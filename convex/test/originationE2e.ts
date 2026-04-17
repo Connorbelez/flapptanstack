@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import type { Id, TableNames } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { FAIRLEND_STAFF_ORG_ID } from "../constants";
 import { adminMutation } from "../fluent";
 import { ORIGINATION_WORKFLOW_SOURCE_TYPE } from "../mortgages/provenance";
@@ -129,7 +129,7 @@ export const ensureOriginationE2eContext = adminMutation
 	.public();
 
 async function loadCommittedOriginationArtifacts(
-	ctx: MutationCtx,
+	ctx: Pick<QueryCtx, "db">,
 	caseId: Id<"adminOriginationCases">
 ) {
 	const caseRecord = await ctx.db.get(caseId);
@@ -138,7 +138,11 @@ async function loadCommittedOriginationArtifacts(
 		.withIndex("by_case", (query) => query.eq("caseId", caseId))
 		.collect();
 
+	const committedListingId = caseRecord?.committedListingId ?? null;
 	const committedMortgageId = caseRecord?.committedMortgageId ?? null;
+	const committedListing = committedListingId
+		? await ctx.db.get(committedListingId)
+		: null;
 	const committedMortgage = committedMortgageId
 		? await ctx.db.get(committedMortgageId)
 		: null;
@@ -310,6 +314,8 @@ async function loadCommittedOriginationArtifacts(
 		cashLedgerEntries,
 		collectionAttempts,
 		collectionPlanEntries,
+		committedListing,
+		committedListingId,
 		committedMortgage,
 		committedMortgageId,
 		dispersalEntries,
@@ -379,6 +385,23 @@ async function deleteCommittedMortgageRecord(
 	}
 
 	await ctx.db.delete(committedMortgageId);
+	return 1;
+}
+
+async function deleteCommittedListingRecord(
+	ctx: Pick<MutationCtx, "db">,
+	committedListingId: Id<"listings"> | null
+) {
+	if (!committedListingId) {
+		return 0;
+	}
+
+	const listing = await ctx.db.get(committedListingId);
+	if (!listing) {
+		return 0;
+	}
+
+	await ctx.db.delete(committedListingId);
 	return 1;
 }
 
@@ -486,6 +509,10 @@ async function cleanupCommittedOriginationArtifacts(
 		borrowerRecords: artifacts.borrowerRecords,
 		caseId,
 	});
+	const deletedListing = await deleteCommittedListingRecord(
+		ctx,
+		artifacts.committedListingId
+	);
 	const deletedMortgage = await deleteCommittedMortgageRecord(
 		ctx,
 		artifacts.committedMortgageId
@@ -517,6 +544,7 @@ async function cleanupCommittedOriginationArtifacts(
 		deletedLedgerAccounts,
 		deletedLedgerEntries,
 		deletedLedgerReservations,
+		deletedListing,
 		deletedMortgage,
 		deletedMortgageBorrowers,
 		deletedObligations,
