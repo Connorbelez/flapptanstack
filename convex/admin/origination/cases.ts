@@ -11,7 +11,7 @@ import {
 	authedQuery,
 	requirePermission,
 } from "../../fluent";
-import { assertOriginationCaseAccess } from "./access";
+import { assertOriginationCaseAccess } from "../../authz/origination";
 import {
 	adminOriginationCasePatchValidator,
 	computeOriginationValidationSnapshot,

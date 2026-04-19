@@ -3,6 +3,7 @@ import { ORIGINATION_COMMIT_BLOCKING_STEP_KEYS } from "../../../src/lib/admin-or
 import { internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
+import { assertOriginationCaseAccess } from "../../authz/origination";
 import {
 	ensureCanonicalBorrowerForOrigination,
 	type OriginationBorrowerParticipantInput,
@@ -17,7 +18,6 @@ import {
 import { authedAction, convex, requirePermissionAction } from "../../fluent";
 import { activateMortgageAggregate } from "../../mortgages/activateMortgageAggregate";
 import { buildAdminDirectMortgageActivationSource } from "../../mortgages/provenance";
-import { assertOriginationCaseAccess } from "./access";
 import {
 	computeOriginationValidationSnapshot,
 	normalizeOriginationCollectionsDraft,

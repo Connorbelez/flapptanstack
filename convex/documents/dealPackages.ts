@@ -1,14 +1,9 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import { assertDealAccess } from "../authz/resourceAccess";
 import type { ActionCtx, QueryCtx } from "../_generated/server";
-import { canAccessDeal } from "../auth/resourceChecks";
-import {
-	adminAction,
-	convex,
-	dealQuery,
-	requirePermissionAction,
-} from "../fluent";
+import { adminAction, convex, dealQuery, requirePermissionAction } from "../fluent";
 import {
 	type DealDocumentPackageStatus,
 	type DealDocumentSourceBlueprintSnapshot,
@@ -1476,10 +1471,7 @@ export const getPortalDocumentPackage = dealQuery
 		dealId: v.id("deals"),
 	})
 	.handler(async (ctx, args) => {
-		const allowed = await canAccessDeal(ctx, ctx.viewer, args.dealId);
-		if (!allowed) {
-			throw new ConvexError("No access to this deal");
-		}
+		await assertDealAccess(ctx, args.dealId);
 
 		return buildDownloadablePackageSurface(
 			await buildPackageSurface(ctx, args.dealId)
