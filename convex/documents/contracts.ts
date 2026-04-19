@@ -100,6 +100,42 @@ export const dealDocumentPackageStatusValidator = v.union(
 	v.literal("archived")
 );
 
+export const signatureProviderCodeValidator = v.literal("documenso");
+
+export const signatureProviderRoleValidator = v.union(
+	v.literal("SIGNER"),
+	v.literal("APPROVER"),
+	v.literal("VIEWER")
+);
+
+export const signatureEnvelopeStatusValidator = v.union(
+	v.literal("draft"),
+	v.literal("sent"),
+	v.literal("partially_signed"),
+	v.literal("completed"),
+	v.literal("declined"),
+	v.literal("voided"),
+	v.literal("provider_error")
+);
+
+export const signatureRecipientStatusValidator = v.union(
+	v.literal("pending"),
+	v.literal("opened"),
+	v.literal("signed"),
+	v.literal("declined")
+);
+
+export const generatedDocumentSigningStatusValidator = v.union(
+	v.literal("not_applicable"),
+	v.literal("draft"),
+	v.literal("sent"),
+	v.literal("partially_signed"),
+	v.literal("completed"),
+	v.literal("declined"),
+	v.literal("voided"),
+	v.literal("provider_error")
+);
+
 export const dealDocumentInstanceKindValidator = v.union(
 	v.literal("static_reference"),
 	v.literal("generated")
@@ -112,6 +148,8 @@ export const dealDocumentInstanceStatusValidator = v.union(
 	v.literal("signature_draft"),
 	v.literal("signature_sent"),
 	v.literal("signature_partially_signed"),
+	v.literal("signature_declined"),
+	v.literal("signature_voided"),
 	v.literal("signed"),
 	v.literal("archived")
 );
@@ -136,6 +174,26 @@ export const dealPackageBlueprintSnapshotValidator = v.object({
 
 export type DealDocumentPackageStatus = Infer<
 	typeof dealDocumentPackageStatusValidator
+>;
+
+export type SignatureProviderCode = Infer<
+	typeof signatureProviderCodeValidator
+>;
+
+export type SignatureProviderRole = Infer<
+	typeof signatureProviderRoleValidator
+>;
+
+export type SignatureEnvelopeStatus = Infer<
+	typeof signatureEnvelopeStatusValidator
+>;
+
+export type SignatureRecipientStatus = Infer<
+	typeof signatureRecipientStatusValidator
+>;
+
+export type GeneratedDocumentSigningStatus = Infer<
+	typeof generatedDocumentSigningStatusValidator
 >;
 
 export type DealDocumentInstanceKind = Infer<
