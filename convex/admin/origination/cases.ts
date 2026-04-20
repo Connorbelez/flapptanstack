@@ -5,7 +5,12 @@ import {
 	INITIAL_ORIGINATION_STEP,
 } from "../../../src/lib/admin-origination";
 import type { Doc } from "../../_generated/dataModel";
-import { authedMutation, authedQuery, requirePermission } from "../../fluent";
+import {
+	adminMutation,
+	authedMutation,
+	authedQuery,
+	requirePermission,
+} from "../../fluent";
 import { assertOriginationCaseAccess } from "./access";
 import {
 	adminOriginationCasePatchValidator,
@@ -21,6 +26,9 @@ const originationQuery = authedQuery.use(
 	requirePermission("mortgage:originate")
 );
 const originationMutation = authedMutation.use(
+	requirePermission("mortgage:originate")
+);
+const originationAdminMutation = adminMutation.use(
 	requirePermission("mortgage:originate")
 );
 
@@ -250,6 +258,63 @@ export const patchCase = originationMutation
 		const updated = await ctx.db.get(args.caseId);
 		if (!updated) {
 			throw new ConvexError("Origination case disappeared during update");
+		}
+
+		return {
+			...updated,
+			recommendedStep: determineRecommendedOriginationStep(updated),
+			stepErrorsForCurrentStep: listOriginationStepErrors(
+				validationSnapshot,
+				(updated.currentStep ?? INITIAL_ORIGINATION_STEP) as Parameters<
+					typeof listOriginationStepErrors
+				>[1]
+			),
+		};
+	})
+	.public();
+
+export const recoverStuckCommittingCase = originationAdminMutation
+	.input({
+		caseId: v.id("adminOriginationCases"),
+	})
+	.handler(async (ctx, args) => {
+		const record = await ctx.db.get(args.caseId);
+		if (!record) {
+			throw new ConvexError("Origination case not found");
+		}
+		if (record.status !== "committing") {
+			throw new ConvexError(
+				"Only origination cases in committing status can be recovered."
+			);
+		}
+
+		const user = await ctx.db
+			.query("users")
+			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+			.unique();
+		if (!user) {
+			throw new ConvexError("User not found in database");
+		}
+
+		const validationSnapshot = computeOriginationValidationSnapshot(record);
+		const nextStatus = resolveDraftOriginationCaseStatus({
+			currentStatus: record.status,
+			validationSnapshot,
+		});
+		const now = Date.now();
+
+		await ctx.db.patch(args.caseId, {
+			failedAt: undefined,
+			lastCommitError: undefined,
+			status: nextStatus,
+			validationSnapshot,
+			updatedByUserId: user._id,
+			updatedAt: now,
+		});
+
+		const updated = await ctx.db.get(args.caseId);
+		if (!updated) {
+			throw new ConvexError("Origination case disappeared during recovery");
 		}
 
 		return {

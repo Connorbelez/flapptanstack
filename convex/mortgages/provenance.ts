@@ -40,10 +40,11 @@ export function buildOriginationMortgageWorkflowSourceKey(
 
 export function buildOriginationBorrowerWorkflowSourceKey(args: {
 	caseId: Id<"adminOriginationCases">;
+	participantDiscriminator?: string;
 	participantDraftId?: string;
 	role: "co_borrower" | "guarantor" | "primary";
 }) {
 	return `${ORIGINATION_WORKFLOW_SOURCE_TYPE}:borrower:${args.caseId}:${
-		args.participantDraftId ?? args.role
+		args.participantDraftId ?? args.participantDiscriminator ?? args.role
 	}`;
 }

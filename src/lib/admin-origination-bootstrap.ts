@@ -1,6 +1,8 @@
 import { createOriginationDraftId } from "#/lib/admin-origination";
 
-const ORIGINATION_BOOTSTRAP_STORAGE_KEY = "admin-origination-bootstrap";
+export const ORIGINATION_BOOTSTRAP_STORAGE_KEY = "admin-origination-bootstrap";
+export const ORIGINATION_E2E_BOOTSTRAP_TOKEN_PREFIX =
+	"origination-e2e-bootstrap";
 
 interface OriginationBootstrapState {
 	caseId?: string;
@@ -74,6 +76,14 @@ function writeOriginationBootstrapState(
 	);
 }
 
+function createOriginationBootstrapState(
+	tokenPrefix: string
+): OriginationBootstrapState {
+	return {
+		token: createOriginationDraftId(tokenPrefix),
+	};
+}
+
 export function peekOriginationBootstrapState(storage?: StorageLike) {
 	const resolvedStorage = resolveStorage(storage);
 	if (!resolvedStorage) {
@@ -96,11 +106,15 @@ export function reserveOriginationBootstrapState(storage?: StorageLike) {
 		return existing;
 	}
 
-	const next = {
-		token: createOriginationDraftId("origination-bootstrap"),
-	};
+	const next = createOriginationBootstrapState("origination-bootstrap");
 	writeOriginationBootstrapState(next, storage);
 	return next;
+}
+
+export function createOriginationE2eBootstrapState() {
+	return createOriginationBootstrapState(
+		ORIGINATION_E2E_BOOTSTRAP_TOKEN_PREFIX
+	);
 }
 
 export function registerOriginationBootstrapCase(

@@ -3,6 +3,25 @@ import type { Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { FAIRLEND_STAFF_ORG_ID } from "../constants";
 import { adminMutation } from "../fluent";
+import { ORIGINATION_WORKFLOW_SOURCE_TYPE } from "../mortgages/provenance";
+
+const ORIGINATION_E2E_ENABLED_ENV = "ORIGINATION_E2E_ENABLED";
+const ORIGINATION_E2E_BOOTSTRAP_TOKEN_PREFIX = "origination-e2e-bootstrap";
+
+function assertOriginationE2eEnabled() {
+	// Require explicit opt-in via Convex env var. NODE_ENV is unreliable in Convex.
+	if (process.env.ORIGINATION_E2E_ENABLED !== "true") {
+		throw new ConvexError(
+			`Origination E2E helpers are disabled. Set ${ORIGINATION_E2E_ENABLED_ENV}=true to enable them.`
+		);
+	}
+}
+
+function hasOriginationE2eBootstrapToken(bootstrapToken?: string) {
+	return Boolean(
+		bootstrapToken?.startsWith(`${ORIGINATION_E2E_BOOTSTRAP_TOKEN_PREFIX}-`)
+	);
+}
 
 async function deleteByIds<TableName extends TableNames>(
 	ctx: Pick<MutationCtx, "db">,
@@ -92,6 +111,8 @@ async function ensureActiveBorrower(
 
 export const ensureOriginationE2eContext = adminMutation
 	.handler(async (ctx) => {
+		assertOriginationE2eEnabled();
+
 		const brokerOfRecordId = await ensureActiveBrokerOfRecord(ctx);
 		const broker = await ctx.db.get(brokerOfRecordId);
 		if (!broker) {
@@ -506,12 +527,47 @@ async function cleanupCommittedOriginationArtifacts(
 	};
 }
 
+function assertOriginationE2eCleanupTarget(
+	caseId: Id<"adminOriginationCases">,
+	artifacts: Awaited<ReturnType<typeof loadCommittedOriginationArtifacts>>
+) {
+	if (!artifacts.caseRecord) {
+		throw new ConvexError("Origination E2E cleanup target was not found");
+	}
+
+	if (!hasOriginationE2eBootstrapToken(artifacts.caseRecord.bootstrapToken)) {
+		throw new ConvexError(
+			"Origination E2E cleanup only supports cases created by the origination E2E bootstrap"
+		);
+	}
+
+	if (!artifacts.committedMortgage) {
+		return;
+	}
+
+	const expectedCaseId = String(caseId);
+	const isCaseOwnedMortgage =
+		artifacts.committedMortgage.originatingWorkflowId === expectedCaseId &&
+		artifacts.committedMortgage.workflowSourceId === expectedCaseId &&
+		artifacts.committedMortgage.workflowSourceType ===
+			ORIGINATION_WORKFLOW_SOURCE_TYPE;
+
+	if (!isCaseOwnedMortgage) {
+		throw new ConvexError(
+			"Origination E2E cleanup only supports mortgages committed from the target origination case"
+		);
+	}
+}
+
 export const cleanupCommittedOrigination = adminMutation
 	.input({
 		caseId: v.id("adminOriginationCases"),
 	})
 	.handler(async (ctx, args) => {
+		assertOriginationE2eEnabled();
+
 		const artifacts = await loadCommittedOriginationArtifacts(ctx, args.caseId);
+		assertOriginationE2eCleanupTarget(args.caseId, artifacts);
 		return cleanupCommittedOriginationArtifacts(ctx, args.caseId, artifacts);
 	})
 	.public();

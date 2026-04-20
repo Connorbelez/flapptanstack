@@ -6,6 +6,10 @@ import { normalizeEmail } from "../seed/seedHelpers";
 
 type BorrowerParticipantRole = Doc<"mortgageBorrowers">["role"];
 const WHITESPACE_PATTERN = /\s+/;
+const REPEATABLE_BORROWER_PARTICIPANT_ROLES = new Set<BorrowerParticipantRole>([
+	"co_borrower",
+	"guarantor",
+]);
 
 export interface OriginationBorrowerParticipantInput {
 	draftId?: string;
@@ -54,9 +58,10 @@ async function findUserByEmail(
 	ctx: Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">,
 	email: string
 ) {
+	const normalizedEmail = normalizeEmail(email);
 	return ctx.db
 		.query("users")
-		.filter((query) => query.eq(query.field("email"), normalizeEmail(email)))
+		.withIndex("by_email", (query) => query.eq("email", normalizedEmail))
 		.first();
 }
 
@@ -98,12 +103,49 @@ function hasMeaningfulParticipantIdentity(
 	);
 }
 
+function normalizeParticipantNameForKey(fullName?: string) {
+	const trimmed = fullName?.trim().toLowerCase();
+	if (!trimmed) {
+		return undefined;
+	}
+
+	return trimmed.replace(WHITESPACE_PATTERN, "-");
+}
+
+function buildParticipantWorkflowSourceDiscriminator(
+	participant: OriginationBorrowerParticipantInput
+) {
+	if (!REPEATABLE_BORROWER_PARTICIPANT_ROLES.has(participant.role)) {
+		return undefined;
+	}
+
+	const normalizedFullName = normalizeParticipantNameForKey(
+		participant.fullName
+	);
+	const discriminatorParts = [
+		participant.existingBorrowerId
+			? `borrower:${participant.existingBorrowerId}`
+			: undefined,
+		participant.email
+			? `email:${normalizeEmail(participant.email)}`
+			: undefined,
+		normalizedFullName ? `name:${normalizedFullName}` : undefined,
+	].filter((value): value is string => Boolean(value));
+
+	return discriminatorParts.length > 0
+		? discriminatorParts.join("|")
+		: undefined;
+}
+
 export function buildOriginationParticipantResolutionKey(args: {
 	caseId: Id<"adminOriginationCases">;
 	participant: OriginationBorrowerParticipantInput;
 }) {
 	return buildOriginationBorrowerWorkflowSourceKey({
 		caseId: args.caseId,
+		participantDiscriminator: buildParticipantWorkflowSourceDiscriminator(
+			args.participant
+		),
 		participantDraftId: args.participant.draftId,
 		role: args.participant.role,
 	});

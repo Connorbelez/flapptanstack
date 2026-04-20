@@ -126,7 +126,9 @@ export default defineSchema({
 
 		// ─── Identity ───
 		dateOfBirth: v.optional(v.string()),
-	}).index("authId", ["authId"]),
+	})
+		.index("authId", ["authId"])
+		.index("by_email", ["email"]),
 
 	organizations: defineTable({
 		workosId: v.string(),

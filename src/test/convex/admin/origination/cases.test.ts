@@ -7,7 +7,11 @@ import {
 	createTestConvex,
 	ensureSeededIdentity,
 } from "../../../auth/helpers";
-import { FAIRLEND_ADMIN, MEMBER } from "../../../auth/identities";
+import {
+	EXTERNAL_ORG_ADMIN,
+	FAIRLEND_ADMIN,
+	MEMBER,
+} from "../../../auth/identities";
 import { lookupPermissions } from "../../../auth/permissions";
 
 async function seedBrokerRecord(t: ReturnType<typeof createTestConvex>) {
@@ -348,6 +352,50 @@ describe("admin origination cases", () => {
 		).rejects.toThrow("Forbidden: origination case access requires org context");
 	});
 
+	it("fails closed for non-admin callers when case org context is missing or mismatched", async () => {
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		await ensureSeededIdentity(t, EXTERNAL_ORG_ADMIN);
+
+		const bootstrapToken = "bootstrap-origination-access-scope";
+		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.createCase,
+			{ bootstrapToken }
+		);
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).query(
+				api.admin.origination.cases.getCase,
+				{ caseId }
+			)
+		).rejects.toThrow("Forbidden: origination case is outside your org");
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).mutation(
+				api.admin.origination.cases.createCase,
+				{ bootstrapToken }
+			)
+		).rejects.toThrow("Forbidden: origination case is outside your org");
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(caseId, { orgId: undefined });
+		});
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).query(
+				api.admin.origination.cases.getCase,
+				{ caseId }
+			)
+		).rejects.toThrow("Forbidden: origination case access requires org context");
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).mutation(
+				api.admin.origination.cases.createCase,
+				{ bootstrapToken }
+			)
+		).rejects.toThrow("Forbidden: origination case access requires org context");
+	});
+
 	it("reuses the same draft when createCase receives the same bootstrap token", async () => {
 		const t = createTestConvex({ includeWorkflowComponents: false });
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
@@ -494,6 +542,94 @@ describe("admin origination cases", () => {
 				{ caseId }
 			)
 		).rejects.toThrow("immutable");
+	});
+
+	it("lets FairLend admins recover cases stuck in committing", async () => {
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		await ensureSeededIdentity(t, EXTERNAL_ORG_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
+
+		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.createCase,
+			{}
+		);
+
+		await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.patchCase,
+			{
+				caseId,
+				patch: {
+					currentStep: "review",
+					participantsDraft: {
+						brokerOfRecordId,
+						primaryBorrower: {
+							email: "ada@example.com",
+							fullName: "Ada Lovelace",
+						},
+					},
+					propertyDraft: {
+						create: {
+							city: "Toronto",
+							postalCode: "M5H 1J9",
+							propertyType: "residential",
+							province: "ON",
+							streetAddress: "123 King St W",
+						},
+					},
+					valuationDraft: {
+						valueAsIs: 425_000,
+					},
+					mortgageDraft: {
+						amortizationMonths: 300,
+						firstPaymentDate: "2026-06-01",
+						interestAdjustmentDate: "2026-05-01",
+						interestRate: 9.5,
+						lienPosition: 1,
+						loanType: "conventional",
+						maturityDate: "2027-04-30",
+						paymentAmount: 2_450,
+						paymentFrequency: "monthly",
+						principal: 250_000,
+						rateType: "fixed",
+						termMonths: 12,
+						termStartDate: "2026-05-01",
+					},
+				},
+			}
+		);
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(caseId, { status: "committing" });
+		});
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).mutation(
+				api.admin.origination.cases.recoverStuckCommittingCase,
+				{ caseId }
+			)
+		).rejects.toThrow("Forbidden: fair lend admin role required");
+
+		const recovered = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.recoverStuckCommittingCase,
+			{ caseId }
+		);
+
+		expect(recovered.status).toBe("ready_to_commit");
+		expect(recovered.failedAt).toBeUndefined();
+		expect(recovered.lastCommitError).toBeUndefined();
+
+		const patched = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.patchCase,
+			{
+				caseId,
+				patch: {
+					currentStep: "review",
+				},
+			}
+		);
+
+		expect(patched.status).toBe("ready_to_commit");
 	});
 
 	it("rejects callers without mortgage:originate", async () => {
