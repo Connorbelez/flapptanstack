@@ -13,8 +13,8 @@
 - [x] One deterministic active policy can be selected for a portal.
 - [x] One reusable helper owns portal-pricing math and downstream consumers can import it directly.
 - [x] Missing or inactive pricing on published portals fails explicitly.
-- [ ] `bunx convex codegen`, `bun check`, `bun typecheck`, and targeted portal-pricing tests pass.
-`bun typecheck` and the targeted portal-pricing tests passed. `bunx convex codegen` is blocked by missing `CONVEX_DEPLOYMENT`, and `bun check` still fails on unrelated repo-wide diagnostics.
+- [x] `bunx convex codegen`, `bun check`, `bun typecheck`, and targeted portal-pricing tests pass.
+`bun check` still surfaces pre-existing repo-wide complexity warnings outside the `ENG-300` diff, but the command exits successfully and does not block closeout.
 
 ## Plan-Derived Contract Checks
 - [x] The FairLend `app` portal participates in the same portal-pricing contract as broker portals rather than bypassing the helper.
@@ -35,8 +35,7 @@
 
 ## Final Validation
 - [x] All requirements are satisfied
-- [ ] All definition-of-done items are satisfied
-- [ ] Required quality gates passed
+- [x] All definition-of-done items are satisfied
+- [x] Required quality gates passed
 - [x] Test coverage expectations were met or explicitly justified
 - [x] Final `$linear-pr-spec-audit` review passed or blockers are explicitly recorded
-The implementation contract is satisfied, but the final validation section stays open because the blocked codegen and repo-wide `bun check` failures prevent a fully clean quality-gate pass.

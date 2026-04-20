@@ -1,4 +1,4 @@
-import { type Infer, v } from "convex/values";
+import { ConvexError, type Infer, v } from "convex/values";
 
 export const portalTypeValidator = v.union(
 	v.literal("fairlend"),
@@ -22,6 +22,12 @@ export const portalPricingPolicyParametersValidator = v.object({
 	/** Percent of the canonical listing return retained by the broker in v1. */
 	brokerSplitPercent: v.number(),
 });
+
+interface PortalPricingPolicyContractLike {
+	brokerSplitPercent: number;
+	effectiveFrom: number;
+	effectiveTo?: number;
+}
 
 export const nonPortalContextKindValidator = v.union(
 	v.literal("marketing"),
@@ -71,6 +77,48 @@ export const resolvedPortalHostValidator = v.object({
 	matchedHostType: portalMatchedHostTypeValidator,
 	portal: publicPortalSummaryValidator,
 });
+
+export function validatePortalPricingPolicyParameters(input: {
+	brokerSplitPercent: number;
+}): PortalPricingPolicyParameters {
+	if (!Number.isFinite(input.brokerSplitPercent)) {
+		throw new ConvexError("Portal pricing brokerSplitPercent must be finite");
+	}
+	if (input.brokerSplitPercent < 0 || input.brokerSplitPercent > 100) {
+		throw new ConvexError(
+			"Portal pricing brokerSplitPercent must stay between 0 and 100"
+		);
+	}
+
+	return {
+		brokerSplitPercent: input.brokerSplitPercent,
+	};
+}
+
+export function validatePortalPricingPolicyContract<
+	T extends PortalPricingPolicyContractLike,
+>(input: T): T {
+	validatePortalPricingPolicyParameters(input);
+
+	if (!Number.isFinite(input.effectiveFrom)) {
+		throw new ConvexError("Portal pricing effectiveFrom must be finite");
+	}
+
+	if (input.effectiveTo !== undefined && !Number.isFinite(input.effectiveTo)) {
+		throw new ConvexError("Portal pricing effectiveTo must be finite");
+	}
+
+	if (
+		input.effectiveTo !== undefined &&
+		input.effectiveTo <= input.effectiveFrom
+	) {
+		throw new ConvexError(
+			"Portal pricing effectiveTo must be greater than effectiveFrom"
+		);
+	}
+
+	return input;
+}
 
 export type PortalType = Infer<typeof portalTypeValidator>;
 export type PortalStatus = Infer<typeof portalStatusValidator>;
