@@ -15,6 +15,7 @@ import { Route as SignOutRouteImport } from './routes/sign-out'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ListingsRouteImport } from './routes/listings'
 import { Route as CallbackRouteImport } from './routes/callback'
+import { Route as AuthCompleteRouteImport } from './routes/auth-complete'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as OnboardRouteRouteImport } from './routes/onboard/route'
 import { Route as LenderRouteRouteImport } from './routes/lender/route'
@@ -171,6 +172,11 @@ const ListingsRoute = ListingsRouteImport.update({
 const CallbackRoute = CallbackRouteImport.update({
   id: '/callback',
   path: '/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCompleteRoute = AuthCompleteRouteImport.update({
+  id: '/auth-complete',
+  path: '/auth-complete',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -859,6 +865,7 @@ export interface FileRoutesByFullPath {
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
+  '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
   '/listings': typeof ListingsRouteWithChildren
   '/sign-in': typeof SignInRoute
@@ -994,6 +1001,7 @@ export interface FileRoutesByTo {
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
+  '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
   '/listings': typeof ListingsRouteWithChildren
   '/sign-in': typeof SignInRoute
@@ -1119,6 +1127,7 @@ export interface FileRoutesById {
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
+  '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
   '/listings': typeof ListingsRouteWithChildren
   '/sign-in': typeof SignInRoute
@@ -1256,6 +1265,7 @@ export interface FileRouteTypes {
     | '/lender'
     | '/onboard'
     | '/about'
+    | '/auth-complete'
     | '/callback'
     | '/listings'
     | '/sign-in'
@@ -1391,6 +1401,7 @@ export interface FileRouteTypes {
     | '/lender'
     | '/onboard'
     | '/about'
+    | '/auth-complete'
     | '/callback'
     | '/listings'
     | '/sign-in'
@@ -1515,6 +1526,7 @@ export interface FileRouteTypes {
     | '/lender'
     | '/onboard'
     | '/about'
+    | '/auth-complete'
     | '/callback'
     | '/listings'
     | '/sign-in'
@@ -1651,6 +1663,7 @@ export interface RootRouteChildren {
   LenderRouteRoute: typeof LenderRouteRouteWithChildren
   OnboardRouteRoute: typeof OnboardRouteRoute
   AboutRoute: typeof AboutRoute
+  AuthCompleteRoute: typeof AuthCompleteRoute
   CallbackRoute: typeof CallbackRoute
   ListingsRoute: typeof ListingsRouteWithChildren
   SignInRoute: typeof SignInRoute
@@ -1740,6 +1753,13 @@ declare module '@tanstack/react-router' {
       path: '/callback'
       fullPath: '/callback'
       preLoaderRoute: typeof CallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth-complete': {
+      id: '/auth-complete'
+      path: '/auth-complete'
+      fullPath: '/auth-complete'
+      preLoaderRoute: typeof AuthCompleteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -3062,6 +3082,7 @@ const rootRouteChildren: RootRouteChildren = {
   LenderRouteRoute: LenderRouteRouteWithChildren,
   OnboardRouteRoute: OnboardRouteRoute,
   AboutRoute: AboutRoute,
+  AuthCompleteRoute: AuthCompleteRoute,
   CallbackRoute: CallbackRoute,
   ListingsRoute: ListingsRouteWithChildren,
   SignInRoute: SignInRoute,

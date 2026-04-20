@@ -1,18 +1,21 @@
 import { isRouterTeardownSignOutError } from "./workos-auth";
 
-type SignOutFn = () => Promise<void>;
+type SignOutFn = (options?: { returnTo?: string }) => Promise<void>;
 
 export async function handleWorkosSignOut(
 	signOut: SignOutFn,
 	options?: {
 		onError?: (message: string) => void;
+		returnTo?: string;
 	}
 ) {
 	try {
-		await signOut();
+		await signOut(
+			options?.returnTo ? { returnTo: options.returnTo } : undefined
+		);
 	} catch (error) {
 		if (isRouterTeardownSignOutError(error)) {
-			window.location.href = "/";
+			window.location.href = options?.returnTo ?? "/";
 			return;
 		}
 

@@ -47,6 +47,9 @@ function skipPdfmeBabelTransform(): Plugin {
 }
 
 const config = defineConfig({
+	server: {
+		allowedHosts: ["localhost", ".localhost"],
+	},
 	test: {
 		exclude: [...configDefaults.exclude, "e2e/**"],
 		coverage: {
