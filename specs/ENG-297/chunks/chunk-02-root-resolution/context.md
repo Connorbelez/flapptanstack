@@ -12,6 +12,7 @@
 ## Implementation notes
 - Preserve `fetchWorkosAuth` and `serverHttpClient.setAuth(token)` behavior in `src/routes/__root.tsx`.
 - Centralize trusted host extraction once; do not broaden `sanitizeRedirectPath`, `buildSignInRedirect`, or the auth routes into host-resolution logic in this slice.
+- Treat the root `PortalContext` as a minimal public pre-auth routing contract. It should expose host identity, portal identity, availability, and cache scoping only; downstream-owned broker/org/pricing/landing identifiers stay out of the public host-resolution payload.
 - Keep `src/routes/index.tsx` as a minimal already-resolved consumer, not the primary enforcement point.
 - Add a small serializable portal cache-key helper instead of rewriting the global query hash function unless tests prove that is required.
 
@@ -25,5 +26,5 @@
 - `src/routes/sign-up.tsx`
 
 ## Validation
-- `bunx vitest run src/test/routes/portal-context.test.ts`
+- `bun run test -- src/test/routes/portal-context.test.tsx src/test/routes/root-route-blocked-hosts.test.ts`
 - `bun run test:e2e`

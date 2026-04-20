@@ -11,6 +11,7 @@
 - Add the persisted portal contract in Convex: `users.homePortalId`, `portals`, and thin typed portal attachment tables for landing pages and pricing policies.
 - Add backend portal validators, registry lookups, and tracked FairLend seed/backfill flows that reuse the existing broker/org data model instead of redesigning onboarding.
 - Resolve a serializable root `PortalContext` from a trusted request-host seam before child loaders run, including fail-closed handling for marketing, admin, reserved, unknown, suspended, and unpublished hosts.
+- Keep the root `PortalContext` intentionally minimal and public: enough for canonical host identity, portal identity, availability, and cache scoping before auth-sensitive downstream loaders run. Privileged portal metadata such as `brokerId`, `orgId`, `landingPageId`, and `pricingPolicyId` stays out of this pre-auth contract and is fetched later behind auth when needed.
 - Expose a stable portal cache-key helper and a shared root boundary surface so downstream loaders and UI do not re-parse host state.
 - Add focused backend, route, and host-resolution validation coverage, then run the required quality gates and spec audit.
 
@@ -20,6 +21,7 @@
 - Treat `app.fairlend.ca` and `app.localhost:3000` as real FairLend portal hosts backed by persisted data, not as hardcoded fallback behavior.
 - Standardize local and E2E hosts on `localhost:3000`, `app.localhost:3000`, and `<portal>.localhost:3000`; do not add `127.0.0.1` support.
 - Fail closed for unknown, reserved, unpublished, and suspended portal hosts at the root boundary; do not silently fall back to marketing.
+- Treat the root `PortalContext` as a public pre-auth routing contract rather than a full portal model; do not leak downstream-owned broker/org/pricing/landing identifiers through the public host resolver.
 - Keep this slice out of callback restoration, portal membership middleware, pricing-policy realization beyond placeholder seams, and landing-page CMS/editor work.
 - Mark `portalLandingPages` and `portalPricingPolicies` as placeholder attachment points owned downstream by ENG-300 and the landing-page goal.
 
