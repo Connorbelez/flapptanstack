@@ -51,7 +51,7 @@ const DEAL_EVENT_MAP: Readonly<Record<string, string>> = {
 const SEED_LENDER_AUTH_IDS: readonly string[] = [
 	seedAuthIdFromEmail("grace.wilson+lender@fairlend.ca"),
 	seedAuthIdFromEmail("summit.credit+lender@fairlend.ca"),
-	seedAuthIdFromEmail("maple.mic+lender@fairlend.ca"),
+	seedAuthIdFromEmail("fairlend.mic+lender@fairlend.ca"),
 ];
 
 const DEAL_FIXTURES: readonly DealSeedFixture[] = [

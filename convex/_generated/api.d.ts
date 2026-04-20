@@ -344,6 +344,7 @@ import type * as seed_seedObligation from "../seed/seedObligation.js";
 import type * as seed_seedObligationStates from "../seed/seedObligationStates.js";
 import type * as seed_seedOnboardingRequest from "../seed/seedOnboardingRequest.js";
 import type * as seed_seedPaymentData from "../seed/seedPaymentData.js";
+import type * as seed_seedPlatformOwnership from "../seed/seedPlatformOwnership.js";
 import type * as test_authTestEndpoints from "../test/authTestEndpoints.js";
 import type * as test_dealPackageE2e from "../test/dealPackageE2e.js";
 import type * as test_moduleMaps from "../test/moduleMaps.js";
@@ -694,6 +695,7 @@ declare const fullApi: ApiFromModules<{
   "seed/seedObligationStates": typeof seed_seedObligationStates;
   "seed/seedOnboardingRequest": typeof seed_seedOnboardingRequest;
   "seed/seedPaymentData": typeof seed_seedPaymentData;
+  "seed/seedPlatformOwnership": typeof seed_seedPlatformOwnership;
   "test/authTestEndpoints": typeof test_authTestEndpoints;
   "test/dealPackageE2e": typeof test_dealPackageE2e;
   "test/moduleMaps": typeof test_moduleMaps;
