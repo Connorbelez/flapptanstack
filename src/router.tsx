@@ -10,6 +10,10 @@ import {
 import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { useCallback, useMemo } from "react";
 import { AppErrorComponent } from "./components/error-boundary";
+import {
+	createPortalCacheScopeController,
+	createPortalScopedQueryKeyHashFn,
+} from "./lib/portal/query-cache-scope";
 import { routeTree } from "./routeTree.gen";
 
 export function getRouter() {
@@ -21,12 +25,17 @@ export function getRouter() {
 	// 1. Initialize Convex & Convex Query
 	const convex = new ConvexReactClient(CONVEX_URL);
 	const convexQueryClient = new ConvexQueryClient(convex);
+	const portalCacheScope = createPortalCacheScopeController();
+	const baseQueryKeyHashFn = convexQueryClient.hashFn();
 
 	// 2. Initialize regular TanStack Query & connect them
 	const queryClient = new QueryClient({
 		defaultOptions: {
 			queries: {
-				queryKeyHashFn: convexQueryClient.hashFn(),
+				queryKeyHashFn: createPortalScopedQueryKeyHashFn({
+					baseHashFn: baseQueryKeyHashFn,
+					getPortalCacheScope: portalCacheScope.getScope,
+				}),
 				queryFn: convexQueryClient.queryFn(),
 				gcTime: 5000,
 			},
@@ -45,7 +54,13 @@ export function getRouter() {
 			<AppErrorComponent error={error} reset={reset} />
 		),
 		defaultNotFoundComponent: () => <p>not found</p>,
-		context: { queryClient, convexClient: convex, convexQueryClient },
+		context: {
+			queryClient,
+			convexClient: convex,
+			convexQueryClient,
+			getPortalCacheScope: portalCacheScope.getScope,
+			setPortalCacheScope: portalCacheScope.setScope,
+		},
 
 		// 4. Wrap the app with SSR-friendly providers
 		Wrap: ({ children }) => (

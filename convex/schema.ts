@@ -120,6 +120,10 @@ import {
 	transferTypeValidator,
 } from "./payments/transfers/validators";
 import { normalizedEventTypeValidator } from "./payments/webhooks/types";
+import {
+	portalStatusValidator,
+	portalTypeValidator,
+} from "./portals/validators";
 
 export default defineSchema({
 	// ══════════════════════════════════════════════════════════
@@ -132,6 +136,7 @@ export default defineSchema({
 		email: v.string(),
 		firstName: v.string(),
 		lastName: v.string(),
+		homePortalId: v.optional(v.id("portals")),
 
 		// ─── Contact ───
 		phoneNumber: v.optional(v.string()),
@@ -177,6 +182,53 @@ export default defineSchema({
 		slug: v.string(),
 		permissions: v.array(v.string()),
 	}).index("slug", ["slug"]),
+
+	// ══════════════════════════════════════════════════════════
+	// PORTAL REGISTRY
+	// ══════════════════════════════════════════════════════════
+
+	portalLandingPages: defineTable({
+		// Placeholder attachment point only.
+		// Full landing-page CMS/editor ownership stays with ENG-301 and the
+		// downstream landing-page goal.
+		portalId: v.id("portals"),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_portal", ["portalId"]),
+
+	portalPricingPolicies: defineTable({
+		// Placeholder attachment point only.
+		// ENG-300 owns the concrete pricing-policy contract and projection logic.
+		portalId: v.id("portals"),
+		/** Flat percentage modifier representing the broker's cut in v1. */
+		brokerSplitPercent: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_portal", ["portalId"]),
+
+	portals: defineTable({
+		slug: v.string(),
+		portalType: portalTypeValidator,
+		brokerId: v.optional(v.id("brokers")),
+		orgId: v.string(),
+		productionHost: v.string(),
+		localHost: v.string(),
+		status: portalStatusValidator,
+		isPublished: v.boolean(),
+		publicTeaserEnabled: v.boolean(),
+		teaserListingLimit: v.optional(v.number()),
+		defaultPostAuthPath: v.optional(v.string()),
+		landingPageId: v.optional(v.id("portalLandingPages")),
+		pricingPolicyId: v.optional(v.id("portalPricingPolicies")),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_slug", ["slug"])
+		.index("by_production_host", ["productionHost"])
+		.index("by_local_host", ["localHost"])
+		.index("by_broker", ["brokerId"])
+		.index("by_org", ["orgId"])
+		.index("by_status", ["status"]),
 
 	// ══════════════════════════════════════════════════════════
 	// CORE ROLE PROFILES
