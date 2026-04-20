@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 
 dotenv.config({ path: path.resolve(import.meta.dirname, ".env.local") });
 
-const e2ePort = Number(process.env.E2E_PORT ?? 3100);
+const e2ePort = Number(process.env.E2E_PORT ?? 3000);
 const e2eBaseUrl = `http://localhost:${e2ePort}`;
 
 export default defineConfig({
@@ -19,7 +19,7 @@ export default defineConfig({
 		trace: "on-first-retry",
 	},
 	webServer: {
-		command: `vite dev --host localhost --port ${e2ePort}`,
+		command: `bunx vite dev --host localhost --port ${e2ePort}`,
 		env: {
 			WORKOS_REDIRECT_URI: `http://localhost:${e2ePort}/callback`,
 			VITE_E2E: "true",
