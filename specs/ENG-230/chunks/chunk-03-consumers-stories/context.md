@@ -104,7 +104,7 @@ type Story = StoryObj<typeof meta>;
 ## Quality Gate Rules
 - `bun check`, `bun typecheck` and `bunx convex codegen` must pass before considering tasks completed.
 - DO NOT try to fix linting/formatting errors BEFORE running `bun check`. Always run `bun check` first as this command also auto formats and fixes some linting errors.
-- After Completing a Major unit of work like a full SPEC run `coderabbit review --plain` to get a code review summary and check for any potential issues or improvements.
+- After completing a major unit of work like a full SPEC run the repo validation commands. Any CodeRabbit review is human-owned and not part of the agent quality gate.
 
 ## Constraints & Rules
 - The route updates in this chunk are validation consumers, not final entity implementations.

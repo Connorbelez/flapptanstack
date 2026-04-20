@@ -609,7 +609,7 @@ Expected: auth suite passes with updated catalog and enforcement behavior.
 Run:
 
 ```bash
-coderabbit review --plain
+Human owner may run CodeRabbit separately if desired; it is not part of the agent quality gate.
 ```
 
 Expected: no critical RBAC regression findings remain open.

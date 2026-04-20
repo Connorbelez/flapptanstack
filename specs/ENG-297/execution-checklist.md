@@ -53,6 +53,6 @@
   Remaining open item is the repo-level `bun check` gate outside the ENG-297 files.
 - [x] Plan-derived contract checks are satisfied
 - [ ] Required quality gates passed
-  `bunx convex codegen`, `bun typecheck`, and focused Vitest coverage passed. `bun check` is still blocked by unrelated repo-wide complexity diagnostics, and `coderabbit review --plain` cannot start because the branch diff exceeds the tool's 300-file limit.
+  `bunx convex codegen`, `bun typecheck`, and focused Vitest coverage passed. `bun check` is still blocked by unrelated repo-wide complexity diagnostics.
 - [x] Test coverage expectations were met or explicitly justified
 - [x] Final `$linear-pr-spec-audit` review passed or blockers are explicitly recorded

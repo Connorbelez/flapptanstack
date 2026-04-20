@@ -10,6 +10,7 @@
 ## Implementation notes
 - `convex/fluent.ts` currently exposes auth, org, role, and permission chains but no portal-aware builders.
 - Portal builders should compose trusted portal resolution first, then auth and portal access, then actor-specific middleware where needed.
+- Audit remediation keeps those builders structural by wrapping handler execution inside a local `fluent-convex` extension instead of reintroducing helper calls inside `convex/portals/proof.ts`.
 - The proof consumer should be intentionally narrow: enough to exercise the builder chain and typed `ctx.portal`, but not a broad rewrite of unrelated product queries.
 - If `convex/authz/resourceAccess.ts` needs changes, they should only reflect shared actor-resolution reuse or typed context compatibility, not hidden portal checks.
 
@@ -21,4 +22,5 @@
 
 ## Validation
 - Proof consumer or harness can be called through the new portal-aware builders
+- Proof consumer source no longer manually calls portal helper composition functions
 - `convex/fluent.ts` still exports explicit `.public()` or `.internal()` endpoints only
