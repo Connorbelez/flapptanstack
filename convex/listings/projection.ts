@@ -6,6 +6,7 @@ import { listActivePublicStaticBlueprintAssets } from "../documents/mortgageBlue
 import { adminMutation, requirePermission } from "../fluent";
 import { insertListingRecord, type ListingInsert } from "./create";
 import { deriveMarketplacePropertyType } from "./marketplaceShared";
+import { roundToTwoDecimals } from "./math";
 
 type ListingDoc = Doc<"listings">;
 type ListingHeroImage = ListingDoc["heroImages"][number];
@@ -26,10 +27,6 @@ type ListingProjectionOverrides = Partial<{
 		? OriginationListingOverridesDraftValue["heroImages"]
 		: ListingDoc[K];
 }>;
-
-function roundToTwoDecimals(value: number) {
-	return Math.round(value * 100) / 100;
-}
 
 function trimToUndefined(value: string | undefined) {
 	if (typeof value !== "string") {
