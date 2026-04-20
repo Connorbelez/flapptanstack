@@ -183,4 +183,74 @@ describe("default origination owner", () => {
 			message: "Configured lender must belong to the FairLend brokerage org",
 		});
 	});
+
+	it("rejects brokerage-org lenders that impersonate the canonical FairLend MIC by name only", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const impostorUserId = await ensureSeededIdentity(
+			t,
+			createMockViewer({
+				email: "other.mic+lender@fairlend.ca",
+				firstName: "Other",
+				lastName: "MIC",
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				orgName: "FairLend Capital",
+				roles: ["lender"],
+				subject: "user_other_fairlend_mic_lender",
+			})
+		);
+
+		const { lenderId, vehicleId, workspaceId } = await t.run(async (ctx) => {
+			const now = Date.now();
+			const brokerId = await ctx.db.insert("brokers", {
+				createdAt: now,
+				lastTransitionAt: now,
+				onboardedAt: now,
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				status: "active",
+				userId: impostorUserId,
+			});
+			const lenderId = await ctx.db.insert("lenders", {
+				accreditationStatus: "exempt",
+				brokerId,
+				createdAt: now,
+				onboardingEntryPath: "admin_dashboard",
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				status: "active",
+				userId: impostorUserId,
+			});
+			const vehicleId = await ctx.db.insert("investmentVehicles", {
+				lenderId,
+				name: "FairLend MIC",
+				legalName: "FairLend Mortgage Investment Corporation",
+				entityType: "mic",
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			const workspaceId = await ctx.db.insert("investmentVehicleWorkspaces", {
+				investmentVehicleId: vehicleId,
+				name: "FairLend MIC Workspace",
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			return { lenderId, vehicleId, workspaceId };
+		});
+
+		const error = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(api.platform.defaultOriginationOwner.setDefaultOriginationOwner, {
+				changeReason: "Attempt to point originations at an impostor MIC owner",
+				defaultOriginationInvestmentVehicleId: vehicleId,
+				defaultOriginationLenderId: lenderId,
+				defaultOriginationWorkspaceId: workspaceId,
+			})
+			.catch((caughtError: unknown) => caughtError);
+
+		expect(await getConvexErrorData(error)).toMatchObject({
+			code: "DEFAULT_ORIGINATION_OWNER_INVALID",
+			message: "Configured lender must be the canonical FairLend MIC owner",
+		});
+	});
 });

@@ -7,6 +7,7 @@ import { upsertDefaultOriginationOwner } from "../platform/defaultOriginationOwn
 import {
 	FAIRLEND_MIC_INVESTMENT_VEHICLE_LEGAL_NAME,
 	FAIRLEND_MIC_INVESTMENT_VEHICLE_NAME,
+	FAIRLEND_MIC_LENDER_EMAIL,
 } from "../platform/defaultOriginationOwnerContract";
 import {
 	ensureUserByEmail,
@@ -223,8 +224,8 @@ export const seedPlatformOwnership = adminMutation
 	.handler(async (ctx, args): Promise<SeedPlatformOwnershipResult> => {
 		const createdAt = seedTimestamp(18_000_000);
 		const { userId } = await ensureUserByEmail(ctx, {
-			authId: seedAuthIdFromEmail("fairlend.mic+lender@fairlend.ca"),
-			email: "fairlend.mic+lender@fairlend.ca",
+			authId: seedAuthIdFromEmail(FAIRLEND_MIC_LENDER_EMAIL),
+			email: FAIRLEND_MIC_LENDER_EMAIL,
 			firstName: "FairLend",
 			lastName: "MIC",
 			phoneNumber: "+1-416-555-0199",
