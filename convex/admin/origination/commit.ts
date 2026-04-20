@@ -22,6 +22,7 @@ import {
 	computeOriginationValidationSnapshot,
 	normalizeOriginationCollectionsDraft,
 } from "./validators";
+import { activateCommittedCaseCollectionsRuntime } from "./collections";
 import { runPostCommitCollectionsActivation } from "./postCommitCollectionsActivation";
 
 function collectOriginationParticipants(
@@ -777,11 +778,7 @@ export const commitCase = originationAction
 				},
 				{
 					runActivation: (activationArgs) =>
-						ctx.runAction(
-							internal.admin.origination.collections
-								.activateCommittedCaseCollections,
-							activationArgs
-						),
+						activateCommittedCaseCollectionsRuntime(ctx, activationArgs),
 				}
 			);
 
