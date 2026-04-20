@@ -8,7 +8,7 @@
  */
 import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
-import { assert, beforeEach, describe, expect, it } from "vitest";
+import { assert, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
@@ -323,6 +323,37 @@ describe("dealAccess effects", () => {
 					}),
 				])
 			);
+		});
+
+		it("logs only aggregate role counts for granted access", async () => {
+			const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {
+				// Suppress test log output while asserting the message content.
+			});
+
+			try {
+				await t.mutation(internal.engine.effects.dealAccess.createDealAccess, {
+					entityId: dealId,
+					entityType: "deal",
+					eventType: "LAWYER_VERIFIED",
+					journalEntryId: "test-journal-log-summary",
+					effectName: "createDealAccess",
+					source: EFFECT_SOURCE,
+				});
+				const loggedMessages = infoSpy.mock.calls
+					.flat()
+					.filter((value): value is string => typeof value === "string")
+					.join("\n");
+
+				expect(loggedMessages).toContain(
+					"[createDealAccess] Granted 2 record(s)"
+				);
+				expect(loggedMessages).toContain("platform_lawyer=1");
+				expect(loggedMessages).toContain("broker_of_record=1");
+				expect(loggedMessages).not.toContain(LAWYER_IDENTITY.subject);
+				expect(loggedMessages).not.toContain("seed-user");
+			} finally {
+				infoSpy.mockRestore();
+			}
 		});
 
 		it("is idempotent — fires twice without duplicating participant access", async () => {

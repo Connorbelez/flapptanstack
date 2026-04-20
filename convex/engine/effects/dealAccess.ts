@@ -122,19 +122,22 @@ export const createDealAccess = internalMutation({
 			}
 		}
 
-		const grantedRecords: string[] = [];
+		const grantedRoleCounts = new Map<DealAccessRole, number>();
 		for (const [userId, role] of grantsByUserId.entries()) {
-			const accessId = await grantDealAccess(ctx.db, {
+			await grantDealAccess(ctx.db, {
 				userId,
 				dealId: args.entityId,
 				role,
 				grantedBy: args.source.actorId ?? "system",
 			});
-			grantedRecords.push(`${role}:${userId}:${accessId}`);
+			grantedRoleCounts.set(role, (grantedRoleCounts.get(role) ?? 0) + 1);
 		}
 
+		const roleSummary = Array.from(grantedRoleCounts.entries())
+			.map(([role, count]) => `${role}=${count}`)
+			.join(", ");
 		console.info(
-			`[createDealAccess] Granted ${grantedRecords.join(", ")} for deal=${args.entityId}`
+			`[createDealAccess] Granted ${grantsByUserId.size} record(s) for deal=${args.entityId}; roles=${roleSummary}`
 		);
 	},
 });
