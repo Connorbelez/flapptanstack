@@ -1,6 +1,7 @@
 import type { Id } from "../../_generated/dataModel";
 import type {
 	SignatureEnvelopeStatus,
+	SignatureProviderRole,
 	SignatureRecipientStatus,
 } from "../contracts";
 import type {
@@ -19,6 +20,7 @@ const DEFAULT_DOCUMENSO_APP_BASE_URL = "https://app.documenso.com";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_SIGNING_URL_TTL_MS = 15 * 60 * 1000;
 const DOCUMENSO_API_SUFFIX_RE = /\/api\/v2\/?$/;
+const DOCUMENSO_API_PATH_RE = /\/api(?:\/.*)?$/;
 
 export interface DocumensoSignatureProviderFactoryOptions {
 	fetchFn?: typeof fetch;
@@ -137,10 +139,14 @@ function resolveConfig(
 
 	const apiBaseUrl =
 		process.env.DOCUMENSO_API_BASE_URL ?? DEFAULT_DOCUMENSO_API_BASE_URL;
+	const derivedAppBaseUrl = apiBaseUrl
+		.replace(DOCUMENSO_API_SUFFIX_RE, "")
+		.replace(DOCUMENSO_API_PATH_RE, "");
 	const appBaseUrl =
-		(process.env.DOCUMENSO_APP_BASE_URL ??
-			apiBaseUrl.replace(DOCUMENSO_API_SUFFIX_RE, "")) ||
-		DEFAULT_DOCUMENSO_APP_BASE_URL;
+		process.env.DOCUMENSO_APP_BASE_URL ??
+		(derivedAppBaseUrl !== apiBaseUrl
+			? derivedAppBaseUrl
+			: DEFAULT_DOCUMENSO_APP_BASE_URL);
 	const timeoutMs =
 		process.env.DOCUMENSO_TIMEOUT_MS &&
 		Number.parseInt(process.env.DOCUMENSO_TIMEOUT_MS, 10) > 0
@@ -238,6 +244,19 @@ function mapDocumensoEnvelopeStatus(
 		default:
 			return "provider_error";
 	}
+}
+
+function mapDocumensoProviderRole(
+	role: string | null | undefined
+): SignatureProviderRole {
+	const normalizedRole = role?.toUpperCase();
+	if (normalizedRole === "APPROVER") {
+		return "APPROVER";
+	}
+	if (normalizedRole === "VIEWER") {
+		return "VIEWER";
+	}
+	return "SIGNER";
 }
 
 function toDocumensoField(field: SignatureProviderField) {
@@ -447,20 +466,10 @@ async function createAndOptionallyDistributeEnvelope(
 	const createdEnvelope = await getEnvelope(config, createResponse.id);
 
 	try {
-		const distributeResponse =
-			await requestJson<DocumensoDistributeEnvelopeResponse>(
-				config,
-				"/envelope/distribute",
-				{
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						envelopeId: createResponse.id,
-					}),
-				}
-			);
+		const distributeResponse = await distributeEnvelope(
+			config,
+			createResponse.id
+		);
 
 		return {
 			envelopeId: createResponse.id,
@@ -485,6 +494,25 @@ async function deleteEnvelope(
 	await requestJson<DocumensoDeleteEnvelopeResponse>(
 		config,
 		"/envelope/delete",
+		{
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				envelopeId: providerEnvelopeId,
+			}),
+		}
+	);
+}
+
+async function distributeEnvelope(
+	config: DocumensoConfig,
+	providerEnvelopeId: string
+) {
+	return requestJson<DocumensoDistributeEnvelopeResponse>(
+		config,
+		"/envelope/distribute",
 		{
 			method: "POST",
 			headers: {
@@ -561,6 +589,10 @@ export function createDocumensoSignatureProvider(
 			await deleteEnvelope(config, input.providerEnvelopeId);
 		},
 
+		async distributeEnvelope(input) {
+			await distributeEnvelope(config, input.providerEnvelopeId);
+		},
+
 		async createEmbeddedSigningSession(input) {
 			const recipient = await getRecipient(config, input.providerRecipientId);
 			const url = normalizeSigningUrl(config, recipient);
@@ -588,15 +620,19 @@ export function createDocumensoSignatureProvider(
 			return {
 				envelopeStatus: mapDocumensoEnvelopeStatus(envelope.status, recipients),
 				recipients: recipients.map((recipient) => ({
+					email: recipient.email,
 					declinedAt:
 						recipient.signingStatus?.toUpperCase() === "REJECTED"
 							? parseTimestamp(envelope.updatedAt)
 							: undefined,
+					name: recipient.name,
 					openedAt:
 						recipient.readStatus?.toUpperCase() === "OPENED"
 							? parseTimestamp(envelope.updatedAt)
 							: undefined,
 					providerRecipientId: String(recipient.id),
+					providerRole: mapDocumensoProviderRole(recipient.role),
+					signingOrder: recipient.signingOrder ?? 0,
 					signedAt: parseTimestamp(recipient.signedAt),
 					status: mapDocumensoRecipientStatus(recipient),
 				})),

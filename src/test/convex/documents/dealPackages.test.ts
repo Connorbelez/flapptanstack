@@ -34,6 +34,7 @@ async function createPdfBytes(label: string) {
 
 interface MockDocumensoOptions {
 	envelopeStatus?: "COMPLETED" | "PENDING";
+	failEnvelopeFetch?: boolean;
 	failCertificateDownload?: boolean;
 	failCreate?: boolean;
 	failDelete?: boolean;
@@ -106,8 +107,8 @@ function installMockDocumensoFetch(options?: MockDocumensoOptions) {
 			return new Response(JSON.stringify({ id: envelopeId }), { status: 200 });
 		}
 		if (url.endsWith(`/envelope/${envelopeId}`)) {
-			if (options?.failSync) {
-				return new Response(JSON.stringify({ error: "sync failed" }), {
+			if (options?.failSync || options?.failEnvelopeFetch) {
+				return new Response(JSON.stringify({ error: "envelope fetch failed" }), {
 					status: 500,
 				});
 			}
@@ -852,12 +853,13 @@ describe("documents/dealPackages", () => {
 			retryCount: 0,
 			status: "ready",
 		});
-		expect(packageSurface.instances).toHaveLength(2);
+		expect(packageSurface.instances).toHaveLength(3);
 		expect(
 			packageSurface.instances.map((instance) => instance.displayName)
 		).toEqual([
 			"Private static memo",
 			"Counsel memo",
+			"Borrower signature packet",
 		]);
 		expect(packageSurface.instances).toEqual(
 			expect.arrayContaining([
@@ -1142,6 +1144,7 @@ describe("documents/dealPackages", () => {
 		).toEqual([
 			"Private static memo",
 			"Counsel memo",
+			"Borrower signature packet",
 		]);
 		expect(
 			packageSurface.instances.some(
@@ -1283,6 +1286,107 @@ describe("documents/dealPackages", () => {
 			])
 		);
 		expect(signatureEnvelopes).toHaveLength(0);
+	});
+
+	it("retries distribution on the existing envelope instead of creating a new one", async () => {
+		const initialDocumenso = installMockDocumensoFetch({ failDistribute: true });
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		const initialResult = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: false,
+			}
+		);
+		const initialSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const initialSignable = initialSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+		if (!initialSignable?.generatedDocumentId) {
+			throw new Error("Expected a signable package instance");
+		}
+
+		const initialEnvelope = await t.run((ctx) =>
+			ctx.db
+				.query("signatureEnvelopes")
+				.withIndex("by_generated_document", (query) =>
+					query.eq("generatedDocumentId", initialSignable.generatedDocumentId!)
+				)
+				.unique()
+		);
+		if (!initialEnvelope) {
+			throw new Error("Expected a signature envelope after initial create");
+		}
+
+		expect(initialResult.status).toBe("partial_failure");
+		expect(initialSignable).toMatchObject({
+			lastError: expect.stringContaining("/envelope/distribute"),
+			status: "signature_draft",
+		});
+
+		const retriedDocumenso = installMockDocumensoFetch();
+		const retryResult = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: true,
+			}
+		);
+		const retriedSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const retriedSignable = retriedSurface.instances.find(
+			(instance) => instance.instanceId === initialSignable.instanceId
+		);
+		const retriedEnvelope = await t.run((ctx) =>
+			ctx.db
+				.query("signatureEnvelopes")
+				.withIndex("by_generated_document", (query) =>
+					query.eq("generatedDocumentId", initialSignable.generatedDocumentId!)
+				)
+				.unique()
+		);
+
+		expect(retryResult.status).toBe("ready");
+		expect(retriedSignable).toMatchObject({
+			generatedDocumentId: initialSignable.generatedDocumentId,
+			instanceId: initialSignable.instanceId,
+			lastError: null,
+			status: "signature_sent",
+			signing: expect.objectContaining({
+				lastError: null,
+				status: "sent",
+			}),
+		});
+		expect(retriedEnvelope?._id).toBe(initialEnvelope._id);
+		expect(
+			retriedDocumenso.fetchMock.mock.calls.filter(([input]) =>
+				String(input).endsWith("/envelope/create")
+			)
+		).toHaveLength(0);
+		expect(
+			retriedDocumenso.fetchMock.mock.calls.filter(([input]) =>
+				String(input).endsWith("/envelope/distribute")
+			)
+		).toHaveLength(1);
+		expect(
+			initialDocumenso.fetchMock.mock.calls.filter(([input]) =>
+				String(input).endsWith("/envelope/create")
+			)
+		).toHaveLength(1);
 	});
 
 	it("accepts DOCUMENSO_API_KEY as a fallback credential name", async () => {
@@ -1643,7 +1747,7 @@ describe("documents/dealPackages", () => {
 		});
 	});
 
-	it("preserves the last successful provider sync timestamp when sync refresh fails", async () => {
+	it("preserves the last known signing state when envelope sync fails", async () => {
 		installMockDocumensoFetch({
 			recipientEmail: "lender.phase7@test.fairlend.ca",
 			recipientName: "Lena Lender",
@@ -1654,27 +1758,26 @@ describe("documents/dealPackages", () => {
 			signablePlatformRole: "lender_primary",
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,
 			retry: false,
 		});
-
-		const initialPackageSurface = await t
-			.withIdentity(fixture.lenderIdentity)
-			.query(api.documents.dealPackages.getPortalDocumentPackage, {
+		const initialSurface = await t.withIdentity(fixture.lenderIdentity).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
 				dealId: fixture.dealId,
-			});
-		const signableInstance = initialPackageSurface.instances.find(
+			}
+		);
+		const initialSignable = initialSurface.instances.find(
 			(instance) => instance.class === "private_templated_signable"
 		);
-		if (!signableInstance?.signing?.lastProviderSyncAt) {
-			throw new Error("Expected a signable instance with a sync timestamp");
+		if (!initialSignable?.generatedDocumentId) {
+			throw new Error("Expected a signable package instance");
 		}
 
-		const initialSyncAt = signableInstance.signing.lastProviderSyncAt;
-
 		installMockDocumensoFetch({
-			failSync: true,
+			failEnvelopeFetch: true,
 			recipientEmail: "lender.phase7@test.fairlend.ca",
 			recipientName: "Lena Lender",
 		});
@@ -1683,29 +1786,39 @@ describe("documents/dealPackages", () => {
 				api.documents.signature.webhooks.syncSignableDocumentEnvelope,
 				{
 					dealId: fixture.dealId,
-					instanceId: signableInstance.instanceId,
+					instanceId: initialSignable.instanceId,
 				}
 			)
-		).rejects.toThrow(/Documenso GET \/envelope\/doc_env_1 failed with status 500/i);
+		).rejects.toThrow(/failed with status 500/i);
 
-		const refreshedPackageSurface = await t
-			.withIdentity(fixture.lenderIdentity)
-			.query(api.documents.dealPackages.getPortalDocumentPackage, {
+		const refreshedSurface = await t.withIdentity(fixture.lenderIdentity).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
 				dealId: fixture.dealId,
-			});
-		const refreshedSignable = refreshedPackageSurface.instances.find(
-			(instance) => instance.instanceId === signableInstance.instanceId
+			}
+		);
+		const refreshedSignable = refreshedSurface.instances.find(
+			(instance) => instance.instanceId === initialSignable.instanceId
+		);
+		const generatedDocument = await t.run((ctx) =>
+			ctx.db.get(initialSignable.generatedDocumentId!)
 		);
 
+		expect(refreshedSurface.package).toMatchObject({
+			lastError: null,
+			status: "ready",
+		});
 		expect(refreshedSignable).toMatchObject({
-			status: "generation_failed",
+			lastError: null,
+			status: "signature_sent",
 			signing: expect.objectContaining({
-				lastError: expect.stringContaining(
-					"Documenso GET /envelope/doc_env_1 failed with status 500"
-				),
-				lastProviderSyncAt: initialSyncAt,
-				status: "provider_error",
+				generatedDocumentSigningStatus: "sent",
+				lastError: expect.stringContaining("failed with status 500"),
+				status: "sent",
 			}),
+		});
+		expect(generatedDocument).toMatchObject({
+			signingStatus: "sent",
 		});
 	});
 
