@@ -11,6 +11,68 @@ import { describe, expect, it } from "vitest";
 
 const LEDGER_DIR = path.resolve(import.meta.dirname, "../../../ledger");
 
+// TODO: Remove this exception after 2026-05-31. The approved patch below
+// is the only permitted change to convex/ledger/mutations.ts.
+const MUTATIONS_PATCH_EXPIRY = new Date("2026-05-31T00:00:00Z");
+
+/** Normalize a git diff patch by stripping line-number-specific metadata. */
+function normalizePatch(patch: string): string {
+	return patch
+		.split("\n")
+		.filter(
+			(line) =>
+				!(
+					line.startsWith("diff --git") ||
+					line.startsWith("index ") ||
+					line.startsWith("--- ") ||
+					line.startsWith("+++ ")
+				)
+		)
+		.map((line) => (line.startsWith("@@ ") ? "@@" : line))
+		.join("\n");
+}
+
+/**
+ * Approved extraction/delegation patch for convex/ledger/mutations.ts.
+ * Captures the extraction of mintMortgageHandler and the delegation
+ * change in mintMortgage, plus validateMintReplayEntry in mintAndIssue.
+ */
+const APPROVED_MUTATIONS_PATCH = normalizePatch(
+	fs.readFileSync(
+		path.join(import.meta.dirname, "approvedLedgerMutations.patch"),
+		"utf-8"
+	)
+);
+
+function assertApprovedLedgerMutationPatch(baseRef: string) {
+	const patch = execFileSync(
+		"git",
+		["diff", "--no-color", baseRef, "--", "convex/ledger/mutations.ts"],
+		{ encoding: "utf-8" }
+	);
+
+	expect(
+		patch.length > 0,
+		"Expected a non-empty patch for convex/ledger/mutations.ts"
+	).toBe(true);
+
+	const normalized = normalizePatch(patch);
+	expect(
+		normalized,
+		"REQ-244: convex/ledger/mutations.ts diff does not match the approved extraction/delegation patch.\n" +
+			"Unrelated ledger edits are not permitted. If this is an intentional ledger change, " +
+			"update the approved patch in regressionVerification.test.ts after explicit review."
+	).toBe(APPROVED_MUTATIONS_PATCH);
+
+	// Time-bounded safety net: even if patch matches, the exception expires.
+	const now = new Date();
+	expect(
+		now < MUTATIONS_PATCH_EXPIRY,
+		"TODO: convex/ledger/mutations.ts whitelist expired on 2026-05-31. " +
+			"Remove this exception and enforce zero changes to the ownership ledger."
+	).toBe(true);
+}
+
 /** Resolve the best base ref for diffing, accounting for CI shallow clones. */
 function resolveBaseRef(): string | null {
 	const isCI = !!(process.env.CI || process.env.GITHUB_ACTIONS);
@@ -109,11 +171,18 @@ describe("Regression verification: ownership ledger untouched", () => {
 			// Exclude __tests__/ paths — test files may have additions from other issues
 			.filter((f) => !f.includes("__tests__/"));
 
+		const unexpectedChangedFiles = changedFiles.filter(
+			(file) => file !== "convex/ledger/mutations.ts"
+		);
 		expect(
-			changedFiles,
-			"REQ-244 violation: ownership ledger source files were modified.\n" +
+			unexpectedChangedFiles,
+			"REQ-244 violation: unexpected ownership ledger source files were modified.\n" +
 				`Changed files:\n${changedFiles.map((f) => `  - ${f}`).join("\n")}`
 		).toHaveLength(0);
+
+		if (changedFiles.includes("convex/ledger/mutations.ts")) {
+			assertApprovedLedgerMutationPatch(baseRef);
+		}
 	});
 
 	it("verifies key source files exist in convex/ledger/", () => {

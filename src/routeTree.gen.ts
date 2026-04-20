@@ -937,8 +937,8 @@ export interface FileRoutesByFullPath {
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/listings': typeof LenderListingsRouteWithChildren
-  '/broker/': typeof BrokerIndexRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
+  '/broker/': typeof BrokerIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1064,8 +1064,8 @@ export interface FileRoutesByTo {
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/listings': typeof LenderListingsRouteWithChildren
-  '/broker': typeof BrokerIndexRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
+  '/broker': typeof BrokerIndexRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
   '/demo/rbac/broker': typeof DemoRbacBrokerRouteRoute
@@ -1202,8 +1202,8 @@ export interface FileRoutesById {
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/listings': typeof LenderListingsRouteWithChildren
-  '/broker/': typeof BrokerIndexRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
+  '/broker/': typeof BrokerIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1342,8 +1342,8 @@ export interface FileRouteTypes {
     | '/e2e/switch-org'
     | '/lender/deals'
     | '/lender/listings'
-    | '/broker/'
     | '/listings/$listingId'
+    | '/broker/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1469,8 +1469,8 @@ export interface FileRouteTypes {
     | '/e2e/switch-org'
     | '/lender/deals'
     | '/lender/listings'
-    | '/broker'
     | '/listings/$listingId'
+    | '/broker'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
     | '/demo/rbac/broker'
@@ -1606,8 +1606,8 @@ export interface FileRouteTypes {
     | '/e2e/switch-org'
     | '/lender/deals'
     | '/lender/listings'
-    | '/broker/'
     | '/listings/$listingId'
+    | '/broker/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'

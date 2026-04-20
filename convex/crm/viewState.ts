@@ -442,7 +442,7 @@ function buildEffectiveColumns(args: {
 	adapterContract: EntityViewAdapterContract;
 	effectiveView: SystemViewDefinition;
 	fieldDefsById: Map<string, FieldDef>;
-	hasSavedViewOverlay: boolean;
+	hasExplicitVisibilityOverride: boolean;
 	viewFields: ViewField[];
 	viewIsDefault: boolean;
 }): ViewColumnDefinition[] {
@@ -490,10 +490,11 @@ function buildEffectiveColumns(args: {
 						label: baseColumn.label,
 						fieldType: baseColumn.fieldType,
 						width: baseColumn?.width,
-						isVisible: args.hasSavedViewOverlay
-							? visibleFieldIds.has(fieldId.toString())
-							: visibleFieldIds.has(fieldId.toString()) ||
-								baseColumn.isVisibleByDefault,
+						isVisible:
+							visibleFieldIds.has(fieldId.toString()) ||
+							((!args.hasExplicitVisibilityOverride ||
+								fieldId.toString().startsWith("computed:")) &&
+								baseColumn.isVisibleByDefault),
 						displayOrder: index,
 					},
 					currentLayout: args.effectiveView.layout,
@@ -903,7 +904,7 @@ export async function resolveViewState(
 			adapterContract,
 			effectiveView: view,
 			fieldDefsById,
-			hasSavedViewOverlay: effectiveState.savedView !== null,
+			hasExplicitVisibilityOverride: effectiveState.savedView !== null,
 			viewFields: effectiveState.viewFields,
 			viewIsDefault:
 				effectiveState.viewDef.isDefault && !effectiveState.savedView,

@@ -10,6 +10,7 @@ import {
 	httpAction,
 	internalAction,
 	internalMutation,
+	internalQuery,
 	type MutationCtx,
 } from "../../_generated/server";
 import { auditLog } from "../../auditLog";
@@ -48,6 +49,8 @@ interface ProcessRotessaPadWebhookArgs {
 	reason?: string;
 	returnCode?: string;
 	transactionId: string;
+	transferId?: Id<"transferRequests">;
+	transferStatus?: string;
 	webhookEventId: Id<"webhookEvents">;
 }
 
@@ -103,6 +106,40 @@ const getExternalCollectionScheduleByProviderRefReference =
 	>(
 		"payments/recurringSchedules/queries:getExternalCollectionScheduleByProviderRef"
 	);
+
+export const getRotessaPadWebhookTransferContext = internalQuery({
+	args: {
+		transactionId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const transfer = await ctx.db
+			.query("transferRequests")
+			.withIndex("by_provider_ref", (q) =>
+				q
+					.eq("providerCode", "pad_rotessa")
+					.eq("providerRef", args.transactionId)
+			)
+			.first();
+		if (!transfer) {
+			return null;
+		}
+
+		const collectionAttempt = transfer.collectionAttemptId
+			? await ctx.db.get(transfer.collectionAttemptId)
+			: null;
+		const planEntryId = transfer.planEntryId ?? collectionAttempt?.planEntryId;
+		const planEntry = planEntryId ? await ctx.db.get(planEntryId) : null;
+
+		return {
+			hasProviderManagedPlanEntry: Boolean(
+				planEntry?.externalCollectionScheduleId ||
+					planEntry?.externalOccurrenceRef
+			),
+			transferId: transfer._id,
+			transferStatus: transfer.status,
+		};
+	},
+});
 
 export function mapRotessaPadStatusToTransferEvent(
 	rotessaEventType: string
@@ -264,39 +301,50 @@ export async function processRotessaPadTransferWebhook(
 			return;
 		}
 
-		const transfer = await ctx.db
-			.query("transferRequests")
-			.withIndex("by_provider_ref", (q) =>
-				q
-					.eq("providerCode", "pad_rotessa")
-					.eq("providerRef", args.transactionId)
-			)
-			.first();
+		let transferId: Id<"transferRequests">;
+		let transferStatus: string;
 
-		if (!transfer) {
-			console.warn(
-				`[Rotessa PAD Webhook] No transfer found for providerRef=${args.transactionId}`
-			);
-			await patchWebhookEventMetadata(ctx, {
-				webhookEventId: args.webhookEventId,
-				normalizedEventType,
-			});
-			await finalizeWebhookEvent(ctx, {
-				webhookEventId: args.webhookEventId,
-				status: "processed",
-			});
-			return;
+		if (args.transferId && args.transferStatus) {
+			transferId = args.transferId;
+			transferStatus = args.transferStatus;
+		} else {
+			const transfer = await ctx.db
+				.query("transferRequests")
+				.withIndex("by_provider_ref", (q) =>
+					q
+						.eq("providerCode", "pad_rotessa")
+						.eq("providerRef", args.transactionId)
+				)
+				.first();
+
+			if (!transfer) {
+				console.warn(
+					`[Rotessa PAD Webhook] No transfer found for providerRef=${args.transactionId}`
+				);
+				await patchWebhookEventMetadata(ctx, {
+					webhookEventId: args.webhookEventId,
+					normalizedEventType,
+				});
+				await finalizeWebhookEvent(ctx, {
+					webhookEventId: args.webhookEventId,
+					status: "processed",
+				});
+				return;
+			}
+
+			transferId = transfer._id;
+			transferStatus = transfer.status;
 		}
 
 		await patchWebhookEventMetadata(ctx, {
 			webhookEventId: args.webhookEventId,
 			normalizedEventType,
-			transferRequestId: transfer._id,
+			transferRequestId: transferId,
 		});
 
-		if (isTransferAlreadyInTargetState(transfer.status, normalizedEventType)) {
+		if (isTransferAlreadyInTargetState(transferStatus, normalizedEventType)) {
 			console.info(
-				`[Rotessa PAD Webhook] Transfer ${transfer._id} already in target state "${transfer.status}" — idempotent skip`
+				`[Rotessa PAD Webhook] Transfer ${transferId} already in target state "${transferStatus}" — idempotent skip`
 			);
 			await finalizeWebhookEvent(ctx, {
 				webhookEventId: args.webhookEventId,
@@ -313,7 +361,7 @@ export async function processRotessaPadTransferWebhook(
 
 		const result = await executeTransition(ctx, {
 			entityType: "transfer",
-			entityId: transfer._id,
+			entityId: transferId,
 			eventType: normalizedEventType,
 			payload: buildRotessaPadTransitionPayload(normalizedEventType, args),
 			source,
@@ -324,7 +372,7 @@ export async function processRotessaPadTransferWebhook(
 				action: "webhook.rotessa_pad.transition_failed",
 				actorId: "system",
 				resourceType: "transferRequests",
-				resourceId: transfer._id,
+				resourceId: transferId,
 				severity: "error",
 				metadata: {
 					eventType: normalizedEventType,
@@ -366,6 +414,8 @@ export const processRotessaPadTransferWebhookMutation = internalMutation({
 		reason: v.optional(v.string()),
 		returnCode: v.optional(v.string()),
 		date: v.optional(v.string()),
+		transferId: v.optional(v.id("transferRequests")),
+		transferStatus: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
 		await processRotessaPadTransferWebhook(ctx, args);
@@ -565,12 +615,21 @@ export const processRotessaPadWebhook = internalAction({
 			return;
 		}
 
-		if (
+		const localTransferContext = await ctx.runQuery(
+			internal.payments.webhooks.rotessaPad.getRotessaPadWebhookTransferContext,
+			{
+				transactionId: args.transactionId,
+			}
+		);
+		const shouldIngestProviderManagedOccurrence =
 			shouldAttemptProviderManagedOccurrenceIngestion(
 				args.eventType,
 				normalizedEventType
-			)
-		) {
+			) &&
+			(localTransferContext === null ||
+				localTransferContext.hasProviderManagedPlanEntry);
+
+		if (shouldIngestProviderManagedOccurrence) {
 			let row: RotessaTransactionReportRow | null = null;
 			try {
 				row = await findRotessaFinancialTransactionForWebhook({
@@ -663,11 +722,24 @@ export const processRotessaPadWebhook = internalAction({
 			}
 		}
 
+		if (
+			localTransferContext &&
+			!localTransferContext.hasProviderManagedPlanEntry
+		) {
+			console.info(
+				`[Rotessa PAD Webhook] Using direct transfer webhook path for transfer ${localTransferContext.transferId} without provider-managed schedule linkage`
+			);
+		}
+
 		try {
 			await ctx.runMutation(
 				internal.payments.webhooks.rotessaPad
 					.processRotessaPadTransferWebhookMutation,
-				args
+				{
+					...args,
+					transferId: localTransferContext?.transferId,
+					transferStatus: localTransferContext?.transferStatus,
+				}
 			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
