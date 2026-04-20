@@ -2,13 +2,9 @@ import { ConvexError, v } from "convex/values";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import {
-	internalMutation,
-	internalQuery,
-	type MutationCtx,
-} from "../_generated/server";
+import type { MutationCtx } from "../_generated/server";
 import type { DealDocumentPackageStatus } from "../documents/contracts";
-import { adminAction, adminMutation } from "../fluent";
+import { adminAction, adminMutation, convex } from "../fluent";
 
 type AdminMutationCtx = MutationCtx & {
 	viewer: {
@@ -285,11 +281,12 @@ async function insertNonSignableTemplateBlueprintFixture(
 	return { basePdfId, templateId };
 }
 
-export const resolveViewerUserIdInternal = internalQuery({
-	args: {
+export const resolveViewerUserIdInternal = convex
+	.query()
+	.input({
 		authId: v.string(),
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		const user = await ctx.db
 			.query("users")
 			.withIndex("authId", (query) => query.eq("authId", args.authId))
@@ -299,11 +296,12 @@ export const resolveViewerUserIdInternal = internalQuery({
 		}
 
 		return user._id;
-	},
-});
+	})
+	.internal();
 
-export const insertStaticBlueprintFixtureInternal = internalMutation({
-	args: {
+export const insertStaticBlueprintFixtureInternal = convex
+	.mutation()
+	.input({
 		description: v.string(),
 		displayName: v.string(),
 		fileHash: v.string(),
@@ -314,40 +312,40 @@ export const insertStaticBlueprintFixtureInternal = internalMutation({
 		packageKey: v.string(),
 		packageLabel: v.string(),
 		viewerUserId: v.id("users"),
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		return insertStaticBlueprintFixture(ctx, args);
-	},
-});
+	})
+	.internal();
 
-export const insertNonSignableTemplateBlueprintFixtureInternal =
-	internalMutation({
-		args: {
-			basePdf: v.object({
-				fileHash: v.string(),
-				fileRef: v.id("_storage"),
-				fileSize: v.number(),
-				pageCount: v.number(),
-				pageDimensions: v.array(
-					v.object({
-						height: v.number(),
-						page: v.number(),
-						width: v.number(),
-					})
-				),
-			}),
-			description: v.string(),
-			displayName: v.string(),
-			mortgageId: v.id("mortgages"),
-			packageKey: v.string(),
-			packageLabel: v.string(),
-			variableKey: v.string(),
-			viewerUserId: v.id("users"),
-		},
-		handler: async (ctx, args) => {
-			return insertNonSignableTemplateBlueprintFixture(ctx, args);
-		},
-	});
+export const insertNonSignableTemplateBlueprintFixtureInternal = convex
+	.mutation()
+	.input({
+		basePdf: v.object({
+			fileHash: v.string(),
+			fileRef: v.id("_storage"),
+			fileSize: v.number(),
+			pageCount: v.number(),
+			pageDimensions: v.array(
+				v.object({
+					height: v.number(),
+					page: v.number(),
+					width: v.number(),
+				})
+			),
+		}),
+		description: v.string(),
+		displayName: v.string(),
+		mortgageId: v.id("mortgages"),
+		packageKey: v.string(),
+		packageLabel: v.string(),
+		variableKey: v.string(),
+		viewerUserId: v.id("users"),
+	})
+	.handler(async (ctx, args) => {
+		return insertNonSignableTemplateBlueprintFixture(ctx, args);
+	})
+	.internal();
 
 async function ensureActiveLender(ctx: AdminMutationCtx) {
 	const existingLender = await ctx.db
@@ -613,12 +611,20 @@ export const cleanupDealPackageScenario = adminMutation
 			.query("dealAccess")
 			.withIndex("by_deal", (query) => query.eq("dealId", args.dealId))
 			.collect();
-		const blueprintRows = await ctx.db
-			.query("mortgageDocumentBlueprints")
-			.withIndex("by_mortgage_created_at", (query) =>
-				query.eq("mortgageId", args.mortgageId)
-			)
-			.collect();
+		const blueprintRows = (
+			await ctx.db
+				.query("mortgageDocumentBlueprints")
+				.withIndex("by_mortgage_created_at", (query) =>
+					query.eq("mortgageId", args.mortgageId)
+				)
+				.collect()
+		).filter(
+			(blueprint) =>
+				(blueprint.assetId !== undefined &&
+					args.assetIds.includes(blueprint.assetId)) ||
+				(blueprint.templateId !== undefined &&
+					args.templateIds.includes(blueprint.templateId))
+		);
 
 		for (const row of instanceRows) {
 			await ctx.db.delete(row._id);

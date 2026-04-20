@@ -98,9 +98,10 @@ export function LenderDealDetailPage({ dealId }: LenderDealDetailPageProps) {
 			<div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
 				<Card>
 					<CardHeader>
-						<CardTitle>Deal not found</CardTitle>
+						<CardTitle>Deal package not found</CardTitle>
 						<CardDescription>
-							The requested deal package could not be loaded.
+							The requested deal package does not exist or is no longer
+							available.
 						</CardDescription>
 					</CardHeader>
 				</Card>
@@ -210,14 +211,6 @@ export function LenderDealDetailPage({ dealId }: LenderDealDetailPageProps) {
 						<SnapshotItem
 							label="Package Status"
 							value={detail.documentPackage?.status ?? "Pending"}
-						/>
-						<SnapshotItem
-							label="Retry Count"
-							value={String(detail.documentPackage?.retryCount ?? 0)}
-						/>
-						<SnapshotItem
-							label="Last Error"
-							value={detail.documentPackage?.lastError ?? "None"}
 						/>
 						<SnapshotItem
 							label="Ready At"

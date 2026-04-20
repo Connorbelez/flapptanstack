@@ -1,15 +1,14 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { QueryCtx } from "../_generated/server";
-import {
-	type ActionCtx,
-	internalAction,
-	internalMutation,
-	internalQuery,
-} from "../_generated/server";
+import type { ActionCtx, QueryCtx } from "../_generated/server";
 import { canAccessDeal } from "../auth/resourceChecks";
-import { adminAction, dealQuery, requirePermissionAction } from "../fluent";
+import {
+	adminAction,
+	convex,
+	dealQuery,
+	requirePermissionAction,
+} from "../fluent";
 import {
 	type DealDocumentPackageStatus,
 	type DealDocumentSourceBlueprintSnapshot,
@@ -628,6 +627,17 @@ async function buildPackageSurface(
 	};
 }
 
+function buildDownloadablePackageSurface(
+	surface: PackageSurface
+): PackageSurface {
+	return {
+		...surface,
+		instances: surface.instances.filter(
+			(instance) => instance.status === "available" && instance.url !== null
+		),
+	};
+}
+
 function summarizePackageStatus(
 	rows: ReadonlyArray<
 		Pick<InstanceRow, "lastError" | "status"> & {
@@ -664,58 +674,64 @@ function summarizePackageStatus(
 	return { lastError, status: "failed" };
 }
 
-export const resolveDealParticipantSnapshotInternal = internalQuery({
-	args: {
+export const resolveDealParticipantSnapshotInternal = convex
+	.query()
+	.input({
 		dealId: v.id("deals"),
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		return buildParticipantSnapshot(ctx, args.dealId);
-	},
-});
+	})
+	.internal();
 
-export const resolveDealDocumentVariablesInternal = internalQuery({
-	args: {
+export const resolveDealDocumentVariablesInternal = convex
+	.query()
+	.input({
 		dealId: v.id("deals"),
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		const snapshot = await buildParticipantSnapshot(ctx, args.dealId);
 		return buildDealVariableBag(snapshot);
-	},
-});
+	})
+	.internal();
 
-export const resolveDealDocumentSignatoriesInternal = internalQuery({
-	args: {
+export const resolveDealDocumentSignatoriesInternal = convex
+	.query()
+	.input({
 		dealId: v.id("deals"),
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		const snapshot = await buildParticipantSnapshot(ctx, args.dealId);
 		return buildSignatoryMappings(snapshot);
-	},
-});
+	})
+	.internal();
 
-export const getPackageByDealInternal = internalQuery({
-	args: { dealId: v.id("deals") },
-	handler: async (ctx, args) => {
+export const getPackageByDealInternal = convex
+	.query()
+	.input({ dealId: v.id("deals") })
+	.handler(async (ctx, args) => {
 		return ctx.db
 			.query("dealDocumentPackages")
 			.withIndex("by_deal", (query) => query.eq("dealId", args.dealId))
 			.unique();
-	},
-});
+	})
+	.internal();
 
-export const listPackageInstancesInternal = internalQuery({
-	args: { packageId: v.id("dealDocumentPackages") },
-	handler: async (ctx, args) => {
+export const listPackageInstancesInternal = convex
+	.query()
+	.input({ packageId: v.id("dealDocumentPackages") })
+	.handler(async (ctx, args) => {
 		return ctx.db
 			.query("dealDocumentInstances")
 			.withIndex("by_package", (query) => query.eq("packageId", args.packageId))
 			.collect();
-	},
-});
+	})
+	.internal();
 
-export const listActivePackageBlueprintInputsInternal = internalQuery({
-	args: { mortgageId: v.id("mortgages") },
-	handler: async (ctx, args) => {
+export const listActivePackageBlueprintInputsInternal = convex
+	.query()
+	.input({ mortgageId: v.id("mortgages") })
+	.handler(async (ctx, args) => {
 		const blueprints = await listMortgageBlueprintRows(ctx, {
 			includeArchived: false,
 			mortgageId: args.mortgageId,
@@ -723,18 +739,27 @@ export const listActivePackageBlueprintInputsInternal = internalQuery({
 		return blueprints.filter(
 			(blueprint) => blueprint.class !== "public_static"
 		);
-	},
-});
+	})
+	.internal();
 
-export const ensurePackageHeaderInternal = internalMutation({
-	args: {
+export const getDocumentAssetInternal = convex
+	.query()
+	.input({ assetId: v.id("documentAssets") })
+	.handler(async (ctx, args) => {
+		return ctx.db.get(args.assetId);
+	})
+	.internal();
+
+export const ensurePackageHeaderInternal = convex
+	.mutation()
+	.input({
 		blueprintSnapshots: v.array(dealPackageBlueprintSnapshotValidator),
 		dealId: v.id("deals"),
 		incrementRetryCount: v.boolean(),
 		mortgageId: v.id("mortgages"),
 		now: v.number(),
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		const existing = await ctx.db
 			.query("dealDocumentPackages")
 			.withIndex("by_deal", (query) => query.eq("dealId", args.dealId))
@@ -763,11 +788,12 @@ export const ensurePackageHeaderInternal = internalMutation({
 			status: "pending",
 			updatedAt: args.now,
 		});
-	},
-});
+	})
+	.internal();
 
-export const createDealDocumentInstance = internalMutation({
-	args: {
+export const createDealDocumentInstance = convex
+	.mutation()
+	.input({
 		archivedAt: v.optional(v.number()),
 		assetId: v.optional(v.id("documentAssets")),
 		createdAt: v.number(),
@@ -791,18 +817,19 @@ export const createDealDocumentInstance = internalMutation({
 		}),
 		status: dealDocumentInstanceStatusValidator,
 		updatedAt: v.number(),
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		return ctx.db.insert("dealDocumentInstances", args);
-	},
-});
+	})
+	.internal();
 
-export const archiveDealDocumentInstance = internalMutation({
-	args: {
+export const archiveDealDocumentInstance = convex
+	.mutation()
+	.input({
 		instanceId: v.id("dealDocumentInstances"),
 		now: v.number(),
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		const instance = await ctx.db.get(args.instanceId);
 		if (!instance || instance.status === "archived") {
 			return;
@@ -813,11 +840,12 @@ export const archiveDealDocumentInstance = internalMutation({
 			status: "archived",
 			updatedAt: args.now,
 		});
-	},
-});
+	})
+	.internal();
 
-export const insertGeneratedDocumentInternal = internalMutation({
-	args: {
+export const insertGeneratedDocumentInternal = convex
+	.mutation()
+	.input({
 		dealId: v.id("deals"),
 		groupId: v.optional(v.id("documentTemplateGroups")),
 		metadata: v.optional(v.any()),
@@ -825,8 +853,8 @@ export const insertGeneratedDocumentInternal = internalMutation({
 		pdfStorageId: v.id("_storage"),
 		templateId: v.id("documentTemplates"),
 		templateVersionUsed: v.number(),
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		return ctx.db.insert("generatedDocuments", {
 			documensoEnvelopeId: undefined,
 			entityId: String(args.dealId),
@@ -843,25 +871,26 @@ export const insertGeneratedDocumentInternal = internalMutation({
 			templateVersionUsed: args.templateVersionUsed,
 			updatedAt: Date.now(),
 		});
-	},
-});
+	})
+	.internal();
 
-export const finalizePackageInternal = internalMutation({
-	args: {
+export const finalizePackageInternal = convex
+	.mutation()
+	.input({
 		lastError: v.optional(v.string()),
 		now: v.number(),
 		packageId: v.id("dealDocumentPackages"),
 		status: dealDocumentPackageStatusValidator,
-	},
-	handler: async (ctx, args) => {
+	})
+	.handler(async (ctx, args) => {
 		await ctx.db.patch(args.packageId, {
 			lastError: args.lastError,
 			readyAt: args.status === "ready" ? args.now : undefined,
 			status: args.status,
 			updatedAt: args.now,
 		});
-	},
-});
+	})
+	.internal();
 
 function getWorkItemSourceBlueprintSnapshot(
 	workItem: PackageWorkItem
@@ -1057,6 +1086,26 @@ async function createStaticReferenceInstance(
 		return;
 	}
 
+	const asset = await ctx.runQuery(
+		internal.documents.dealPackages.getDocumentAssetInternal,
+		{
+			assetId,
+		}
+	);
+	if (!asset) {
+		await createPackageInstance(ctx, {
+			dealId: runtime.dealId,
+			kind: "static_reference",
+			lastError: "Static blueprint source asset record not found",
+			mortgageId: runtime.mortgageId,
+			packageId: runtime.packageId,
+			sourceBlueprintId: getWorkItemSourceBlueprintId(workItem),
+			sourceBlueprintSnapshot,
+			status: "generation_failed",
+		});
+		return;
+	}
+
 	await createPackageInstance(ctx, {
 		assetId,
 		dealId: runtime.dealId,
@@ -1160,6 +1209,13 @@ async function createNonSignableGeneratedInstance(
 	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot
 ) {
 	if (!sourceBlueprintSnapshot.templateId) {
+		await createGeneratedFailureInstance(
+			ctx,
+			runtime,
+			workItem,
+			sourceBlueprintSnapshot,
+			"Generated package instance is missing a templateId"
+		);
 		return;
 	}
 
@@ -1392,15 +1448,16 @@ const retryPackageGenerationAction = adminAction.use(
 	requirePermissionAction("deal:manage")
 );
 
-export const runCreateDocumentPackageInternal = internalAction({
-	args: {
+export const runCreateDocumentPackageInternal = convex
+	.action()
+	.input({
 		dealId: v.id("deals"),
 		retry: v.boolean(),
-	},
-	handler: async (ctx, args): Promise<CreateDocumentPackageResult> => {
+	})
+	.handler(async (ctx, args): Promise<CreateDocumentPackageResult> => {
 		return createDocumentPackageForDeal(ctx, args);
-	},
-});
+	})
+	.internal();
 
 export const retryPackageGeneration = retryPackageGenerationAction
 	.input({
@@ -1424,7 +1481,9 @@ export const getPortalDocumentPackage = dealQuery
 			throw new ConvexError("No access to this deal");
 		}
 
-		return buildPackageSurface(ctx, args.dealId);
+		return buildDownloadablePackageSurface(
+			await buildPackageSurface(ctx, args.dealId)
+		);
 	})
 	.public();
 
