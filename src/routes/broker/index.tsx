@@ -5,8 +5,10 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
+import { guardRouteAccess } from "#/lib/auth";
 
 export const Route = createFileRoute("/broker/")({
+	beforeLoad: guardRouteAccess("broker"),
 	component: BrokerWorkspaceIndexRoute,
 });
 
