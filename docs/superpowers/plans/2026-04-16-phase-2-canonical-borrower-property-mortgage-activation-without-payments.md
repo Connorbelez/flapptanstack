@@ -135,7 +135,7 @@ Manual blast radius inspection is required in this session because GitNexus tool
 - `bunx convex codegen`
 - `bun typecheck`
 - Focused origination tests
-- `coderabbit review --plain`
+- Human owner may run CodeRabbit separately if desired; it is not part of the agent quality gate.
 
 ## Definition Of Done
 

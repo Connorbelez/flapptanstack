@@ -3,14 +3,16 @@ import type {
 	GenericDatabaseReader,
 	GenericDataModel,
 } from "convex/server";
-import { ConvexError } from "convex/values";
+import { ConvexError, type PropertyValidators } from "convex/values";
 import type {
 	Context,
 	ConvexArgsValidator,
 	ConvexBuilderDef,
+	ConvexMiddleware,
 	ConvexReturnsValidator,
 	EmptyObject,
 	FunctionType,
+	InferArgs,
 } from "fluent-convex";
 import { ConvexBuilderWithFunctionKind, createBuilder } from "fluent-convex";
 import type { DataModel } from "./_generated/dataModel";
@@ -23,6 +25,20 @@ import {
 	normalizeRoles,
 	resolvePrimaryRole,
 } from "./authz/policy";
+import type {
+	PortalAccessContext,
+	PortalBorrowerContext,
+	PortalLenderContext,
+	PortalResolvedContext,
+} from "./portals/middleware";
+import {
+	type PortalArgs,
+	portalArgsValidator,
+	withPortalAccess,
+	withPortalBorrower,
+	withPortalContext,
+	withPortalLender,
+} from "./portals/middleware";
 
 // ── Builder ─────────────────────────────────────────────────────────
 export const convex = createBuilder<DataModel>();
@@ -328,6 +344,158 @@ export class TimedBuilder<
 	}
 }
 
+type PortalQueryArgs<TArgsValidator extends ConvexArgsValidator | undefined> =
+	PortalArgs &
+		(TArgsValidator extends ConvexArgsValidator
+			? InferArgs<TArgsValidator>
+			: EmptyObject);
+
+type PortalHandlerWrapper<
+	TCurrentContext extends Context,
+	TPortalContext extends Context,
+	TArgsValidator extends ConvexArgsValidator | undefined,
+> = <TReturn>(
+	handler: (
+		context: TCurrentContext & TPortalContext,
+		input: PortalQueryArgs<TArgsValidator>
+	) => Promise<TReturn>
+) => (
+	context: TCurrentContext,
+	input: PortalQueryArgs<TArgsValidator>
+) => Promise<TReturn>;
+
+class PortalBuilder<
+	TDataModel extends GenericDataModel = GenericDataModel,
+	TFunctionType extends FunctionType = FunctionType,
+	TCurrentContext extends Context = EmptyObject,
+	TArgsValidator extends ConvexArgsValidator | undefined = undefined,
+	TReturnsValidator extends ConvexReturnsValidator | undefined = undefined,
+	TPortalContext extends Context = EmptyObject,
+> extends ConvexBuilderWithFunctionKind<
+	TDataModel,
+	TFunctionType,
+	TCurrentContext,
+	TArgsValidator,
+	TReturnsValidator
+> {
+	private readonly portalHandlerWrapper: PortalHandlerWrapper<
+		TCurrentContext,
+		TPortalContext,
+		TArgsValidator
+	>;
+
+	constructor(
+		builderOrDef:
+			| ConvexBuilderDef<TFunctionType, TArgsValidator, TReturnsValidator>
+			| ConvexBuilderWithFunctionKind<
+					TDataModel,
+					TFunctionType,
+					TCurrentContext,
+					TArgsValidator,
+					TReturnsValidator
+			  >,
+		portalHandlerWrapper: PortalHandlerWrapper<
+			TCurrentContext,
+			TPortalContext,
+			TArgsValidator
+		>
+	) {
+		const def =
+			builderOrDef instanceof ConvexBuilderWithFunctionKind
+				? (
+						builderOrDef as unknown as {
+							def: ConvexBuilderDef<
+								TFunctionType,
+								TArgsValidator,
+								TReturnsValidator
+							>;
+						}
+					).def
+				: builderOrDef;
+		super(def);
+		this.portalHandlerWrapper = portalHandlerWrapper;
+	}
+
+	protected _clone(
+		def: ConvexBuilderDef<TFunctionType, TArgsValidator, TReturnsValidator>
+	) {
+		return new PortalBuilder(def, this.portalHandlerWrapper);
+	}
+
+	// @ts-ignore -- narrows return type from base to preserve portal-aware subclass
+	use<UOutContext extends Context>(
+		middleware: ConvexMiddleware<TCurrentContext, UOutContext>
+	): PortalBuilder<
+		TDataModel,
+		TFunctionType,
+		TCurrentContext & UOutContext,
+		TArgsValidator,
+		TReturnsValidator,
+		TPortalContext
+	> {
+		return super.use(middleware) as unknown as PortalBuilder<
+			TDataModel,
+			TFunctionType,
+			TCurrentContext & UOutContext,
+			TArgsValidator,
+			TReturnsValidator,
+			TPortalContext
+		>;
+	}
+
+	// @ts-ignore -- narrows return type from base to preserve portal-aware subclass
+	input<UInput extends PropertyValidators>(
+		validator: UInput
+	): PortalBuilder<
+		TDataModel,
+		TFunctionType,
+		TCurrentContext,
+		UInput extends ConvexArgsValidator ? UInput : ConvexArgsValidator,
+		TReturnsValidator,
+		TPortalContext
+	> {
+		return super.input(validator) as unknown as PortalBuilder<
+			TDataModel,
+			TFunctionType,
+			TCurrentContext,
+			UInput extends ConvexArgsValidator ? UInput : ConvexArgsValidator,
+			TReturnsValidator,
+			TPortalContext
+		>;
+	}
+
+	// @ts-ignore -- narrows return type from base to preserve portal-aware subclass
+	returns<UReturns extends ConvexReturnsValidator>(
+		validator: UReturns
+	): PortalBuilder<
+		TDataModel,
+		TFunctionType,
+		TCurrentContext,
+		TArgsValidator,
+		UReturns,
+		TPortalContext
+	> {
+		return super.returns(validator) as unknown as PortalBuilder<
+			TDataModel,
+			TFunctionType,
+			TCurrentContext,
+			TArgsValidator,
+			UReturns,
+			TPortalContext
+		>;
+	}
+
+	// @ts-ignore -- narrows handler context to include structural portal context
+	handler<TReturn>(
+		handlerFn: (
+			context: TCurrentContext & TPortalContext,
+			input: PortalQueryArgs<TArgsValidator>
+		) => Promise<TReturn>
+	) {
+		return super.handler(this.portalHandlerWrapper(handlerFn) as never);
+	}
+}
+
 // ── Action Auth Middleware (no db — cannot audit) ───────────────────
 // Actions lack ctx.db, so we can't call auditAuthFailure. This middleware
 // mirrors authMiddleware's Viewer construction without the DB-dependent audit.
@@ -443,6 +611,182 @@ export const lawyerMutation = authedMutation
 	.use(requirePermission("lawyer:access"));
 
 export const adminQuery = authedQuery.use(requireFairLendAdmin);
+
+function withPortalArgs<TInput extends PropertyValidators>(input?: TInput) {
+	return {
+		...portalArgsValidator,
+		...(input ?? {}),
+	} as typeof portalArgsValidator & TInput;
+}
+
+type BuilderContextOf<TBuilder> =
+	TBuilder extends ConvexBuilderWithFunctionKind<
+		infer _TDataModel extends GenericDataModel,
+		infer _TFunctionType extends FunctionType,
+		infer TCurrentContext,
+		infer _TArgsValidator extends ConvexArgsValidator | undefined,
+		infer _TReturnsValidator extends ConvexReturnsValidator | undefined
+	>
+		? TCurrentContext
+		: never;
+
+type BuilderArgsOf<TBuilder> =
+	TBuilder extends ConvexBuilderWithFunctionKind<
+		infer _TDataModel extends GenericDataModel,
+		infer _TFunctionType extends FunctionType,
+		infer _TCurrentContext extends Context,
+		infer TArgs,
+		infer _TReturnsValidator extends ConvexReturnsValidator | undefined
+	>
+		? TArgs
+		: never;
+
+export function portalPublicQuery<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	const builder = convex.query().input(withPortalArgs(input));
+	return new PortalBuilder<
+		DataModel,
+		"query",
+		BuilderContextOf<typeof builder>,
+		BuilderArgsOf<typeof builder>,
+		undefined,
+		PortalResolvedContext
+	>(
+		builder,
+		withPortalContext as PortalHandlerWrapper<
+			BuilderContextOf<typeof builder>,
+			PortalResolvedContext,
+			BuilderArgsOf<typeof builder>
+		>
+	);
+}
+
+export function portalAuthedQuery<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	const builder = authedQuery.input(withPortalArgs(input));
+	return new PortalBuilder<
+		DataModel,
+		"query",
+		BuilderContextOf<typeof builder>,
+		BuilderArgsOf<typeof builder>,
+		undefined,
+		PortalAccessContext
+	>(
+		builder,
+		withPortalAccess as PortalHandlerWrapper<
+			BuilderContextOf<typeof builder>,
+			PortalAccessContext,
+			BuilderArgsOf<typeof builder>
+		>
+	);
+}
+
+export function portalAuthedMutation<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	const builder = authedMutation.input(withPortalArgs(input));
+	return new PortalBuilder<
+		DataModel,
+		"mutation",
+		BuilderContextOf<typeof builder>,
+		BuilderArgsOf<typeof builder>,
+		undefined,
+		PortalAccessContext
+	>(
+		builder,
+		withPortalAccess as PortalHandlerWrapper<
+			BuilderContextOf<typeof builder>,
+			PortalAccessContext,
+			BuilderArgsOf<typeof builder>
+		>
+	);
+}
+
+export function portalBorrowerQuery<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	const builder = borrowerQuery.input(withPortalArgs(input));
+	return new PortalBuilder<
+		DataModel,
+		"query",
+		BuilderContextOf<typeof builder>,
+		BuilderArgsOf<typeof builder>,
+		undefined,
+		PortalBorrowerContext
+	>(
+		builder,
+		withPortalBorrower as PortalHandlerWrapper<
+			BuilderContextOf<typeof builder>,
+			PortalBorrowerContext,
+			BuilderArgsOf<typeof builder>
+		>
+	);
+}
+
+export function portalBorrowerMutation<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	const builder = borrowerMutation.input(withPortalArgs(input));
+	return new PortalBuilder<
+		DataModel,
+		"mutation",
+		BuilderContextOf<typeof builder>,
+		BuilderArgsOf<typeof builder>,
+		undefined,
+		PortalBorrowerContext
+	>(
+		builder,
+		withPortalBorrower as PortalHandlerWrapper<
+			BuilderContextOf<typeof builder>,
+			PortalBorrowerContext,
+			BuilderArgsOf<typeof builder>
+		>
+	);
+}
+
+export function portalLenderQuery<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	const builder = lenderQuery.input(withPortalArgs(input));
+	return new PortalBuilder<
+		DataModel,
+		"query",
+		BuilderContextOf<typeof builder>,
+		BuilderArgsOf<typeof builder>,
+		undefined,
+		PortalLenderContext
+	>(
+		builder,
+		withPortalLender as PortalHandlerWrapper<
+			BuilderContextOf<typeof builder>,
+			PortalLenderContext,
+			BuilderArgsOf<typeof builder>
+		>
+	);
+}
+
+export function portalLenderMutation<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	const builder = lenderMutation.input(withPortalArgs(input));
+	return new PortalBuilder<
+		DataModel,
+		"mutation",
+		BuilderContextOf<typeof builder>,
+		BuilderArgsOf<typeof builder>,
+		undefined,
+		PortalLenderContext
+	>(
+		builder,
+		withPortalLender as PortalHandlerWrapper<
+			BuilderContextOf<typeof builder>,
+			PortalLenderContext,
+			BuilderArgsOf<typeof builder>
+		>
+	);
+}
 // Underwriting
 export const uwQuery = authedQuery
 	.use(requireOrgContext)

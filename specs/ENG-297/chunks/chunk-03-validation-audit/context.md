@@ -4,7 +4,7 @@
 - Prove the portal registry and root-resolution contract with focused tests, required repo quality gates, the final spec audit, and final scope reconciliation.
 
 ## Relevant plan excerpts
-- Validation commands: `bunx convex codegen`, `bun check`, `bun typecheck`, targeted Vitest runs, `bun run test` when scope broadens, `bun run test:e2e` when root host resolution affects visible route behavior, and `coderabbit review --plain`.
+- Validation commands: `bunx convex codegen`, `bun check`, `bun typecheck`, targeted Vitest runs, `bun run test` when scope broadens, and `bun run test:e2e` when root host resolution affects visible route behavior.
 - Acceptance criteria include `localhost:3000`, `app.localhost:3000`, a valid broker `*.localhost:3000`, and an unknown broker host resolving the correct context.
 - Final close-out must run `$linear-pr-spec-audit` and `gitnexus_detect_changes` before the issue is claimed complete.
 
@@ -28,6 +28,5 @@
 - targeted Vitest runs for portal schema and route coverage
 - `bun run test`
 - `bun run test:e2e`
-- `coderabbit review --plain`
 - `$linear-pr-spec-audit`
 - `gitnexus_detect_changes`

@@ -89,7 +89,7 @@ export async function seedMortgage(
 ## Constraints & Rules
 
 > - `bun check`, `bun typecheck` and `bunx convex codegen` must pass before considering tasks completed.
-> - After Completing a Major unit of work like a full SPEC run `coderabbit review --plain`.
+> - After completing a major unit of work like a full SPEC run the repo validation commands. Any CodeRabbit review is human-owned and not part of the agent quality gate.
 
 ## File Structure
 

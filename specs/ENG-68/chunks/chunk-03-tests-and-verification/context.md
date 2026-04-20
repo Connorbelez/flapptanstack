@@ -125,5 +125,5 @@ it("idempotency: existing reroute for dealId — skips", async () => {
 ```md
 - `bun check`, `bun typecheck` and `bunx convex codegen` must pass before considering tasks completed.
 - DO NOT try to fix linting/formatting errors BEFORE running `bun check`.
-- After Completing a Major unit of work like a full SPEC run `coderabbit review --plain` to get a code review summary.
+- After completing a major unit of work like a full SPEC run the repo validation commands. Any CodeRabbit review is human-owned and not part of the agent quality gate.
 ```

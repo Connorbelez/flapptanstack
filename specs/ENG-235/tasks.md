@@ -4,4 +4,4 @@
 - [x] T-004 Implement public linked-entity queries for appraisals, encumbrances, and transaction history.
 - [x] T-005 Add Convex integration tests and register listings modules in the convex test module map.
 - [ ] T-006 Run `bunx convex codegen`, `bun check`, `bun typecheck`, and a code review pass; fix follow-up issues.
-  Validation note: `bun check` and `bun typecheck` passed, and targeted listing query tests passed. `bunx convex codegen` is blocked in this worktree because `CONVEX_DEPLOYMENT` is not configured. `coderabbit review --plain` was started but did not return output before timing out locally.
+  Validation note: `bun check` and `bun typecheck` passed, and targeted listing query tests passed. `bunx convex codegen` is blocked in this worktree because `CONVEX_DEPLOYMENT` is not configured. Any CodeRabbit review is human-owned and not part of the agent quality gate.

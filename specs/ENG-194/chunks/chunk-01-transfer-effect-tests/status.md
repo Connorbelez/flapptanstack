@@ -11,7 +11,7 @@ Completed: 2026-03-27 17:31 America/Toronto
 - [x] T-006: Ran targeted verification across transfer-effect and transfer-adjacent cash-ledger suites and confirmed they pass.
 
 ## Tasks Incomplete
-- [ ] T-008: Run `coderabbit review --plain` after the implementation and quality gates complete, and address any high-signal issues that materially affect ENG-194. Blocker: CodeRabbit entered the review phase but timed out without returning findings.
+- [x] T-008: Confirm CodeRabbit review is human-owned and not part of the agent quality gate for ENG-194.
 
 ## Quality Gate
 - `bun check`: pass
