@@ -10,13 +10,14 @@
 
 ## Implementation notes
 - Prefer targeted Vitest coverage for portal modules and route/root behavior first; add Playwright only if the current harness can exercise host-based route outcomes cleanly, otherwise record the justification explicitly.
+- Include one route-module integration test that proves blocked hosts do not leave a loader-shaped side-effect path on `/` and that non-root blocked requests redirect before child loaders can run.
 - Use the execution checklist as the source of truth when deciding whether an audit finding is fixed or must be recorded as a blocker.
 - Final scope verification should include `git diff` alongside `gitnexus_detect_changes` in case the CLI under-reports dirty-worktree symbols.
 
 ## Existing code touchpoints
-- `convex/portals/__tests__/lookup.test.ts`
-- `convex/portals/__tests__/migrations.test.ts`
-- `src/test/routes/portal-context.test.ts`
+- `convex/portals/__tests__/registry.test.ts`
+- `src/test/routes/portal-context.test.tsx`
+- `src/test/routes/root-route-blocked-hosts.test.ts`
 - Playwright host-resolution coverage if feasible in the current test harness
 - `specs/ENG-297/audit.md`
 

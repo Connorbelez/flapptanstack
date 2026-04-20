@@ -23,6 +23,7 @@
 - [x] `localhost:3000`, `app.localhost:3000`, and at least one broker `*.localhost:3000` host resolve the expected context.
 - [x] Unknown, reserved, suspended, and unpublished hosts fail closed with explicit states.
 - [x] Portal context is serializable and ready for downstream loader/query keys.
+  The blessed contract is the minimal public pre-auth root context: canonical host identity, portal identity, availability, and cache scoping. Privileged portal metadata (`brokerId`, `orgId`, `landingPageId`, `pricingPolicyId`) is intentionally fetched later through authenticated seams when required.
 - [x] The FairLend app host resolves through the same persisted registry contract as broker hosts.
 - [ ] `bunx convex codegen`, `bun check`, and `bun typecheck` all pass.
   `bunx convex codegen` and `bun typecheck` passed. `bun check` remains blocked by pre-existing repo-wide complexity diagnostics in unrelated files.
@@ -31,6 +32,7 @@
 ## Plan-Derived Contract Checks
 - [x] Preserve explicit non-portal `PortalContext` kinds for `marketing`, `admin`, `reserved`, and `unknown`.
 - [x] Extract and normalize the trusted request host once in a shared root/server seam instead of reparsing hosts in leaf routes or auth redirect helpers.
+- [x] Keep the root `PortalContext` as a minimal public pre-auth routing contract; do not expose `brokerId`, `orgId`, `landingPageId`, or `pricingPolicyId` from the public host resolver.
 - [x] Keep placeholder `portalLandingPages` and `portalPricingPolicies` tables clearly marked as downstream-owned attachment points rather than fully realized product models.
 
 ## Agent Instructions
@@ -40,6 +42,7 @@
 
 ## Test Coverage Expectations
 - [x] Unit tests added or updated where backend, host-resolution, or root-loader logic changed
+- [x] Route-level coverage proves blocked hosts keep the `/` child route inert and redirect non-root paths before child loaders run
 - [x] E2E host-resolution coverage added or an explicit non-applicability rationale recorded
   Playwright coverage is explicitly not applicable for this slice because the existing harness does not model multi-host `localhost` routing; route and Convex integration tests cover the contract instead.
 - [x] Storybook work explicitly marked not applicable because the repo does not define a Storybook workflow
