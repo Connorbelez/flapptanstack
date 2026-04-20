@@ -196,6 +196,8 @@ import type * as lib_businessDays from "../lib/businessDays.js";
 import type * as lib_orgScope from "../lib/orgScope.js";
 import type * as listings_create from "../listings/create.js";
 import type * as listings_curation from "../listings/curation.js";
+import type * as listings_marketplace from "../listings/marketplace.js";
+import type * as listings_marketplaceShared from "../listings/marketplaceShared.js";
 import type * as listings_projection from "../listings/projection.js";
 import type * as listings_publicDocuments from "../listings/publicDocuments.js";
 import type * as listings_queries from "../listings/queries.js";
@@ -539,6 +541,8 @@ declare const fullApi: ApiFromModules<{
   "lib/orgScope": typeof lib_orgScope;
   "listings/create": typeof listings_create;
   "listings/curation": typeof listings_curation;
+  "listings/marketplace": typeof listings_marketplace;
+  "listings/marketplaceShared": typeof listings_marketplaceShared;
   "listings/projection": typeof listings_projection;
   "listings/publicDocuments": typeof listings_publicDocuments;
   "listings/queries": typeof listings_queries;
