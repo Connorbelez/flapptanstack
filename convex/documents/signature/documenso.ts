@@ -68,6 +68,10 @@ interface DocumensoCreateEnvelopeResponse {
 	id: string;
 }
 
+interface DocumensoDeleteEnvelopeResponse {
+	success: boolean;
+}
+
 export class DocumensoConfigError extends Error {
 	name = "DocumensoConfigError";
 }
@@ -420,6 +424,25 @@ async function createAndOptionallyDistributeEnvelope(
 	}
 }
 
+async function deleteEnvelope(
+	config: DocumensoConfig,
+	providerEnvelopeId: string
+) {
+	await requestJson<DocumensoDeleteEnvelopeResponse>(
+		config,
+		"/envelope/delete",
+		{
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				envelopeId: providerEnvelopeId,
+			}),
+		}
+	);
+}
+
 export function createDocumensoSignatureProvider(
 	input: DocumensoSignatureProviderFactoryOptions
 ): SignatureProvider {
@@ -451,6 +474,10 @@ export function createDocumensoSignatureProvider(
 				}),
 				status: created.status,
 			};
+		},
+
+		async deleteEnvelope(input) {
+			await deleteEnvelope(config, input.providerEnvelopeId);
 		},
 
 		async createEmbeddedSigningSession(input) {

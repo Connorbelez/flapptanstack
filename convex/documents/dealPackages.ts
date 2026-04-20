@@ -192,6 +192,8 @@ interface ResolvedLawyerParticipant {
 }
 
 const SIGNATORY_MAPPING_ERROR_RE = /signatory mapping validation failed/i;
+const EMPTY_SIGNABLE_RECIPIENTS_ERROR =
+	"Signable template configuration error: no Documenso recipients were generated for this blueprint.";
 
 type DealPackagePreparation =
 	| {
@@ -684,6 +686,11 @@ function canLaunchEmbeddedSigning(args: {
 	envelopeStatus: EnvelopeRow["status"] | null;
 	providerRecipientId: string | null;
 	recipientStatus: RecipientRow["status"];
+	recipients: Pick<
+		PackageInstanceSigningRecipientSurface,
+		"signingOrder" | "status"
+	>[];
+	recipientSigningOrder: number;
 	userId: Id<"users"> | null;
 	viewer?: DealPackageViewerContext;
 }) {
@@ -702,6 +709,16 @@ function canLaunchEmbeddedSigning(args: {
 	if (
 		args.recipientStatus === "signed" ||
 		args.recipientStatus === "declined"
+	) {
+		return false;
+	}
+
+	if (
+		args.recipients.some(
+			(recipient) =>
+				recipient.signingOrder < args.recipientSigningOrder &&
+				recipient.status !== "signed"
+		)
 	) {
 		return false;
 	}
@@ -766,7 +783,9 @@ async function buildSigningSurface(
 			canLaunchEmbeddedSigning({
 				envelopeStatus: envelope?.status ?? null,
 				providerRecipientId: recipient.providerRecipientId,
+				recipients,
 				recipientStatus: recipient.status,
+				recipientSigningOrder: recipient.signingOrder,
 				userId: recipient.userId,
 				viewer,
 			})
@@ -1901,6 +1920,20 @@ function buildEnvelopeRecipientRows(args: {
 	});
 }
 
+async function deleteRemoteEnvelopeAfterPersistenceFailure(args: {
+	provider: ReturnType<typeof getSignatureProvider>;
+	providerEnvelopeId: string;
+}) {
+	try {
+		await args.provider.deleteEnvelope({
+			providerEnvelopeId: args.providerEnvelopeId,
+		});
+		return null;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+}
+
 async function createSignableGeneratedInstance(
 	ctx: DealPackageActionCtx,
 	runtime: DealPackageRuntimeState,
@@ -1949,19 +1982,48 @@ async function createSignableGeneratedInstance(
 				templateVersionUsed: generationResult.templateVersionUsed,
 			}
 		);
+		if (signatureRecipients.length === 0) {
+			await createPackageInstance(ctx, {
+				dealId: runtime.dealId,
+				generatedDocumentId,
+				kind: "generated",
+				lastError: EMPTY_SIGNABLE_RECIPIENTS_ERROR,
+				mortgageId: runtime.mortgageId,
+				packageId: runtime.packageId,
+				sourceBlueprintId: getWorkItemSourceBlueprintId(workItem),
+				sourceBlueprintSnapshot,
+				status: "signature_pending_recipient_resolution",
+			});
+			return;
+		}
 		const provider = getSignatureProvider("documenso", {
 			fetchFn: fetch,
 			getStorageBlob: (storageId) => ctx.storage.get(storageId),
 		});
+		let createdEnvelope: SignatureProviderCreateEnvelopeResult | null = null;
 
 		try {
-			const createdEnvelope = await provider.createEnvelope({
+			createdEnvelope = await provider.createEnvelope({
 				dealId: runtime.dealId,
 				generatedDocumentId,
 				pdfStorageId: generationResult.pdfRef,
 				recipients: signatureRecipients,
 				title: sourceBlueprintSnapshot.displayName,
 			});
+			const now = Date.now();
+
+			await ctx.runMutation(
+				internal.documents.dealPackages
+					.patchGeneratedDocumentSigningStateInternal,
+				{
+					documensoEnvelopeId: createdEnvelope.providerEnvelopeId,
+					generatedDocumentId,
+					now,
+					signingStatus: mapEnvelopeStatusToGeneratedDocumentSigningStatus(
+						createdEnvelope.status
+					),
+				}
+			);
 
 			await ctx.runMutation(
 				internal.documents.dealPackages
@@ -1969,8 +2031,14 @@ async function createSignableGeneratedInstance(
 				{
 					dealId: runtime.dealId,
 					generatedDocumentId,
+					instanceLastError: createdEnvelope.lastError,
+					instanceStatus: mapEnvelopeStatusToDealDocumentInstanceStatus(
+						createdEnvelope.status
+					),
 					lastError: createdEnvelope.lastError,
+					mortgageId: runtime.mortgageId,
 					now: Date.now(),
+					packageId: runtime.packageId,
 					providerCode: "documenso",
 					providerEnvelopeId: createdEnvelope.providerEnvelopeId,
 					recipients: buildEnvelopeRecipientRows({
@@ -1978,39 +2046,41 @@ async function createSignableGeneratedInstance(
 						runtime,
 						signatureRecipients,
 					}),
+					sourceBlueprintId: getWorkItemSourceBlueprintId(workItem),
+					sourceBlueprintSnapshot,
 					status: createdEnvelope.status,
 				}
 			);
-
-			await createPackageInstance(ctx, {
-				dealId: runtime.dealId,
-				generatedDocumentId,
-				kind: "generated",
-				lastError: createdEnvelope.lastError,
-				mortgageId: runtime.mortgageId,
-				packageId: runtime.packageId,
-				sourceBlueprintId: getWorkItemSourceBlueprintId(workItem),
-				sourceBlueprintSnapshot,
-				status: mapEnvelopeStatusToDealDocumentInstanceStatus(
-					createdEnvelope.status
-				),
-			});
 		} catch (error) {
+			const cleanupError = createdEnvelope
+				? await deleteRemoteEnvelopeAfterPersistenceFailure({
+						provider,
+						providerEnvelopeId: createdEnvelope.providerEnvelopeId,
+					})
+				: null;
 			const message = error instanceof Error ? error.message : String(error);
 			await ctx.runMutation(
 				internal.documents.dealPackages
 					.patchGeneratedDocumentSigningStateInternal,
 				{
+					documensoEnvelopeId:
+						createdEnvelope && !cleanupError
+							? null
+							: createdEnvelope?.providerEnvelopeId,
 					generatedDocumentId,
 					now: Date.now(),
-					signingStatus: "provider_error",
+					signingStatus:
+						createdEnvelope && !cleanupError ? "draft" : "provider_error",
 				}
 			);
 			await createPackageInstance(ctx, {
 				dealId: runtime.dealId,
 				generatedDocumentId,
 				kind: "generated",
-				lastError: message,
+				lastError:
+					createdEnvelope && cleanupError
+						? `${message}. Remote envelope cleanup failed: ${cleanupError}`
+						: message,
 				mortgageId: runtime.mortgageId,
 				packageId: runtime.packageId,
 				sourceBlueprintId: getWorkItemSourceBlueprintId(workItem),

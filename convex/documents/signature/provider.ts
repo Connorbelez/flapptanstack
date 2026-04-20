@@ -70,6 +70,10 @@ export interface SignatureProviderCreateEmbeddedSigningSessionResult {
 	url: string;
 }
 
+export interface SignatureProviderDeleteEnvelopeInput {
+	providerEnvelopeId: string;
+}
+
 export interface SignatureProviderSyncEnvelopeInput {
 	providerEnvelopeId: string;
 }
@@ -101,6 +105,7 @@ export interface SignatureProvider {
 	createEnvelope(
 		input: SignatureProviderCreateEnvelopeInput
 	): Promise<SignatureProviderCreateEnvelopeResult>;
+	deleteEnvelope(input: SignatureProviderDeleteEnvelopeInput): Promise<void>;
 	downloadCompletedArtifacts(
 		input: SignatureProviderDownloadCompletedArtifactsInput
 	): Promise<SignatureProviderDownloadCompletedArtifactsResult>;
