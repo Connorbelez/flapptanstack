@@ -55,6 +55,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 	"/convex/auth.ts": async () => await import("./../auth.ts"),
 	"/convex/auth/auditAuth.ts": async () =>
 		await import("./../auth/auditAuth.ts"),
+	"/convex/auth/actorResolution.ts": async () =>
+		await import("./../auth/actorResolution.ts"),
 	"/convex/auth/internal.ts": async () => await import("./../auth/internal.ts"),
 	"/convex/auth/resourceChecks.ts": async () =>
 		await import("./../auth/resourceChecks.ts"),
@@ -377,6 +379,9 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../portals/invariants.ts"),
 	"/convex/portals/queries.ts": async () =>
 		await import("./../portals/queries.ts"),
+	"/convex/portals/middleware.ts": async () =>
+		await import("./../portals/middleware.ts"),
+	"/convex/portals/proof.ts": async () => await import("./../portals/proof.ts"),
 	"/convex/portals/validators.ts": async () =>
 		await import("./../portals/validators.ts"),
 	"/convex/mortgages/activateMortgageAggregate.ts": async () =>
