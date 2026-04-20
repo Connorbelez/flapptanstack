@@ -13,7 +13,13 @@ export function assertOriginationCaseAccess(
 		return;
 	}
 
-	if (viewer.orgId && record.orgId && viewer.orgId !== record.orgId) {
+	if (!(viewer.orgId && record.orgId)) {
+		throw new ConvexError(
+			"Forbidden: origination case access requires org context"
+		);
+	}
+
+	if (viewer.orgId !== record.orgId) {
 		throw new ConvexError("Forbidden: origination case is outside your org");
 	}
 }
