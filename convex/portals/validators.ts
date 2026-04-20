@@ -12,6 +12,17 @@ export const portalStatusValidator = v.union(
 	v.literal("archived")
 );
 
+export const portalPricingPolicyStatusValidator = v.union(
+	v.literal("draft"),
+	v.literal("active"),
+	v.literal("archived")
+);
+
+export const portalPricingPolicyParametersValidator = v.object({
+	/** Percent of the canonical listing return retained by the broker in v1. */
+	brokerSplitPercent: v.number(),
+});
+
 export const nonPortalContextKindValidator = v.union(
 	v.literal("marketing"),
 	v.literal("admin"),
@@ -63,6 +74,12 @@ export const resolvedPortalHostValidator = v.object({
 
 export type PortalType = Infer<typeof portalTypeValidator>;
 export type PortalStatus = Infer<typeof portalStatusValidator>;
+export type PortalPricingPolicyStatus = Infer<
+	typeof portalPricingPolicyStatusValidator
+>;
+export type PortalPricingPolicyParameters = Infer<
+	typeof portalPricingPolicyParametersValidator
+>;
 export type NonPortalContextKind = Infer<typeof nonPortalContextKindValidator>;
 export type PortalSummary = Infer<typeof portalSummaryValidator>;
 export type PublicPortalSummary = Infer<typeof publicPortalSummaryValidator>;

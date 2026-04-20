@@ -360,6 +360,7 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../listings/curation.ts"),
 	"/convex/listings/marketplace.ts": async () =>
 		await import("./../listings/marketplace.ts"),
+	"/convex/listings/math.ts": async () => await import("./../listings/math.ts"),
 	"/convex/listings/projection.ts": async () =>
 		await import("./../listings/projection.ts"),
 	"/convex/listings/publicDocuments.ts": async () =>
@@ -377,6 +378,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../portals/helpers.ts"),
 	"/convex/portals/invariants.ts": async () =>
 		await import("./../portals/invariants.ts"),
+	"/convex/portals/pricing.ts": async () =>
+		await import("./../portals/pricing.ts"),
 	"/convex/portals/queries.ts": async () =>
 		await import("./../portals/queries.ts"),
 	"/convex/portals/middleware.ts": async () =>
