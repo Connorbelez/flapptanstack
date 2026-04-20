@@ -5,6 +5,7 @@ import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { internalAction, internalMutation } from "./_generated/server";
 import { authedQuery } from "./fluent";
+import { resolveUserHomePortalId } from "./portals/homePortalAssignment";
 
 const authFunctions: AuthFunctions = internal.auth;
 
@@ -158,6 +159,38 @@ async function deleteRole(ctx: GenericMutationCtx<DataModel>, slug: string) {
 	}
 }
 
+async function syncUserHomePortalAssignmentByAuthId(
+	ctx: GenericMutationCtx<DataModel>,
+	authId: string
+) {
+	const user = await ctx.db
+		.query("users")
+		.withIndex("authId", (query) => query.eq("authId", authId))
+		.unique();
+	if (!user) {
+		return null;
+	}
+
+	const homePortalId = await resolveUserHomePortalId(ctx, user);
+	if (user.homePortalId !== homePortalId) {
+		await ctx.db.patch(user._id, { homePortalId });
+	}
+
+	return {
+		homePortalId,
+		userId: user._id,
+	};
+}
+
+async function queueUserHomePortalAssignmentSync(
+	ctx: GenericMutationCtx<DataModel>,
+	authId: string
+) {
+	await ctx.scheduler.runAfter(0, internal.auth.syncUserHomePortalAssignment, {
+		authId,
+	});
+}
+
 // ── Actions (auth hooks that run after auth events) ─────────────────
 
 export const { authKitAction } = authKit.actions({
@@ -199,6 +232,10 @@ export const { authKitEvent } = authKit.events({
 			firstName: `${event.data.firstName}`,
 			lastName: `${event.data.lastName}`,
 		});
+		await ctx.scheduler.runAfter(0, internal.auth.syncUserRelatedData, {
+			userId: event.data.id,
+		});
+		await queueUserHomePortalAssignmentSync(ctx, event.data.id);
 	},
 	"user.updated": async (ctx, event) => {
 		console.log("Received user.updated event for", event.data.id);
@@ -221,6 +258,7 @@ export const { authKitEvent } = authKit.events({
 			await ctx.scheduler.runAfter(0, internal.auth.syncUserRelatedData, {
 				userId: event.data.id,
 			});
+			await queueUserHomePortalAssignmentSync(ctx, event.data.id);
 			return;
 		}
 		await ctx.db.patch(user._id, {
@@ -261,12 +299,15 @@ export const { authKitEvent } = authKit.events({
 	// ── Membership events ─────────────────────────────────────────────
 	"organization_membership.created": async (ctx, event) => {
 		await upsertMembership(ctx, event.data);
+		await queueUserHomePortalAssignmentSync(ctx, event.data.userId);
 	},
 	"organization_membership.updated": async (ctx, event) => {
 		await upsertMembership(ctx, event.data);
+		await queueUserHomePortalAssignmentSync(ctx, event.data.userId);
 	},
 	"organization_membership.deleted": async (ctx, event) => {
 		await deleteMembership(ctx, event.data.id);
+		await queueUserHomePortalAssignmentSync(ctx, event.data.userId);
 	},
 
 	// ── Role events ───────────────────────────────────────────────────
@@ -307,6 +348,12 @@ export const getCurrentUser = authedQuery
 	.public();
 
 // ── Backfill: sync a user's orgs, memberships, and roles from WorkOS ─
+
+export const syncUserHomePortalAssignment = internalMutation({
+	args: { authId: v.string() },
+	handler: async (ctx, args) =>
+		await syncUserHomePortalAssignmentByAuthId(ctx, args.authId),
+});
 
 export const upsertRelatedData = internalMutation({
 	args: {
@@ -447,6 +494,9 @@ export const syncUserRelatedData = internalAction({
 			orgs,
 			memberships,
 			roles,
+		});
+		await ctx.runMutation(internal.auth.syncUserHomePortalAssignment, {
+			authId: args.userId,
 		});
 
 		console.log(
