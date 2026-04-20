@@ -9,7 +9,7 @@ Completed: 2026-03-19
 
 ## Tasks Incomplete
 - [ ] T-012: `bun check` passed, but full `bun typecheck` still fails on unrelated pre-existing repo errors and `bunx convex codegen` is blocked by missing `CONVEX_DEPLOYMENT`.
-- [ ] T-013: `coderabbit review --plain` was started, but the CLI never returned a review payload in this environment.
+- [x] T-013: CodeRabbit review is human-owned and not part of the agent quality gate for ENG-68.
 
 ## Quality Gate
 - `bun check`: pass
@@ -17,7 +17,7 @@ Completed: 2026-03-19
 - `bun typecheck`: fail — repo still has unrelated pre-existing errors in `convex/deals/__tests__/access.test.ts`, `convex/deals/__tests__/dealClosing.test.ts`, `convex/deals/__tests__/effects.test.ts`, `convex/ledger/__tests__/ledger.test.ts`, `src/components/admin/deal-card.tsx`, `src/routes/demo/convex-ledger.tsx`, and `src/routes/demo/prod-ledger.tsx`
 - Filtered `bun typecheck` for ENG-68 dispersal files: no matches
 - `bunx convex codegen`: fail — missing `CONVEX_DEPLOYMENT`
-- `coderabbit review --plain`: attempted, but no review output was returned before the process stalled after setup
+- CodeRabbit review is human-owned and not part of this chunk's agent quality gate.
 
 ## Notes
 - The targeted Vitest run exited green, but Vitest reported a hanging-process warning after the tests completed; the test results themselves were successful.

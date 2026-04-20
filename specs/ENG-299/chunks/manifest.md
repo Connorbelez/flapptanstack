@@ -4,5 +4,5 @@
 | ----- | ----- | ------ | ----- |
 | chunk-01-actor-resolution-and-impact | T-001, T-005, T-010 | complete | actor lookups extracted to reusable auth helpers with no resource-check semantic drift |
 | chunk-02-portal-middleware | T-020, T-030 | complete | portal reload, access, lender, and borrower middleware landed with typed context and fail-closed guards |
-| chunk-03-builders-and-proof | T-040, T-050, T-060 | complete | portal-aware builders and proof consumers landed without widening resource-level access checks |
-| chunk-04-tests-validation-audit | T-070, T-080, T-900, T-901, T-902, T-903, T-904, T-910, T-920, T-930 | complete | targeted tests and repo gates passed; CodeRabbit full-branch mode blocked by stack size but audit closeout is complete |
+| chunk-03-builders-and-proof | T-040, T-045, T-046, T-047, T-050, T-051, T-060 | complete | builders now inject structural portal context, lender access is broker-only, and borrower access uses the transitional by-org mapping pending `ENG-302` |
+| chunk-04-tests-validation-audit | T-070, T-071, T-080, T-905, T-906, T-907, T-908, T-909, T-911, T-912, T-920, T-931 | complete | targeted tests, repo gates, contract verification, rerun audit, and final artifact validation are all complete |

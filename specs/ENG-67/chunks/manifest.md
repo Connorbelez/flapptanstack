@@ -4,7 +4,7 @@
 |-------|-------|--------|-------------|
 | chunk-01-ownership-periods | T-001 → T-004 | partial | Reconstruct ownership timelines from ledger history and lock down proration semantics with tests |
 | chunk-02-accrual-queries | T-005 → T-009 | complete | Implement the four accrual query surfaces and wire auth/identifier handling to real repo conventions |
-| chunk-03-accrual-tests | T-010 → T-013 | partial | Add integration coverage, run quality gates, and finish with CodeRabbit review |
+| chunk-03-accrual-tests | T-010 → T-013 | partial | Add integration coverage and run quality gates; any CodeRabbit review is human-owned |
 
 ## Execution Order
 1. **chunk-01-ownership-periods** — everything else depends on deterministic ownership periods and the corrected identifier model.

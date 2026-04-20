@@ -9,15 +9,11 @@ import {
 import {
 	buildPortalFilterBounds,
 	buildPortalPricingProjection,
-	loadPortalContext,
-	resolvePortalAccess,
-	resolvePortalBorrower,
-	resolvePortalLender,
 } from "./middleware";
 
 export const getPortalPublicContextProof = portalPublicQuery()
-	.handler(async (ctx, args) => {
-		return loadPortalContext(ctx, args.portalId);
+	.handler(async (ctx) => {
+		return { portal: ctx.portal };
 	})
 	.public();
 
@@ -25,49 +21,38 @@ export const getPortalMortgageAccessProof = portalAuthedQuery({
 	mortgageId: v.id("mortgages"),
 })
 	.handler(async (ctx, args) => {
-		const portalContext = await loadPortalContext(ctx, args.portalId);
-		const access = await resolvePortalAccess({ ...ctx, ...portalContext });
-
 		return {
-			accessMode: access.mode,
-			filterBounds: buildPortalFilterBounds(portalContext.portal),
+			accessMode: ctx.portalAccess.mode,
+			filterBounds: buildPortalFilterBounds(ctx.portal),
 			mortgageAllowed: await canAccessMortgage(
 				ctx,
 				ctx.viewer,
 				args.mortgageId
 			),
-			portalId: portalContext.portal.portalId,
-			pricingProjection: buildPortalPricingProjection(portalContext.portal),
+			portalId: ctx.portal.portalId,
+			pricingProjection: buildPortalPricingProjection(ctx.portal),
 		};
 	})
 	.public();
 
 export const getPortalBorrowerContextProof = portalBorrowerQuery()
-	.handler(async (ctx, args) => {
-		const portalContext = await loadPortalContext(ctx, args.portalId);
-		const access = await resolvePortalAccess({ ...ctx, ...portalContext });
-		const borrower = await resolvePortalBorrower({ ...ctx, ...portalContext });
-
+	.handler(async (ctx) => {
 		return {
-			accessMode: access.mode,
-			borrowerId: borrower._id,
-			portalId: portalContext.portal.portalId,
+			accessMode: ctx.portalAccess.mode,
+			borrowerId: ctx.borrower._id,
+			portalId: ctx.portal.portalId,
 		};
 	})
 	.public();
 
 export const getPortalLenderContextProof = portalLenderQuery()
-	.handler(async (ctx, args) => {
-		const portalContext = await loadPortalContext(ctx, args.portalId);
-		const access = await resolvePortalAccess({ ...ctx, ...portalContext });
-		const lender = await resolvePortalLender({ ...ctx, ...portalContext });
-
+	.handler(async (ctx) => {
 		return {
-			accessMode: access.mode,
-			filterBounds: buildPortalFilterBounds(portalContext.portal),
-			lenderId: lender._id,
-			portalId: portalContext.portal.portalId,
-			pricingProjection: buildPortalPricingProjection(portalContext.portal),
+			accessMode: ctx.portalAccess.mode,
+			filterBounds: buildPortalFilterBounds(ctx.portal),
+			lenderId: ctx.lender._id,
+			portalId: ctx.portal.portalId,
+			pricingProjection: buildPortalPricingProjection(ctx.portal),
 		};
 	})
 	.public();

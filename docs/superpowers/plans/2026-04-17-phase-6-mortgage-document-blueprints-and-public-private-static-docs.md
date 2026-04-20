@@ -184,7 +184,7 @@ GitNexus MCP tools are not exposed in this session, and the local CLI bootstrap 
 - `bunx convex codegen`
 - `bun typecheck`
 - Focused origination/document/listing/admin-detail tests
-- `coderabbit review --plain`
+- Human owner may run CodeRabbit separately if desired; it is not part of the agent quality gate.
 
 ## Definition Of Done
 

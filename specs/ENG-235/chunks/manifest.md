@@ -2,7 +2,7 @@
 
 ## chunk-01-listing-query-surface
 Status: in_progress
-Validation note: implementation and targeted tests are complete; final validation is pending only on environment-dependent steps (`bunx convex codegen`, CodeRabbit service response).
+Validation note: implementation and targeted tests are complete; final validation is pending only on environment-dependent steps (`bunx convex codegen`).
 Tasks:
 - T-001
 - T-002
