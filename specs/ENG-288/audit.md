@@ -11,12 +11,12 @@
 - [low] The preferred external review step could not be collected because `coderabbit review --plain` still fails to start with `Review failed: Unknown error` on retry. This does not change the code evidence below, but it leaves the workflow without its expected third-party review summary.
 
 ## Coverage Summary
-- SATISFIED: 11
+- SATISFIED: 12
 - PARTIAL: 1
 - MISSING: 0
 - CONTRADICTED: 0
 - UNVERIFIED: 1
-- OUT_OF_SCOPE: 1
+- OUT_OF_SCOPE: 0
 
 ## Requirement Ledger
 | Status | Bucket | Requirement | Evidence | Notes |
@@ -34,12 +34,12 @@
 | SATISFIED | regression | Existing phase-7 static and non-signable package behavior remains exercised | `src/test/convex/documents/dealPackages.test.ts` | The main package-materialization test still covers static and non-signable rows alongside signable additions |
 | PARTIAL | validation | Required quality gates pass | `bunx convex codegen`, `bun check`, `bun typecheck` passed on 2026-04-19; `bun run test -- convex/payments/__tests__/crons.test.ts` and `bun run test -- src/test/convex/documents/dealPackages.test.ts` pass after the follow-up fixes | `bun run test` still fails in unrelated suites outside ENG-288 |
 | UNVERIFIED | manual checkpoint | A human can complete live embedded signing and verify persistence plus non-recipient denial | no live execution evidence yet | Environment parity improved via `DOCUMENSO_API_KEY` fallback, but the end-to-end checkpoint still requires a real signable scenario plus a second real login for the non-recipient denial step |
-| OUT_OF_SCOPE | archive behavior | Final signed artifact archival into platform storage | Linear issue scope, `convex/documents/signature/provider.ts:105` | Phase 9 owns consuming `downloadCompletedArtifacts` and storing final artifacts |
+| SATISFIED | archive behavior | Final signed artifacts are archived into platform storage when signing completes | `convex/engine/effects/dealClosingEffects.ts:51`, `convex/documents/dealPackages.ts:1602`, `convex/documents/dealPackages.ts:1684`, `src/test/convex/documents/dealPackages.test.ts:1330` | `ALL_PARTIES_SIGNED` runs `archiveSignedDocuments`, which downloads the final PDF and certificate, stores them in Convex storage, patches `generatedDocuments`, archives the instance and package, and stays idempotent on rerun. Phase 9 now only audits and validates this shipped path. |
 
 ## Unresolved items
-- Resolve or quarantine the unrelated full-suite `bun run test` failures outside ENG-288.
+- Phase 9 follow-through is now audit-only for the shipped archive path: resolve or quarantine the unrelated full-suite `bun run test` failures outside ENG-288 and rerun validation.
 - Run the live manual checkpoint with a real signable deal, a real eligible recipient login, and a second real non-recipient login.
 - Re-run the preferred external CodeRabbit review if the service becomes available.
 
 ## Next action
-- Clear the broader repo-wide test failures, execute the live manual checkpoint, then rerun the audit and final artifact validation before marking ENG-288 complete.
+- Clear the broader repo-wide test failures, execute the live manual checkpoint, then rerun the audit and final validation for the already-implemented signed-artifact archive path before marking ENG-288 complete.
