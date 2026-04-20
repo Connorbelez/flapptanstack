@@ -828,6 +828,87 @@ describe("admin origination commit", () => {
 		});
 	});
 
+	it("fails closed when persisted platform settings point at a non-FairLend owner", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
+		const { identity: borrowerIdentity, userId } = await seedBorrowerUser(t, {
+			email: "invalid.default.owner.borrower@test.fairlend.ca",
+			subject: "user_invalid_default_owner_borrower",
+		});
+		setWorkosProvisioningForTests(createProvisioningMock());
+
+		const caseId = await stageCommitReadyCase(t, {
+			brokerOfRecordId,
+			primaryBorrowerEmail: borrowerIdentity.user_email,
+			primaryBorrowerName: "Invalid Default Owner Borrower",
+			seedDefaultOriginationOwner: false,
+		});
+
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			const invalidBrokerId = await ctx.db.insert("brokers", {
+				createdAt: now,
+				lastTransitionAt: now,
+				onboardedAt: now,
+				orgId: FAIRLEND_STAFF_ORG_ID,
+				status: "active",
+				userId,
+			});
+			const invalidLenderId = await ctx.db.insert("lenders", {
+				accreditationStatus: "exempt",
+				brokerId: invalidBrokerId,
+				createdAt: now,
+				kycStatus: "approved",
+				onboardingEntryPath: "admin_dashboard",
+				orgId: FAIRLEND_STAFF_ORG_ID,
+				status: "active",
+				userId,
+			});
+			const invalidVehicleId = await ctx.db.insert("investmentVehicles", {
+				createdAt: now,
+				entityType: "mic",
+				legalName: "Not FairLend Mortgage Investment Corporation",
+				lenderId: invalidLenderId,
+				name: "Not FairLend MIC",
+				status: "active",
+				updatedAt: now,
+			});
+			const invalidWorkspaceId = await ctx.db.insert(
+				"investmentVehicleWorkspaces",
+				{
+					createdAt: now,
+					investmentVehicleId: invalidVehicleId,
+					name: "Not FairLend MIC Workspace",
+					status: "active",
+					updatedAt: now,
+				}
+			);
+
+			await ctx.db.insert("platformSettings", {
+				changeReason: "Corrupt default origination owner for failure-path coverage",
+				createdAt: now,
+				defaultOriginationInvestmentVehicleId: invalidVehicleId,
+				defaultOriginationLenderId: invalidLenderId,
+				defaultOriginationWorkspaceId: invalidWorkspaceId,
+				key: "default",
+				source: "migration",
+				updatedAt: now,
+				updatedBy: "test",
+			});
+		});
+
+		const error = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.action(api.admin.origination.commit.commitCase, { caseId })
+			.catch((caughtError: unknown) => caughtError);
+
+		expect(await getConvexErrorData(error)).toMatchObject({
+			code: "DEFAULT_ORIGINATION_OWNER_INVALID",
+			message: "Configured lender must belong to the FairLend brokerage org",
+		});
+	});
+
 	it("commits canonically first and immediately activates provider-managed collections when the primary borrower bank account is ready", async () => {
 		const t = createTestConvex();
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);

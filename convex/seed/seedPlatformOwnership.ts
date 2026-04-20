@@ -5,6 +5,10 @@ import { FAIRLEND_BROKERAGE_ORG_ID } from "../constants";
 import { adminMutation } from "../fluent";
 import { upsertDefaultOriginationOwner } from "../platform/defaultOriginationOwner";
 import {
+	FAIRLEND_MIC_INVESTMENT_VEHICLE_LEGAL_NAME,
+	FAIRLEND_MIC_INVESTMENT_VEHICLE_NAME,
+} from "../platform/defaultOriginationOwnerContract";
+import {
 	ensureUserByEmail,
 	findLenderByUserId,
 	SEED_SOURCE,
@@ -86,9 +90,9 @@ async function upsertFairLendMicVehicle(
 	const investmentVehicleId = await ctx.db.insert("investmentVehicles", {
 		createdAt: args.createdAt,
 		entityType: "mic",
-		legalName: "FairLend Mortgage Investment Corporation",
+		legalName: FAIRLEND_MIC_INVESTMENT_VEHICLE_LEGAL_NAME,
 		lenderId: args.lenderId,
-		name: "FairLend MIC",
+		name: FAIRLEND_MIC_INVESTMENT_VEHICLE_NAME,
 		status: "active",
 		updatedAt: args.createdAt,
 	});
@@ -147,16 +151,51 @@ async function upsertFairLendMicWorkspace(
 
 async function upsertFairLendMicTrustAccount(
 	ctx: MutationCtx,
-	args: { createdAt: number; investmentVehicleId: Id<"investmentVehicles"> }
+	args: {
+		createdAt: number;
+		investmentVehicleId: Id<"investmentVehicles">;
+		preferredTrustBankAccountId?: Id<"bankAccounts">;
+	}
 ) {
-	const existing = await ctx.db
+	const existingTrustBankAccounts = await ctx.db
 		.query("bankAccounts")
 		.withIndex("by_owner", (q) =>
 			q.eq("ownerType", "trust").eq("ownerId", String(args.investmentVehicleId))
 		)
-		.unique();
-	if (existing) {
-		return { trustBankAccountId: existing._id, wasCreated: false };
+		.collect();
+	const preferredTrustBankAccount = args.preferredTrustBankAccountId
+		? existingTrustBankAccounts.find(
+				(account) => account._id === args.preferredTrustBankAccountId
+			)
+		: undefined;
+	if (preferredTrustBankAccount) {
+		return {
+			trustBankAccountId: preferredTrustBankAccount._id,
+			wasCreated: false,
+		};
+	}
+
+	const reusableTrustBankAccount =
+		[...existingTrustBankAccounts]
+			.filter((account) => account.status === "validated")
+			.sort(
+				(left, right) =>
+					left.createdAt - right.createdAt ||
+					String(left._id).localeCompare(String(right._id))
+			)
+			.at(0) ??
+		[...existingTrustBankAccounts]
+			.sort(
+				(left, right) =>
+					left.createdAt - right.createdAt ||
+					String(left._id).localeCompare(String(right._id))
+			)
+			.at(0);
+	if (reusableTrustBankAccount) {
+		return {
+			trustBankAccountId: reusableTrustBankAccount._id,
+			wasCreated: false,
+		};
 	}
 
 	const trustBankAccountId = await ctx.db.insert("bankAccounts", {
@@ -226,15 +265,16 @@ export const seedPlatformOwnership = adminMutation
 			createdAt,
 			investmentVehicleId: investmentVehicle.investmentVehicleId,
 		});
-		const trustBankAccount = await upsertFairLendMicTrustAccount(ctx, {
-			createdAt,
-			investmentVehicleId: investmentVehicle.investmentVehicleId,
-		});
-
 		const existingSettings = await ctx.db
 			.query("platformSettings")
 			.withIndex("by_key", (q) => q.eq("key", "default"))
 			.unique();
+		const trustBankAccount = await upsertFairLendMicTrustAccount(ctx, {
+			createdAt,
+			investmentVehicleId: investmentVehicle.investmentVehicleId,
+			preferredTrustBankAccountId:
+				existingSettings?.defaultFairlendTrustBankAccountId,
+		});
 
 		const settings = await upsertDefaultOriginationOwner(ctx, {
 			actorId: "seed",

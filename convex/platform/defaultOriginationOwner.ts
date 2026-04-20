@@ -1,9 +1,14 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { FAIRLEND_BROKERAGE_ORG_ID } from "../constants";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
 import type { ActorType, CommandChannel } from "../engine/types";
 import { adminMutation, adminQuery } from "../fluent";
+import {
+	FAIRLEND_MIC_INVESTMENT_VEHICLE_LEGAL_NAME,
+	FAIRLEND_MIC_INVESTMENT_VEHICLE_NAME,
+} from "./defaultOriginationOwnerContract";
 
 const PLATFORM_SETTINGS_KEY = "default";
 
@@ -93,12 +98,38 @@ async function resolveDefaultOriginationOwnerLinks(
 		);
 	}
 
+	const broker = await ctx.db.get(lender.brokerId);
+	if (
+		!broker ||
+		broker.orgId !== FAIRLEND_BROKERAGE_ORG_ID ||
+		lender.orgId !== FAIRLEND_BROKERAGE_ORG_ID
+	) {
+		throw invalidDefaultOriginationOwnerError(
+			"Configured lender must belong to the FairLend brokerage org"
+		);
+	}
+
 	if (
 		!investmentVehicle ||
 		investmentVehicle.lenderId !== args.defaultOriginationLenderId
 	) {
 		throw invalidDefaultOriginationOwnerError(
 			"Configured investment vehicle is not linked to the configured lender"
+		);
+	}
+
+	if (investmentVehicle.entityType !== "mic") {
+		throw invalidDefaultOriginationOwnerError(
+			"Configured investment vehicle must be a MIC"
+		);
+	}
+
+	if (
+		investmentVehicle.name !== FAIRLEND_MIC_INVESTMENT_VEHICLE_NAME ||
+		investmentVehicle.legalName !== FAIRLEND_MIC_INVESTMENT_VEHICLE_LEGAL_NAME
+	) {
+		throw invalidDefaultOriginationOwnerError(
+			"Configured investment vehicle must be the canonical FairLend MIC"
 		);
 	}
 
