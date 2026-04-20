@@ -64,6 +64,45 @@ async function loadListingDetailProjectionContext(
 			.first(),
 	]);
 }
+
+async function loadDocumentAssetDetails(
+	ctx: Pick<CrmDetailQueryCtx, "db" | "storage">,
+	blueprints: Awaited<ReturnType<typeof listMortgageBlueprintRows>>
+) {
+	const assetIds = Array.from(
+		new Set(
+			blueprints.flatMap((blueprint) =>
+				blueprint.assetId ? [blueprint.assetId] : []
+			)
+		)
+	);
+	const assetEntries = await Promise.all(
+		assetIds.map(async (assetId) => {
+			const asset = await ctx.db.get(assetId);
+			return asset ? ([assetId, asset] as const) : null;
+		})
+	);
+	const assetsById = new Map(
+		assetEntries.filter(
+			(
+				entry
+			): entry is readonly [Id<"documentAssets">, Doc<"documentAssets">] =>
+				entry !== null
+		)
+	);
+	const assetUrlEntries = await Promise.all(
+		[...assetsById.values()].map(
+			async (asset) =>
+				[asset._id, await ctx.storage.getUrl(asset.fileRef)] as const
+		)
+	);
+
+	return {
+		assetUrlsById: new Map(assetUrlEntries),
+		assetsById,
+	};
+}
+
 export const getMortgageDetailContext = crmQuery
 	.input({
 		mortgageId: v.id("mortgages"),
@@ -213,6 +252,10 @@ export const getMortgageDetailContext = crmQuery
 				.sort((left, right) => left.scheduledDate - right.scheduledDate)
 				.map((entry) => buildCollectionPlanEntryRow(ctx, entry))
 		);
+		const { assetsById, assetUrlsById } = await loadDocumentAssetDetails(
+			ctx,
+			documentBlueprints
+		);
 
 		return {
 			property: property
@@ -296,34 +339,33 @@ export const getMortgageDetailContext = crmQuery
 					mortgage.paymentBootstrapScheduleRuleMissing ?? false,
 				transferRequestCount: transferRequests.length,
 			},
-			documents: await Promise.all(
-				documentBlueprints.map(async (blueprint) => {
-					const asset = blueprint.assetId
-						? await ctx.db.get(blueprint.assetId)
-						: null;
-					return {
-						archivedAt: blueprint.archivedAt ?? null,
-						asset: asset
-							? {
-									assetId: asset._id,
-									fileRef: asset.fileRef,
-									name: asset.name,
-									url: await ctx.storage.getUrl(asset.fileRef),
-								}
-							: null,
-						blueprintId: blueprint._id,
-						class: blueprint.class,
-						description: blueprint.description ?? null,
-						displayName: blueprint.displayName,
-						displayOrder: blueprint.displayOrder,
-						packageLabel: blueprint.packageLabel ?? null,
-						status: blueprint.status,
-						templateId: blueprint.templateId ?? null,
-						templateName: blueprint.templateSnapshotMeta?.templateName ?? null,
-						templateVersion: blueprint.templateVersion ?? null,
-					};
-				})
-			),
+			documents: documentBlueprints.map((blueprint) => {
+				const asset = blueprint.assetId
+					? (assetsById.get(blueprint.assetId) ?? null)
+					: null;
+
+				return {
+					archivedAt: blueprint.archivedAt ?? null,
+					asset: asset
+						? {
+								assetId: asset._id,
+								fileRef: asset.fileRef,
+								name: asset.name,
+								url: assetUrlsById.get(asset._id) ?? null,
+							}
+						: null,
+					blueprintId: blueprint._id,
+					class: blueprint.class,
+					description: blueprint.description ?? null,
+					displayName: blueprint.displayName,
+					displayOrder: blueprint.displayOrder,
+					packageLabel: blueprint.packageLabel ?? null,
+					status: blueprint.status,
+					templateId: blueprint.templateId ?? null,
+					templateName: blueprint.templateSnapshotMeta?.templateName ?? null,
+					templateVersion: blueprint.templateVersion ?? null,
+				};
+			}),
 			recentObligations,
 			obligationStats,
 			recentAuditEvents: [...auditEvents]
@@ -355,10 +397,9 @@ export const getListingDetailContext = crmQuery
 				listing,
 				mortgage,
 			});
-		const publicDocuments = await readListingPublicDocuments(
-			ctx,
-			args.listingId
-		);
+		const publicDocuments = await readListingPublicDocuments(ctx, {
+			mortgageId: mortgage._id,
+		});
 
 		return {
 			latestValuationSnapshot: latestValuationSnapshot

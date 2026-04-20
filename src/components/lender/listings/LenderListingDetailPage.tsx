@@ -187,16 +187,24 @@ export function LenderListingDetailPage({
 												</p>
 											) : null}
 										</div>
-										<Button asChild size="sm" variant="outline">
-											<a
-												href={document.url ?? "#"}
-												rel="noreferrer"
-												target="_blank"
+										{document.url ? (
+											<Button asChild size="sm" variant="outline">
+												<a href={document.url} rel="noreferrer" target="_blank">
+													<FileText className="mr-2 size-4" />
+													Open PDF
+												</a>
+											</Button>
+										) : (
+											<Button
+												disabled
+												size="sm"
+												type="button"
+												variant="outline"
 											>
 												<FileText className="mr-2 size-4" />
 												Open PDF
-											</a>
-										</Button>
+											</Button>
+										)}
 									</div>
 								</div>
 							))

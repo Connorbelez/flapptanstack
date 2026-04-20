@@ -4,19 +4,23 @@ import type { QueryCtx } from "../_generated/server";
 import { listActivePublicStaticBlueprintAssets } from "../documents/mortgageBlueprints";
 import { lenderQuery } from "../fluent";
 
+type ReadListingPublicDocumentsArgs =
+	| { listingId: Id<"listings"> }
+	| { mortgageId: Id<"mortgages"> | undefined };
+
 export async function readListingPublicDocuments(
 	ctx: Pick<QueryCtx, "db" | "storage">,
-	listingId: Id<"listings">
+	args: ReadListingPublicDocumentsArgs
 ) {
-	const listing = await ctx.db.get(listingId);
-	if (!listing?.mortgageId) {
+	const mortgageId =
+		"mortgageId" in args
+			? args.mortgageId
+			: (await ctx.db.get(args.listingId))?.mortgageId;
+	if (!mortgageId) {
 		return [];
 	}
 
-	const assets = await listActivePublicStaticBlueprintAssets(
-		ctx,
-		listing.mortgageId
-	);
+	const assets = await listActivePublicStaticBlueprintAssets(ctx, mortgageId);
 	return Promise.all(
 		assets.map(async ({ asset, blueprint }) => ({
 			assetId: asset._id,
@@ -39,6 +43,8 @@ export const listForListing = lenderQuery
 			throw new ConvexError("Listing not found");
 		}
 
-		return readListingPublicDocuments(ctx, args.listingId);
+		return readListingPublicDocuments(ctx, {
+			mortgageId: listing.mortgageId,
+		});
 	})
 	.public();

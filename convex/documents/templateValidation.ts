@@ -107,7 +107,7 @@ export function buildMortgageDocumentValidationSummary(args: {
 
 	if (unsupportedVariableKeys.length > 0) {
 		throw new ConvexError(
-			`Template uses unsupported deal variables: ${unsupportedVariableKeys.join(", ")}`
+			`Template uses unsupported mortgage variables: ${unsupportedVariableKeys.join(", ")}`
 		);
 	}
 
