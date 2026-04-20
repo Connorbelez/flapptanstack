@@ -219,7 +219,6 @@ describe("portal registry backfill", () => {
 		);
 		expect(brokerPortal?.portal.slug).toBe("meridian");
 		expect(brokerPortal?.portal.portalType).toBe("broker");
-		expect(brokerPortal?.portal.orgId).toBe(fixture.brokerOrgId);
 		expect(brokerPortal?.canonicalHost).toBe("meridian.localhost:3000");
 
 		const records = await t.run(async (ctx) => {
@@ -228,16 +227,24 @@ describe("portal registry backfill", () => {
 			const borrowerUser = await ctx.db.get(fixture.borrowerUserId);
 			const fallbackUser = await ctx.db.get(fixture.fallbackUserId);
 			const adminUser = await ctx.db.get(fixture.adminUserId);
+			const brokerPortalRow = await ctx.db
+				.query("portals")
+				.withIndex("by_broker", (query) =>
+					query.eq("brokerId", fixture.brokerId)
+				)
+				.unique();
 			return {
 				adminUser,
 				borrowerUser,
 				broker,
+				brokerPortalRow,
 				brokerUser,
 				fallbackUser,
 			};
 		});
 
 		expect(records.broker?.orgId).toBe(fixture.brokerOrgId);
+		expect(records.brokerPortalRow?.orgId).toBe(fixture.brokerOrgId);
 		expect(records.brokerUser?.homePortalId).toBe(
 			brokerPortal?.portal.portalId as Id<"portals">
 		);

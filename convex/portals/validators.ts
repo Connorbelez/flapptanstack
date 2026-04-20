@@ -41,15 +41,29 @@ export const portalSummaryValidator = v.object({
 	pricingPolicyId: v.optional(v.id("portalPricingPolicies")),
 });
 
+export const publicPortalSummaryValidator = v.object({
+	portalId: v.id("portals"),
+	slug: v.string(),
+	portalType: portalTypeValidator,
+	productionHost: v.string(),
+	localHost: v.string(),
+	status: portalStatusValidator,
+	isPublished: v.boolean(),
+	publicTeaserEnabled: v.boolean(),
+	teaserListingLimit: v.optional(v.number()),
+	defaultPostAuthPath: v.optional(v.string()),
+});
+
 export const resolvedPortalHostValidator = v.object({
 	requestedHost: v.string(),
 	canonicalHost: v.string(),
 	matchedHostType: portalMatchedHostTypeValidator,
-	portal: portalSummaryValidator,
+	portal: publicPortalSummaryValidator,
 });
 
 export type PortalType = Infer<typeof portalTypeValidator>;
 export type PortalStatus = Infer<typeof portalStatusValidator>;
 export type NonPortalContextKind = Infer<typeof nonPortalContextKindValidator>;
 export type PortalSummary = Infer<typeof portalSummaryValidator>;
+export type PublicPortalSummary = Infer<typeof publicPortalSummaryValidator>;
 export type ResolvedPortalHost = Infer<typeof resolvedPortalHostValidator>;

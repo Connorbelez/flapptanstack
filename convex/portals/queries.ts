@@ -8,7 +8,11 @@ import {
 	FAIRLEND_PORTAL_SLUG,
 	normalizePortalHost,
 } from "./helpers";
-import type { PortalSummary, ResolvedPortalHost } from "./validators";
+import type {
+	PortalSummary,
+	PublicPortalSummary,
+	ResolvedPortalHost,
+} from "./validators";
 
 type PortalReaderCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
 
@@ -73,6 +77,21 @@ function toPortalSummary(portal: Doc<"portals">): PortalSummary {
 	};
 }
 
+function toPublicPortalSummary(portal: Doc<"portals">): PublicPortalSummary {
+	return {
+		portalId: portal._id,
+		slug: portal.slug,
+		portalType: portal.portalType,
+		productionHost: portal.productionHost,
+		localHost: portal.localHost,
+		status: portal.status,
+		isPublished: portal.isPublished,
+		publicTeaserEnabled: portal.publicTeaserEnabled,
+		teaserListingLimit: portal.teaserListingLimit,
+		defaultPostAuthPath: portal.defaultPostAuthPath,
+	};
+}
+
 export const getFairLendPortal = convex
 	.query()
 	.input({})
@@ -96,7 +115,7 @@ export const resolvePortalByHost = convex
 				requestedHost,
 				canonicalHost: productionPortal.productionHost,
 				matchedHostType: "production" as const,
-				portal: toPortalSummary(productionPortal),
+				portal: toPublicPortalSummary(productionPortal),
 			};
 		}
 
@@ -106,7 +125,7 @@ export const resolvePortalByHost = convex
 				requestedHost,
 				canonicalHost: localPortal.localHost,
 				matchedHostType: "local" as const,
-				portal: toPortalSummary(localPortal),
+				portal: toPublicPortalSummary(localPortal),
 			};
 		}
 
