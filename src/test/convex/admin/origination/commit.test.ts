@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { MutationCtx } from "../../../../../convex/_generated/server";
-import { FAIRLEND_STAFF_ORG_ID } from "../../../../../convex/constants";
+import {
+	FAIRLEND_BROKERAGE_ORG_ID,
+	FAIRLEND_STAFF_ORG_ID,
+} from "../../../../../convex/constants";
 import {
 	setWorkosProvisioningForTests,
 	type WorkosProvisioning,
@@ -68,6 +71,34 @@ async function seedBrokerRecord(
 			userId,
 		});
 	});
+}
+
+async function seedDefaultOriginationOwner(
+	t: ReturnType<typeof createTestConvex>,
+	brokerId?: Id<"brokers">
+) {
+	let defaultOriginationBrokerId = brokerId;
+	if (defaultOriginationBrokerId) {
+		const brokerOrgId = await t.run(async (ctx) => {
+			return (await ctx.db.get(defaultOriginationBrokerId))?.orgId;
+		});
+		if (brokerOrgId !== FAIRLEND_BROKERAGE_ORG_ID) {
+			defaultOriginationBrokerId = undefined;
+		}
+	}
+
+	if (!defaultOriginationBrokerId) {
+		const brokers = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.seed.seedBroker.seedBroker,
+			{}
+		);
+		defaultOriginationBrokerId = brokers.brokerIds[0];
+	}
+
+	return t.withIdentity(FAIRLEND_ADMIN).mutation(
+		api.seed.seedPlatformOwnership.seedPlatformOwnership,
+		{ brokerId: defaultOriginationBrokerId }
+	);
 }
 
 async function seedBorrowerUser(
@@ -145,6 +176,26 @@ async function seedValidatedBorrowerBankAccount(
 			validationMethod: "provider_verified",
 		});
 	});
+}
+
+async function getConvexErrorData(error: unknown) {
+	if (typeof error === "string") {
+		const parsed = JSON.parse(error) as unknown;
+		return typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+	}
+	if (
+		error &&
+		typeof error === "object" &&
+		"data" in error &&
+		typeof error.data === "string"
+	) {
+		const parsed = JSON.parse(error.data) as unknown;
+		return typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+	}
+	if (error && typeof error === "object" && "data" in error) {
+		return error.data;
+	}
+	return undefined;
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
@@ -238,6 +289,7 @@ async function stageCommitReadyCase(
 		};
 		primaryBorrowerEmail: string;
 		primaryBorrowerName?: string;
+		seedDefaultOriginationOwner?: boolean;
 		propertyDraft?:
 			| {
 					create: {
@@ -252,6 +304,10 @@ async function stageCommitReadyCase(
 			| { propertyId: string };
 	}
 ) {
+	if (args.seedDefaultOriginationOwner !== false) {
+		await seedDefaultOriginationOwner(t, args.brokerOfRecordId);
+	}
+
 	const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
 		api.admin.origination.cases.createCase,
 		{}
@@ -497,6 +553,7 @@ describe("admin origination commit", () => {
 		const t = createTestConvex();
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
 		const brokerOfRecordId = await seedBrokerRecord(t);
+		const defaultOwner = await seedDefaultOriginationOwner(t, brokerOfRecordId);
 		const { identity: borrowerIdentity } = await seedBorrowerUser(t);
 		const provisioning = createProvisioningMock();
 		setWorkosProvisioningForTests(provisioning);
@@ -720,6 +777,18 @@ describe("admin origination commit", () => {
 			)
 		).toBe(true);
 		expect(
+			artifacts.ledgerEntries.some(
+				(entry) => entry.entryType === "SHARES_ISSUED"
+			)
+		).toBe(true);
+		expect(
+			artifacts.ledgerAccounts.some(
+				(account) =>
+					account.type === "POSITION" &&
+					account.lenderId === String(defaultOwner.defaultOriginationLenderId)
+			)
+		).toBe(true);
+		expect(
 			artifacts.auditJournal.some(
 				(entry) =>
 					entry.entityId === firstResult.committedMortgageId &&
@@ -730,6 +799,33 @@ describe("admin origination commit", () => {
 			String(artifacts.mortgageValuationSnapshots[0]?._id)
 		);
 		expect(firstResult.committedListingId).toBe(String(artifacts.listings[0]?._id));
+	});
+
+	it("fails closed when the default origination owner is not configured", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
+		const { identity: borrowerIdentity } = await seedBorrowerUser(t, {
+			email: "no.default.owner.borrower@test.fairlend.ca",
+			subject: "user_no_default_owner_borrower",
+		});
+		setWorkosProvisioningForTests(createProvisioningMock());
+
+		const caseId = await stageCommitReadyCase(t, {
+			brokerOfRecordId,
+			primaryBorrowerEmail: borrowerIdentity.user_email,
+			primaryBorrowerName: "No Default Owner Borrower",
+			seedDefaultOriginationOwner: false,
+		});
+
+		const error = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.action(api.admin.origination.commit.commitCase, { caseId })
+			.catch((caughtError: unknown) => caughtError);
+
+		expect(await getConvexErrorData(error)).toMatchObject({
+			code: "DEFAULT_ORIGINATION_OWNER_MISSING",
+		});
 	});
 
 	it("commits canonically first and immediately activates provider-managed collections when the primary borrower bank account is ready", async () => {
