@@ -2,7 +2,11 @@ import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { roundToTwoDecimals } from "../listings/math";
-import type { PortalPricingPolicyParameters } from "./validators";
+import {
+	type PortalPricingPolicyParameters,
+	validatePortalPricingPolicyContract,
+	validatePortalPricingPolicyParameters,
+} from "./validators";
 
 type PortalDoc = Doc<"portals">;
 export type PortalPricingPolicyDoc = Doc<"portalPricingPolicies">;
@@ -43,30 +47,6 @@ export type PortalPricingSelection =
 			reason: PortalPricingUnavailableReason;
 	  };
 
-function normalizePortalPricingParameters(input: {
-	brokerSplitPercent: number;
-}): PortalPricingPolicyParameters {
-	if (!Number.isFinite(input.brokerSplitPercent)) {
-		throw new ConvexError("Portal pricing brokerSplitPercent must be finite");
-	}
-	if (input.brokerSplitPercent < 0 || input.brokerSplitPercent > 100) {
-		throw new ConvexError(
-			"Portal pricing brokerSplitPercent must stay between 0 and 100"
-		);
-	}
-
-	return {
-		brokerSplitPercent: input.brokerSplitPercent,
-	};
-}
-
-function hasValidPolicyWindow(policy: PortalPricingPolicyDoc) {
-	return (
-		policy.effectiveTo === undefined ||
-		policy.effectiveTo > policy.effectiveFrom
-	);
-}
-
 function isPolicyActiveAt(policy: PortalPricingPolicyDoc, atTime: number) {
 	return (
 		policy.status === "active" &&
@@ -77,8 +57,8 @@ function isPolicyActiveAt(policy: PortalPricingPolicyDoc, atTime: number) {
 
 function hasValidPolicyConfiguration(policy: PortalPricingPolicyDoc) {
 	try {
-		normalizePortalPricingParameters(policy);
-		return hasValidPolicyWindow(policy);
+		validatePortalPricingPolicyContract(policy);
+		return true;
 	} catch {
 		return false;
 	}
@@ -89,7 +69,7 @@ function buildReadySelection(
 ): Extract<PortalPricingSelection, { kind: "ready" }> {
 	return {
 		kind: "ready",
-		parameters: normalizePortalPricingParameters(policy),
+		parameters: validatePortalPricingPolicyParameters(policy),
 		policy,
 		projectedFields: PORTAL_PROJECTED_LISTING_FIELDS,
 	};
@@ -239,7 +219,7 @@ export function projectListingForPortal<T extends PortalProjectableListing>(
 		| PortalPricingPolicyParameters
 		| Pick<PortalPricingPolicyDoc, "brokerSplitPercent">
 ): T {
-	const parameters = normalizePortalPricingParameters(input);
+	const parameters = validatePortalPricingPolicyParameters(input);
 
 	return {
 		...listing,

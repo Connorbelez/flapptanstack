@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { createTestConvex } from "../../../src/test/auth/helpers";
 import type { Id } from "../../_generated/dataModel";
 import {
+	FAIRLEND_PORTAL_LOCAL_HOST,
+	FAIRLEND_PORTAL_PRODUCTION_HOST,
+	FAIRLEND_PORTAL_SLUG,
+} from "../helpers";
+import {
 	loadPortalPricingSelection,
 	PORTAL_PROJECTED_LISTING_FIELDS,
 	type PortalPricingPolicyDoc,
@@ -9,6 +14,10 @@ import {
 	requirePortalPricingSelection,
 	selectEffectivePortalPricingPolicy,
 } from "../pricing";
+import {
+	validatePortalPricingPolicyContract,
+	validatePortalPricingPolicyParameters,
+} from "../validators";
 
 const NOW = 1_710_000_000_000;
 
@@ -88,6 +97,15 @@ describe("portal pricing contract", () => {
 		});
 	});
 
+	it("rejects malformed broker split percentages at validation time", () => {
+		expect(() =>
+			validatePortalPricingPolicyParameters({ brokerSplitPercent: -1 })
+		).toThrow("Portal pricing brokerSplitPercent must stay between 0 and 100");
+		expect(() =>
+			validatePortalPricingPolicyParameters({ brokerSplitPercent: 101 })
+		).toThrow("Portal pricing brokerSplitPercent must stay between 0 and 100");
+	});
+
 	it("rejects ambiguous active policies when no canonical pointer is set", () => {
 		const selection = selectEffectivePortalPricingPolicy({
 			atTime: NOW,
@@ -105,6 +123,52 @@ describe("portal pricing contract", () => {
 			kind: "unavailable",
 			reason: "ambiguous-active-policy",
 		});
+	});
+
+	it("fails closed for published portals missing an active policy", () => {
+		const selection = selectEffectivePortalPricingPolicy({
+			atTime: NOW,
+			policies: [],
+			portal: buildPortal({
+				isPublished: true,
+				pricingPolicyId: undefined,
+				slug: "published-without-policy",
+			}),
+		});
+
+		expect(selection).toEqual({
+			kind: "unavailable",
+			reason: "missing-active-policy",
+		});
+	});
+
+	it("treats an invalid selected policy as unavailable for a published portal", () => {
+		const invalidWindowPolicy = buildPolicy({
+			_id: "policy_meridian_invalid_window" as Id<"portalPricingPolicies">,
+			effectiveFrom: NOW,
+			effectiveTo: NOW - 1,
+		});
+
+		const selection = selectEffectivePortalPricingPolicy({
+			atTime: NOW,
+			policies: [invalidWindowPolicy],
+			portal: buildPortal({ pricingPolicyId: invalidWindowPolicy._id }),
+		});
+
+		expect(selection).toEqual({
+			kind: "unavailable",
+			reason: "invalid-selected-policy",
+		});
+	});
+
+	it("rejects invalid effective windows at validation time", () => {
+		expect(() =>
+			validatePortalPricingPolicyContract({
+				brokerSplitPercent: 12.5,
+				effectiveFrom: NOW,
+				effectiveTo: NOW - 1,
+			})
+		).toThrow("Portal pricing effectiveTo must be greater than effectiveFrom");
 	});
 
 	it("projects only the portal-priced listing fields and rounds to two decimals", () => {
@@ -168,5 +232,54 @@ describe("portal pricing contract", () => {
 
 		expect(readySelection.parameters.brokerSplitPercent).toBe(10);
 		expect(readySelection.policy.portalId).toBe(portalId);
+	});
+
+	it("applies the same pricing contract to the FairLend app portal", async () => {
+		const t = createTestConvex();
+		const portalId = await t.run(async (ctx) => {
+			const portalId = await ctx.db.insert("portals", {
+				brokerId: undefined,
+				createdAt: NOW,
+				defaultPostAuthPath: "/",
+				isPublished: true,
+				landingPageId: undefined,
+				localHost: FAIRLEND_PORTAL_LOCAL_HOST,
+				orgId: "org_fairlend",
+				portalType: "fairlend",
+				pricingPolicyId: undefined,
+				productionHost: FAIRLEND_PORTAL_PRODUCTION_HOST,
+				publicTeaserEnabled: true,
+				slug: FAIRLEND_PORTAL_SLUG,
+				status: "active",
+				teaserListingLimit: 12,
+				updatedAt: NOW,
+			});
+			const policyId = await ctx.db.insert("portalPricingPolicies", {
+				brokerSplitPercent: 9,
+				createdAt: NOW,
+				effectiveFrom: NOW - 1000,
+				effectiveTo: undefined,
+				portalId,
+				status: "active",
+				updatedAt: NOW,
+			});
+			await ctx.db.patch(portalId, {
+				pricingPolicyId: policyId,
+				updatedAt: NOW,
+			});
+			return portalId;
+		});
+
+		const selection = await t.run(
+			async (ctx) =>
+				await loadPortalPricingSelection(ctx, { atTime: NOW, portalId })
+		);
+		expect(selection.kind).toBe("ready");
+		if (selection.kind !== "ready") {
+			throw new Error("Expected a ready selection");
+		}
+
+		expect(selection.policy.portalId).toBe(portalId);
+		expect(selection.parameters.brokerSplitPercent).toBe(9);
 	});
 });

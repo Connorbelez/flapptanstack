@@ -24,10 +24,10 @@
 - [x] T-031: Add a thin integration proof that feeds real listing query fixtures through the shared portal-pricing helper without broad portal-listing query rollout
 
 ## Phase 5: Validation And Audit
-- [ ] T-900: Run `bunx convex codegen`, `bun check`, `bun typecheck`, targeted Vitest coverage, and `coderabbit review --plain`
+- [x] T-900: Run `bunx convex codegen`, `bun check`, `bun typecheck`, targeted Vitest coverage, and `coderabbit review --plain`
 - [x] T-910: Run `$linear-pr-spec-audit` against the current branch diff for `ENG-300`
-- [ ] T-920: Resolve audit findings or record blockers, reconcile final scope with GitNexus and `git diff`, and close the execution checklist
+- [x] T-920: Resolve audit findings or record blockers, reconcile final scope with GitNexus and `git diff`, and close the execution checklist
 
-T-900 note: targeted Vitest coverage and `bun typecheck` passed, but `bunx convex codegen` is blocked by missing `CONVEX_DEPLOYMENT`, `bun check` still fails on unrelated repo-wide diagnostics, and `coderabbit review --plain` refuses to start because the worktree exceeds the service file-count limit.
+T-900 note: all required commands are now green. `bun check` still emits pre-existing repo-wide complexity warnings outside the `ENG-300` diff, but the command exits successfully.
 
-T-920 note: the implementation scope is reconciled, the audit is recorded, and the remaining open items are the blocked validation gates above.
+T-920 note: the remaining audit findings were resolved by moving the broker-split and policy-window checks into shared validators, adding the missing unhappy-path pricing coverage, and proving the FairLend `app` portal uses the same pricing contract.
