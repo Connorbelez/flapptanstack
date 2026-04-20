@@ -2,6 +2,13 @@ import { expect, type Page } from "@playwright/test";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import {
+	createOriginationE2eBootstrapState,
+	ORIGINATION_BOOTSTRAP_STORAGE_KEY,
+} from "../../src/lib/admin-origination-bootstrap";
+
+const ORIGINATION_E2E_BOOTSTRAP_INIT_KEY =
+	"origination-e2e-bootstrap-installed";
 
 function requireEnv(name: string): string {
 	const value = process.env[name];
@@ -36,6 +43,34 @@ export async function readE2eAccessToken(page: Page) {
 	}
 
 	return session.accessToken;
+}
+
+export async function primeOriginationE2eBootstrap(page: Page) {
+	const bootstrapState = createOriginationE2eBootstrapState();
+	await page.addInitScript(
+		({
+			initKey,
+			storageKey,
+			state,
+		}: {
+			initKey: string;
+			storageKey: string;
+			state: ReturnType<typeof createOriginationE2eBootstrapState>;
+		}) => {
+			if (window.sessionStorage.getItem(initKey) === "true") {
+				return;
+			}
+
+			window.localStorage.setItem(storageKey, JSON.stringify(state));
+			window.sessionStorage.setItem(initKey, "true");
+		},
+		{
+			initKey: ORIGINATION_E2E_BOOTSTRAP_INIT_KEY,
+			storageKey: ORIGINATION_BOOTSTRAP_STORAGE_KEY,
+			state: bootstrapState,
+		}
+	);
+	return bootstrapState;
 }
 
 export function createOriginationE2eClient(accessToken: string) {

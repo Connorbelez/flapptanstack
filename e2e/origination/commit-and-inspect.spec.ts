@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
 	createOriginationE2eClient,
+	primeOriginationE2eBootstrap,
 	readE2eAccessToken,
 	uniqueOriginationValue,
 } from "../helpers/origination";
@@ -71,10 +72,8 @@ test.describe("Admin origination commit flow", () => {
 		const uniqueSuffix = uniqueOriginationValue("origination");
 		const streetAddress = `500 ${uniqueSuffix} Street`;
 
+		await primeOriginationE2eBootstrap(page);
 		await page.goto("/admin/originations");
-		await page.evaluate(() => {
-			window.localStorage.removeItem("admin-origination-bootstrap");
-		});
 		await Promise.all([
 			page.waitForURL(
 				/\/admin\/originations\/(?:new|[^/?#]+)(?:\?.*)?$/,

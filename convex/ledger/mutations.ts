@@ -47,6 +47,24 @@ export interface MintMortgageArgs {
 	source: EventSource;
 }
 
+function validateMintReplayEntry(
+	existingEntry: Doc<"ledger_journal_entries">,
+	args: { mortgageId: string; replayName: string }
+) {
+	if (existingEntry.entryType !== "MORTGAGE_MINTED") {
+		throw new ConvexError({
+			code: "IDEMPOTENT_REPLAY_FAILED" as const,
+			message: `Idempotent ${args.replayName} replay: existing entry ${existingEntry._id} has entryType ${existingEntry.entryType}, expected MORTGAGE_MINTED`,
+		});
+	}
+	if (existingEntry.mortgageId !== args.mortgageId) {
+		throw new ConvexError({
+			code: "IDEMPOTENT_REPLAY_FAILED" as const,
+			message: `Idempotent ${args.replayName} replay: existing entry ${existingEntry._id} belongs to mortgage ${existingEntry.mortgageId}, expected ${args.mortgageId}`,
+		});
+	}
+}
+
 export async function mintMortgageHandler(
 	ctx: MutationCtx,
 	args: MintMortgageArgs
@@ -59,6 +77,10 @@ export async function mintMortgageHandler(
 		)
 		.first();
 	if (existingEntry) {
+		validateMintReplayEntry(existingEntry, {
+			mortgageId: args.mortgageId,
+			replayName: "mint",
+		});
 		const treasury = await ctx.db
 			.query("ledger_accounts")
 			.withIndex("by_type_and_mortgage", (q) =>
@@ -361,6 +383,10 @@ export const mintAndIssue = ledgerMutation
 			)
 			.first();
 		if (existingEntry) {
+			validateMintReplayEntry(existingEntry, {
+				mortgageId: args.mortgageId,
+				replayName: "mintAndIssue",
+			});
 			const treasury = await ctx.db
 				.query("ledger_accounts")
 				.withIndex("by_type_and_mortgage", (q) =>

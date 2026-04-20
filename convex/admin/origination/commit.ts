@@ -10,11 +10,15 @@ import {
 	provisionableParticipantName,
 	resolveOriginationBorrowerParticipants,
 } from "../../borrowers/resolveOrProvisionForOrigination";
-import { getWorkosProvisioning } from "../../engine/effects/workosProvisioning";
+import {
+	getWorkosProvisioning,
+	type WorkosProvisioning,
+} from "../../engine/effects/workosProvisioning";
 import { authedAction, convex, requirePermissionAction } from "../../fluent";
 import { activateMortgageAggregate } from "../../mortgages/activateMortgageAggregate";
 import { buildAdminDirectMortgageActivationSource } from "../../mortgages/provenance";
 import { assertOriginationCaseAccess } from "./access";
+import { computeOriginationValidationSnapshot } from "./validators";
 
 function collectOriginationParticipants(
 	record: Pick<Doc<"adminOriginationCases">, "participantsDraft">
@@ -110,11 +114,26 @@ type OriginationCommitResult =
 	| CommittedOriginationResult;
 
 function listCommitBlockingValidationErrors(
-	record: Pick<Doc<"adminOriginationCases">, "validationSnapshot">
+	record: Pick<
+		Doc<"adminOriginationCases">,
+		| "mortgageDraft"
+		| "participantsDraft"
+		| "propertyDraft"
+		| "validationSnapshot"
+		| "valuationDraft"
+	>
 ) {
+	const validationSnapshot = computeOriginationValidationSnapshot({
+		mortgageDraft: record.mortgageDraft,
+		participantsDraft: record.participantsDraft,
+		propertyDraft: record.propertyDraft,
+		validationSnapshot: record.validationSnapshot,
+		valuationDraft: record.valuationDraft,
+	});
+
 	return dedupeStrings(
 		ORIGINATION_COMMIT_BLOCKING_STEP_KEYS.flatMap(
-			(step) => record.validationSnapshot?.stepErrors?.[step] ?? []
+			(step) => validationSnapshot.stepErrors?.[step] ?? []
 		)
 	);
 }
@@ -147,12 +166,74 @@ function collectCommitBlockingErrors(
 		| "participantsDraft"
 		| "propertyDraft"
 		| "validationSnapshot"
+		| "valuationDraft"
 	>
 ) {
 	return dedupeStrings([
 		...listCommitBlockingValidationErrors(record),
 		...listCanonicalMortgageReadinessErrors(record),
 	]);
+}
+
+function findProvisionedUserByEmail(
+	provisioning: Pick<WorkosProvisioning, "listUsers">,
+	email: string
+) {
+	return provisioning
+		.listUsers({ email })
+		.then(
+			(users) =>
+				users.find(
+					(user) => user.email.toLowerCase() === email.toLowerCase()
+				) ?? null
+		);
+}
+
+function isWorkosConflictError(error: unknown): error is { status: number } {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"status" in error &&
+		typeof error.status === "number" &&
+		error.status === 409
+	);
+}
+
+async function getOrCreateProvisionedUser(
+	provisioning: WorkosProvisioning,
+	participant: Extract<
+		OriginationParticipantResolution,
+		{ kind: "missing_identity" }
+	>
+) {
+	const existingUser = await findProvisionedUserByEmail(
+		provisioning,
+		participant.email
+	);
+	if (existingUser) {
+		return existingUser;
+	}
+
+	try {
+		return await provisioning.createUser({
+			email: participant.email,
+			...provisionableParticipantName(participant),
+		});
+	} catch (error) {
+		if (!isWorkosConflictError(error)) {
+			throw error;
+		}
+
+		const conflictedUser = await findProvisionedUserByEmail(
+			provisioning,
+			participant.email
+		);
+		if (conflictedUser) {
+			return conflictedUser;
+		}
+
+		throw error;
+	}
 }
 
 async function readCommittedMortgageLinks(
@@ -681,18 +762,10 @@ export const commitCase = originationAction
 				continue;
 			}
 
-			const existingUsers = await provisioning.listUsers({
-				email: participant.email,
-			});
-			const existingUser = existingUsers.find(
-				(user) => user.email.toLowerCase() === participant.email.toLowerCase()
+			const workosUser = await getOrCreateProvisionedUser(
+				provisioning,
+				participant
 			);
-			const workosUser =
-				existingUser ??
-				(await provisioning.createUser({
-					email: participant.email,
-					...provisionableParticipantName(participant),
-				}));
 
 			pendingIdentities.push({
 				email: participant.email,

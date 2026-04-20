@@ -22,12 +22,12 @@ Ship the phase-2 origination commit path so `/admin/originations/$caseId` can co
 
 - Add `convex/admin/origination/commit.ts` as the single phase-2 orchestration surface.
 - Expose:
-  - `commitCase` public mutation guarded by `requirePermission("mortgage:originate")`
+  - `commitCase` public action guarded by `requirePermission("mortgage:originate")`
   - focused local helpers for loading viewer/case context, validating commit eligibility, and short-circuiting idempotent replays
 - Responsibilities:
   - assert org access
   - reject incomplete stage data using persisted validation
-  - resolve/provision borrower identities
+  - resolve participant identities and provision missing WorkOS users inside the orchestration
   - stop at `awaiting_identity_sync` when any provisioned identity is not yet represented in `users`
   - activate canonical borrower/property/mortgage state exactly once
   - patch the origination case with `status`, `committedMortgageId`, and `committedAt`
@@ -38,15 +38,14 @@ Ship the phase-2 origination commit path so `/admin/originations/$caseId` can co
 - Provide a testable helper that:
   - normalizes borrower emails
   - finds existing Convex `users` by normalized email
-  - provisions a WorkOS user when none exists
-  - rechecks Convex `users` after provisioning
-  - returns either:
+  - returns participant resolution records:
     - `ready` with canonical `userId`
-    - `awaiting_identity_sync` with WorkOS `userId`
+    - `missing_identity` when the WorkOS/Convex identity sync is not ready yet
 - Also handle canonical borrower lookup/creation:
   - reuse same-org borrower for same `userId`
   - reject a borrower linked to the same `userId` in another org
   - create a new borrower only when no borrower exists for that `userId`
+- Leave WorkOS provisioning plus the final `awaiting_identity_sync` commit result inside `commitCase`.
 
 ### 3. Canonical mortgage activation seam
 

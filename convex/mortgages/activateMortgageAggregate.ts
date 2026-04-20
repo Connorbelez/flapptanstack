@@ -145,10 +145,23 @@ function resolvePrimaryBorrowerId(
 	}>
 ) {
 	return (
-		borrowerLinks.find((link) => link.role === "primary")?.borrowerId ??
-		borrowerLinks[0]?.borrowerId ??
-		null
+		borrowerLinks.find((link) => link.role === "primary")?.borrowerId ?? null
 	);
+}
+
+function requirePrimaryBorrowerId(
+	borrowerLinks: ReadonlyArray<{
+		borrowerId: Id<"borrowers">;
+		role: Doc<"mortgageBorrowers">["role"];
+	}>,
+	message: string
+) {
+	const primaryBorrowerId = resolvePrimaryBorrowerId(borrowerLinks);
+	if (!primaryBorrowerId) {
+		throw new ConvexError(message);
+	}
+
+	return primaryBorrowerId;
 }
 
 async function readExistingActivationResult(
@@ -178,8 +191,10 @@ async function readExistingActivationResult(
 	]);
 
 	const borrowerIds = dedupeBorrowerIds(borrowerLinks);
-	const primaryBorrowerLink =
-		borrowerLinks.find((link) => link.role === "primary") ?? borrowerLinks[0];
+	const primaryBorrowerId = requirePrimaryBorrowerId(
+		borrowerLinks,
+		`Mortgage ${existingMortgage._id} is missing an explicit primary borrower link`
+	);
 
 	return {
 		borrowerIds,
@@ -188,7 +203,7 @@ async function readExistingActivationResult(
 		dealBlueprintCount: 0,
 		listingId: listing?._id ?? null,
 		mortgageId: existingMortgage._id,
-		primaryBorrowerId: primaryBorrowerLink?.borrowerId ?? null,
+		primaryBorrowerId,
 		propertyId: existingMortgage.propertyId,
 		publicBlueprintCount: 0,
 		scheduleRuleMissing: false,
@@ -252,7 +267,10 @@ export async function activateMortgageAggregate(
 	});
 	const mortgageInputs = requireMortgageActivationInputs(args.mortgageDraft);
 	const borrowerIds = dedupeBorrowerIds(args.borrowerLinks);
-	const primaryBorrowerId = resolvePrimaryBorrowerId(args.borrowerLinks);
+	const primaryBorrowerId = requirePrimaryBorrowerId(
+		args.borrowerLinks,
+		"At least one primary borrower is required to activate a mortgage"
+	);
 
 	const mortgageId = await ctx.db.insert("mortgages", {
 		activeExternalCollectionScheduleId: undefined,
