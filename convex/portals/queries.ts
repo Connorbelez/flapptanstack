@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { adminQuery, convex } from "../fluent";
+import { adminQuery, authedQuery, convex } from "../fluent";
 import {
 	FAIRLEND_PORTAL_LOCAL_HOST,
 	FAIRLEND_PORTAL_PRODUCTION_HOST,
@@ -149,6 +149,33 @@ export const getFairLendPortalHosts = convex
 		return {
 			productionHost: FAIRLEND_PORTAL_PRODUCTION_HOST,
 			localHost: FAIRLEND_PORTAL_LOCAL_HOST,
+		};
+	})
+	.public();
+
+export const getViewerHomePortal = authedQuery
+	.input({})
+	.handler(async (ctx) => {
+		const user = await ctx.db
+			.query("users")
+			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+			.unique();
+
+		if (!user?.homePortalId) {
+			return {
+				userId: user?._id ?? null,
+				homePortalId: user?.homePortalId ?? null,
+				homePortal: null,
+				isFairLendAdmin: ctx.viewer.isFairLendAdmin,
+			};
+		}
+
+		const homePortal = await ctx.db.get(user.homePortalId);
+		return {
+			userId: user._id,
+			homePortalId: user.homePortalId,
+			homePortal: homePortal ? toPublicPortalSummary(homePortal) : null,
+			isFairLendAdmin: ctx.viewer.isFairLendAdmin,
 		};
 	})
 	.public();

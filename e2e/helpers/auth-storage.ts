@@ -18,11 +18,14 @@ export const TEST_ADMIN_ORG_ID = requireEnv("TEST_ADMIN_ORG");
 export const TEST_MEMBER_ORG_ID = requireEnv("TEST_MEMBER_ORG");
 
 export async function createAuthStorageState(args: {
+	entryHref?: string;
 	orgId?: string;
 	page: Page;
 	path: string;
 }) {
-	await loginViaWorkOS(args.page, testAccountEmail, testAccountPassword);
+	await loginViaWorkOS(args.page, testAccountEmail, testAccountPassword, {
+		entryHref: args.entryHref,
+	});
 
 	if (args.orgId) {
 		await args.page.goto(`/e2e/switch-org?orgId=${args.orgId}`);

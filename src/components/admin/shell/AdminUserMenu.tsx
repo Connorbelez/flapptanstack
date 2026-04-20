@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { useAppAuth } from "#/hooks/use-app-auth";
-import { isRouterTeardownSignOutError } from "#/lib/workos-auth";
+import { useHostAwareSignOut } from "#/hooks/use-host-aware-sign-out";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +43,7 @@ export function AdminUserMenu() {
 	const { state } = useSidebar();
 	const { orgId, role, signOut, user } = useAppAuth();
 	const isCollapsed = state === "collapsed";
+	const handleSignOut = useHostAwareSignOut(signOut);
 
 	const displayName = useMemo(() => {
 		const fullName = [user?.firstName, user?.lastName]
@@ -52,17 +53,6 @@ export function AdminUserMenu() {
 	}, [user?.email, user?.firstName, user?.lastName]);
 
 	const initials = useMemo(() => getInitials(displayName), [displayName]);
-
-	const handleSignOut = () => {
-		void signOut().catch((error) => {
-			if (isRouterTeardownSignOutError(error)) {
-				window.location.href = "/";
-				return;
-			}
-
-			console.error("Sign out failed:", error);
-		});
-	};
 
 	return (
 		<DropdownMenu>
@@ -138,7 +128,7 @@ export function AdminUserMenu() {
 					</Link>
 				</DropdownMenuItem>
 				<DropdownMenuSeparator />
-				<DropdownMenuItem onClick={handleSignOut}>
+				<DropdownMenuItem onClick={() => void handleSignOut()}>
 					<LogOut className="size-4" />
 					Sign out
 				</DropdownMenuItem>

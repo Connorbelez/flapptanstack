@@ -1,5 +1,9 @@
 import type { Page } from "@playwright/test";
 
+export interface WorkosLoginOptions {
+	entryHref?: string;
+}
+
 /**
  * Automates the WorkOS AuthKit hosted login page.
  *
@@ -10,10 +14,12 @@ import type { Page } from "@playwright/test";
 export async function loginViaWorkOS(
 	page: Page,
 	email: string,
-	password: string
+	password: string,
+	options: WorkosLoginOptions = {}
 ) {
-	// Navigate to /sign-in which triggers a server-side redirect to WorkOS
-	await page.goto("/sign-in");
+	// Navigate to the caller-selected entrypoint, which can be a relative path
+	// on the Playwright baseURL or an absolute localhost/*.localhost URL.
+	await page.goto(options.entryHref ?? "/sign-in");
 
 	// ── Step 1: Email ──
 	const emailInput = page.getByRole("textbox", { name: "Email" });
