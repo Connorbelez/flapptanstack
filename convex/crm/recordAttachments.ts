@@ -136,25 +136,30 @@ export const listForRecord = crmQuery
 		const uploaderAuthIds = [
 			...new Set(attachments.map((attachment) => attachment.uploaderAuthId)),
 		];
-		const uploaderMap = new Map<string, AuthorSummary>();
-		for (const authId of uploaderAuthIds) {
-			const user = await ctx.db
-				.query("users")
-				.withIndex("authId", (q) => q.eq("authId", authId))
-				.unique();
-			const displayName = user
-				? [user.firstName, user.lastName]
-						.filter((part) => part && part.length > 0)
-						.join(" ")
-						.trim() ||
-					(user.email ?? authId)
-				: authId;
-			uploaderMap.set(authId, {
-				authId,
-				displayName: displayName || authId,
-				email: user?.email,
-			});
-		}
+		const uploaderEntries = await Promise.all(
+			uploaderAuthIds.map(async (authId) => {
+				const user = await ctx.db
+					.query("users")
+					.withIndex("authId", (q) => q.eq("authId", authId))
+					.unique();
+				const displayName = user
+					? [user.firstName, user.lastName]
+							.filter((part) => part && part.length > 0)
+							.join(" ")
+							.trim() ||
+						(user.email ?? authId)
+					: authId;
+				return [
+					authId,
+					{
+						authId,
+						displayName: displayName || authId,
+						email: user?.email,
+					},
+				] as const satisfies readonly [string, AuthorSummary];
+			})
+		);
+		const uploaderMap = new Map<string, AuthorSummary>(uploaderEntries);
 
 		const withUrls = await Promise.all(
 			attachments
