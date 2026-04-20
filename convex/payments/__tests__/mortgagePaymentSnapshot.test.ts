@@ -293,40 +293,40 @@ describe("mortgagePaymentSnapshot", () => {
 		});
 	});
 
-	it("uses a shared table scan for larger mortgage batches", async () => {
+	it("uses indexed per-mortgage loading for larger mortgage batches", async () => {
 		const mortgageIds = Array.from(
 			{ length: 9 },
 			(_, index) => `mortgage_${String(index + 1)}`
 		);
 		const obligationDueDate = Date.parse("2026-05-01T00:00:00.000Z");
-		const queryMocks = {
-			obligations: {
-				collect: vi.fn(async () => [
-					{
-						amount: 2450,
-						dueDate: obligationDueDate,
-						mortgageId: "mortgage_1",
-						status: "upcoming",
-					},
-					{
-						amount: 3200,
-						dueDate: Date.parse("2026-05-10T00:00:00.000Z"),
-						mortgageId: "mortgage_other",
-						status: "upcoming",
-					},
-				]),
+		const indexedQueries = {
+			collectionAttempts: {
+				expectedIndex: "by_mortgage_status",
+				mortgageIds: [] as string[],
+				rowsByMortgageId: {} as Record<string, unknown[]>,
 			},
 			collectionPlanEntries: {
-				collect: vi.fn(async () => []),
-			},
-			collectionAttempts: {
-				collect: vi.fn(async () => []),
+				expectedIndex: "by_mortgage_status_scheduled",
+				mortgageIds: [] as string[],
+				rowsByMortgageId: {} as Record<string, unknown[]>,
 			},
 			externalCollectionSchedules: {
-				collect: vi.fn(async () => []),
+				expectedIndex: "by_mortgage",
+				mortgageIds: [] as string[],
+				rowsByMortgageId: {} as Record<string, unknown[]>,
 			},
-			transferRequests: {
-				collect: vi.fn(async () => []),
+			obligations: {
+				expectedIndex: "by_mortgage_and_date",
+				mortgageIds: [] as string[],
+				rowsByMortgageId: {
+					mortgage_1: [
+						{
+							amount: 2450,
+							dueDate: obligationDueDate,
+							status: "upcoming",
+						},
+					],
+				} as Record<string, unknown[]>,
 			},
 		};
 		const ctx = {
@@ -336,12 +336,43 @@ describe("mortgagePaymentSnapshot", () => {
 					activeExternalCollectionScheduleId: undefined,
 				})),
 				normalizeId: vi.fn((_table: string, id: string) => id),
-				query: vi.fn((table: keyof typeof queryMocks) => {
-					const query = queryMocks[table];
-					if (!query) {
+				query: vi.fn((table: keyof typeof indexedQueries) => {
+					const queryConfig = indexedQueries[table];
+					if (!queryConfig) {
 						throw new Error(`Unexpected table query: ${table}`);
 					}
-					return query;
+					return {
+						withIndex: vi.fn(
+							(
+								indexName: string,
+								applyIndex: (query: {
+									eq: (field: string, value: string) => unknown;
+								}) => unknown
+							) => {
+								expect(indexName).toBe(queryConfig.expectedIndex);
+								let mortgageId: string | undefined;
+								applyIndex({
+									eq: (_field: string, value: string) => {
+										mortgageId = value;
+										return {};
+									},
+								});
+								if (!mortgageId) {
+									throw new Error("Expected mortgageId to be captured");
+								}
+								const resolvedMortgageId = mortgageId;
+
+								return {
+									collect: vi.fn(async () => {
+										queryConfig.mortgageIds.push(resolvedMortgageId);
+										return (
+											queryConfig.rowsByMortgageId[resolvedMortgageId] ?? []
+										);
+									}),
+								};
+							}
+						),
+					};
 				}),
 			},
 		};
@@ -352,13 +383,15 @@ describe("mortgagePaymentSnapshot", () => {
 			Date.parse("2026-04-15T00:00:00.000Z")
 		);
 
-		expect(queryMocks.obligations.collect).toHaveBeenCalledOnce();
-		expect(queryMocks.collectionPlanEntries.collect).toHaveBeenCalledOnce();
-		expect(queryMocks.collectionAttempts.collect).toHaveBeenCalledOnce();
-		expect(
-			queryMocks.externalCollectionSchedules.collect
-		).toHaveBeenCalledOnce();
-		expect(queryMocks.transferRequests.collect).not.toHaveBeenCalled();
+		expect(indexedQueries.obligations.mortgageIds).toEqual(mortgageIds);
+		expect(indexedQueries.collectionPlanEntries.mortgageIds).toEqual(
+			mortgageIds
+		);
+		expect(indexedQueries.collectionAttempts.mortgageIds).toEqual(mortgageIds);
+		expect(indexedQueries.externalCollectionSchedules.mortgageIds).toEqual(
+			mortgageIds
+		);
+		expect(ctx.db.query).not.toHaveBeenCalledWith("transferRequests");
 		expect(snapshots.get("mortgage_1")).toEqual({
 			mostRecentPaymentAmount: 2450,
 			mostRecentPaymentDate: obligationDueDate,

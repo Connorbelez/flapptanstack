@@ -523,17 +523,26 @@ export function AdminEntityViewPage({
 			return;
 		}
 
-		const nextFilters = schema.effectiveView.filters.filter(
-			(filter) => String(filter.fieldDefId) !== String(fieldDefId)
+		const nextFilters = [...schema.effectiveView.filters];
+		const existingFilterIndex = nextFilters.findIndex(
+			(filter) => String(filter.fieldDefId) === String(fieldDefId)
 		);
 
 		if (nextFilter) {
-			nextFilters.push({
+			const replacementFilter = {
 				fieldDefId,
 				logicalOperator: nextFilter.logicalOperator,
 				operator: nextFilter.operator,
 				value: nextFilter.value,
-			});
+			};
+
+			if (existingFilterIndex >= 0) {
+				nextFilters[existingFilterIndex] = replacementFilter;
+			} else {
+				nextFilters.push(replacementFilter);
+			}
+		} else if (existingFilterIndex >= 0) {
+			nextFilters.splice(existingFilterIndex, 1);
 		}
 
 		await persistTableSavedViewState({

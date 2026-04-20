@@ -2243,6 +2243,192 @@ describe("System object view queries", () => {
 		);
 	});
 
+	it("computes footer aggregates from the full result set for paginated default table views", async () => {
+		const orgId = CRM_ADMIN_IDENTITY.org_id;
+
+		const mortgageIds = await t.run(async (ctx) => {
+			const userId = await ctx.db.insert("users", {
+				authId: "view-engine-footer-aggregate-broker",
+				email: "snapshot-footer@example.com",
+				firstName: "Snapshot",
+				lastName: "Footer",
+			});
+			const brokerId = await ctx.db.insert("brokers", {
+				createdAt: Date.now(),
+				orgId,
+				status: "active",
+				userId,
+			});
+
+			const createMortgage = async (args: {
+				address: string;
+				maturityDate: string;
+				paymentAmount: number;
+				principal: number;
+			}) => {
+				const propertyId = await ctx.db.insert("properties", {
+					city: "Toronto",
+					createdAt: Date.now(),
+					postalCode: "M5V1A1",
+					propertyType: "residential",
+					province: "ON",
+					streetAddress: args.address,
+				});
+
+				return ctx.db.insert("mortgages", {
+					amortizationMonths: 300,
+					brokerOfRecordId: brokerId,
+					createdAt: Date.now(),
+					firstPaymentDate: "2026-05-01",
+					interestAdjustmentDate: "2026-04-01",
+					interestRate: 5.4,
+					lienPosition: 1,
+					loanType: "conventional",
+					maturityDate: args.maturityDate,
+					orgId,
+					paymentAmount: args.paymentAmount,
+					paymentFrequency: "monthly",
+					principal: args.principal,
+					propertyId,
+					rateType: "fixed",
+					status: "active",
+					termMonths: 60,
+					termStartDate: "2026-04-01",
+				});
+			};
+
+			return {
+				first: await createMortgage({
+					address: "101 Aggregate Street",
+					maturityDate: "2031-04-01",
+					paymentAmount: 2450,
+					principal: 425_000,
+				}),
+				second: await createMortgage({
+					address: "202 Aggregate Street",
+					maturityDate: "2031-05-01",
+					paymentAmount: 1980,
+					principal: 318_000,
+				}),
+				third: await createMortgage({
+					address: "303 Aggregate Street",
+					maturityDate: "2031-06-01",
+					paymentAmount: 2780,
+					principal: 512_000,
+				}),
+			};
+		});
+
+		loadMortgagePaymentSnapshotsMock.mockResolvedValue(
+			new Map([
+				[
+					String(mortgageIds.first),
+					{
+						mostRecentPaymentAmount: 2450,
+						mostRecentPaymentDate: Date.parse("2026-04-02T12:00:00.000Z"),
+						mostRecentPaymentStatus: "failed",
+						nextUpcomingPaymentAmount: 2450,
+						nextUpcomingPaymentDate: Date.parse("2026-04-30T00:00:00.000Z"),
+						nextUpcomingPaymentStatus: "planned",
+					},
+				],
+				[
+					String(mortgageIds.second),
+					{
+						mostRecentPaymentAmount: 1980,
+						mostRecentPaymentDate: Date.parse("2026-04-05T12:00:00.000Z"),
+						mostRecentPaymentStatus: "failed",
+						nextUpcomingPaymentAmount: 1980,
+						nextUpcomingPaymentDate: Date.parse("2026-04-22T00:00:00.000Z"),
+						nextUpcomingPaymentStatus: "due",
+					},
+				],
+				[
+					String(mortgageIds.third),
+					{
+						mostRecentPaymentAmount: 2780,
+						mostRecentPaymentDate: Date.parse("2026-04-03T12:00:00.000Z"),
+						mostRecentPaymentStatus: "settled",
+						nextUpcomingPaymentAmount: 2780,
+						nextUpcomingPaymentDate: Date.parse("2026-05-10T00:00:00.000Z"),
+						nextUpcomingPaymentStatus: "planned",
+					},
+				],
+			])
+		);
+
+		await t.mutation(
+			internal.crm.systemAdapters.bootstrap.bootstrapSystemObjects,
+			{ orgId }
+		);
+
+		const { fieldDefsByName, mortgageObjDef } = await t.run(async (ctx) => {
+			const objectDef = await ctx.db
+				.query("objectDefs")
+				.withIndex("by_org_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "mortgage")
+				)
+				.first();
+			if (!objectDef) {
+				throw new Error("Mortgage system object not found");
+			}
+
+			const fieldDefs = await ctx.db
+				.query("fieldDefs")
+				.withIndex("by_object", (q) => q.eq("objectDefId", objectDef._id))
+				.collect();
+
+			return {
+				mortgageObjDef: objectDef,
+				fieldDefsByName: Object.fromEntries(
+					fieldDefs.map((fieldDef) => [fieldDef.name, fieldDef._id])
+				),
+			};
+		});
+
+		const viewDefId = await asAdmin(t).mutation(api.crm.viewDefs.createView, {
+			objectDefId: mortgageObjDef._id,
+			name: "Mortgage Aggregate Footer",
+			viewType: "table",
+		});
+
+		await t.run(async (ctx) => {
+			await ctx.db.insert("userSavedViews", {
+				orgId,
+				objectDefId: mortgageObjDef._id,
+				ownerAuthId: CRM_ADMIN_IDENTITY.subject,
+				sourceViewDefId: viewDefId,
+				name: "Aggregate Footer",
+				viewType: "table",
+				visibleFieldIds: [fieldDefsByName.mostRecentPaymentStatus],
+				fieldOrder: [fieldDefsByName.mostRecentPaymentStatus],
+				filters: [],
+				sort: undefined,
+				aggregatePresets: [],
+				isDefault: true,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+		});
+
+		const result = await asAdmin(t).query(
+			api.crm.viewQueries.queryViewRecords,
+			{
+				viewDefId,
+				limit: 1,
+			}
+		);
+
+		expect(result.rows).toHaveLength(1);
+		expect(result.totalCount).toBe(3);
+		expect(result.footerAggregates).toEqual([
+			expect.objectContaining({
+				fieldName: "mostRecentPaymentStatus",
+				summary: "2 Failed, 1 Settled",
+			}),
+		]);
+	});
+
 	it("getViewSchema returns dedicated adapter metadata for system objects", async () => {
 		await t.mutation(
 			internal.crm.systemAdapters.bootstrap.bootstrapSystemObjects,

@@ -80,6 +80,14 @@ interface AdminEntityTableViewProps {
 	readonly schemaColumns: readonly AdminViewSchemaColumn[];
 }
 
+type EntityViewCell = EntityViewRow["cells"][number];
+
+interface PreparedEntityViewRow {
+	readonly cellsByFieldName: ReadonlyMap<string, EntityViewCell>;
+	readonly row: EntityViewRow;
+	readonly searchText: string;
+}
+
 function appendSearchFragments(fragments: string[], value: unknown) {
 	if (value === null || value === undefined) {
 		return;
@@ -157,12 +165,11 @@ export function AdminEntityTableView({
 	const fieldsByName = new Map(
 		fields.map((field) => [field.name, field] as const)
 	);
-	const displayedRows = useMemo(() => {
-		if (deferredSearchValue.length === 0) {
-			return rows;
-		}
-
-		return rows.filter((row) => {
+	const preparedRows = useMemo<PreparedEntityViewRow[]>(() => {
+		return rows.map((row) => {
+			const cellsByFieldName = new Map(
+				row.cells.map((cell) => [cell.fieldName, cell] as const)
+			);
 			const fragments = [
 				getAdminRecordTitle({
 					adapterContract,
@@ -177,9 +184,7 @@ export function AdminEntityTableView({
 			];
 
 			for (const column of visibleColumns) {
-				const cell = row.cells.find(
-					(candidate) => candidate.fieldName === column.name
-				);
+				const cell = cellsByFieldName.get(column.name);
 				if (!cell) {
 					continue;
 				}
@@ -199,16 +204,22 @@ export function AdminEntityTableView({
 				);
 			}
 
-			return fragments.join(" ").toLowerCase().includes(deferredSearchValue);
+			return {
+				cellsByFieldName,
+				row,
+				searchText: fragments.join(" ").toLowerCase(),
+			};
 		});
-	}, [
-		adapterContract,
-		deferredSearchValue,
-		fields,
-		objectDef,
-		rows,
-		visibleColumns,
-	]);
+	}, [adapterContract, fields, objectDef, rows, visibleColumns]);
+	const displayedRows = useMemo(() => {
+		if (deferredSearchValue.length === 0) {
+			return preparedRows;
+		}
+
+		return preparedRows.filter((preparedRow) =>
+			preparedRow.searchText.includes(deferredSearchValue)
+		);
+	}, [deferredSearchValue, preparedRows]);
 	const handleSelectableRowKeyDown = (
 		event: KeyboardEvent<HTMLTableRowElement>,
 		recordId: string
@@ -296,7 +307,7 @@ export function AdminEntityTableView({
 							</TableCell>
 						</TableRow>
 					) : (
-						displayedRows.map((row) => (
+						displayedRows.map(({ row, cellsByFieldName }) => (
 							<TableRow
 								className={cn(
 									onSelectRecord &&
@@ -343,9 +354,7 @@ export function AdminEntityTableView({
 								</TableCell>
 								{visibleColumns.map((column) => {
 									const field = fieldsByName.get(column.name);
-									const cell = row.cells.find(
-										(candidate) => candidate.fieldName === column.name
-									);
+									const cell = cellsByFieldName.get(column.name);
 									const cellKey = `${row.record._id}:${column.name}`;
 									const relationDisplayValue = isRelationCellDisplayValue(
 										cell?.displayValue

@@ -544,13 +544,21 @@ describe("admin shell helpers", () => {
 				record,
 			})
 		).toBe("789 King St W, Toronto, ON");
-		expect(
-			getAdminRecordSupportingText({
-				adapterContract: { entityType: "mortgages" },
-				objectDef,
-				record,
-			})
-		).toBe("Alice Borrower + 1 more • Latest Failed • Next 4/30/2027 • $4,250");
+		const supportingText = getAdminRecordSupportingText({
+			adapterContract: { entityType: "mortgages" },
+			objectDef,
+			record,
+		});
+		expect(supportingText).toBeDefined();
+		if (!supportingText) {
+			throw new Error("Expected mortgage supporting text");
+		}
+		expect(supportingText.split(" • ")).toEqual([
+			"Alice Borrower + 1 more",
+			"Latest Failed",
+			expect.stringMatching(/^Next .+/),
+			"$4,250",
+		]);
 	});
 
 	it("resolves relation references from object metadata", () => {

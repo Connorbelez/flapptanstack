@@ -599,7 +599,18 @@ async function queryTableView(
 	limit: number
 ): Promise<TableViewResult> {
 	const recordFilters = convertViewFiltersToRecordFilters(state.view.filters);
+	const hasFooterAggregateColumns = state.columns.some((column) => {
+		if (!column.isVisible) {
+			return false;
+		}
+
+		return (
+			state.fieldDefsById.get(column.fieldDefId.toString())?.aggregation
+				?.enabled === true
+		);
+	});
 	const hasWindowedViewRequirements =
+		hasFooterAggregateColumns ||
 		recordFilters.length > 0 ||
 		state.view.aggregatePresets.length > 0 ||
 		state.effectiveView.sort !== undefined;
