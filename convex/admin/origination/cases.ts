@@ -11,7 +11,11 @@ import {
 	authedQuery,
 	requirePermission,
 } from "../../fluent";
-import { assertOriginationCaseAccess } from "../../authz/origination";
+import {
+	assertOriginationCaseAccess,
+	assertOriginationCaseAccessContext,
+	ORIGINATION_CASE_ACCESS_REQUIRES_ORG_CONTEXT,
+} from "../../authz/origination";
 import {
 	adminOriginationCasePatchValidator,
 	computeOriginationValidationSnapshot,
@@ -44,9 +48,7 @@ function assertMutableOriginationCase(
 
 function requireViewerOrgId(viewer: { orgId?: string }) {
 	if (!viewer.orgId) {
-		throw new ConvexError(
-			"Forbidden: origination case access requires org context"
-		);
+		throw new ConvexError(ORIGINATION_CASE_ACCESS_REQUIRES_ORG_CONTEXT);
 	}
 
 	return viewer.orgId;
@@ -176,6 +178,8 @@ export const getCase = originationQuery
 		caseId: v.id("adminOriginationCases"),
 	})
 	.handler(async (ctx, args) => {
+		assertOriginationCaseAccessContext(ctx.viewer);
+
 		const record = await ctx.db.get(args.caseId);
 		if (!record) {
 			return null;
@@ -213,6 +217,8 @@ export const patchCase = originationMutation
 		patch: adminOriginationCasePatchValidator,
 	})
 	.handler(async (ctx, args) => {
+		assertOriginationCaseAccessContext(ctx.viewer);
+
 		const record = await ctx.db.get(args.caseId);
 		if (!record) {
 			throw new ConvexError("Origination case not found");
@@ -335,6 +341,8 @@ export const deleteCase = originationMutation
 		caseId: v.id("adminOriginationCases"),
 	})
 	.handler(async (ctx, args) => {
+		assertOriginationCaseAccessContext(ctx.viewer);
+
 		const record = await ctx.db.get(args.caseId);
 		if (!record) {
 			return null;
