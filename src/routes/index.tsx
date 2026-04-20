@@ -1,13 +1,12 @@
-import { convexQuery } from "@convex-dev/react-query";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
 	getSignInUrl,
 	getSignUpUrl,
 } from "@workos/authkit-tanstack-react-start";
-import { Authenticated, Unauthenticated, useMutation } from "convex/react";
+import { Authenticated, Unauthenticated } from "convex/react";
 import { Button } from "#/components/ui/button";
-import { api } from "../../convex/_generated/api";
+import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
+import { Route as RootRoute } from "./__root";
 
 export const Route = createFileRoute("/")({
 	component: Home,
@@ -24,6 +23,27 @@ function Home() {
 	return <HomeContent signInUrl={signInUrl} signUpUrl={signUpUrl} />;
 }
 
+function getHomeHeading(
+	portalContext: ReturnType<typeof RootRoute.useRouteContext>["portalContext"]
+) {
+	if (portalContext.kind === "portal") {
+		if (portalContext.portal.portalType === "fairlend") {
+			return "FairLend Portal";
+		}
+		return `${portalContext.portal.slug} Portal`;
+	}
+
+	if (portalContext.kind === "marketing") {
+		return "FairLend Marketing Host";
+	}
+
+	if (portalContext.kind === "admin") {
+		return "FairLend Admin Host";
+	}
+
+	return "Portal Context";
+}
+
 function HomeContent({
 	signInUrl,
 	signUpUrl,
@@ -31,11 +51,61 @@ function HomeContent({
 	signInUrl: string;
 	signUpUrl: string;
 }) {
+	const { portalCacheKey, portalContext, requestHost } =
+		RootRoute.useRouteContext();
+
+	const heading = getHomeHeading(portalContext);
+
 	return (
 		<main className="page-wrap flex flex-col gap-8 px-4 py-10 sm:py-12">
-			<h1 className="text-center font-bold text-4xl">
-				Convex + TanStack Start + WorkOS
-			</h1>
+			<div className="space-y-3 text-center">
+				<h1 className="font-bold text-4xl tracking-tight">{heading}</h1>
+				<p className="mx-auto max-w-2xl text-muted-foreground">
+					Root host resolution is now centralized before child loaders run. This
+					page is a minimal consumer of the resolved portal context.
+				</p>
+			</div>
+
+			<Card>
+				<CardHeader>
+					<CardTitle>Resolved host context</CardTitle>
+				</CardHeader>
+				<CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+					<div>
+						<p className="font-medium text-muted-foreground">Requested host</p>
+						<p>{requestHost}</p>
+					</div>
+					<div>
+						<p className="font-medium text-muted-foreground">Canonical host</p>
+						<p>{portalContext.canonicalHost}</p>
+					</div>
+					<div>
+						<p className="font-medium text-muted-foreground">Context kind</p>
+						<p>{portalContext.kind}</p>
+					</div>
+					<div>
+						<p className="font-medium text-muted-foreground">
+							Portal cache key
+						</p>
+						<p className="break-all">{portalCacheKey}</p>
+					</div>
+					{portalContext.kind === "portal" ? (
+						<>
+							<div>
+								<p className="font-medium text-muted-foreground">Portal slug</p>
+								<p>{portalContext.portal.slug}</p>
+							</div>
+							<div>
+								<p className="font-medium text-muted-foreground">
+									Availability
+								</p>
+								<p>{portalContext.availability}</p>
+							</div>
+						</>
+					) : null}
+				</CardContent>
+			</Card>
+
 			<Authenticated>
 				<Content />
 			</Authenticated>
@@ -53,126 +123,41 @@ function SignInForm({
 	signInUrl: string;
 	signUpUrl: string;
 }) {
-	console.log("signInUrl", signInUrl);
 	return (
-		<div className="mx-auto flex w-96 flex-col gap-8">
-			<p>Log in to see the numbers</p>
-			<a
-				className="rounded-md bg-foreground px-4 py-2 text-center text-background"
-				href={signInUrl}
-			>
-				Sign in
-			</a>
-			<a
-				className="rounded-md bg-foreground px-4 py-2 text-center text-background"
-				href={signUpUrl}
-			>
-				Sign up
-			</a>
-		</div>
+		<Card className="mx-auto w-full max-w-xl">
+			<CardHeader>
+				<CardTitle>Authentication actions</CardTitle>
+			</CardHeader>
+			<CardContent className="flex flex-col gap-3">
+				<Button asChild>
+					<a href={signInUrl}>Sign in</a>
+				</Button>
+				<Button asChild variant="outline">
+					<a href={signUpUrl}>Sign up</a>
+				</Button>
+			</CardContent>
+		</Card>
 	);
 }
 
 function Content() {
-	const {
-		data: { viewer, numbers },
-	} = useSuspenseQuery(
-		convexQuery(api.numbers.listNumbers, {
-			count: 10,
-		})
-	);
-	const addNumber = useMutation(api.numbers.addNumber);
+	const { portalContext } = RootRoute.useRouteContext();
 
 	return (
-		<div className="mx-auto flex max-w-lg flex-col gap-8">
-			<p>Welcome {viewer}!</p>
-			<p>
-				Click the button below and open this page in another window - this data
-				is persisted in the Convex cloud database!
-			</p>
-			<p>
-				<Button
-					className="rounded-md bg-foreground px-4 py-2 text-background text-sm"
-					onClick={() => {
-						void addNumber({ value: Math.floor(Math.random() * 10) });
-					}}
-				>
-					Add a random number
-				</Button>
-			</p>
-			<p>
-				Numbers:{" "}
-				{numbers.length === 0 ? "Click the button!" : numbers.join(", ")}
-			</p>
-			<p>
-				Edit{" "}
-				<code className="rounded-md bg-slate-200 px-1 py-0.5 font-bold font-mono text-sm dark:bg-slate-800">
-					convex/numbers.ts
-				</code>{" "}
-				to change your backend
-			</p>
-			<p>
-				Edit{" "}
-				<code className="rounded-md bg-slate-200 px-1 py-0.5 font-bold font-mono text-sm dark:bg-slate-800">
-					src/routes/index.tsx
-				</code>{" "}
-				to change your frontend
-			</p>
-			<p>
-				See{" "}
-				<Link className="underline hover:no-underline" to="/authenticated">
-					/authenticated
-				</Link>{" "}
-				for an example of a page only available to authenticated users.
-			</p>
-			<div className="flex flex-col">
-				<p className="font-bold text-lg">Useful resources:</p>
-				<div className="flex gap-2">
-					<div className="flex w-1/2 flex-col gap-2">
-						<ResourceCard
-							description="Read comprehensive documentation for all Convex features."
-							href="https://docs.convex.dev/home"
-							title="Convex docs"
-						/>
-						<ResourceCard
-							description="Learn about best practices, use cases, and more from a growing collection of articles, videos, and walkthroughs."
-							href="https://stack.convex.dev"
-							title="Stack articles"
-						/>
-					</div>
-					<div className="flex w-1/2 flex-col gap-2">
-						<ResourceCard
-							description="Browse our collection of templates to get started quickly."
-							href="https://www.convex.dev/templates"
-							title="Templates"
-						/>
-						<ResourceCard
-							description="Join our developer community to ask questions, trade tips & tricks, and show off your projects."
-							href="https://www.convex.dev/community"
-							title="Discord"
-						/>
-					</div>
-				</div>
-			</div>
-		</div>
-	);
-}
-
-function ResourceCard({
-	title,
-	description,
-	href,
-}: {
-	title: string;
-	description: string;
-	href: string;
-}) {
-	return (
-		<div className="flex h-28 flex-col gap-2 overflow-auto rounded-md bg-slate-200 p-4 dark:bg-slate-800">
-			<a className="text-sm underline hover:no-underline" href={href}>
-				{title}
-			</a>
-			<p className="text-xs">{description}</p>
-		</div>
+		<Card className="mx-auto w-full max-w-xl">
+			<CardHeader>
+				<CardTitle>Signed-in state</CardTitle>
+			</CardHeader>
+			<CardContent className="space-y-2 text-muted-foreground text-sm">
+				<p>
+					The root route has already resolved the current host as{" "}
+					<strong>{portalContext.kind}</strong>.
+				</p>
+				<p>
+					This is where downstream role-specific shells can branch on the shared
+					portal context without reparsing the hostname.
+				</p>
+			</CardContent>
+		</Card>
 	);
 }

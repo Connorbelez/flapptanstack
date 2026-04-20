@@ -371,6 +371,14 @@ export const convexModules: ModuleMap = withModuleAliases({
 	"/convex/lib/businessDays.ts": async () =>
 		await import("./../lib/businessDays.ts"),
 	"/convex/lib/orgScope.ts": async () => await import("./../lib/orgScope.ts"),
+	"/convex/portals/helpers.ts": async () =>
+		await import("./../portals/helpers.ts"),
+	"/convex/portals/invariants.ts": async () =>
+		await import("./../portals/invariants.ts"),
+	"/convex/portals/queries.ts": async () =>
+		await import("./../portals/queries.ts"),
+	"/convex/portals/validators.ts": async () =>
+		await import("./../portals/validators.ts"),
 	"/convex/mortgages/activateMortgageAggregate.ts": async () =>
 		await import("./../mortgages/activateMortgageAggregate.ts"),
 	"/convex/mortgages/paymentFrequency.ts": async () =>
