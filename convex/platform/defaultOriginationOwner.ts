@@ -8,6 +8,7 @@ import { adminMutation, adminQuery } from "../fluent";
 import {
 	FAIRLEND_MIC_INVESTMENT_VEHICLE_LEGAL_NAME,
 	FAIRLEND_MIC_INVESTMENT_VEHICLE_NAME,
+	FAIRLEND_MIC_LENDER_EMAIL,
 } from "./defaultOriginationOwnerContract";
 
 const PLATFORM_SETTINGS_KEY = "default";
@@ -76,6 +77,10 @@ function invalidDefaultOriginationOwnerError(message: string) {
 	});
 }
 
+function normalizeConfiguredEmail(email?: string) {
+	return email?.trim().toLowerCase();
+}
+
 async function resolveDefaultOriginationOwnerLinks(
 	ctx: DefaultOriginationOwnerCtx,
 	args: DefaultOriginationOwnerLinkArgs
@@ -98,7 +103,10 @@ async function resolveDefaultOriginationOwnerLinks(
 		);
 	}
 
-	const broker = await ctx.db.get(lender.brokerId);
+	const [broker, lenderUser] = await Promise.all([
+		ctx.db.get(lender.brokerId),
+		ctx.db.get(lender.userId),
+	]);
 	if (
 		!broker ||
 		broker.orgId !== FAIRLEND_BROKERAGE_ORG_ID ||
@@ -106,6 +114,15 @@ async function resolveDefaultOriginationOwnerLinks(
 	) {
 		throw invalidDefaultOriginationOwnerError(
 			"Configured lender must belong to the FairLend brokerage org"
+		);
+	}
+
+	if (
+		!lenderUser ||
+		normalizeConfiguredEmail(lenderUser.email) !== FAIRLEND_MIC_LENDER_EMAIL
+	) {
+		throw invalidDefaultOriginationOwnerError(
+			"Configured lender must be the canonical FairLend MIC owner"
 		);
 	}
 
