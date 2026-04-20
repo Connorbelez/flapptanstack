@@ -25,6 +25,28 @@ interface SeedLenderResult {
 	reused: { lenders: number };
 }
 
+interface SeedPlatformOwnershipResult {
+	created: {
+		bankAccounts: number;
+		investmentVehicles: number;
+		investmentVehicleWorkspaces: number;
+		lenders: number;
+		platformSettings: number;
+	};
+	defaultFairlendTrustBankAccountId?: Id<"bankAccounts">;
+	defaultOriginationInvestmentVehicleId: Id<"investmentVehicles">;
+	defaultOriginationLenderId: Id<"lenders">;
+	defaultOriginationWorkspaceId?: Id<"investmentVehicleWorkspaces">;
+	reused: {
+		bankAccounts: number;
+		investmentVehicles: number;
+		investmentVehicleWorkspaces: number;
+		lenders: number;
+		platformSettings: number;
+	};
+	settingsId?: Id<"platformSettings">;
+}
+
 interface SeedMortgageBorrowerLink {
 	borrowerId: Id<"borrowers">;
 	mortgageId: Id<"mortgages">;
@@ -86,6 +108,12 @@ const seedLenderRef = makeFunctionReference<
 	SeedLenderResult
 >("seed/seedLender:seedLender");
 
+const seedPlatformOwnershipRef = makeFunctionReference<
+	"mutation",
+	{ brokerId?: Id<"brokers"> },
+	SeedPlatformOwnershipResult
+>("seed/seedPlatformOwnership:seedPlatformOwnership");
+
 const seedMortgageRef = makeFunctionReference<
 	"mutation",
 	{ borrowerIds?: Id<"borrowers">[]; brokerIds?: Id<"brokers">[] },
@@ -129,6 +157,9 @@ export const seedAll = adminAction
 		const borrowers = await ctx.runMutation(seedBorrowerRef, {});
 		const lenders = await ctx.runMutation(seedLenderRef, {
 			brokerIds: brokers.brokerIds,
+		});
+		const platformOwnership = await ctx.runMutation(seedPlatformOwnershipRef, {
+			brokerId: brokers.brokerIds[0],
 		});
 		const mortgages = await ctx.runMutation(seedMortgageRef, {
 			borrowerIds: borrowers.borrowerIds,
@@ -184,6 +215,7 @@ export const seedAll = adminAction
 			brokers,
 			borrowers,
 			lenders,
+			platformOwnership,
 			mortgages,
 			deals,
 			obligations,
@@ -197,24 +229,32 @@ export const seedAll = adminAction
 				created: {
 					brokers: brokers.created.brokers,
 					borrowers: borrowers.created.borrowers,
-					lenders: lenders.created.lenders,
+					lenders: lenders.created.lenders + platformOwnership.created.lenders,
+					investmentVehicles: platformOwnership.created.investmentVehicles,
+					investmentVehicleWorkspaces:
+						platformOwnership.created.investmentVehicleWorkspaces,
 					properties: mortgages.created.properties,
 					mortgages: mortgages.created.mortgages,
 					deals: deals.created.deals,
 					obligations: obligations.created.obligations,
 					onboardingRequests: onboardingRequests.created.onboardingRequests,
+					platformSettings: platformOwnership.created.platformSettings,
 					paymentDataObligations: paymentData.generated.obligations,
 					paymentDataPlanEntries: paymentData.generated.planEntries,
 				},
 				reused: {
 					brokers: brokers.reused.brokers,
 					borrowers: borrowers.reused.borrowers,
-					lenders: lenders.reused.lenders,
+					lenders: lenders.reused.lenders + platformOwnership.reused.lenders,
+					investmentVehicles: platformOwnership.reused.investmentVehicles,
+					investmentVehicleWorkspaces:
+						platformOwnership.reused.investmentVehicleWorkspaces,
 					properties: mortgages.reused.properties,
 					mortgages: mortgages.reused.mortgages,
 					deals: deals.reused.deals,
 					obligations: obligations.reused.obligations,
 					onboardingRequests: onboardingRequests.reused.onboardingRequests,
+					platformSettings: platformOwnership.reused.platformSettings,
 					paymentDataObligations: paymentData.reused.obligations,
 					paymentDataPlanEntries: paymentData.reused.planEntries,
 				},

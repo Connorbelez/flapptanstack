@@ -626,6 +626,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../seed/seedOnboardingRequest.ts"),
 	"/convex/seed/seedPaymentData.ts": async () =>
 		await import("./../seed/seedPaymentData.ts"),
+	"/convex/seed/seedPlatformOwnership.ts": async () =>
+		await import("./../seed/seedPlatformOwnership.ts"),
 	"/convex/test/authTestEndpoints.ts": async () =>
 		await import("./authTestEndpoints.ts"),
 	"/convex/test/moduleMaps.ts": async () => await import("./moduleMaps.ts"),
