@@ -44,6 +44,9 @@ export const DEMO_DOCUMENT_SIGNATORY_ROLE_OPTIONS = [
 	},
 ] as const satisfies readonly DocumentSignatoryRoleOption[];
 
+export type DemoDocumentSignatoryRole =
+	(typeof DEMO_DOCUMENT_SIGNATORY_ROLE_OPTIONS)[number]["value"];
+
 export const MORTGAGE_DOCUMENT_SIGNATORY_ROLE_OPTIONS = [
 	{
 		bgColor: "#fee2e2",

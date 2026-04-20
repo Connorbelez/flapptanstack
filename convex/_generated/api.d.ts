@@ -21,6 +21,7 @@ import type * as admin_origination_caseDocuments from "../admin/origination/case
 import type * as admin_origination_cases from "../admin/origination/cases.js";
 import type * as admin_origination_collections from "../admin/origination/collections.js";
 import type * as admin_origination_commit from "../admin/origination/commit.js";
+import type * as admin_origination_postCommitCollectionsActivation from "../admin/origination/postCommitCollectionsActivation.js";
 import type * as admin_origination_validators from "../admin/origination/validators.js";
 import type * as admin_queries from "../admin/queries.js";
 import type * as audit_queries from "../audit/queries.js";
@@ -344,6 +345,7 @@ declare const fullApi: ApiFromModules<{
   "admin/origination/cases": typeof admin_origination_cases;
   "admin/origination/collections": typeof admin_origination_collections;
   "admin/origination/commit": typeof admin_origination_commit;
+  "admin/origination/postCommitCollectionsActivation": typeof admin_origination_postCommitCollectionsActivation;
   "admin/origination/validators": typeof admin_origination_validators;
   "admin/queries": typeof admin_queries;
   "audit/queries": typeof audit_queries;

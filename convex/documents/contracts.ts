@@ -1,8 +1,46 @@
 import { type Infer, v } from "convex/values";
-import {
-	MORTGAGE_DOCUMENT_SIGNATORY_ROLES,
-	SUPPORTED_DEAL_DOCUMENT_VARIABLE_KEYS,
-} from "../../src/lib/document-engine/contracts";
+
+const MORTGAGE_DOCUMENT_SIGNATORY_ROLES = [
+	"lender_primary",
+	"borrower_primary",
+	"borrower_co_1",
+	"borrower_co_2",
+	"broker_of_record",
+	"assigned_broker",
+	"lawyer_primary",
+] as const;
+
+const SUPPORTED_DEAL_DOCUMENT_VARIABLE_KEYS = [
+	"assigned_broker_full_name",
+	"borrower_co_1_full_name",
+	"borrower_co_2_full_name",
+	"borrower_primary_email",
+	"borrower_primary_full_name",
+	"broker_of_record_full_name",
+	"lawyer_primary_full_name",
+	"listing_description",
+	"listing_title",
+	"mortgage_amortization_months",
+	"mortgage_amount",
+	"mortgage_first_payment_date",
+	"mortgage_interest_rate",
+	"mortgage_lien_position",
+	"mortgage_maturity_date",
+	"mortgage_payment_amount",
+	"mortgage_payment_frequency",
+	"mortgage_principal",
+	"mortgage_rate_type",
+	"mortgage_term_months",
+	"mortgage_term_start_date",
+	"property_city",
+	"property_postal_code",
+	"property_province",
+	"property_street_address",
+	"property_type",
+	"property_unit",
+	"valuation_date",
+	"valuation_value_as_is",
+] as const;
 
 export const mortgageDocumentBlueprintClassValidator = v.union(
 	v.literal("public_static"),

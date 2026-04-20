@@ -1,9 +1,11 @@
 import type { Schema, Template } from "@pdfme/common";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import type {
-	DEMO_DOCUMENT_SIGNATORY_ROLE_OPTIONS,
+	DemoDocumentSignatoryRole,
 	DocumentSignatoryRoleOption,
 } from "./contracts";
+
+export type { DemoDocumentSignatoryRole } from "./contracts";
 
 // ── Re-exported document types for convenience ────────────────────
 export type BasePdf = Doc<"documentBasePdfs">;
@@ -20,9 +22,6 @@ export type VariableType =
 	| "percentage"
 	| "integer"
 	| "boolean";
-
-export type DemoDocumentSignatoryRole =
-	(typeof DEMO_DOCUMENT_SIGNATORY_ROLE_OPTIONS)[number]["value"];
 
 export type PlatformRole = DemoDocumentSignatoryRole;
 
