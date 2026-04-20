@@ -91,4 +91,46 @@ describe("lender listing detail page", () => {
 			)
 		).toBe("/lender");
 	});
+
+	it("renders a disabled document action when the public document URL is missing", () => {
+		const useQueryMock = useQuery as unknown as QueryMock;
+		useQueryMock
+			.mockReturnValueOnce({
+				availability: { availableFractions: 42 },
+				listing: {
+					city: "Toronto",
+					description: "Projected lender-facing mortgage listing.",
+					interestRate: 9.5,
+					lienPosition: 1,
+					listingId: "listing_1",
+					loanType: "conventional",
+					ltvRatio: 62,
+					maturityDate: "2027-04-30",
+					monthlyPayment: 2450,
+					paymentFrequency: "monthly",
+					principal: 250000,
+					propertyType: "residential",
+					province: "ON",
+					status: "active",
+					title: "King West bridge opportunity",
+				},
+			})
+			.mockReturnValueOnce([
+				{
+					assetId: "asset_public_1",
+					blueprintId: "blueprint_public_1",
+					class: "public_static",
+					description: "Visible to authenticated lenders.",
+					displayName: "Investor Summary",
+					url: null,
+				},
+			]);
+
+		render(<LenderListingDetailPage listingId="listing_1" />);
+
+		expect(screen.queryByRole("link", { name: "Open PDF" })).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "Open PDF" }).getAttribute("disabled")
+		).not.toBeNull();
+	});
 });
