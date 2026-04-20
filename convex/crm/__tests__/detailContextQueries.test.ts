@@ -110,6 +110,7 @@ async function seedListingDetailFixture(
 			principal: 250_000,
 			propertyId,
 			propertyType: "residential",
+			marketplacePropertyType: "Detached Home",
 			province: "ON",
 			publicDocumentIds,
 			publishedAt: undefined,
