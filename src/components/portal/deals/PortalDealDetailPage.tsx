@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { FileText, Home, Percent, Wallet } from "lucide-react";
+import { useRef } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -122,6 +123,7 @@ type PortalDealDetail = FunctionReturnType<
 type DealDocumentListItem = NonNullable<
 	NonNullable<PortalDealDetail>["documentInstances"]
 >[number];
+type DealDocumentInstanceId = DealDocumentListItem["instanceId"];
 
 function groupDocuments(documents: DealDocumentListItem[]) {
 	const availableDocuments = documents.filter(
@@ -179,6 +181,12 @@ export function PortalDealDetailPage({
 	dealId,
 }: PortalDealDetailPageProps) {
 	const copy = PORTAL_COPY[audience];
+	const signingDialogsRef = useRef(
+		new Map<DealDocumentInstanceId, HTMLDialogElement>()
+	);
+	const signingFramesRef = useRef(
+		new Map<DealDocumentInstanceId, HTMLIFrameElement>()
+	);
 	const detail = useQuery(api.deals.queries.getPortalDealDetail, {
 		dealId: dealId as Id<"deals">,
 	});
@@ -238,32 +246,77 @@ export function PortalDealDetailPage({
 		}
 	}
 
-	function signingDialogId(instanceId: Id<"dealDocumentInstances">) {
-		return `signing-dialog-${String(instanceId)}`;
+	function setSigningDialogRef(instanceId: DealDocumentInstanceId) {
+		return (dialog: HTMLDialogElement | null) => {
+			if (dialog) {
+				signingDialogsRef.current.set(instanceId, dialog);
+				return;
+			}
+
+			signingDialogsRef.current.delete(instanceId);
+		};
 	}
 
-	function signingFrameId(instanceId: Id<"dealDocumentInstances">) {
-		return `signing-frame-${String(instanceId)}`;
+	function setSigningFrameRef(instanceId: DealDocumentInstanceId) {
+		return (frame: HTMLIFrameElement | null) => {
+			if (frame) {
+				signingFramesRef.current.set(instanceId, frame);
+				return;
+			}
+
+			signingFramesRef.current.delete(instanceId);
+		};
 	}
 
-	async function launchEmbeddedSigning(
-		instanceId: Id<"dealDocumentInstances">
-	) {
+	function getSigningNodes(instanceId: DealDocumentInstanceId) {
+		const dialog = signingDialogsRef.current.get(instanceId);
+		const frame = signingFramesRef.current.get(instanceId);
+
+		if (!(dialog && frame)) {
+			toast.error(
+				"Embedded signing is unavailable right now. Refresh the page and try again."
+			);
+			return null;
+		}
+
+		return { dialog, frame };
+	}
+
+	function closeEmbeddedSigning(instanceId: DealDocumentInstanceId) {
+		const dialog = signingDialogsRef.current.get(instanceId);
+		if (!dialog) {
+			toast.error(
+				"Embedded signing dialog is unavailable right now. Refresh the page and try again."
+			);
+			return;
+		}
+
+		dialog.close();
+	}
+
+	function resetEmbeddedSigningFrame(instanceId: DealDocumentInstanceId) {
+		const frame = signingFramesRef.current.get(instanceId);
+		if (frame) {
+			frame.src = "about:blank";
+		}
+	}
+
+	async function launchEmbeddedSigning(instanceId: DealDocumentInstanceId) {
+		if (!getSigningNodes(instanceId)) {
+			return;
+		}
+
 		try {
 			const session = await createEmbeddedSigningSession({
 				dealId: resolvedDealId,
 				instanceId,
 			});
-			const frame = document.getElementById(
-				signingFrameId(instanceId)
-			) as HTMLIFrameElement | null;
-			const dialog = document.getElementById(
-				signingDialogId(instanceId)
-			) as HTMLDialogElement | null;
-			if (frame) {
-				frame.src = session.url;
+			const signingNodes = getSigningNodes(instanceId);
+			if (!signingNodes) {
+				return;
 			}
-			dialog?.showModal();
+			signingNodes.frame.src = session.url;
+			signingNodes.dialog.showModal();
 		} catch (error) {
 			toast.error(
 				error instanceof Error
@@ -277,11 +330,15 @@ export function PortalDealDetailPage({
 		<div className="mx-auto max-w-5xl space-y-8 px-4 py-10 sm:px-6">
 			<div className="space-y-3">
 				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant="outline">{detail.deal.status}</Badge>
+					<Badge variant="outline">{formatEnumLabel(detail.deal.status)}</Badge>
 					<Badge variant="secondary">
-						{detail.documentPackage?.status ?? "No package yet"}
+						{detail.documentPackage?.status
+							? formatEnumLabel(detail.documentPackage.status)
+							: "No package yet"}
 					</Badge>
-					<Badge variant="secondary">{detail.mortgage.status}</Badge>
+					<Badge variant="secondary">
+						{formatEnumLabel(detail.mortgage.status)}
+					</Badge>
 					{groupedDocuments.archivedSignableDocuments.length > 0 ? (
 						<Badge variant="secondary">Signed archive ready</Badge>
 					) : null}
@@ -395,7 +452,11 @@ export function PortalDealDetailPage({
 					<CardContent className="space-y-3">
 						<SnapshotItem
 							label="Package Status"
-							value={detail.documentPackage?.status ?? "Pending"}
+							value={
+								detail.documentPackage?.status
+									? formatEnumLabel(detail.documentPackage.status)
+									: "Pending"
+							}
 						/>
 						<SnapshotItem label="Lifecycle" value={lifecycleLabel} />
 						<SnapshotItem
@@ -631,19 +692,14 @@ export function PortalDealDetailPage({
 
 								<dialog
 									className="max-h-[90vh] w-[min(1000px,calc(100%-2rem))] rounded-xl border border-border/70 bg-background p-0 text-foreground shadow-xl backdrop:bg-black/50"
-									id={signingDialogId(document.instanceId)}
 									onClose={() => {
-										const frame = window.document.getElementById(
-											signingFrameId(document.instanceId)
-										) as HTMLIFrameElement | null;
-										if (frame) {
-											frame.src = "about:blank";
-										}
+										resetEmbeddedSigningFrame(document.instanceId);
 										void syncEnvelope({
 											instanceId: document.instanceId,
 											quiet: true,
 										});
 									}}
+									ref={setSigningDialogRef(document.instanceId)}
 								>
 									<div className="space-y-4 p-4">
 										<div className="flex items-start justify-between gap-4">
@@ -658,10 +714,7 @@ export function PortalDealDetailPage({
 											</div>
 											<Button
 												onClick={() => {
-													const dialog = window.document.getElementById(
-														signingDialogId(document.instanceId)
-													) as HTMLDialogElement | null;
-													dialog?.close();
+													closeEmbeddedSigning(document.instanceId);
 												}}
 												type="button"
 												variant="outline"
@@ -671,7 +724,7 @@ export function PortalDealDetailPage({
 										</div>
 										<iframe
 											className="h-[70vh] w-full rounded-lg border border-border/60"
-											id={signingFrameId(document.instanceId)}
+											ref={setSigningFrameRef(document.instanceId)}
 											src="about:blank"
 											title={`Embedded signing for ${document.displayName}`}
 										/>
