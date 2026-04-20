@@ -35,6 +35,7 @@ interface MockDocumensoOptions {
 	envelopeStatus?: "COMPLETED" | "PENDING";
 	failCreate?: boolean;
 	failDistribute?: boolean;
+	failSync?: boolean;
 	recipientEmail?: string;
 	recipientName?: string;
 	recipientSigningStatus?: "SIGNED" | null;
@@ -76,6 +77,11 @@ function installMockDocumensoFetch(options?: MockDocumensoOptions) {
 			return new Response(JSON.stringify({ id: envelopeId }), { status: 200 });
 		}
 		if (url.endsWith(`/envelope/${envelopeId}`)) {
+			if (options?.failSync) {
+				return new Response(JSON.stringify({ error: "sync failed" }), {
+					status: 500,
+				});
+			}
 			return new Response(
 				JSON.stringify({
 					id: envelopeId,
@@ -1220,5 +1226,71 @@ describe("documents/dealPackages", () => {
 				}),
 			])
 		);
+	});
+
+	it("preserves the last successful provider sync timestamp when sync refresh fails", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const initialPackageSurface = await t
+			.withIdentity(fixture.lenderIdentity)
+			.query(api.documents.dealPackages.getPortalDocumentPackage, {
+				dealId: fixture.dealId,
+			});
+		const signableInstance = initialPackageSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+		if (!signableInstance?.signing?.lastProviderSyncAt) {
+			throw new Error("Expected a signable instance with a sync timestamp");
+		}
+
+		const initialSyncAt = signableInstance.signing.lastProviderSyncAt;
+
+		installMockDocumensoFetch({
+			failSync: true,
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		await expect(
+			t.withIdentity(fixture.lenderIdentity).action(
+				api.documents.signature.webhooks.syncSignableDocumentEnvelope,
+				{
+					dealId: fixture.dealId,
+					instanceId: signableInstance.instanceId,
+				}
+			)
+		).rejects.toThrow(/Documenso GET \/envelope\/doc_env_1 failed with status 500/i);
+
+		const refreshedPackageSurface = await t
+			.withIdentity(fixture.lenderIdentity)
+			.query(api.documents.dealPackages.getPortalDocumentPackage, {
+				dealId: fixture.dealId,
+			});
+		const refreshedSignable = refreshedPackageSurface.instances.find(
+			(instance) => instance.instanceId === signableInstance.instanceId
+		);
+
+		expect(refreshedSignable).toMatchObject({
+			status: "generation_failed",
+			signing: expect.objectContaining({
+				lastError: expect.stringContaining(
+					"Documenso GET /envelope/doc_env_1 failed with status 500"
+				),
+				lastProviderSyncAt: initialSyncAt,
+				status: "provider_error",
+			}),
+		});
 	});
 });

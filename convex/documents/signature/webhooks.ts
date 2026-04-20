@@ -63,7 +63,6 @@ export const syncSignableDocumentEnvelope = authedAction
 				{
 					envelopeId: signableDocument.envelope.envelopeId,
 					lastError: message,
-					now: Date.now(),
 					recipients: [],
 					status: "provider_error",
 				}
