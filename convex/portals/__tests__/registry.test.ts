@@ -6,7 +6,7 @@ import {
 	ensureSeededIdentity,
 } from "../../../src/test/auth/helpers";
 import { FAIRLEND_ADMIN } from "../../../src/test/auth/identities";
-import { api } from "../../_generated/api";
+import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import {
 	FAIRLEND_BROKERAGE_ORG_ID,
@@ -177,6 +177,36 @@ async function seedPortalBackfillFixture(t: ReturnType<typeof createHarness>) {
 }
 
 describe("portal registry backfill", () => {
+	it("syncs a freshly created user's home portal to the FairLend app portal", async () => {
+		const t = createHarness();
+		const authId = "user_marketing_signup";
+		const userId = await t.run(async (ctx) => {
+			return ctx.db.insert("users", {
+				authId,
+				email: "marketing-signup@test.fairlend.ca",
+				firstName: "Marketing",
+				lastName: "Signup",
+			});
+		});
+
+		const result = await t.mutation(
+			internal.auth.syncUserHomePortalAssignment,
+			{
+				authId,
+			}
+		);
+		expect(String(result?.userId)).toBe(String(userId));
+
+		const fairLendPortal = await t.query(
+			api.portals.queries.getFairLendPortal,
+			{}
+		);
+		expect(fairLendPortal?.slug).toBe("app");
+
+		const user = await t.run(async (ctx) => await ctx.db.get(userId));
+		expect(String(user?.homePortalId)).toBe(String(fairLendPortal?.portalId));
+	});
+
 	it("creates FairLend and broker portal rows and assigns home portals deterministically", async () => {
 		const t = createHarness();
 		const fixture = await seedPortalBackfillFixture(t);
@@ -255,7 +285,9 @@ describe("portal registry backfill", () => {
 		expect(records.fallbackUser?.homePortalId).toBe(
 			fairLendPortal?.portalId as Id<"portals">
 		);
-		expect(records.adminUser?.homePortalId).toBeUndefined();
+		expect(records.adminUser?.homePortalId).toBe(
+			fairLendPortal?.portalId as Id<"portals">
+		);
 	});
 
 	it("rejects conflicting FairLend host claims during the portal backfill", async () => {
@@ -373,7 +405,9 @@ describe("portal registry backfill", () => {
 			{}
 		);
 		expect(adminResult.isFairLendAdmin).toBe(true);
-		expect(adminResult.homePortal).toBeNull();
-		expect(adminResult.homePortalId).toBeNull();
+		expect(adminResult.homePortal?.slug).toBe("app");
+		expect(String(adminResult.homePortalId)).toBe(
+			String(adminResult.homePortal?.portalId)
+		);
 	});
 });
