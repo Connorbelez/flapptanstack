@@ -1,40 +1,39 @@
-# Spec Audit: ENG-300 - Broker portal: define the v1 portal pricing policy contract
+# Spec Compliance Review
 
 - Audit skill: `$linear-pr-spec-audit`
-- Review target: current branch diff against its merge base
-- Last run: 2026-04-20T21:19:52Z
-- Verdict: needs manual validation
+- Review target: `eng-297..HEAD` (`3fde40e4153181420368c14130e73e9341171894..4ae70928395ec46369665fa017d3a59f687d93dd`)
+- Last run: `2026-04-20T22:33:22Z`
 
 ## Findings
-- [medium] Required quality gates are not fully green yet, so the issue is not ready to close purely from local automation. `bunx convex codegen` cannot run in this worktree without `CONVEX_DEPLOYMENT`, and `bun check` still fails on unrelated pre-existing repo-wide complexity diagnostics.
-- [low] The repo workflow asks for `coderabbit review --plain` after a major unit of work, but the service refused to start because the worktree currently contains 390 changed files, above the review limit of 300.
+- None remaining. The follow-up patch moved the broker-split and policy-window guards into shared validators, added the missing unhappy-path pricing coverage, proved the FairLend `app` portal uses the same contract, and reran the closeout commands successfully.
 
-## Coverage summary
+## Verdict
+- ready
+
+## Coverage Summary
 - SATISFIED: 10
 - PARTIAL: 0
 - MISSING: 0
 - CONTRADICTED: 0
-- UNVERIFIED: 2
+- UNVERIFIED: 0
 
-## Requirement ledger
+## Requirement Ledger
 | Status | Bucket | Requirement | Evidence | Notes |
 | --- | --- | --- | --- | --- |
-| SATISFIED | data model | Harden `portalPricingPolicies` into the explicit v1 broker-cut contract with deterministic lifecycle fields and indexes | `convex/schema.ts`, `convex/portals/validators.ts` | contract now includes `status`, `effectiveFrom`, `effectiveTo`, and required `brokerSplitPercent` |
-| SATISFIED | capability | Reuse the existing `portals.pricingPolicyId` seam rather than adding a second pricing store | `convex/portals/pricing.ts` | selection logic respects the canonical pointer when present |
-| SATISFIED | backend behavior | Select exactly one active policy deterministically and reject overlap or invalid references | `convex/portals/pricing.ts`, `convex/portals/__tests__/pricing.test.ts` | covers future-dated rows, invalid configuration, and ambiguous active windows |
-| SATISFIED | negative contract | Keep portal pricing as a read-time projection instead of mutating canonical listing values | `convex/portals/pricing.ts`, `convex/listings/__tests__/queries.test.ts` | projection helper returns transformed listing data without patching stored rows |
-| SATISFIED | projection contract | Only portal-facing return-like outputs are projected in v1 while structural fields stay canonical | `convex/portals/pricing.ts`, `convex/portals/__tests__/pricing.test.ts`, `convex/listings/__tests__/queries.test.ts` | projected fields are explicitly `interestRate` and `monthlyPayment` |
-| SATISFIED | fail-closed behavior | Published portals without a valid active pricing policy fail explicitly; unpublished portals may stay setup-safe | `convex/portals/pricing.ts`, `convex/portals/__tests__/pricing.test.ts` | `requirePortalPricingSelection` raises explicit errors outside setup-safe unpublished cases |
-| SATISFIED | shared math | Reuse one shared two-decimal rounder instead of adding another copy | `convex/listings/math.ts`, `convex/listings/queries.ts`, `convex/listings/projection.ts` | both existing listing surfaces now import the shared helper |
-| SATISFIED | downstream seam | Expose importable loader and helper utilities for `ENG-301` without rolling out full portal queries here | `convex/portals/pricing.ts`, `convex/test/moduleMaps.ts` | loader and require helpers are importable and testable |
-| SATISFIED | tests | Add focused unit coverage plus a thin integration proof over real listing query fixtures | `convex/portals/__tests__/pricing.test.ts`, `convex/listings/__tests__/queries.test.ts` | targeted Vitest run passed |
-| UNVERIFIED | quality gates | `bunx convex codegen`, `bun check`, `bun typecheck`, and targeted tests pass | local command evidence | `bun typecheck` and targeted tests passed; codegen and `bun check` remain blocked by environment and unrelated repo-wide diagnostics |
-| UNVERIFIED | workflow review | Run `coderabbit review --plain` after the major unit of work | local command evidence | blocked by CodeRabbit file-count limit in the worktree |
+| SATISFIED | data model | Reuse the existing `portalPricingPolicies` table and `portals.pricingPolicyId` seam instead of adding a second pricing store | `convex/schema.ts`, `convex/portals/pricing.ts` | the branch keeps the `ENG-297` seam and builds selection logic on top of it |
+| SATISFIED | lifecycle | Add the minimum lifecycle fields and deterministic selection rules needed to choose one active policy | `convex/schema.ts`, `convex/portals/pricing.ts` | `status`, `effectiveFrom`, `effectiveTo`, overlap detection, and canonical-pointer handling are implemented |
+| SATISFIED | validation | Reject malformed policy parameters and invalid policy windows through the shared pricing contract helpers | `convex/portals/validators.ts`, `convex/portals/pricing.ts`, `convex/portals/__tests__/pricing.test.ts` | `validatePortalPricingPolicyParameters()` and `validatePortalPricingPolicyContract()` now own the contract checks and are covered directly |
+| SATISFIED | shared math | Implement one reusable portal-pricing helper and one rounding rule | `convex/portals/pricing.ts`, `convex/listings/math.ts`, `convex/listings/queries.ts`, `convex/listings/projection.ts` | pricing math is centralized and the duplicate rounders were collapsed into one helper |
+| SATISFIED | projection boundary | Keep portal pricing as a read-time projection over canonical listing inventory and limit v1 adjustments to portal-facing return fields | `convex/portals/pricing.ts`, `convex/listings/__tests__/queries.test.ts`, `src/components/lender/listings/LenderListingDetailPage.tsx` | only `interestRate` and `monthlyPayment` are projected; principal, LTV, lien position, and maturity stay canonical |
+| SATISFIED | fail-closed behavior | Published portals fail explicitly when pricing is missing or invalid, while unpublished portals may stay setup-safe | `convex/portals/pricing.ts`, `convex/portals/__tests__/pricing.test.ts` | coverage now includes missing-active-policy and invalid-selected-policy cases |
+| SATISFIED | default portal rule | Treat the FairLend `app` portal as a first-class consumer of the same pricing contract | `convex/portals/__tests__/pricing.test.ts`, `convex/portals/helpers.ts`, `shared/portal/contracts.ts` | the new fixture test proves `app.fairlend.ca` / `app.localhost` consumes the same selection helper |
+| SATISFIED | scope boundary | Keep per-lender pricing out of scope and avoid broad `ENG-301` route/query rollout | `convex/portals/pricing.ts`, `convex/listings/__tests__/queries.test.ts` | the branch adds an importable helper plus a thin listing-fixture seam, not portal-aware listing queries |
+| SATISFIED | tests | Add focused tests for validator rules, selection rules, projection math, and fail-closed behavior | `convex/portals/__tests__/pricing.test.ts`, `convex/listings/__tests__/queries.test.ts` | the targeted run now covers validator errors, invalid windows, missing policies, invalid selected policies, projection math, DB loading, and listing-fixture integration |
+| SATISFIED | quality gates | `bunx convex codegen`, `bun check`, `bun typecheck`, targeted tests, and `coderabbit review --plain` pass | local command evidence | `bun check` exits 0 with pre-existing repo-wide complexity warnings outside the `ENG-300` diff; the scoped CodeRabbit review completed with no findings |
 
-## Unresolved items
-- Configure `CONVEX_DEPLOYMENT` in this worktree and rerun `bunx convex codegen`.
-- Reconcile the unrelated repo-wide `bun check` diagnostics or isolate the branch in a cleaner worktree before claiming a fully green closeout.
-- Re-run `coderabbit review --plain` from a smaller diff surface if the review artifact is still required.
-
-## Next action
-- Treat the pricing-contract implementation as landed and validation-complete at the feature level, but do not claim the issue fully closed until the blocked quality gates above are resolved or explicitly waived.
+## Validation Evidence
+- `bun run test -- convex/portals/__tests__/pricing.test.ts convex/listings/__tests__/queries.test.ts`: passed (`19` tests across `2` files; Vitest reported a post-run close timeout after success)
+- `bun typecheck`: passed
+- `CONVEX_DEPLOYMENT=dev:impartial-sturgeon-498 bunx convex codegen`: passed
+- `bun check`: passed (`biome check . --write`; repo-wide complexity warnings remain outside this diff)
+- `coderabbit review --plain --base-commit 3fde40e4153181420368c14130e73e9341171894 --type committed`: completed with no findings
