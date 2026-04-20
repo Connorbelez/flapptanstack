@@ -73,19 +73,30 @@ test.describe("Deal package materialization", () => {
 		| undefined;
 
 	test.afterEach(async () => {
-		if (accessToken && dealCleanup) {
+		let cleanupError: unknown;
+		if (accessToken) {
 			const client = createOriginationE2eClient(accessToken);
-			await client.cleanupDealPackageScenario(dealCleanup);
-		}
-
-		if (accessToken && caseId) {
-			const client = createOriginationE2eClient(accessToken);
-			await client.cleanupCommittedOrigination(caseId);
+			const cleanupResults = await Promise.allSettled([
+				dealCleanup
+					? client.cleanupDealPackageScenario(dealCleanup)
+					: Promise.resolve(),
+				caseId
+					? client.cleanupCommittedOrigination(caseId)
+					: Promise.resolve(),
+			]);
+			const failedCleanup = cleanupResults.find(
+				(result): result is PromiseRejectedResult => result.status === "rejected"
+			);
+			cleanupError = failedCleanup?.reason;
 		}
 
 		accessToken = undefined;
 		caseId = undefined;
 		dealCleanup = undefined;
+
+		if (cleanupError) {
+			throw cleanupError;
+		}
 	});
 
 	test("creates immutable deal-time docs from private blueprints and keeps listing docs public-only", async ({
@@ -284,7 +295,12 @@ test.describe("Deal package materialization", () => {
 		).toBe(false);
 
 		await page.reload();
-		await expect(page.getByText("Late addendum")).toHaveCount(0);
+		await expect(
+			page.getByRole("heading", { exact: true, name: "Deal Package" })
+		).toBeVisible({ timeout: UI_TIMEOUT });
+		await expect(
+			detailSection(page, "Private Static Documents")
+		).not.toContainText("Late addendum");
 
 		expect(await client.getPublicListingDocuments(listingId)).toEqual([]);
 	});

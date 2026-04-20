@@ -162,6 +162,8 @@ function CompactList({
 	return <div className="space-y-2">{items.map(renderItem)}</div>;
 }
 
+const retryingDealPackageIds = new Set<string>();
+
 const MORTGAGE_BASE_SECTIONS = [
 	{
 		title: "Summary",
@@ -1085,6 +1087,9 @@ export function DealsDedicatedDetails({
 	const groupedDocumentInstances = groupDealDocumentInstances(
 		detailContext?.documentInstances ?? []
 	);
+	const lenderParty = detailContext?.parties?.lender ?? null;
+	const sellerParty = detailContext?.parties?.seller ?? null;
+	const lawyerParty = detailContext?.parties?.lawyer ?? null;
 	const retryPackageGeneration = useAction(
 		api.documents.dealPackages.retryPackageGeneration
 	);
@@ -1093,8 +1098,19 @@ export function DealsDedicatedDetails({
 	const canRetry =
 		canRetryPackage &&
 		(packageStatus === "failed" || packageStatus === "partial_failure");
+	const retryKey = String(dealId);
+	const isRetryingPackage = retryingDealPackageIds.has(retryKey);
 
-	async function handleRetryPackageGeneration() {
+	async function handleRetryPackageGeneration(
+		event: React.MouseEvent<HTMLButtonElement>
+	) {
+		if (retryingDealPackageIds.has(retryKey)) {
+			return;
+		}
+
+		const button = event.currentTarget;
+		retryingDealPackageIds.add(retryKey);
+		button.disabled = true;
 		try {
 			await retryPackageGeneration({ dealId });
 			toast.success("Deal package generation retried.");
@@ -1104,6 +1120,9 @@ export function DealsDedicatedDetails({
 					? error.message
 					: "Unable to retry deal package generation."
 			);
+		} finally {
+			retryingDealPackageIds.delete(retryKey);
+			button.disabled = false;
 		}
 	}
 
@@ -1201,7 +1220,8 @@ export function DealsDedicatedDetails({
 					/>
 					{canRetry ? (
 						<Button
-							onClick={() => void handleRetryPackageGeneration()}
+							disabled={isRetryingPackage}
+							onClick={(event) => void handleRetryPackageGeneration(event)}
 							type="button"
 						>
 							Retry package generation
@@ -1338,20 +1358,20 @@ export function DealsDedicatedDetails({
 					items={[
 						{
 							label: "Lender",
-							value: detailContext?.parties.lender.email
-								? `${detailContext.parties.lender.name} (${detailContext.parties.lender.email})`
-								: (detailContext?.parties.lender.name ?? "Unavailable"),
+							value: lenderParty?.email
+								? `${lenderParty.name} (${lenderParty.email})`
+								: (lenderParty?.name ?? "Unavailable"),
 						},
 						{
 							label: "Seller",
-							value: detailContext?.parties.seller.email
-								? `${detailContext.parties.seller.name} (${detailContext.parties.seller.email})`
-								: (detailContext?.parties.seller.name ?? "Unavailable"),
+							value: sellerParty?.email
+								? `${sellerParty.name} (${sellerParty.email})`
+								: (sellerParty?.name ?? "Unavailable"),
 						},
 						{
 							label: "Lawyer",
-							value: detailContext?.parties.lawyer
-								? `${detailContext.parties.lawyer.lawyerId} • ${detailContext.parties.lawyer.lawyerType ?? "unknown"}`
+							value: lawyerParty
+								? `${lawyerParty.lawyerId} • ${lawyerParty.lawyerType ?? "unknown"}`
 								: "Not assigned",
 						},
 					]}

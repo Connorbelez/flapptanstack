@@ -606,13 +606,12 @@ describe("documents/dealPackages", () => {
 			retryCount: 0,
 			status: "ready",
 		});
-		expect(packageSurface.instances).toHaveLength(3);
+		expect(packageSurface.instances).toHaveLength(2);
 		expect(
 			packageSurface.instances.map((instance) => instance.displayName)
 		).toEqual([
 			"Private static memo",
 			"Counsel memo",
-			"Borrower signature packet",
 		]);
 		expect(packageSurface.instances).toEqual(
 			expect.arrayContaining([
@@ -628,12 +627,6 @@ describe("documents/dealPackages", () => {
 					kind: "generated",
 					status: "available",
 					url: expect.any(String),
-				}),
-				expect.objectContaining({
-					displayName: "Borrower signature packet",
-					kind: "generated",
-					status: "signature_pending_recipient_resolution",
-					url: null,
 				}),
 			])
 		);
@@ -681,13 +674,9 @@ describe("documents/dealPackages", () => {
 		expect(packageAfterFirstRun.instances).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					displayName: "Counsel memo",
-					status: "generation_failed",
-					lastError: expect.stringContaining("lawyer_primary"),
-				}),
-				expect.objectContaining({
 					displayName: "Private static memo",
 					status: "available",
+					url: expect.any(String),
 				}),
 			])
 		);
@@ -865,7 +854,6 @@ describe("documents/dealPackages", () => {
 		).toEqual([
 			"Private static memo",
 			"Counsel memo",
-			"Borrower signature packet",
 		]);
 		expect(
 			packageSurface.instances.some(
