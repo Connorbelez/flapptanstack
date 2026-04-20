@@ -3,7 +3,7 @@ import type {
 	GenericDatabaseReader,
 	GenericDataModel,
 } from "convex/server";
-import { ConvexError } from "convex/values";
+import { ConvexError, type PropertyValidators } from "convex/values";
 import type {
 	Context,
 	ConvexArgsValidator,
@@ -23,6 +23,7 @@ import {
 	normalizeRoles,
 	resolvePrimaryRole,
 } from "./authz/policy";
+import { portalArgsValidator } from "./portals/middleware";
 
 // ── Builder ─────────────────────────────────────────────────────────
 export const convex = createBuilder<DataModel>();
@@ -443,6 +444,55 @@ export const lawyerMutation = authedMutation
 	.use(requirePermission("lawyer:access"));
 
 export const adminQuery = authedQuery.use(requireFairLendAdmin);
+
+function withPortalArgs<TInput extends PropertyValidators>(input?: TInput) {
+	return {
+		...portalArgsValidator,
+		...(input ?? {}),
+	} as typeof portalArgsValidator & TInput;
+}
+
+export function portalPublicQuery<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	return convex.query().input(withPortalArgs(input));
+}
+
+export function portalAuthedQuery<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	return authedQuery.input(withPortalArgs(input));
+}
+
+export function portalAuthedMutation<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	return authedMutation.input(withPortalArgs(input));
+}
+
+export function portalBorrowerQuery<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	return borrowerQuery.input(withPortalArgs(input));
+}
+
+export function portalBorrowerMutation<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	return borrowerMutation.input(withPortalArgs(input));
+}
+
+export function portalLenderQuery<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	return lenderQuery.input(withPortalArgs(input));
+}
+
+export function portalLenderMutation<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	return lenderMutation.input(withPortalArgs(input));
+}
 // Underwriting
 export const uwQuery = authedQuery
 	.use(requireOrgContext)
