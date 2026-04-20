@@ -29,13 +29,15 @@ export const getBrokerSearchContext = originationQuery
 
 		assertOriginationCaseAccess(ctx.viewer, caseRecord);
 
-		const [brokers, users] = await Promise.all([
-			ctx.db
-				.query("brokers")
-				.withIndex("by_status", (query) => query.eq("status", "active"))
-				.collect(),
-			ctx.db.query("users").collect(),
-		]);
+		const brokers = await ctx.db
+			.query("brokers")
+			.withIndex("by_status", (query) => query.eq("status", "active"))
+			.collect();
+
+		const userIds = [...new Set(brokers.map((broker) => broker.userId))];
+		const users = (
+			await Promise.all(userIds.map((userId) => ctx.db.get(userId)))
+		).filter((user): user is NonNullable<typeof user> => user !== null);
 
 		const usersById = new Map(
 			users.map((user) => [

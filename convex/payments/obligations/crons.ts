@@ -16,8 +16,8 @@ import { unixMsToBusinessDate } from "../../lib/businessDates";
  * waits for the next day's cron).
  */
 const BATCH_SIZE = 100;
-/** Upper bound on waves per single `processObligationTransitions` run (100×500 = 50k per phase). */
-const MAX_WAVES_PER_CRON_RUN = 500;
+/** Upper bound on waves per single `processObligationTransitions` run (100×50 = 5k per phase). */
+const MAX_WAVES_PER_CRON_RUN = 50;
 const JOB_NAME = "daily obligation transitions";
 type CronActionCtx = Pick<GenericActionCtx<GenericDataModel>, "runMutation">;
 interface CronSource {
