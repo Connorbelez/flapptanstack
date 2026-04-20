@@ -7,6 +7,10 @@ import { listMortgageBlueprintRows } from "../documents/mortgageBlueprints";
 import { crmQuery } from "../fluent";
 import { readListingPublicDocuments } from "../listings/publicDocuments";
 import { buildCollectionPlanEntryRow } from "../payments/collectionPlan/readModels";
+import {
+	EMPTY_MORTGAGE_PAYMENT_SNAPSHOT,
+	loadMortgagePaymentSnapshots,
+} from "../payments/mortgagePaymentSnapshot";
 
 function toBorrowerName(args: {
 	firstName?: string;
@@ -277,6 +281,7 @@ export const getMortgageDetailContext = crmQuery
 			latestExternalCollectionSchedule,
 			originationCase,
 			documentBlueprints,
+			paymentSnapshotByMortgageId,
 		] = await Promise.all([
 			ctx.db.get(mortgage.propertyId),
 			ctx.db
@@ -339,6 +344,7 @@ export const getMortgageDetailContext = crmQuery
 				includeArchived: true,
 				mortgageId: args.mortgageId,
 			}),
+			loadMortgagePaymentSnapshots(ctx, [args.mortgageId]),
 		]);
 
 		const borrowers = await Promise.all(
@@ -485,6 +491,9 @@ export const getMortgageDetailContext = crmQuery
 					mortgage.paymentBootstrapScheduleRuleMissing ?? false,
 				transferRequestCount: transferRequests.length,
 			},
+			paymentSnapshot:
+				paymentSnapshotByMortgageId.get(String(args.mortgageId)) ??
+				EMPTY_MORTGAGE_PAYMENT_SNAPSHOT,
 			documents: documentBlueprints.map((blueprint) => {
 				const asset = blueprint.assetId
 					? (assetsById.get(blueprint.assetId) ?? null)
