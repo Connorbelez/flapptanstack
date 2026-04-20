@@ -8,8 +8,9 @@ import { crmQuery } from "../fluent";
 import { readListingPublicDocuments } from "../listings/publicDocuments";
 import { buildCollectionPlanEntryRow } from "../payments/collectionPlan/readModels";
 import {
+	buildMortgagePaymentSnapshot,
 	EMPTY_MORTGAGE_PAYMENT_SNAPSHOT,
-	loadMortgagePaymentSnapshots,
+	pickPreferredExternalCollectionSchedule,
 } from "../payments/mortgagePaymentSnapshot";
 
 function toBorrowerName(args: {
@@ -278,10 +279,9 @@ export const getMortgageDetailContext = crmQuery
 			transferRequests,
 			auditEvents,
 			latestValuationSnapshot,
-			latestExternalCollectionSchedule,
+			externalCollectionSchedules,
 			originationCase,
 			documentBlueprints,
-			paymentSnapshotByMortgageId,
 		] = await Promise.all([
 			ctx.db.get(mortgage.propertyId),
 			ctx.db
@@ -327,15 +327,10 @@ export const getMortgageDetailContext = crmQuery
 				)
 				.order("desc")
 				.first(),
-			mortgage.activeExternalCollectionScheduleId
-				? ctx.db.get(mortgage.activeExternalCollectionScheduleId)
-				: ctx.db
-						.query("externalCollectionSchedules")
-						.withIndex("by_mortgage", (q) =>
-							q.eq("mortgageId", args.mortgageId)
-						)
-						.order("desc")
-						.first(),
+			ctx.db
+				.query("externalCollectionSchedules")
+				.withIndex("by_mortgage", (q) => q.eq("mortgageId", args.mortgageId))
+				.collect(),
 			mortgage.workflowSourceType === "admin_origination_case" &&
 			mortgage.workflowSourceId
 				? ctx.db.get(mortgage.workflowSourceId as Id<"adminOriginationCases">)
@@ -344,7 +339,6 @@ export const getMortgageDetailContext = crmQuery
 				includeArchived: true,
 				mortgageId: args.mortgageId,
 			}),
-			loadMortgagePaymentSnapshots(ctx, [args.mortgageId]),
 		]);
 
 		const borrowers = await Promise.all(
@@ -408,6 +402,24 @@ export const getMortgageDetailContext = crmQuery
 			ctx,
 			documentBlueprints
 		);
+		const selectedExternalCollectionSchedule =
+			pickPreferredExternalCollectionSchedule({
+				mortgage,
+				schedules: externalCollectionSchedules,
+			});
+		const paymentSnapshot = buildMortgagePaymentSnapshot({
+			asOf: Date.now(),
+			attempts: collectionAttempts,
+			mortgage,
+			obligations,
+			planEntries: collectionPlanEntries,
+			schedules: externalCollectionSchedules,
+			transfersById: new Map(
+				transferRequests.map(
+					(transfer) => [String(transfer._id), transfer] as const
+				)
+			),
+		});
 
 		return {
 			property: property
@@ -468,20 +480,21 @@ export const getMortgageDetailContext = crmQuery
 					mortgage.collectionExecutionProviderCode ?? null,
 				collectionPlanEntryCount: collectionPlanEntries.length,
 				collectionPlanEntries: paymentSetupPlanEntries,
-				externalSchedule: latestExternalCollectionSchedule
+				externalSchedule: selectedExternalCollectionSchedule
 					? {
-							activatedAt: latestExternalCollectionSchedule.activatedAt ?? null,
-							bankAccountId: latestExternalCollectionSchedule.bankAccountId,
+							activatedAt:
+								selectedExternalCollectionSchedule.activatedAt ?? null,
+							bankAccountId: selectedExternalCollectionSchedule.bankAccountId,
 							externalScheduleRef:
-								latestExternalCollectionSchedule.externalScheduleRef ?? null,
+								selectedExternalCollectionSchedule.externalScheduleRef ?? null,
 							lastSyncErrorMessage:
-								latestExternalCollectionSchedule.lastSyncErrorMessage ?? null,
+								selectedExternalCollectionSchedule.lastSyncErrorMessage ?? null,
 							lastSyncedAt:
-								latestExternalCollectionSchedule.lastSyncedAt ?? null,
-							nextPollAt: latestExternalCollectionSchedule.nextPollAt ?? null,
-							providerCode: latestExternalCollectionSchedule.providerCode,
-							scheduleId: latestExternalCollectionSchedule._id,
-							status: latestExternalCollectionSchedule.status,
+								selectedExternalCollectionSchedule.lastSyncedAt ?? null,
+							nextPollAt: selectedExternalCollectionSchedule.nextPollAt ?? null,
+							providerCode: selectedExternalCollectionSchedule.providerCode,
+							scheduleId: selectedExternalCollectionSchedule._id,
+							status: selectedExternalCollectionSchedule.status,
 						}
 					: null,
 				obligationCount: obligations.length,
@@ -491,9 +504,7 @@ export const getMortgageDetailContext = crmQuery
 					mortgage.paymentBootstrapScheduleRuleMissing ?? false,
 				transferRequestCount: transferRequests.length,
 			},
-			paymentSnapshot:
-				paymentSnapshotByMortgageId.get(String(args.mortgageId)) ??
-				EMPTY_MORTGAGE_PAYMENT_SNAPSHOT,
+			paymentSnapshot: paymentSnapshot ?? EMPTY_MORTGAGE_PAYMENT_SNAPSHOT,
 			documents: documentBlueprints.map((blueprint) => {
 				const asset = blueprint.assetId
 					? (assetsById.get(blueprint.assetId) ?? null)
