@@ -9,8 +9,17 @@ import { PortalStateBoundary } from "#/components/portal/portal-state-boundary";
 import { resolveRootPortalContext } from "#/lib/portal/host-resolution";
 import { extractTrustedRequestHost } from "#/lib/portal/request-host";
 
+const TRUST_X_FORWARDED_HOST_ENV = "TRUST_X_FORWARDED_HOST";
+const originalTrustForwardedHost = process.env.TRUST_X_FORWARDED_HOST;
+
 afterEach(() => {
 	cleanup();
+	if (originalTrustForwardedHost === undefined) {
+		delete process.env[TRUST_X_FORWARDED_HOST_ENV];
+		return;
+	}
+
+	process.env[TRUST_X_FORWARDED_HOST_ENV] = originalTrustForwardedHost;
 });
 
 function buildResolvedPortal(overrides?: {
@@ -26,8 +35,6 @@ function buildResolvedPortal(overrides?: {
 			portalId: "portal_meridian" as Id<"portals">,
 			slug: "meridian",
 			portalType: "broker" as const,
-			brokerId: "broker_meridian" as Id<"brokers">,
-			orgId: "org_meridian",
 			productionHost: "meridian.fairlend.ca",
 			localHost: "meridian.localhost:3000",
 			status: overrides?.status ?? "active",
@@ -35,18 +42,28 @@ function buildResolvedPortal(overrides?: {
 			publicTeaserEnabled: true,
 			teaserListingLimit: 12,
 			defaultPostAuthPath: "/",
-			landingPageId: undefined,
-			pricingPolicyId: undefined,
 		},
 	};
 }
 
 describe("portal request host extraction", () => {
-	it("prefers x-forwarded-host and canonicalizes casing", () => {
+	it("defaults to the direct host header when forwarded-host trust is disabled", () => {
 		const request = new Request("https://internal.invalid", {
 			headers: {
 				"x-forwarded-host": "MERIDIAN.LocalHost:3000, proxy.example",
-				host: "ignored.example",
+				host: "marketing.fairlend.ca",
+			},
+		});
+
+		expect(extractTrustedRequestHost(request)).toBe("marketing.fairlend.ca");
+	});
+
+	it("prefers x-forwarded-host only when the trusted-proxy env flag is enabled", () => {
+		process.env[TRUST_X_FORWARDED_HOST_ENV] = "true";
+		const request = new Request("https://internal.invalid", {
+			headers: {
+				"x-forwarded-host": "MERIDIAN.LocalHost:3000, proxy.example",
+				host: "marketing.fairlend.ca",
 			},
 		});
 

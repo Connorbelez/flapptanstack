@@ -1,8 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-	getSignInUrl,
-	getSignUpUrl,
-} from "@workos/authkit-tanstack-react-start";
 import { Authenticated, Unauthenticated } from "convex/react";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
@@ -10,17 +6,10 @@ import { Route as RootRoute } from "./__root";
 
 export const Route = createFileRoute("/")({
 	component: Home,
-	loader: async () => {
-		const signInUrl = await getSignInUrl();
-		const signUpUrl = await getSignUpUrl();
-
-		return { signInUrl, signUpUrl };
-	},
 });
 
 function Home() {
-	const { signInUrl, signUpUrl } = Route.useLoaderData();
-	return <HomeContent signInUrl={signInUrl} signUpUrl={signUpUrl} />;
+	return <HomeContent />;
 }
 
 function getHomeHeading(
@@ -44,13 +33,7 @@ function getHomeHeading(
 	return "Portal Context";
 }
 
-function HomeContent({
-	signInUrl,
-	signUpUrl,
-}: {
-	signInUrl: string;
-	signUpUrl: string;
-}) {
+function HomeContent() {
 	const { portalCacheKey, portalContext, requestHost } =
 		RootRoute.useRouteContext();
 
@@ -110,19 +93,13 @@ function HomeContent({
 				<Content />
 			</Authenticated>
 			<Unauthenticated>
-				<SignInForm signInUrl={signInUrl} signUpUrl={signUpUrl} />
+				<SignInForm />
 			</Unauthenticated>
 		</main>
 	);
 }
 
-function SignInForm({
-	signInUrl,
-	signUpUrl,
-}: {
-	signInUrl: string;
-	signUpUrl: string;
-}) {
+function SignInForm() {
 	return (
 		<Card className="mx-auto w-full max-w-xl">
 			<CardHeader>
@@ -130,10 +107,10 @@ function SignInForm({
 			</CardHeader>
 			<CardContent className="flex flex-col gap-3">
 				<Button asChild>
-					<a href={signInUrl}>Sign in</a>
+					<a href="/sign-in?redirect=/">Sign in</a>
 				</Button>
 				<Button asChild variant="outline">
-					<a href={signUpUrl}>Sign up</a>
+					<a href="/sign-up?redirect=/">Sign up</a>
 				</Button>
 			</CardContent>
 		</Card>

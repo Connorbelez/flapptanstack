@@ -14,10 +14,16 @@ function firstHeaderValue(headers: Headers, headerName: string) {
 	return firstValue;
 }
 
+function shouldTrustForwardedHost() {
+	return process.env.TRUST_X_FORWARDED_HOST === "true";
+}
+
 export function extractTrustedRequestHost(request: Request): string {
-	const forwardedHost = firstHeaderValue(request.headers, "x-forwarded-host");
-	if (forwardedHost) {
-		return normalizePortalHost(forwardedHost);
+	if (shouldTrustForwardedHost()) {
+		const forwardedHost = firstHeaderValue(request.headers, "x-forwarded-host");
+		if (forwardedHost) {
+			return normalizePortalHost(forwardedHost);
+		}
 	}
 
 	const directHost = firstHeaderValue(request.headers, "host");

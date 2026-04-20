@@ -20,7 +20,9 @@ export function buildPortalCacheKey(
 				portalContext.matchedHostType,
 				portalContext.canonicalHost,
 			].join(":");
-		default:
-			return portalContext.kind;
+		default: {
+			const exhaustivePortalContext: never = portalContext;
+			return exhaustivePortalContext;
+		}
 	}
 }
