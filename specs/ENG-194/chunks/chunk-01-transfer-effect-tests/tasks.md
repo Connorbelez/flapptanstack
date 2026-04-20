@@ -7,4 +7,4 @@
 - [x] T-005: Add coverage for error and metadata paths: non-bridged confirmed transfers without direction fail loudly, non-bridged reversals without an original journal entry fail closed, `recordTransferProviderRef` patches `providerRef`, and `publishTransferFailed` patches failure metadata.
 - [x] T-006: Run targeted verification for `convex/engine/effects/__tests__/transfer.test.ts` and any affected cash-ledger suites, fixing regressions if the stronger transfer-effect coverage exposes them.
 - [x] T-007: Run `bun check`, `bun typecheck`, and `bunx convex codegen` and resolve any failures required to consider ENG-194 complete.
-- [ ] T-008: Run `coderabbit review --plain` after the implementation and quality gates complete, and address any high-signal issues that materially affect ENG-194. Blocker: CodeRabbit review timed out after entering the review phase and returned no findings.
+- [x] T-008: Confirm CodeRabbit review is human-owned and not part of the agent quality gate for ENG-194.

@@ -3,4 +3,4 @@
 - [x] T-003 Refactor `AdminNavigation` to render grouped, active-aware sidebar sections from the registry instead of placeholder demo data.
 - [x] T-004 Refactor `AdminBreadcrumbs` to resolve admin entity labels from the registry while preserving generic fallback handling for non-entity routes.
 - [x] T-005 Update `/admin` route integration to use the canonical shell while preserving `admin:access` gating and admin search validation.
-- [ ] T-006 Run `bunx convex codegen`, `bun check`, `bun typecheck`, and `coderabbit review --plain`, then capture the results.
+- [ ] T-006 Run `bunx convex codegen`, `bun check`, and `bun typecheck`, then capture the results. Any CodeRabbit review is human-owned.

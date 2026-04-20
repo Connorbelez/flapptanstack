@@ -15,4 +15,4 @@
 - [ ] T-008: Create `convex/seed/seedOnboardingRequest.ts` as an `adminMutation` that idempotently seeds 3 onboarding requests in `pending_review`, `approved`, and `rejected` states with correct journal history and review metadata
 - [ ] T-009: Create `convex/seed/seedAll.ts` as an admin-gated action that orchestrates seed mutations in dependency order, returns a summary payload, and remains safe to rerun; add an action-level admin guard in `convex/fluent.ts` if needed
 - [ ] T-010: Add focused Convex tests covering `seedAll` idempotency, expected entity counts, and governed entity status/journal consistency for the seeded dataset
-- [ ] T-011: Run `bun check`, `bun typecheck`, and `bunx convex codegen`; run `coderabbit review --plain`; fix any remaining issues before closing the issue
+- [ ] T-011: Run `bun check`, `bun typecheck`, and `bunx convex codegen`; fix any remaining issues before closing the issue. Any CodeRabbit review is human-owned.

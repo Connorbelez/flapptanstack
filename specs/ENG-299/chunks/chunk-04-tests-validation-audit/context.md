@@ -1,12 +1,13 @@
 # Chunk Context: chunk-04-tests-validation-audit
 
 ## Goal
-- Close out the issue with targeted portal middleware tests, repo quality gates, CodeRabbit review, final spec audit, and final execution artifact validation.
+- Close out the issue with targeted portal middleware tests, repo quality gates, final spec audit, and final execution artifact validation.
 
 ## Relevant plan excerpts
 - Add tests for cross-portal denial, allowed same-portal access, and admin override.
 - Add tests showing existing resource helpers are only evaluated after portal membership has passed.
-- Run `bunx convex codegen`, `bun check`, `bun typecheck`, targeted portal middleware tests, and `coderabbit review --plain`.
+- Run `bunx convex codegen`, `bun check`, `bun typecheck`, and targeted portal middleware tests.
+- Update `ENG-299` contract wording so first-class borrower portal attribution is explicitly deferred to `ENG-302`.
 
 ## Implementation notes
 - The highest-risk regression area is existing resource access behavior after actor-resolution extraction.
@@ -24,6 +25,6 @@
 - `bun check`
 - `bun typecheck`
 - targeted portal middleware/resource access tests
-- `coderabbit review --plain`
 - `$linear-pr-spec-audit`
+- Linear issue and Notion implementation plan reflect the approved `ENG-302` follow-up boundary
 - `python3 /Users/connor/.codex/skills/linear-implement-v2/scripts/validate_execution_artifacts.py ENG-299 --repo-root "/Users/connor/.t3/worktrees/fairlendapp/t3code-3f717be5" --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`

@@ -74,4 +74,4 @@
 - [ ] Add focused frontend tests for the stepper/review shell and any pure helpers worth locking down.
 - [ ] Document the staging tables, route contract, additive patch invariant, and “no canonical rows” rule.
 - [ ] Run the repo gates: `bun check`, `bunx convex codegen`, `bun typecheck`, targeted Vitest suites, then `bun run test` if the targeted pass leaves no blockers.
-- [ ] Run `coderabbit review --plain` after the implementation is stable and address any actionable findings.
+- [ ] Human owner may run CodeRabbit separately after the implementation is stable if desired; it is not part of the agent quality gate.

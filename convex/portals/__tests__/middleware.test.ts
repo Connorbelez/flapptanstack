@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	createMockViewer,
@@ -33,6 +34,36 @@ const MISMATCHED_LENDER = createMockViewer({
 	email: "lender-portal-mismatch@test.fairlend.ca",
 	firstName: "Lender",
 	lastName: "Mismatch",
+});
+
+const MISSING_ORG_BORROWER = createMockViewer({
+	roles: ["borrower"],
+	orgId: BROKER.org_id,
+	orgName: BROKER.organization_name,
+	subject: "user_borrower_missing_org",
+	email: "borrower-missing-org@test.fairlend.ca",
+	firstName: "Borrower",
+	lastName: "MissingOrg",
+});
+
+const UNMAPPED_ORG_BORROWER = createMockViewer({
+	roles: ["borrower"],
+	orgId: BROKER.org_id,
+	orgName: BROKER.organization_name,
+	subject: "user_borrower_unmapped_org",
+	email: "borrower-unmapped-org@test.fairlend.ca",
+	firstName: "Borrower",
+	lastName: "UnmappedOrg",
+});
+
+const SAME_ORG_WRONG_BROKER_LENDER = createMockViewer({
+	roles: ["lender"],
+	orgId: BROKER.org_id,
+	orgName: BROKER.organization_name,
+	subject: "user_lender_same_org_wrong_broker",
+	email: "lender-same-org-wrong-broker@test.fairlend.ca",
+	firstName: "Lender",
+	lastName: "WrongBroker",
 });
 
 function createHarness() {
@@ -74,6 +105,9 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 		seedFromIdentity(t, LENDER),
 		seedFromIdentity(t, MISMATCHED_BORROWER),
 		seedFromIdentity(t, MISMATCHED_LENDER),
+		seedFromIdentity(t, MISSING_ORG_BORROWER),
+		seedFromIdentity(t, UNMAPPED_ORG_BORROWER),
+		seedFromIdentity(t, SAME_ORG_WRONG_BROKER_LENDER),
 	]);
 
 	return t.run(async (ctx) => {
@@ -93,6 +127,13 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 		const lenderUser = await findUser(LENDER.subject);
 		const mismatchedBorrowerUser = await findUser(MISMATCHED_BORROWER.subject);
 		const mismatchedLenderUser = await findUser(MISMATCHED_LENDER.subject);
+		const missingOrgBorrowerUser = await findUser(MISSING_ORG_BORROWER.subject);
+		const unmappedOrgBorrowerUser = await findUser(
+			UNMAPPED_ORG_BORROWER.subject
+		);
+		const sameOrgWrongBrokerLenderUser = await findUser(
+			SAME_ORG_WRONG_BROKER_LENDER.subject
+		);
 
 		const brokerAId = await ctx.db.insert("brokers", {
 			userId: brokerUser._id,
@@ -167,6 +208,11 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 			ctx.db.patch(lenderUser._id, { homePortalId: portalAId }),
 			ctx.db.patch(mismatchedBorrowerUser._id, { homePortalId: portalAId }),
 			ctx.db.patch(mismatchedLenderUser._id, { homePortalId: portalAId }),
+			ctx.db.patch(missingOrgBorrowerUser._id, { homePortalId: portalAId }),
+			ctx.db.patch(unmappedOrgBorrowerUser._id, { homePortalId: portalAId }),
+			ctx.db.patch(sameOrgWrongBrokerLenderUser._id, {
+				homePortalId: portalAId,
+			}),
 		]);
 
 		const borrowerId = await ctx.db.insert("borrowers", {
@@ -180,6 +226,19 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 			userId: mismatchedBorrowerUser._id,
 			status: "active",
 			orgId: "org_brokerage_portal_b",
+			createdAt: NOW,
+		});
+
+		await ctx.db.insert("borrowers", {
+			userId: missingOrgBorrowerUser._id,
+			status: "active",
+			createdAt: NOW,
+		});
+
+		await ctx.db.insert("borrowers", {
+			userId: unmappedOrgBorrowerUser._id,
+			status: "active",
+			orgId: "org_unmapped_portal",
 			createdAt: NOW,
 		});
 
@@ -197,6 +256,16 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 			userId: mismatchedLenderUser._id,
 			brokerId: brokerBId,
 			orgId: "org_brokerage_portal_b",
+			accreditationStatus: "accredited",
+			onboardingEntryPath: "self_signup",
+			status: "active",
+			createdAt: NOW,
+		});
+
+		await ctx.db.insert("lenders", {
+			userId: sameOrgWrongBrokerLenderUser._id,
+			brokerId: brokerBId,
+			orgId: BROKER.org_id,
 			accreditationStatus: "accredited",
 			onboardingEntryPath: "self_signup",
 			status: "active",
@@ -251,6 +320,18 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 }
 
 describe("portal middleware proof consumers", () => {
+	it("proof handlers rely on builder-injected portal context instead of manual helper composition", () => {
+		const proofSource = readFileSync(
+			new URL("../proof.ts", import.meta.url),
+			"utf8"
+		);
+
+		expect(proofSource).not.toContain("loadPortalContext(");
+		expect(proofSource).not.toContain("resolvePortalAccess(");
+		expect(proofSource).not.toContain("resolvePortalBorrower(");
+		expect(proofSource).not.toContain("resolvePortalLender(");
+	});
+
 	it("loads public portal context for an active portal", async () => {
 		const t = createHarness();
 		const fixture = await seedPortalFixture(t);
@@ -351,6 +432,27 @@ describe("portal middleware proof consumers", () => {
 		).rejects.toThrow("Forbidden: borrower does not belong to this portal");
 	});
 
+	it("fails closed when borrower org attribution is missing or unmapped", async () => {
+		const t = createHarness();
+		const fixture = await seedPortalFixture(t);
+
+		await expect(
+			t
+				.withIdentity(MISSING_ORG_BORROWER)
+				.query(api.portals.proof.getPortalBorrowerContextProof, {
+					portalId: fixture.portalAId,
+				})
+		).rejects.toThrow("Forbidden: borrower does not belong to this portal");
+
+		await expect(
+			t
+				.withIdentity(UNMAPPED_ORG_BORROWER)
+				.query(api.portals.proof.getPortalBorrowerContextProof, {
+					portalId: fixture.portalAId,
+				})
+		).rejects.toThrow("Forbidden: borrower does not belong to this portal");
+	});
+
 	it("resolves lender portal attribution and fails closed on mismatches", async () => {
 		const t = createHarness();
 		const fixture = await seedPortalFixture(t);
@@ -368,6 +470,19 @@ describe("portal middleware proof consumers", () => {
 		await expect(
 			t
 				.withIdentity(MISMATCHED_LENDER)
+				.query(api.portals.proof.getPortalLenderContextProof, {
+					portalId: fixture.portalAId,
+				})
+		).rejects.toThrow("Forbidden: lender does not belong to this portal");
+	});
+
+	it("denies lenders whose org matches the portal but broker alignment does not", async () => {
+		const t = createHarness();
+		const fixture = await seedPortalFixture(t);
+
+		await expect(
+			t
+				.withIdentity(SAME_ORG_WRONG_BROKER_LENDER)
 				.query(api.portals.proof.getPortalLenderContextProof, {
 					portalId: fixture.portalAId,
 				})

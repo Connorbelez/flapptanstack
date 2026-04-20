@@ -2,13 +2,10 @@
 
 - Audit skill: `$linear-pr-spec-audit`
 - Review target: current working tree on `connorbelez/eng-299-broker-portal-enforce-portal-membership-in-convex-middleware` against the `origin/eng-297` contract
-- Last run: 2026-04-20T17:15:05-0400
+- Last run: 2026-04-20T19:26:25-0400
 - Verdict: ready
 
 ## Findings
-- No material `MISSING`, `CONTRADICTED`, or `PARTIAL` gaps were found against the Linear issue contract. The middleware, builder, proof, and test evidence align with the stated requirements.
-
-## Unresolved items
 - none
 
 ## Coverage Summary
@@ -21,17 +18,23 @@
 ## Requirement Ledger
 | Status | Bucket | Requirement | Evidence | Notes |
 | --- | --- | --- | --- | --- |
-| SATISFIED | backend behavior | Reload canonical portal state from a trusted portal identifier and reject unavailable portals before handler logic | `convex/portals/middleware.ts:102-125` | `loadPortalOrThrow` fails closed for missing, inactive, or unpublished portals before returning typed portal context. |
-| SATISFIED | auth | Same-portal membership is keyed off `users.homePortalId` with FairLend admin override only | `convex/portals/middleware.ts:127-143` | No alternate bypass path exists beyond `viewer.isFairLendAdmin`; cross-portal non-admin calls throw `Forbidden: wrong portal`. |
-| SATISFIED | auth | Borrower and lender portal checks reuse shared actor-resolution helpers | `convex/auth/actorResolution.ts:8-95`, `convex/portals/middleware.ts:145-170` | Borrower access resolves against borrower `orgId`; lender access resolves against portal `brokerId` with `orgId` fallback. |
-| SATISFIED | architecture | Portal membership remains structural and outside `resourceChecks` | `convex/portals/middleware.ts:173-288`, `convex/portals/proof.ts:24-73`, `convex/auth/resourceChecks.ts:1-10` | Resource checks now import the shared actor helpers but do not absorb portal membership logic. |
-| SATISFIED | builder surface | Expose portal-aware fluent-convex builder chains instead of standalone endpoint helpers | `convex/fluent.ts:445-492` | Public, authenticated, borrower, lender, and mutation variants all compose `portalId` into the input contract. |
-| SATISFIED | capability | Add a thin proof consumer before broader portal adoption | `convex/portals/proof.ts:18-73` | Proof queries exercise public, authenticated, borrower, and lender portal seams without broad product rewrites. |
-| SATISFIED | same-portal behavior | Same-portal non-admin access succeeds through reusable portal builders | `convex/portals/__tests__/middleware.test.ts:286-301` | Broker proof path returns `same-portal` and preserves derived filter/pricing context. |
-| SATISFIED | negative contract | Cross-portal non-admin access is denied before resource-level checks can grant access | `convex/portals/__tests__/middleware.test.ts:303-315` | Test asserts denial on portal mismatch before resource access proof can succeed. |
-| SATISFIED | override behavior | FairLend admin cross-portal access works only through explicit override | `convex/portals/__tests__/middleware.test.ts:317-330` | Proof path returns `admin-override` only for FairLend admin identity. |
-| SATISFIED | validation | Codegen, lint/check, typecheck, and targeted tests pass | `bunx convex codegen`, `bun check`, `bun typecheck`, `bun run test -- convex/portals/__tests__/middleware.test.ts convex/auth/__tests__/resourceChecks.test.ts` | `bun check` still reports pre-existing complexity warnings elsewhere in the repo, but exits successfully after applying safe fixes. |
+| SATISFIED | backend behavior | Reload canonical portal state from a trusted portal identifier and reject unavailable portals before handler logic | `convex/portals/middleware.ts:102-125`, `convex/portals/__tests__/middleware.test.ts:350-365` | Missing, suspended, and unpublished portals fail closed before proof handlers can run. |
+| SATISFIED | auth | Same-portal membership is keyed off `users.homePortalId` with FairLend admin override only | `convex/portals/middleware.ts:127-143`, `convex/portals/__tests__/middleware.test.ts:367-410` | The access stage returns `same-portal` or `admin-override` and denies cross-portal non-admin viewers. |
+| SATISFIED | shared logic | Portal middleware and resource checks reuse the same actor-resolution helpers without moving portal membership into `resourceChecks` | `convex/auth/actorResolution.ts:8-95`, `convex/auth/resourceChecks.ts:6-10`, `convex/auth/resourceChecks.ts:85-149` | Shared identity resolution is centralized while resource helpers remain resource-scoped booleans. |
+| SATISFIED | builder surface | Expose structural portal-aware fluent-convex builders rather than standalone endpoint helpers | `convex/fluent.ts:347-497`, `convex/fluent.ts:641-785` | `PortalBuilder` wraps handler execution with portal middleware and preserves typed chain composition for public, authed, borrower, and lender flows. |
+| SATISFIED | proof adoption | Add a thin proof consumer that exercises builder-injected portal context | `convex/portals/proof.ts:14-58`, `convex/portals/__tests__/middleware.test.ts:323-333` | Proof handlers consume `ctx.portal`, `ctx.portalAccess`, `ctx.borrower`, and `ctx.lender` directly; the test suite asserts they no longer manually call `loadPortalContext` or `resolvePortal*`. |
+| SATISFIED | lender access | Resolve lender ownership against the current portal broker relationship rather than generic org equality | `convex/portals/middleware.ts:173-185`, `convex/portals/__tests__/middleware.test.ts:456-490` | Same-org lenders with the wrong broker relationship now fail closed. |
+| SATISFIED | borrower access | Resolve borrower ownership against the current portal using the approved deterministic `borrowers.orgId -> portals.by_org -> portalId` mapping, with explicit first-class `portalId` fields deferred to `ENG-302` | `convex/portals/middleware.ts:145-170`, `convex/portals/__tests__/middleware.test.ts:413-454` | Borrowers with missing, unmapped, or ambiguous org attribution fail closed. The live Linear issue and Notion plan were re-verified on 2026-04-20 and both explicitly defer first-class borrower/onboarding `portalId` fields to `ENG-302`. |
+| SATISFIED | negative contract | Keep portal membership structural and ahead of resource-level access helpers | `convex/portals/middleware.ts:206-259`, `convex/portals/proof.ts:20-35`, `convex/auth/resourceChecks.ts:98-149` | The portal proof query composes portal access first and only then invokes `canAccessMortgage`, preserving the boundary between host-level membership and resource-level authorization. |
+| SATISFIED | typed context | Preserve typed portal context so downstream handlers receive `ctx.portal` and actor-specific entities without `any` | `convex/fluent.ts:347-497`, `convex/fluent.ts:641-785`, `convex/portals/proof.ts:14-58` | `bun typecheck` passes with the portal builder generics in place. |
+| SATISFIED | validation | Required repo gates and targeted tests pass for the remediated diff | `bunx convex codegen`, `bun check`, `bun typecheck`, `bun run test -- convex/portals/__tests__/middleware.test.ts convex/auth/__tests__/resourceChecks.test.ts` | `bun check` still reports the repo's standing complexity warnings outside ENG-299, but there are no remaining errors in the touched scope. |
+
+## Manual Checkpoint
+- The issue's backend/runtime slice does not introduce a real route consumer. The proof queries and Convex tests cover the structural portal behavior owned by `ENG-299`; broader route-level smoke remains with downstream consumer adoption in `ENG-301`.
+
+## External Review Notes
+- CodeRabbit review is human-owned and excluded from the agent quality gate for this repo.
 
 ## Open Questions
-- CodeRabbit full-branch review is blocked by the stacked branch size cap (`393` files > `300` limit). A narrower `--type uncommitted` review was attempted afterward, but no review findings were emitted before the local closeout continued.
-- The installed GitNexus CLI does not expose `detect_changes`; scope validation used the earlier impact analysis plus `git status --short` and the working-tree diff as the closest available replacement.
+- No code or spec gaps remain in the scope owned by `ENG-299`.
+- There is still no dedicated `ENG-299` PR; the audit target remains the local branch diff against `origin/eng-297`.

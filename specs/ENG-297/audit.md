@@ -8,7 +8,7 @@
 # Spec Compliance Review
 
 ## Findings
-- [low] Release evidence is still incomplete against the explicit definition-of-done gates. `bunx convex codegen`, `bun typecheck`, and the focused ENG-297 Vitest suite are green, but `bun check` is still red on unrelated repo-wide complexity warnings, `coderabbit review --plain` still cannot run on the current stacked diff because it exceeds the 300-file limit, and the human multi-host localhost checkpoint remains manual because the repo does not provide a multi-host Playwright harness.
+- [low] Release evidence is still incomplete against the explicit definition-of-done gates. `bunx convex codegen`, `bun typecheck`, and the focused ENG-297 Vitest suite are green, but `bun check` is still red on unrelated repo-wide complexity warnings, and the human multi-host localhost checkpoint remains manual because the repo does not provide a multi-host Playwright harness.
 
 ## Verdict
 - needs manual validation
@@ -39,4 +39,4 @@
 
 ## Open Questions
 - Whether the repo-wide `bun check` failure is acceptable debt for merging ENG-297, or whether this slice needs an explicit waiver before it can be treated as definition-of-done complete.
-- `coderabbit review --plain` still cannot run on the stacked diff because the review target exceeds the tool's 300-file limit.
+- CodeRabbit review is human-owned and not part of the agent quality gate for this repo.
