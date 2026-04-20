@@ -24,8 +24,8 @@ import {
 } from "#/components/ui/card";
 import { Separator } from "#/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "#/components/ui/tabs";
+import { useHostAwareSignOut } from "#/hooks/use-host-aware-sign-out";
 import { buildSignInRedirect } from "#/lib/auth-redirect";
-import { isRouterTeardownSignOutError } from "#/lib/workos-auth";
 import { api } from "../../../convex/_generated/api";
 
 export const Route = createFileRoute("/demo/workos")({
@@ -88,7 +88,7 @@ function UnauthenticatedView() {
 }
 
 interface AuthenticatedViewProps {
-	signOut: () => Promise<void>;
+	signOut: ReturnType<typeof useAuth>["signOut"];
 	user: {
 		id: string;
 		email: string;
@@ -144,8 +144,9 @@ function ProfileTab({
 	signOut,
 }: {
 	user: AuthenticatedViewProps["user"];
-	signOut: () => Promise<void>;
+	signOut: AuthenticatedViewProps["signOut"];
 }) {
+	const handleSignOut = useHostAwareSignOut(signOut);
 	const initials = [user.firstName?.[0], user.lastName?.[0]]
 		.filter(Boolean)
 		.join("")
@@ -183,13 +184,7 @@ function ProfileTab({
 			<Button
 				className="w-full"
 				onClick={() => {
-					void signOut().catch((error) => {
-						if (isRouterTeardownSignOutError(error)) {
-							window.location.href = "/";
-							return;
-						}
-						console.error("Sign out failed:", error);
-					});
+					void handleSignOut();
 				}}
 				variant="outline"
 			>

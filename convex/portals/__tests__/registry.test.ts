@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import migrationsSchema from "../../../node_modules/@convex-dev/migrations/dist/component/schema.js";
 import {
+	createMockViewer,
 	createTestConvex,
 	ensureSeededIdentity,
 } from "../../../src/test/auth/helpers";
@@ -336,5 +337,43 @@ describe("portal registry backfill", () => {
 				host: "duplicate.localhost:3000",
 			})
 		).rejects.toThrow(DUPLICATE_PORTAL_CLAIM_ERROR_REGEX);
+	});
+
+	it("returns the authenticated viewer's home portal assignment and admin bypass flag", async () => {
+		const t = createHarness();
+		const fixture = await seedPortalBackfillFixture(t);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+
+		await asAdmin.mutation(
+			api.brokers.migrations.runPortalRegistryBackfill,
+			{}
+		);
+
+		const brokerViewer = createMockViewer({
+			subject: "user_broker_meridian",
+			email: "broker-meridian@test.fairlend.ca",
+			firstName: "Meridian",
+			lastName: "Broker",
+			orgId: fixture.brokerOrgId,
+			orgName: "Meridian Mortgage Group",
+			roles: ["admin"],
+		});
+
+		const brokerResult = await t
+			.withIdentity(brokerViewer)
+			.query(api.portals.queries.getViewerHomePortal, {});
+		expect(brokerResult.isFairLendAdmin).toBe(false);
+		expect(String(brokerResult.homePortalId)).toBe(
+			String(brokerResult.homePortal?.portalId)
+		);
+		expect(brokerResult.homePortal?.slug).toBe("meridian");
+
+		const adminResult = await asAdmin.query(
+			api.portals.queries.getViewerHomePortal,
+			{}
+		);
+		expect(adminResult.isFairLendAdmin).toBe(true);
+		expect(adminResult.homePortal).toBeNull();
+		expect(adminResult.homePortalId).toBeNull();
 	});
 });
