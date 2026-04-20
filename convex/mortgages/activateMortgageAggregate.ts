@@ -3,12 +3,14 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { materializeMortgageBlueprintsFromCaseDrafts } from "../documents/mortgageBlueprints";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
-import { mintMortgageHandler } from "../ledger/mutations";
+import { TOTAL_SUPPLY } from "../ledger/constants";
+import { issueSharesHandler, mintMortgageHandler } from "../ledger/mutations";
 import {
 	toListingProjectionOverrides,
 	upsertMortgageListingProjection,
 } from "../listings/projection";
 import { bootstrapOriginationPayments } from "../payments/origination/bootstrap";
+import { getRequiredDefaultOriginationOwner } from "../platform/defaultOriginationOwner";
 import {
 	ensureMortgageBorrowerLink,
 	findPropertyByAddress,
@@ -504,15 +506,40 @@ export async function activateMortgageAggregate(
 		now: args.now,
 		overrides: toListingProjectionOverrides(args.listingOverrides),
 	});
+	const effectiveDate =
+		mortgageInputs.termStartDate ?? toBusinessDate(args.now);
 
 	// The constructor contract is locked now so later phases can extend
 	// provider-managed collections and documents without reshaping activation.
 	await mintMortgageHandler(ctx, {
-		effectiveDate: mortgageInputs.termStartDate ?? toBusinessDate(args.now),
+		effectiveDate,
 		idempotencyKey: `${args.source.workflowSourceKey}:ledger-genesis`,
 		metadata: {
 			caseId: args.source.originatingWorkflowId,
 			orgId: args.orgId,
+			stagedCollectionMode: args.collectionsDraft?.mode,
+		},
+		mortgageId: String(mortgageId),
+		source: {
+			type: "user",
+			actor: args.actorAuthId,
+			channel: "admin_origination",
+		},
+	});
+	const defaultOriginationOwner = await getRequiredDefaultOriginationOwner(ctx);
+
+	await issueSharesHandler(ctx, {
+		amount: Number(TOTAL_SUPPLY),
+		effectiveDate,
+		idempotencyKey: `${args.source.workflowSourceKey}:initial-owner-issue`,
+		lenderId: String(defaultOriginationOwner.lender._id),
+		metadata: {
+			caseId: args.source.originatingWorkflowId,
+			investmentVehicleId: String(
+				defaultOriginationOwner.investmentVehicle._id
+			),
+			orgId: args.orgId,
+			platformSettingsId: String(defaultOriginationOwner.settings._id),
 			stagedCollectionMode: args.collectionsDraft?.mode,
 		},
 		mortgageId: String(mortgageId),
