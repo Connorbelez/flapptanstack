@@ -15,7 +15,10 @@ export type EntityType =
 	| "broker"
 	| "borrower"
 	| "lender"
+	| "investmentVehicle"
+	| "investmentVehicleWorkspace"
 	| "lenderOnboarding"
+	| "platformSetting"
 	| "provisionalOffer"
 	| "offerCondition"
 	| "lenderRenewalIntent"
@@ -206,7 +209,10 @@ export const ENTITY_TABLE_MAP = {
 	broker: "brokers",
 	borrower: "borrowers",
 	lender: "lenders",
+	investmentVehicle: "investmentVehicles",
+	investmentVehicleWorkspace: "investmentVehicleWorkspaces",
 	lenderOnboarding: "lenderOnboardings",
+	platformSetting: "platformSettings",
 	provisionalOffer: "provisionalOffers",
 	offerCondition: "offerConditions",
 	lenderRenewalIntent: "lenderRenewalIntents",

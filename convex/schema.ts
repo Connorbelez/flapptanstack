@@ -335,6 +335,66 @@ export default defineSchema({
 		.index("by_org", ["orgId"])
 		.index("by_org_status", ["orgId", "status"]),
 
+	investmentVehicles: defineTable({
+		lenderId: v.id("lenders"),
+		name: v.string(),
+		legalName: v.string(),
+		entityType: v.union(
+			v.literal("mic"),
+			v.literal("corporation"),
+			v.literal("trust"),
+			v.literal("partnership")
+		),
+		status: v.union(v.literal("active"), v.literal("inactive")),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_lender", ["lenderId"]),
+
+	investmentVehicleWorkspaces: defineTable({
+		investmentVehicleId: v.id("investmentVehicles"),
+		name: v.string(),
+		status: v.union(v.literal("active"), v.literal("archived")),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_vehicle", ["investmentVehicleId"]),
+
+	lenderSettings: defineTable({
+		lenderId: v.id("lenders"),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_lender", ["lenderId"]),
+
+	brokerSettings: defineTable({
+		brokerId: v.id("brokers"),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_broker", ["brokerId"]),
+
+	investmentVehicleWorkspaceSettings: defineTable({
+		investmentVehicleWorkspaceId: v.id("investmentVehicleWorkspaces"),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_workspace", ["investmentVehicleWorkspaceId"]),
+
+	platformSettings: defineTable({
+		key: v.string(),
+		defaultOriginationLenderId: v.id("lenders"),
+		defaultOriginationInvestmentVehicleId: v.id("investmentVehicles"),
+		defaultOriginationWorkspaceId: v.optional(
+			v.id("investmentVehicleWorkspaces")
+		),
+		defaultFairlendTrustBankAccountId: v.optional(v.id("bankAccounts")),
+		updatedBy: v.string(),
+		changeReason: v.string(),
+		source: v.union(
+			v.literal("seed"),
+			v.literal("admin_mutation"),
+			v.literal("migration")
+		),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_key", ["key"]),
+
 	// ══════════════════════════════════════════════════════════
 	// LENDER ECOSYSTEM
 	// ══════════════════════════════════════════════════════════
