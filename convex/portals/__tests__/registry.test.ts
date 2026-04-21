@@ -167,6 +167,7 @@ async function seedPortalBackfillFixture(t: ReturnType<typeof createHarness>) {
 
 		return {
 			adminUserId: adminUser._id,
+			borrowerAuthId: "user_borrower_meridian",
 			borrowerUserId,
 			brokerId,
 			brokerOrgId,
@@ -290,6 +291,91 @@ describe("portal registry backfill", () => {
 		);
 	});
 
+	it("repairs stale FairLend fallback assignments once broker portals are backfilled", async () => {
+		const t = createHarness();
+		const fixture = await seedPortalBackfillFixture(t);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+
+		await t.mutation(internal.auth.syncUserHomePortalAssignment, {
+			authId: fixture.borrowerAuthId,
+		});
+
+		const fairLendPortal = await t.query(
+			api.portals.queries.getFairLendPortal,
+			{}
+		);
+		const beforeBackfill = await t.run(async (ctx) => {
+			return ctx.db.get(fixture.borrowerUserId);
+		});
+		expect(beforeBackfill?.homePortalId).toBe(
+			fairLendPortal?.portalId as Id<"portals">
+		);
+
+		await asAdmin.mutation(
+			api.brokers.migrations.runPortalRegistryBackfill,
+			{}
+		);
+
+		const brokerPortal = await t.query(
+			api.portals.queries.resolvePortalByHost,
+			{
+				host: "meridian.localhost:3000",
+			}
+		);
+		const afterBackfill = await t.run(async (ctx) => {
+			return ctx.db.get(fixture.borrowerUserId);
+		});
+		expect(afterBackfill?.homePortalId).toBe(
+			brokerPortal?.portal.portalId as Id<"portals">
+		);
+	});
+
+	it("falls back to the FairLend portal when a user only has inactive memberships", async () => {
+		const t = createHarness();
+		const fixture = await seedPortalBackfillFixture(t);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+
+		await asAdmin.mutation(
+			api.brokers.migrations.runPortalRegistryBackfill,
+			{}
+		);
+
+		const inactiveUserAuthId = "user_inactive_broker_member";
+		const inactiveUserId = await t.run(async (ctx) => {
+			const userId = await ctx.db.insert("users", {
+				authId: inactiveUserAuthId,
+				email: "inactive-member@test.fairlend.ca",
+				firstName: "Inactive",
+				lastName: "Member",
+			});
+			await ctx.db.insert("organizationMemberships", {
+				workosId: "om_inactive_broker_member",
+				organizationWorkosId: fixture.brokerOrgId,
+				organizationName: "Meridian Mortgage Group",
+				userWorkosId: inactiveUserAuthId,
+				status: "inactive",
+				roleSlug: "member",
+				roleSlugs: ["member"],
+			});
+			return userId;
+		});
+
+		await t.mutation(internal.auth.syncUserHomePortalAssignment, {
+			authId: inactiveUserAuthId,
+		});
+
+		const fairLendPortal = await t.query(
+			api.portals.queries.getFairLendPortal,
+			{}
+		);
+		const inactiveUser = await t.run(async (ctx) => {
+			return ctx.db.get(inactiveUserId);
+		});
+		expect(inactiveUser?.homePortalId).toBe(
+			fairLendPortal?.portalId as Id<"portals">
+		);
+	});
+
 	it("rejects conflicting FairLend host claims during the portal backfill", async () => {
 		const t = createHarness();
 		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
@@ -399,6 +485,10 @@ describe("portal registry backfill", () => {
 			String(brokerResult.homePortal?.portalId)
 		);
 		expect(brokerResult.homePortal?.slug).toBe("meridian");
+		expect(String(brokerResult.currentOrgPortalId)).toBe(
+			String(brokerResult.currentOrgPortal?.portalId)
+		);
+		expect(brokerResult.currentOrgPortal?.slug).toBe("meridian");
 
 		const adminResult = await asAdmin.query(
 			api.portals.queries.getViewerHomePortal,
@@ -409,5 +499,38 @@ describe("portal registry backfill", () => {
 		expect(String(adminResult.homePortalId)).toBe(
 			String(adminResult.homePortal?.portalId)
 		);
+		expect(adminResult.currentOrgPortalId).toBeNull();
+		expect(adminResult.currentOrgPortal).toBeNull();
+
+		await t.run(async (ctx) => {
+			await ctx.db.insert("organizationMemberships", {
+				workosId: "om_fairlend_admin_broker",
+				organizationWorkosId: fixture.brokerOrgId,
+				organizationName: "Meridian Mortgage Group",
+				userWorkosId: FAIRLEND_ADMIN.subject,
+				status: "active",
+				roleSlug: "broker",
+				roleSlugs: ["broker"],
+			});
+		});
+
+		const brokerOrgAdminViewer = createMockViewer({
+			subject: FAIRLEND_ADMIN.subject,
+			email: FAIRLEND_ADMIN.email,
+			firstName: FAIRLEND_ADMIN.firstName,
+			lastName: FAIRLEND_ADMIN.lastName,
+			orgId: fixture.brokerOrgId,
+			orgName: "Meridian Mortgage Group",
+			role: "broker",
+			roles: ["broker"],
+		});
+		const brokerOrgAdminResult = await t
+			.withIdentity(brokerOrgAdminViewer)
+			.query(api.portals.queries.getViewerHomePortal, {});
+		expect(brokerOrgAdminResult.homePortal?.slug).toBe("app");
+		expect(String(brokerOrgAdminResult.currentOrgPortalId)).toBe(
+			String(brokerOrgAdminResult.currentOrgPortal?.portalId)
+		);
+		expect(brokerOrgAdminResult.currentOrgPortal?.slug).toBe("meridian");
 	});
 });

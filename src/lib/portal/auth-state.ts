@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { getReturnPathname } from "#/lib/auth-redirect";
+import { getReturnPathname, sanitizeRedirectPath } from "#/lib/auth-redirect";
 import type { PortalHostMatchType } from "../../../shared/portal/contracts";
 import { resolvePortalHostTypeFromHost } from "./auth-routing";
 import type { RootPortalContext } from "./host-resolution";
@@ -16,6 +16,7 @@ export type PortalAuthHostClass = "marketing" | "portal";
 
 export interface PortalAuthStatePayload {
 	canonicalHost: string;
+	hasExplicitReturnPath?: boolean;
 	hostClass: PortalAuthHostClass;
 	hostType: PortalHostMatchType;
 	issuedAt: number;
@@ -67,6 +68,7 @@ function parsePayload(parsed: unknown): PortalAuthStatePayload {
 		hostClass,
 		hostType,
 		issuedAt,
+		hasExplicitReturnPath,
 		portalId,
 		portalSlug,
 		requestedHost,
@@ -107,6 +109,16 @@ function parsePayload(parsed: unknown): PortalAuthStatePayload {
 	}
 
 	if (
+		hasExplicitReturnPath !== undefined &&
+		typeof hasExplicitReturnPath !== "boolean"
+	) {
+		throw new PortalAuthStateError(
+			"invalid-payload",
+			"Portal auth state hasExplicitReturnPath must be a boolean when present."
+		);
+	}
+
+	if (
 		typeof requestedHost !== "string" ||
 		requestedHost.length === 0 ||
 		typeof canonicalHost !== "string" ||
@@ -142,6 +154,10 @@ function parsePayload(parsed: unknown): PortalAuthStatePayload {
 		version,
 		issuedAt,
 		returnPathname,
+		hasExplicitReturnPath:
+			typeof hasExplicitReturnPath === "boolean"
+				? hasExplicitReturnPath
+				: undefined,
 		hostClass,
 		hostType,
 		requestedHost,
@@ -169,12 +185,17 @@ export function buildPortalAuthStatePayload(args: {
 	issuedAt?: number;
 }): PortalAuthStatePayload {
 	const { portalContext } = args;
+	const explicitReturnPath = sanitizeRedirectPath(args.redirectTarget);
+	const returnPathname =
+		explicitReturnPath ?? getReturnPathname(args.redirectTarget);
+	const hasExplicitReturnPath = explicitReturnPath !== undefined;
 
 	if (portalContext.kind === "marketing") {
 		return {
 			version: PORTAL_AUTH_STATE_VERSION,
 			issuedAt: args.issuedAt ?? Date.now(),
-			returnPathname: getReturnPathname(args.redirectTarget),
+			returnPathname,
+			hasExplicitReturnPath,
 			hostClass: "marketing",
 			hostType: resolvePortalHostTypeFromHost(portalContext.canonicalHost),
 			requestedHost: portalContext.requestedHost,
@@ -185,7 +206,8 @@ export function buildPortalAuthStatePayload(args: {
 	return {
 		version: PORTAL_AUTH_STATE_VERSION,
 		issuedAt: args.issuedAt ?? Date.now(),
-		returnPathname: getReturnPathname(args.redirectTarget),
+		returnPathname,
+		hasExplicitReturnPath,
 		hostClass: "portal",
 		hostType: portalContext.matchedHostType,
 		requestedHost: portalContext.requestedHost,

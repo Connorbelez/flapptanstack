@@ -58,6 +58,16 @@ async function getPortalByLocalHost(ctx: PortalReaderCtx, host: string) {
 	);
 }
 
+async function getPortalByOrgId(ctx: PortalReaderCtx, orgId: string) {
+	return assertSinglePortal(
+		await ctx.db
+			.query("portals")
+			.withIndex("by_org", (query) => query.eq("orgId", orgId))
+			.collect(),
+		`orgId:${orgId}`
+	);
+}
+
 function toPortalSummary(portal: Doc<"portals">): PortalSummary {
 	return {
 		portalId: portal._id,
@@ -166,12 +176,19 @@ export const getViewerHomePortal = authedQuery
 			.query("users")
 			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
 			.unique();
+		const currentOrgPortal = ctx.viewer.orgId
+			? await getPortalByOrgId(ctx, ctx.viewer.orgId)
+			: null;
 
 		if (!user?.homePortalId) {
 			return {
 				userId: user?._id ?? null,
 				homePortalId: user?.homePortalId ?? null,
 				homePortal: null,
+				currentOrgPortalId: currentOrgPortal?._id ?? null,
+				currentOrgPortal: currentOrgPortal
+					? toPublicPortalSummary(currentOrgPortal)
+					: null,
 				isFairLendAdmin: ctx.viewer.isFairLendAdmin,
 			};
 		}
@@ -181,6 +198,10 @@ export const getViewerHomePortal = authedQuery
 			userId: user._id,
 			homePortalId: user.homePortalId,
 			homePortal: homePortal ? toPublicPortalSummary(homePortal) : null,
+			currentOrgPortalId: currentOrgPortal?._id ?? null,
+			currentOrgPortal: currentOrgPortal
+				? toPublicPortalSummary(currentOrgPortal)
+				: null,
 			isFairLendAdmin: ctx.viewer.isFairLendAdmin,
 		};
 	})
