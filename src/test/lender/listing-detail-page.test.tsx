@@ -7,9 +7,23 @@ import { useQuery } from "convex/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LenderListingDetailPage } from "#/components/lender/listings/LenderListingDetailPage";
+import { Route as RootRoute } from "#/routes/__root";
 
 vi.mock("convex/react", () => ({
 	useQuery: vi.fn(),
+}));
+
+vi.mock("#/routes/__root", () => ({
+	Route: {
+		useRouteContext: vi.fn(() => ({
+			portalContext: {
+				cacheKey: "marketing:fairlend.ca",
+				canonicalHost: "fairlend.ca",
+				kind: "marketing",
+				requestedHost: "fairlend.ca",
+			},
+		})),
+	},
 }));
 
 vi.mock("@tanstack/react-router", async () => {
@@ -77,6 +91,11 @@ describe("lender listing detail page", () => {
 
 		render(<LenderListingDetailPage listingId="listing_1" />);
 
+		expect(vi.mocked(useQuery).mock.calls[0]?.[1]).toEqual({
+			listingId: "listing_1",
+			portalId: undefined,
+		});
+
 		expect(screen.getByText("King West bridge opportunity")).toBeTruthy();
 		expect(screen.getByText("Public Documents")).toBeTruthy();
 		expect(screen.getByText("Investor Summary")).toBeTruthy();
@@ -129,8 +148,64 @@ describe("lender listing detail page", () => {
 		render(<LenderListingDetailPage listingId="listing_1" />);
 
 		expect(screen.queryByRole("link", { name: "Open PDF" })).toBeNull();
-		expect(
-			screen.getByRole("button", { name: "Open PDF" }).getAttribute("disabled")
-		).not.toBeNull();
+	expect(
+		screen.getByRole("button", { name: "Open PDF" }).getAttribute("disabled")
+	).not.toBeNull();
+});
+
+	it("passes the resolved portal id into listing detail queries on portal hosts", () => {
+		vi.mocked(RootRoute.useRouteContext).mockReturnValue({
+			portalContext: {
+				availability: "active",
+				cacheKey: "portal:portal_meridian:active:local:meridian.localhost:3000",
+				canonicalHost: "meridian.localhost:3000",
+				kind: "portal",
+				matchedHostType: "local",
+				portal: {
+					defaultPostAuthPath: "/",
+					isPublished: true,
+					localHost: "meridian.localhost:3000",
+					portalId: "portal_meridian",
+					portalType: "broker",
+					productionHost: "meridian.fairlend.ca",
+					publicTeaserEnabled: true,
+					slug: "meridian",
+					status: "active",
+					teaserListingLimit: 12,
+				},
+				requestedHost: "meridian.localhost:3000",
+			},
+		} as never);
+
+		const useQueryMock = useQuery as unknown as QueryMock;
+		useQueryMock
+			.mockReturnValueOnce({
+				availability: { availableFractions: 42 },
+				listing: {
+					city: "Toronto",
+					description: "Projected lender-facing mortgage listing.",
+					interestRate: 9.5,
+					lienPosition: 1,
+					listingId: "listing_1",
+					loanType: "conventional",
+					ltvRatio: 62,
+					maturityDate: "2027-04-30",
+					monthlyPayment: 2450,
+					paymentFrequency: "monthly",
+					principal: 250000,
+					propertyType: "residential",
+					province: "ON",
+					status: "active",
+					title: "King West bridge opportunity",
+				},
+			})
+			.mockReturnValueOnce([]);
+
+		render(<LenderListingDetailPage listingId="listing_1" />);
+
+		expect(vi.mocked(useQuery).mock.calls[0]?.[1]).toEqual({
+			listingId: "listing_1",
+			portalId: "portal_meridian",
+		});
 	});
 });
