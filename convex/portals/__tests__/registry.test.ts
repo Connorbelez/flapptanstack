@@ -203,9 +203,27 @@ describe("portal registry backfill", () => {
 			{}
 		);
 		expect(fairLendPortal?.slug).toBe("app");
+		expect(fairLendPortal?.pricingPolicyId).toBeDefined();
 
-		const user = await t.run(async (ctx) => await ctx.db.get(userId));
-		expect(String(user?.homePortalId)).toBe(String(fairLendPortal?.portalId));
+		const resolvedFairLendPortal = await t.query(
+			api.portals.queries.resolvePortalByHost,
+			{
+				host: "app.localhost:3000",
+			}
+		);
+		expect(resolvedFairLendPortal?.availability).toBe("active");
+
+		const records = await t.run(async (ctx) => {
+			const user = await ctx.db.get(userId);
+			const policy = fairLendPortal?.pricingPolicyId
+				? await ctx.db.get(fairLendPortal.pricingPolicyId)
+				: null;
+			return { policy, user };
+		});
+		expect(String(records.user?.homePortalId)).toBe(
+			String(fairLendPortal?.portalId)
+		);
+		expect(records.policy?.brokerSplitPercent).toBe(0);
 	});
 
 	it("creates FairLend and broker portal rows and assigns home portals deterministically", async () => {
