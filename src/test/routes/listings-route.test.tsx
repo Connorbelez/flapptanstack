@@ -83,6 +83,14 @@ describe("public listings route", () => {
 		vi.mocked(useSuspenseQuery).mockReturnValue({
 			data: {
 				continueCursor: null,
+				effectiveFilters: {
+					ltv: { max: 0.65, min: 0.55 },
+					maturityDate: { end: "2026-12-31" },
+					mortgageTypes: ["First"],
+					principalAmount: { max: 300000, min: 200000 },
+					propertyTypes: ["Detached Home"],
+					searchQuery: undefined,
+				},
 				isDone: true,
 				page: [],
 			},
@@ -98,6 +106,19 @@ describe("public listings route", () => {
 		expect(MarketplaceListingsPage).toHaveBeenCalled();
 
 		const props = vi.mocked(MarketplaceListingsPage).mock.calls[0]?.[0];
+		expect(props?.search).toEqual({
+			maturityBefore: "2026-12-31",
+			mortgageTypes: ["First"],
+			principalMax: 300000,
+			principalMin: 200000,
+			propertyTypes: ["Detached Home"],
+			q: undefined,
+			rateMax: undefined,
+			rateMin: undefined,
+			sort: "featured",
+			ltvMax: 0.65,
+			ltvMin: 0.55,
+		});
 		props?.setSearch((current: { q?: string; sort?: string }) => ({
 			...current,
 			q: "hamilton",

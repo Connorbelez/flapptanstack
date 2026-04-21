@@ -15,6 +15,10 @@ import {
 	lienPositionToMortgageType,
 } from "./marketplaceShared";
 import { getRequiredPortalPricingPolicy } from "./portalProjection";
+import {
+	clampMarketplaceFiltersToLenderConstraints,
+	resolveViewerLenderConstraintForPortal,
+} from "./portalVisibility";
 import { readListingPublicDocuments } from "./publicDocuments";
 import { marketplaceListingPropertyTypeValidator } from "./validators";
 
@@ -394,17 +398,30 @@ export const listMarketplaceListings = listingQuery
 			ctx,
 			args.portalId
 		);
-		return await listMarketplaceListingsSnapshot(
+		const lenderConstraint = await resolveViewerLenderConstraintForPortal(ctx, {
+			portalId: args.portalId,
+			viewerAuthId: ctx.viewer.authId,
+			viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
+		});
+		const effectiveFilters = clampMarketplaceFiltersToLenderConstraints(
+			args.filters,
+			lenderConstraint
+		);
+		const snapshot = await listMarketplaceListingsSnapshot(
 			ctx,
 			{
 				cursor: args.cursor,
-				filters: args.filters,
+				filters: effectiveFilters,
 				numItems: args.numItems,
 			},
 			{
 				pricingPolicy,
 			}
 		);
+		return {
+			...snapshot,
+			effectiveFilters,
+		};
 	})
 	.public();
 
@@ -420,6 +437,18 @@ export const getMarketplaceListingDetail = listingQuery
 			ctx,
 			args.portalId
 		);
+		const lenderConstraint = await resolveViewerLenderConstraintForPortal(ctx, {
+			portalId: args.portalId,
+			viewerAuthId: ctx.viewer.authId,
+			viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
+		});
+		const visibilityFilters = clampMarketplaceFiltersToLenderConstraints(
+			undefined,
+			lenderConstraint
+		);
+		if (!matchesMarketplaceFilters(listing, visibilityFilters)) {
+			return null;
+		}
 		const projectedListing = projectListingForPortal(listing, pricingPolicy);
 
 		const [

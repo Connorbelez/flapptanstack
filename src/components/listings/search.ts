@@ -2,6 +2,7 @@ import {
 	MARKETPLACE_MORTGAGE_TYPES,
 	MARKETPLACE_PROPERTY_TYPES,
 	MARKETPLACE_SORT_KEYS,
+	type MarketplaceEffectiveFilters,
 	type MarketplaceListingsSearchState,
 	type PortalEffectiveMarketplaceFilters,
 } from "./marketplace-types";
@@ -101,7 +102,7 @@ export function cleanMarketplaceListingsSearch(
 }
 
 export function marketplaceFiltersToSearchState(
-	filters: PortalEffectiveMarketplaceFilters,
+	filters: MarketplaceEffectiveFilters | PortalEffectiveMarketplaceFilters,
 	currentSort: MarketplaceListingsSearchState["sort"]
 ): MarketplaceListingsSearchState {
 	return {

@@ -207,6 +207,7 @@ import type * as listings_marketplaceShared from "../listings/marketplaceShared.
 import type * as listings_math from "../listings/math.js";
 import type * as listings_portalProjection from "../listings/portalProjection.js";
 import type * as listings_portalQueries from "../listings/portalQueries.js";
+import type * as listings_portalVisibility from "../listings/portalVisibility.js";
 import type * as listings_projection from "../listings/projection.js";
 import type * as listings_publicDocuments from "../listings/publicDocuments.js";
 import type * as listings_queries from "../listings/queries.js";
@@ -575,6 +576,7 @@ declare const fullApi: ApiFromModules<{
   "listings/math": typeof listings_math;
   "listings/portalProjection": typeof listings_portalProjection;
   "listings/portalQueries": typeof listings_portalQueries;
+  "listings/portalVisibility": typeof listings_portalVisibility;
   "listings/projection": typeof listings_projection;
   "listings/publicDocuments": typeof listings_publicDocuments;
   "listings/queries": typeof listings_queries;
