@@ -12,6 +12,15 @@ export const portalStatusValidator = v.union(
 	v.literal("archived")
 );
 
+export const portalAvailabilityValidator = v.union(
+	v.literal("draft"),
+	v.literal("active"),
+	v.literal("suspended"),
+	v.literal("archived"),
+	v.literal("unpublished"),
+	v.literal("misconfigured")
+);
+
 export const portalPricingPolicyStatusValidator = v.union(
 	v.literal("draft"),
 	v.literal("active"),
@@ -75,6 +84,7 @@ export const resolvedPortalHostValidator = v.object({
 	requestedHost: v.string(),
 	canonicalHost: v.string(),
 	matchedHostType: portalMatchedHostTypeValidator,
+	availability: portalAvailabilityValidator,
 	portal: publicPortalSummaryValidator,
 });
 
@@ -122,6 +132,7 @@ export function validatePortalPricingPolicyContract<
 
 export type PortalType = Infer<typeof portalTypeValidator>;
 export type PortalStatus = Infer<typeof portalStatusValidator>;
+export type PortalAvailability = Infer<typeof portalAvailabilityValidator>;
 export type PortalPricingPolicyStatus = Infer<
 	typeof portalPricingPolicyStatusValidator
 >;

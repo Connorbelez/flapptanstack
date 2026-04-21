@@ -11,6 +11,11 @@ import {
 } from "./marketplaceShared";
 import { getPostedBalance } from "../ledger/accounts";
 import { TOTAL_SUPPLY } from "../ledger/constants";
+import {
+	loadPortalPricingSelection,
+	projectListingForPortal,
+	requirePortalPricingSelection,
+} from "../portals/pricing";
 import { roundToTwoDecimals } from "./math";
 import {
 	listingPropertyTypeValidator,
@@ -317,6 +322,22 @@ async function getListingByIdOrNull(
 	return await ctx.db.get(listingId);
 }
 
+async function getRequiredPortalPricingPolicy(
+	ctx: { db: Pick<DatabaseReader, "get" | "query"> },
+	portalId: Id<"portals">
+) {
+	const portal = await ctx.db.get(portalId);
+	if (!portal) {
+		throw new ConvexError("Portal no longer exists for listing projection");
+	}
+
+	const selection = await loadPortalPricingSelection(ctx, {
+		atTime: Date.now(),
+		portalId,
+	});
+	return requirePortalPricingSelection(selection, portal.slug).policy;
+}
+
 async function collectPublishedListingCandidates(
 	ctx: { db: Pick<DatabaseReader, "query"> },
 	filters: PublishedListingFilters | undefined
@@ -544,16 +565,25 @@ export const getListingById = authedQuery
 	.public();
 
 export const getListingWithAvailability = authedQuery
-	.input({ listingId: v.id("listings") })
+	.input({
+		listingId: v.id("listings"),
+		portalId: v.optional(v.id("portals")),
+	})
 	.handler(async (ctx, args) => {
 		const listing = await getListingByIdOrNull(ctx, args.listingId);
 		if (!listing) {
 			return null;
 		}
 
+		const pricingPolicy = args.portalId
+			? await getRequiredPortalPricingPolicy(ctx, args.portalId)
+			: null;
+
 		return {
 			availability: await buildListingAvailability(ctx, listing.mortgageId),
-			listing,
+			listing: pricingPolicy
+				? projectListingForPortal(listing, pricingPolicy)
+				: listing,
 		};
 	})
 	.public();
@@ -594,6 +624,7 @@ export const listPublishedListings = authedQuery
 			})
 		),
 		numItems: v.optional(v.number()),
+		portalId: v.optional(v.id("portals")),
 		sort: v.optional(
 			v.object({
 				direction: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
@@ -610,6 +641,9 @@ export const listPublishedListings = authedQuery
 	.handler(async (ctx, args) => {
 		const sortField = args.sort?.field ?? "publishedAt";
 		const sortDirection = args.sort?.direction ?? "desc";
+		const pricingPolicy = args.portalId
+			? await getRequiredPortalPricingPolicy(ctx, args.portalId)
+			: null;
 		if (!hasPublishedFilters(args.filters)) {
 			const paginated = await paginateListingsBySortField(ctx, {
 				cursor: args.cursor,
@@ -621,7 +655,12 @@ export const listPublishedListings = authedQuery
 
 			return {
 				...paginated,
-				page: await attachAvailabilityToListings(ctx, paginated.page),
+				page: (await attachAvailabilityToListings(ctx, paginated.page)).map(
+					(listing) =>
+						pricingPolicy
+							? projectListingForPortal(listing, pricingPolicy)
+							: listing
+				),
 			};
 		}
 
@@ -644,7 +683,12 @@ export const listPublishedListings = authedQuery
 
 		return {
 			...paginated,
-			page: await attachAvailabilityToListings(ctx, paginated.page),
+			page: (await attachAvailabilityToListings(ctx, paginated.page)).map(
+				(listing) =>
+					pricingPolicy
+						? projectListingForPortal(listing, pricingPolicy)
+						: listing
+			),
 		};
 	})
 	.public();

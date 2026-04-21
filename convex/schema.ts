@@ -197,6 +197,14 @@ export default defineSchema({
 		updatedAt: v.number(),
 	}).index("by_portal", ["portalId"]),
 
+	brokerPortalPricingSettings: defineTable({
+		// Singleton control-plane row for the temporary broker-global pricing UI.
+		brokerSplitPercent: v.number(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		updatedByAuthId: v.optional(v.string()),
+	}),
+
 	portalPricingPolicies: defineTable({
 		// Explicit v1 pricing contract owned by ENG-300.
 		// Pricing stays portal-wide and minimal: one flat broker cut plus the
