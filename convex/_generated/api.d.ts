@@ -27,6 +27,7 @@ import type * as admin_origination_postCommitCollectionsActivation from "../admi
 import type * as admin_origination_properties from "../admin/origination/properties.js";
 import type * as admin_origination_validators from "../admin/origination/validators.js";
 import type * as admin_queries from "../admin/queries.js";
+import type * as admin_settings_mutations from "../admin/settings/mutations.js";
 import type * as admin_settings_queries from "../admin/settings/queries.js";
 import type * as audit_queries from "../audit/queries.js";
 import type * as auditEvidence_services from "../auditEvidence/services.js";
@@ -377,6 +378,7 @@ declare const fullApi: ApiFromModules<{
   "admin/origination/properties": typeof admin_origination_properties;
   "admin/origination/validators": typeof admin_origination_validators;
   "admin/queries": typeof admin_queries;
+  "admin/settings/mutations": typeof admin_settings_mutations;
   "admin/settings/queries": typeof admin_settings_queries;
   "audit/queries": typeof audit_queries;
   "auditEvidence/services": typeof auditEvidence_services;

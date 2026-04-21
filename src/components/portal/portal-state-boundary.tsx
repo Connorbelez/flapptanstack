@@ -50,10 +50,12 @@ export function PortalStateBoundary(props: {
 		portalContext.kind === "portal" &&
 		portalContext.availability !== "active"
 	) {
-		const reason =
-			portalContext.availability === "unpublished"
-				? "This portal exists but is not published yet."
-				: `This portal is currently ${portalContext.availability}.`;
+		let reason = `This portal is currently ${portalContext.availability}.`;
+		if (portalContext.availability === "unpublished") {
+			reason = "This portal exists but is not published yet.";
+		} else if (portalContext.availability === "misconfigured") {
+			reason = "This portal is misconfigured and cannot be served safely.";
+		}
 		return (
 			<PortalStateCard
 				description={`${reason} Requests for ${portalContext.requestedHost} stay blocked at the root boundary.`}
