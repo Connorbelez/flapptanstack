@@ -7,6 +7,7 @@ import {
 	fairLendPortalFields,
 } from "./helpers";
 import { assertPortalRegistryInvariants } from "./invariants";
+import { ensurePortalSelectedPricingPolicy } from "./pricing";
 
 type PortalReaderCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
 type PortalWriterCtx = Pick<MutationCtx, "db">;
@@ -90,13 +91,22 @@ export async function ensureFairLendPortal(ctx: PortalWriterCtx) {
 			...normalizedPortal,
 			createdAt: existingPortal.createdAt,
 		});
+		await ensurePortalSelectedPricingPolicy(ctx, {
+			brokerSplitPercent: 0,
+			portalId: existingPortal._id,
+		});
 		return existingPortal._id;
 	}
 
-	return ctx.db.insert("portals", {
+	const portalId = await ctx.db.insert("portals", {
 		...fairLendPortal,
 		...normalizedPortal,
 	});
+	await ensurePortalSelectedPricingPolicy(ctx, {
+		brokerSplitPercent: 0,
+		portalId,
+	});
+	return portalId;
 }
 
 export async function resolveUserHomePortalId(
