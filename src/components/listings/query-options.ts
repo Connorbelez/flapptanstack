@@ -53,3 +53,13 @@ export function marketplaceListingDetailQueryOptions(
 		portalId,
 	});
 }
+
+export function listingDocumentAccessQueryOptions(
+	listingId: string,
+	assetId: string
+) {
+	return convexQuery(api.listings.publicDocuments.refreshForListingAsset, {
+		assetId: assetId as Id<"documentAssets">,
+		listingId: listingId as Id<"listings">,
+	});
+}

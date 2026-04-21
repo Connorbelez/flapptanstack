@@ -59,11 +59,14 @@ export interface ListingPaymentHistoryMonth {
 }
 
 export interface ListingDocumentItem {
+	assetId: string;
+	contentType?: string | null;
 	description?: string | null;
+	fileName?: string | null;
 	id: string;
+	kind: "pdf" | "other";
 	label: string;
 	meta: string;
-	pageLabel: string;
 	url?: string | null;
 }
 
