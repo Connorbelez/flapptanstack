@@ -7,6 +7,10 @@ import {
 	resolveBorrowerPortalIdForWrite,
 } from "../portals/borrowerPortalAttribution";
 import { syncUserHomePortalAssignmentByUserId } from "../portals/homePortalAssignment";
+import {
+	ensureBorrowerPortalAttribution,
+	resolveBorrowerPortalIdForWrite,
+} from "../portals/borrowerPortalAttribution";
 import { normalizeEmail } from "../seed/seedHelpers";
 
 type BorrowerParticipantRole = Doc<"mortgageBorrowers">["role"];

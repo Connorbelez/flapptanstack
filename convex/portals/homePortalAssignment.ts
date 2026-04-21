@@ -1,5 +1,6 @@
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { getDeterministicPortalIdForOrgId } from "./borrowerPortalAttribution";
 import {
 	deleteOrphanUsersByAuthId,
 	findCanonicalUserByAuthId,
