@@ -75,9 +75,9 @@ const PORTFOLIO_SOURCE_OF_TRUTH: PortfolioSourceOfTruth = {
 	paymentActivityRows:
 		"Obligations joined with mortgage context and latest collection/transfer state",
 	historicalChartInputs:
-		"Reserved for ENG-310 snapshot materialization; live portfolio accrual remains the current fallback seam",
+		"Monthly portfolio history query backed by materialized snapshots with explicit live fallback labeling when a completed snapshot is missing",
 	csvTaxExportInputs:
-		"Reserved for ENG-310 server-generated export contracts built from snapshots and lender-scoped ledger inputs",
+		"Server-generated lender tax export query backed by year-end snapshots and explicit live fallback when a completed-period snapshot is unavailable",
 };
 
 function roundCurrency(value: number) {
