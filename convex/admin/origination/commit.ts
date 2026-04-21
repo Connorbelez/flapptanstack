@@ -23,6 +23,7 @@ import {
 	getPortalByBrokerId,
 	syncUserHomePortalAssignmentByUserId,
 } from "../../portals/homePortalAssignment";
+import { activateCommittedCaseCollectionsRuntime } from "./collections";
 import { runPostCommitCollectionsActivation } from "./postCommitCollectionsActivation";
 import {
 	computeOriginationValidationSnapshot,
