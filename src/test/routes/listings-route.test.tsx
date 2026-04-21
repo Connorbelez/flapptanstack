@@ -14,6 +14,7 @@ import {
 	Route,
 } from "#/routes/listings/index";
 import { ListingsLayout } from "#/routes/listings/route";
+import { Route as RootRoute } from "#/routes/__root";
 
 vi.mock("@tanstack/react-query", () => ({
 	useSuspenseQuery: vi.fn(),
@@ -54,6 +55,7 @@ afterEach(() => {
 });
 
 const LIST_QUERY_OPTIONS = { queryKey: ["marketplace-listings"] };
+const PORTAL_ID = "portal_meridian" as never;
 
 describe("public listings route", () => {
 	it("renders the marketplace listings surface from the index route", () => {
@@ -61,6 +63,19 @@ describe("public listings route", () => {
 		const navigate = vi.fn();
 
 		vi.spyOn(Route, "useSearch").mockReturnValue(search as never);
+		vi.spyOn(RootRoute, "useRouteContext").mockReturnValue({
+			portalContext: {
+				availability: "active",
+				cacheKey: "portal:portal_meridian:active:local:meridian.localhost:3000",
+				canonicalHost: "meridian.localhost:3000",
+				kind: "portal",
+				matchedHostType: "local",
+				portal: {
+					portalId: PORTAL_ID,
+				},
+				requestedHost: "meridian.localhost:3000",
+			},
+		} as never);
 		vi.mocked(useNavigate).mockReturnValue(navigate);
 		vi.mocked(marketplaceListingsQueryOptions).mockReturnValue(
 			LIST_QUERY_OPTIONS as never
@@ -75,7 +90,10 @@ describe("public listings route", () => {
 
 		render(<ListingsIndexRoutePage />);
 
-		expect(marketplaceListingsQueryOptions).toHaveBeenCalledWith(search);
+		expect(marketplaceListingsQueryOptions).toHaveBeenCalledWith(
+			PORTAL_ID,
+			search
+		);
 		expect(useSuspenseQuery).toHaveBeenCalledWith(LIST_QUERY_OPTIONS);
 		expect(MarketplaceListingsPage).toHaveBeenCalled();
 
