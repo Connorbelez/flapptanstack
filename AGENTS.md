@@ -54,6 +54,25 @@
 - Canonical FairLend RBAC policy lives in `docs/architecture/rbac-and-permissions.md`.
 - `admin` gets exactly one WorkOS permission: `admin:access`.
 - `admin:access` is the admin super-permission for permission checks. It does not replace explicit FairLend staff boundary checks like `requireFairLendAdmin`.
+- For authenticated route trees that render `useSuspenseQuery`, the canonical pattern is a parent layout route that gates rendering with `Authenticated` / `AuthLoading` from `convex/react` before rendering the child outlet. Do not mount suspense query screens directly under an authenticated route without this wrapper, or the route can subscribe before the Convex auth wrapper is ready.
+- This is the default pattern for all authenticated routes going forward:
+```tsx
+import { Authenticated, AuthLoading } from "convex/react";
+
+function AuthenticatedLayout() {
+	return (
+		<>
+			<Authenticated>
+				<Outlet />
+			</Authenticated>
+			<AuthLoading>
+				<AppRoutePendingScreen />
+			</AuthLoading>
+		</>
+	);
+}
+```
+- Reference implementation: `src/routes/listings/route.tsx` + `src/routes/listings/index.tsx`.
 - Always use `import { useAuth } from "@workos/authkit-tanstack-react-start/client"` to access auth state in React components.
 ```ts
 export interface AuthContextType {
