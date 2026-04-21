@@ -1,26 +1,28 @@
-# Execution Checklist: ENG-300 - Broker portal: define the v1 portal pricing policy contract
+# Execution Checklist: ENG-300 - Broker portal runtime pricing productionization
 
 ## Requirements From Linear
-- [x] Formalize `portalPricingPolicies` around a flat-percentage broker cut and reuse the existing `pricingPolicyId` seam.
-- [x] Add the minimum lifecycle fields and deterministic active-policy selection rules needed to choose one portal policy.
-- [x] Implement one shared portal-pricing helper and one rounding rule; do not duplicate formulae across queries or UI components.
-- [x] Document and test which listing outputs are portal-projected versus which remain canonical structural fields.
-- [x] Fail closed for published portals missing a valid active pricing policy, with explicit setup-safe behavior for unpublished portals if supported.
-- [x] Keep per-lender pricing out of scope and leave broad portal-listings integration to `ENG-301`.
+- [x] Formalize portal pricing around the existing `portalPricingPolicies` seam and make the contract real in runtime code.
+- [x] Fail closed for published portals with missing or invalid pricing at the root portal boundary.
+- [x] Return backend-owned portal `availability` from host resolution, including a generic public misconfiguration state.
+- [x] Thread portal-aware pricing into real listing detail and published-list query paths without mutating canonical listing data.
+- [x] Add a temporary `/admin/settings` control that applies one broker-global portal adjustment across broker portals.
+- [x] Persist a real `0%` default policy and keep the FairLend app portal pinned to `0%` outside broker-global updates.
 
 ## Definition Of Done From Linear
-- [x] A typed v1 portal-pricing contract exists in schema and code.
-- [x] One deterministic active policy can be selected for a portal.
-- [x] One reusable helper owns portal-pricing math and downstream consumers can import it directly.
-- [x] Missing or inactive pricing on published portals fails explicitly.
-- [x] `bunx convex codegen`, `bun check`, `bun typecheck`, and targeted portal-pricing tests pass.
-`bun check` still surfaces pre-existing repo-wide complexity warnings outside the `ENG-300` diff, but the command exits successfully and does not block closeout.
+- [x] Portal pricing helpers are no longer test-only; runtime portal reads and listing reads consume them directly.
+- [x] Published portals with broken pricing resolve to a blocked public root state instead of leaking child content.
+- [x] Broker portal pricing can be viewed and updated from `/admin/settings`.
+- [x] Broker portal backfill and FairLend portal bootstrap materialize selected active pricing rows deterministically.
+- [ ] `bun run test -- ...`, `bun check`, `bun typecheck`, and `bunx convex codegen` pass for the widened ENG-300 scope.
+  - Targeted Vitest coverage, `bun typecheck`, and `CONVEX_DEPLOYMENT=dev:impartial-sturgeon-498 bunx convex codegen` are green.
+  - `bun check` still fails on pre-existing Biome complexity violations in unrelated files outside the ENG-300 diff. Scoped Biome over the ENG-300 files passes cleanly.
 
 ## Plan-Derived Contract Checks
-- [x] The FairLend `app` portal participates in the same portal-pricing contract as broker portals rather than bypassing the helper.
-- [x] Portal pricing remains a read-time projection over canonical listing inventory instead of mutating stored listing values.
-- [x] Only portal-facing return-like listing outputs are projected in v1; structural fields such as principal, lien position, LTV, and maturity remain canonical.
-- [x] The active-policy selector handles future-dated rows, invalid references, and overlapping active windows deterministically.
+- [x] The public root portal contract exposes only a generic `"misconfigured"` state rather than raw pricing failure reasons.
+- [x] The FairLend app portal stays on the same runtime contract as broker portals, but its persisted selected policy remains `0%`.
+- [x] Portal pricing remains a read-time projection over canonical listing inventory.
+- [x] Only `interestRate` and `monthlyPayment` are projected through portal pricing in v1; principal, lien position, LTV, and other structural fields remain canonical.
+- [x] The broker-global admin control is a control-plane setting that fans out to per-portal runtime policy rows instead of becoming a separate runtime read source.
 
 ## Agent Instructions
 - Keep this file current as work progresses.
@@ -28,14 +30,15 @@
 - If an item is blocked or inapplicable, note the reason directly under the item.
 
 ## Test Coverage Expectations
-- [x] Unit tests cover validator rules, selection rules, projection math, and fail-closed behavior.
-- [x] A thin integration proof uses real listing query fixtures plus the shared portal-pricing helper.
-- [x] E2E coverage is explicitly marked not applicable here because live portal-listing route wiring lands in `ENG-301`.
-- [x] Storybook work is explicitly marked not applicable because this repo does not define a Storybook workflow.
+- [x] Portal pricing tests cover malformed selected rows, malformed stored rows with no selected pointer, and a persisted `0%` no-op projection case.
+- [x] Registry/backfill tests prove FairLend bootstrap and broker portal backfill both produce selected active policies.
+- [x] Listing query tests cover `getListingWithAvailability` and `listPublishedListings` both with and without `portalId`.
+- [x] Root portal context tests prove misconfigured published portals are blocked before child content renders.
+- [x] Admin settings tests cover default boot, non-zero broker-global updates, idempotent repeat saves, and the pricing card submit/validation flow.
 
 ## Final Validation
 - [x] All requirements are satisfied
-- [x] All definition-of-done items are satisfied
-- [x] Required quality gates passed
-- [x] Test coverage expectations were met or explicitly justified
-- [x] Final `$linear-pr-spec-audit` review passed or blockers are explicitly recorded
+- [ ] All definition-of-done items are satisfied
+- [ ] Required quality gates passed
+- [x] Test coverage expectations were met
+- [x] Final `$linear-pr-spec-audit` blockers were resolved in the widened runtime scope

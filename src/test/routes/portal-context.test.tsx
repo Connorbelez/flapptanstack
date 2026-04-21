@@ -23,11 +23,13 @@ afterEach(() => {
 });
 
 function buildResolvedPortal(overrides?: {
+	availability?: "active" | "archived" | "draft" | "misconfigured" | "suspended" | "unpublished";
 	isPublished?: boolean;
 	requestedHost?: string;
 	status?: "active" | "archived" | "draft" | "suspended";
 }) {
 	return {
+		availability: overrides?.availability ?? "active",
 		requestedHost: overrides?.requestedHost ?? "meridian.localhost:3000",
 		canonicalHost: "meridian.localhost:3000",
 		matchedHostType: "local" as const,
@@ -161,12 +163,41 @@ describe("resolveRootPortalContext", () => {
 			},
 			{
 				resolvePortalByHost: async () =>
-					buildResolvedPortal({ isPublished: false, status: "draft" }),
+					buildResolvedPortal({
+						availability: "unpublished",
+						isPublished: false,
+						status: "draft",
+					}),
 			}
 		);
 
 		expect(portalContext.kind).toBe("portal");
 		expect(portalContext.availability).toBe("unpublished");
+	});
+
+	it("blocks misconfigured portals at the root boundary", async () => {
+		const portalContext = await resolveRootPortalContext(
+			{
+				requestHost: "meridian.localhost:3000",
+				token: null,
+			},
+			{
+				resolvePortalByHost: async () =>
+					buildResolvedPortal({ availability: "misconfigured" }),
+			}
+		);
+
+		expect(portalContext.kind).toBe("portal");
+		expect(portalContext.availability).toBe("misconfigured");
+
+		render(
+			<PortalStateBoundary portalContext={portalContext}>
+				<div>portal children</div>
+			</PortalStateBoundary>
+		);
+
+		expect(screen.getByText("Portal unavailable")).not.toBeNull();
+		expect(screen.queryByText("portal children")).toBeNull();
 	});
 });
 

@@ -70,6 +70,10 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../admin/origination/commit.ts"),
 	"/convex/admin/origination/validators.ts": async () =>
 		await import("./../admin/origination/validators.ts"),
+	"/convex/admin/settings/mutations.ts": async () =>
+		await import("./../admin/settings/mutations.ts"),
+	"/convex/admin/settings/queries.ts": async () =>
+		await import("./../admin/settings/queries.ts"),
 	"/convex/brokers/migrations.ts": async () =>
 		await import("./../brokers/migrations.ts"),
 	"/convex/borrowers/resolveOrProvisionForOrigination.ts": async () =>

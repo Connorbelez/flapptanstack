@@ -1,6 +1,8 @@
 import type { Doc } from "../../_generated/dataModel";
 import { SYSTEM_OBJECT_CONFIGS } from "../../crm/systemAdapters/bootstrap";
 import { crmAdminQuery } from "../../fluent";
+import type { BrokerPortalPricingSnapshot } from "../../portals/pricing";
+import { getBrokerPortalPricingSnapshot } from "../../portals/pricing";
 
 export interface AdminOrgMemberSummary {
 	readonly email: string | null;
@@ -22,6 +24,7 @@ export interface AdminOrgBootstrapStatus {
 
 export interface AdminOrgSettingsSnapshot {
 	readonly bootstrapStatus: AdminOrgBootstrapStatus;
+	readonly brokerPortalPricing: BrokerPortalPricingSnapshot;
 	readonly members: readonly AdminOrgMemberSummary[];
 	readonly organization: Doc<"organizations"> | null;
 }
@@ -47,6 +50,7 @@ export const getOrgSettings = crmAdminQuery
 				.withIndex("by_org", (q) => q.eq("orgId", orgId))
 				.collect(),
 		]);
+		const brokerPortalPricing = await getBrokerPortalPricingSnapshot(ctx);
 
 		const uniqueUserIds = Array.from(
 			new Set(memberships.map((membership) => membership.userWorkosId))
@@ -105,6 +109,7 @@ export const getOrgSettings = crmAdminQuery
 		};
 
 		return {
+			brokerPortalPricing,
 			bootstrapStatus,
 			members,
 			organization,

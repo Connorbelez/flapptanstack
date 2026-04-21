@@ -3,14 +3,21 @@ import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { roundToTwoDecimals } from "../listings/math";
 import {
+	type PortalAvailability,
 	type PortalPricingPolicyParameters,
 	validatePortalPricingPolicyContract,
 	validatePortalPricingPolicyParameters,
 } from "./validators";
 
 type PortalDoc = Doc<"portals">;
+export type BrokerPortalPricingSettingDoc = Doc<"brokerPortalPricingSettings">;
 export type PortalPricingPolicyDoc = Doc<"portalPricingPolicies">;
-type PortalPricingReaderCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
+interface PortalPricingReaderCtx {
+	db: Pick<QueryCtx["db"], "get" | "query">;
+}
+interface PortalPricingWriterCtx {
+	db: Pick<MutationCtx["db"], "get" | "insert" | "patch" | "query">;
+}
 
 export const PORTAL_PROJECTED_LISTING_FIELDS = [
 	"interestRate",
@@ -47,6 +54,21 @@ export type PortalPricingSelection =
 			reason: PortalPricingUnavailableReason;
 	  };
 
+export interface BrokerPortalPricingSnapshot {
+	readonly brokerPortalCount: number;
+	readonly brokerSplitPercent: number;
+	readonly driftedBrokerPortalCount: number;
+	readonly lastUpdatedAt: number | null;
+	readonly updatedByAuthId: string | null;
+}
+
+export interface PortalPricingSyncSummary {
+	readonly brokerPortalCount: number;
+	readonly brokerPortalsUpdated: number;
+	readonly fairLendPortalsUpdated: number;
+	readonly setting: BrokerPortalPricingSettingDoc;
+}
+
 function isPolicyActiveAt(policy: PortalPricingPolicyDoc, atTime: number) {
 	return (
 		policy.status === "active" &&
@@ -82,6 +104,112 @@ function buildUnavailableSelection(
 		kind: "unavailable",
 		reason,
 	};
+}
+
+async function getSingleBrokerPortalPricingSetting(
+	ctx: PortalPricingReaderCtx
+): Promise<BrokerPortalPricingSettingDoc | null> {
+	const settings = await ctx.db.query("brokerPortalPricingSettings").collect();
+	if (settings.length > 1) {
+		throw new ConvexError("Duplicate broker portal pricing settings rows");
+	}
+	return settings[0] ?? null;
+}
+
+function isReadySelectionWithBrokerSplit(
+	selection: PortalPricingSelection,
+	brokerSplitPercent: number
+): selection is Extract<PortalPricingSelection, { kind: "ready" }> {
+	return (
+		selection.kind === "ready" &&
+		selection.parameters.brokerSplitPercent === brokerSplitPercent
+	);
+}
+
+function resolvePublishedPortalAvailability(args: {
+	isPublished: boolean;
+	portalStatus: PortalDoc["status"];
+	pricingSelection?: PortalPricingSelection;
+}): PortalAvailability {
+	if (!args.isPublished) {
+		return "unpublished";
+	}
+
+	if (args.portalStatus !== "active") {
+		return args.portalStatus;
+	}
+
+	return args.pricingSelection?.kind === "ready" ? "active" : "misconfigured";
+}
+
+async function loadPortalPricingPolicies(
+	ctx: PortalPricingReaderCtx,
+	portalId: PortalDoc["_id"]
+) {
+	return await ctx.db
+		.query("portalPricingPolicies")
+		.withIndex("by_portal", (query) => query.eq("portalId", portalId))
+		.collect();
+}
+
+export async function getBrokerPortalPricingSetting(
+	ctx: PortalPricingReaderCtx
+) {
+	return await getSingleBrokerPortalPricingSetting(ctx);
+}
+
+export async function ensureBrokerPortalPricingSetting(
+	ctx: PortalPricingWriterCtx,
+	args?: { updatedByAuthId?: string }
+): Promise<BrokerPortalPricingSettingDoc> {
+	const existing = await getSingleBrokerPortalPricingSetting(ctx);
+	if (existing) {
+		return existing;
+	}
+
+	const now = Date.now();
+	const settingId = await ctx.db.insert("brokerPortalPricingSettings", {
+		brokerSplitPercent: 0,
+		createdAt: now,
+		updatedAt: now,
+		updatedByAuthId: args?.updatedByAuthId,
+	});
+	const setting = await ctx.db.get(settingId);
+	if (!setting) {
+		throw new ConvexError("Broker portal pricing setting could not be created");
+	}
+
+	return setting;
+}
+
+export async function setBrokerPortalPricingSetting(
+	ctx: PortalPricingWriterCtx,
+	args: { brokerSplitPercent: number; updatedByAuthId?: string }
+): Promise<BrokerPortalPricingSettingDoc> {
+	const parameters = validatePortalPricingPolicyParameters({
+		brokerSplitPercent: args.brokerSplitPercent,
+	});
+	const existing = await ensureBrokerPortalPricingSetting(ctx, {
+		updatedByAuthId: args.updatedByAuthId,
+	});
+
+	if (existing.brokerSplitPercent === parameters.brokerSplitPercent) {
+		return existing;
+	}
+
+	const now = Date.now();
+	await ctx.db.patch(existing._id, {
+		brokerSplitPercent: parameters.brokerSplitPercent,
+		updatedAt: now,
+		updatedByAuthId: args.updatedByAuthId,
+	});
+
+	const setting = await ctx.db.get(existing._id);
+	if (!setting) {
+		throw new ConvexError("Broker portal pricing setting could not be updated");
+	}
+
+	return setting;
 }
 
 export function selectEffectivePortalPricingPolicy(args: {
@@ -162,10 +290,7 @@ export async function loadPortalPricingSelection(
 		throw new ConvexError("Portal no longer exists for pricing selection");
 	}
 
-	const policies = await ctx.db
-		.query("portalPricingPolicies")
-		.withIndex("by_portal", (query) => query.eq("portalId", args.portalId))
-		.collect();
+	const policies = await loadPortalPricingPolicies(ctx, args.portalId);
 
 	return selectEffectivePortalPricingPolicy({
 		atTime: args.atTime,
@@ -193,6 +318,179 @@ export function requirePortalPricingSelection(
 			throw new ConvexError("Portal pricing selection is in an unknown state");
 	}
 }
+
+export async function ensurePortalSelectedPricingPolicy(
+	ctx: PortalPricingWriterCtx,
+	args: {
+		brokerSplitPercent: number;
+		portalId: PortalDoc["_id"];
+	}
+) {
+	const portal = await ctx.db.get(args.portalId);
+	if (!portal) {
+		throw new ConvexError(
+			"Portal no longer exists for pricing synchronization"
+		);
+	}
+
+	const parameters = validatePortalPricingPolicyParameters({
+		brokerSplitPercent: args.brokerSplitPercent,
+	});
+	const policies = await loadPortalPricingPolicies(ctx, args.portalId);
+	const currentSelection = selectEffectivePortalPricingPolicy({
+		atTime: Date.now(),
+		policies,
+		portal,
+	});
+
+	if (
+		isReadySelectionWithBrokerSplit(
+			currentSelection,
+			parameters.brokerSplitPercent
+		)
+	) {
+		return {
+			brokerSplitPercent: parameters.brokerSplitPercent,
+			changed: false,
+			policyId: currentSelection.policy._id,
+		};
+	}
+
+	const now = Date.now();
+	// Portal pricing policies are synchronized configuration rows, not governed
+	// transition entities. Superseded active rows are archived in place before a
+	// new selected policy row is inserted.
+	await Promise.all(
+		policies.flatMap((policy) =>
+			policy.status === "active"
+				? [
+						ctx.db.patch(policy._id, {
+							effectiveTo:
+								policy.effectiveFrom < now &&
+								(policy.effectiveTo === undefined || policy.effectiveTo > now)
+									? now
+									: policy.effectiveTo,
+							status: "archived",
+							updatedAt: now,
+						}),
+					]
+				: []
+		)
+	);
+
+	const policyId = await ctx.db.insert("portalPricingPolicies", {
+		brokerSplitPercent: parameters.brokerSplitPercent,
+		createdAt: now,
+		effectiveFrom: now,
+		effectiveTo: undefined,
+		portalId: args.portalId,
+		status: "active",
+		updatedAt: now,
+	});
+
+	await ctx.db.patch(args.portalId, {
+		pricingPolicyId: policyId,
+		updatedAt: now,
+	});
+
+	return {
+		brokerSplitPercent: parameters.brokerSplitPercent,
+		changed: true,
+		policyId,
+	};
+}
+
+export async function syncAllPortalPricingSelections(
+	ctx: PortalPricingWriterCtx,
+	args?: { updatedByAuthId?: string }
+): Promise<PortalPricingSyncSummary> {
+	const setting = await ensureBrokerPortalPricingSetting(ctx, {
+		updatedByAuthId: args?.updatedByAuthId,
+	});
+	const portals = await ctx.db.query("portals").collect();
+
+	let brokerPortalsUpdated = 0;
+	let fairLendPortalsUpdated = 0;
+	let brokerPortalCount = 0;
+
+	for (const portal of portals) {
+		if (portal.portalType === "fairlend") {
+			const result = await ensurePortalSelectedPricingPolicy(ctx, {
+				brokerSplitPercent: 0,
+				portalId: portal._id,
+			});
+			if (result.changed) {
+				fairLendPortalsUpdated += 1;
+			}
+			continue;
+		}
+
+		brokerPortalCount += 1;
+		const result = await ensurePortalSelectedPricingPolicy(ctx, {
+			brokerSplitPercent: setting.brokerSplitPercent,
+			portalId: portal._id,
+		});
+		if (result.changed) {
+			brokerPortalsUpdated += 1;
+		}
+	}
+
+	return {
+		brokerPortalCount,
+		brokerPortalsUpdated,
+		fairLendPortalsUpdated,
+		setting,
+	};
+}
+
+export async function getBrokerPortalPricingSnapshot(
+	ctx: PortalPricingReaderCtx
+): Promise<BrokerPortalPricingSnapshot> {
+	const setting = await getSingleBrokerPortalPricingSetting(ctx);
+	const brokerSplitPercent = setting?.brokerSplitPercent ?? 0;
+	const portals = await ctx.db.query("portals").collect();
+	const policies = await ctx.db.query("portalPricingPolicies").collect();
+	const policiesByPortalId = new Map<
+		PortalDoc["_id"],
+		PortalPricingPolicyDoc[]
+	>();
+
+	for (const policy of policies) {
+		const current = policiesByPortalId.get(policy.portalId) ?? [];
+		current.push(policy);
+		policiesByPortalId.set(policy.portalId, current);
+	}
+
+	const atTime = Date.now();
+	let brokerPortalCount = 0;
+	let driftedBrokerPortalCount = 0;
+
+	for (const portal of portals) {
+		if (portal.portalType !== "broker") {
+			continue;
+		}
+
+		brokerPortalCount += 1;
+		const selection = selectEffectivePortalPricingPolicy({
+			atTime,
+			policies: policiesByPortalId.get(portal._id) ?? [],
+			portal,
+		});
+		if (!isReadySelectionWithBrokerSplit(selection, brokerSplitPercent)) {
+			driftedBrokerPortalCount += 1;
+		}
+	}
+
+	return {
+		brokerPortalCount,
+		brokerSplitPercent,
+		driftedBrokerPortalCount,
+		lastUpdatedAt: setting?.updatedAt ?? null,
+		updatedByAuthId: setting?.updatedByAuthId ?? null,
+	};
+}
+
+export { resolvePublishedPortalAvailability };
 
 function projectBrokerCutValue(
 	value: number,
