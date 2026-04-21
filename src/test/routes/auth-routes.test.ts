@@ -14,8 +14,10 @@ import {
 import {
 	buildAuthCompletionPath,
 	buildHostAwareAuthRequest,
+	buildLocalSessionSignOutHref,
 	buildHostOrigin,
 	buildHostAwareSignOutReturnTo,
+	resolveLocalSessionSignOutReturnTo,
 } from "#/lib/portal/auth-routing";
 
 describe("auth redirect helpers", () => {
@@ -102,6 +104,7 @@ describe("portal auth state helpers", () => {
 			version: 1,
 			issuedAt: 123,
 			returnPathname: "/",
+			hasExplicitReturnPath: false,
 			hostClass: "marketing",
 			hostType: "local",
 			requestedHost: "localhost:3000",
@@ -120,6 +123,7 @@ describe("portal auth state helpers", () => {
 			version: 1,
 			issuedAt: 123,
 			returnPathname: "/borrower/deals?tab=open",
+			hasExplicitReturnPath: true,
 			hostClass: "portal",
 			hostType: "local",
 			requestedHost: "meridian.localhost:3000",
@@ -143,12 +147,42 @@ describe("portal auth state helpers", () => {
 			verifyPortalAuthState(token, "test-secret", {
 				now: 1_000 + 5_000,
 			})
-		).toMatchObject({
-			hostClass: "portal",
-			returnPathname: "/broker#pipeline",
-			portalId: "portal_meridian",
-			portalSlug: "meridian",
+			).toMatchObject({
+				hostClass: "portal",
+				hasExplicitReturnPath: true,
+				returnPathname: "/broker#pipeline",
+				portalId: "portal_meridian",
+				portalSlug: "meridian",
+			});
 		});
+
+	it("preserves legacy tokens that omit hasExplicitReturnPath", () => {
+		const token = signPortalAuthState(
+			{
+				version: 1,
+				issuedAt: 1_000,
+				returnPathname: "/",
+				hostClass: "marketing",
+				hostType: "local",
+				requestedHost: "localhost:3000",
+				canonicalHost: "localhost:3000",
+			},
+			"test-secret"
+		);
+
+		expect(
+			verifyPortalAuthState(token, "test-secret", {
+				now: 1_000 + 5_000,
+			})
+		).toMatchObject({
+			hostClass: "marketing",
+			returnPathname: "/",
+		});
+		expect(
+			verifyPortalAuthState(token, "test-secret", {
+				now: 1_000 + 5_000,
+			}).hasExplicitReturnPath
+		).toBeUndefined();
 	});
 
 	it("rejects a tampered auth state token", () => {
@@ -262,5 +296,28 @@ describe("portal auth routing helpers", () => {
 				canonicalHost: "mystery.localhost:3000",
 			})
 		).toBe("http://mystery.localhost:3000/");
+	});
+
+	it("builds a same-host local session sign-out URL for localhost flows", () => {
+		expect(
+			buildLocalSessionSignOutHref("http://app.localhost:3000/")
+		).toBe(
+			"http://app.localhost:3000/sign-out/local?returnTo=http%3A%2F%2Fapp.localhost%3A3000%2F"
+		);
+	});
+
+	it("keeps local session sign-out returns on the current host", () => {
+		expect(
+			resolveLocalSessionSignOutReturnTo({
+				requestUrl: "http://app.localhost:3000/sign-out/local",
+				returnTo: "/borrower/home",
+			})
+		).toBe("http://app.localhost:3000/borrower/home");
+		expect(
+			resolveLocalSessionSignOutReturnTo({
+				requestUrl: "http://app.localhost:3000/sign-out/local",
+				returnTo: "http://evil.localhost:3000/",
+			})
+		).toBe("http://app.localhost:3000/");
 	});
 });

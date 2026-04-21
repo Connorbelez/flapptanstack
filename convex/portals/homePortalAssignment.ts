@@ -140,13 +140,13 @@ export async function resolveUserHomePortalId(
 		.query("organizationMemberships")
 		.withIndex("byUser", (query) => query.eq("userWorkosId", user.authId))
 		.collect();
-	const preferredMembership =
-		memberships.find((membership) => membership.status === "active") ??
-		memberships[0];
-	if (preferredMembership?.organizationWorkosId) {
+	for (const membership of memberships) {
+		if (membership.status !== "active" || !membership.organizationWorkosId) {
+			continue;
+		}
 		const membershipPortal = await getPortalByOrgId(
 			ctx,
-			preferredMembership.organizationWorkosId
+			membership.organizationWorkosId
 		);
 		if (membershipPortal) {
 			return membershipPortal._id;
@@ -154,4 +154,51 @@ export async function resolveUserHomePortalId(
 	}
 
 	return ensureFairLendPortal(ctx);
+}
+
+interface HomePortalSyncResult {
+	homePortalId: Id<"portals">;
+	userId: Id<"users">;
+}
+
+async function syncUserHomePortalAssignment(
+	ctx: PortalWriterCtx,
+	user: DataModel["users"]["document"]
+): Promise<HomePortalSyncResult> {
+	const homePortalId = await resolveUserHomePortalId(ctx, user);
+	if (user.homePortalId !== homePortalId) {
+		await ctx.db.patch(user._id, { homePortalId });
+	}
+
+	return {
+		homePortalId,
+		userId: user._id,
+	};
+}
+
+export async function syncUserHomePortalAssignmentByUserId(
+	ctx: PortalWriterCtx,
+	userId: Id<"users">
+) {
+	const user = await ctx.db.get(userId);
+	if (!user) {
+		return null;
+	}
+
+	return syncUserHomePortalAssignment(ctx, user);
+}
+
+export async function syncUserHomePortalAssignmentByAuthId(
+	ctx: PortalWriterCtx,
+	authId: string
+) {
+	const user = await ctx.db
+		.query("users")
+		.withIndex("authId", (query) => query.eq("authId", authId))
+		.unique();
+	if (!user) {
+		return null;
+	}
+
+	return syncUserHomePortalAssignment(ctx, user);
 }

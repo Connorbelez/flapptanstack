@@ -140,7 +140,14 @@ export const Route = createRootRouteWithContext<{
 			portalContext.kind === "unknown" ||
 			(portalContext.kind === "portal" &&
 				portalContext.availability !== "active");
-		if (isBlockedPortalHost && ctx.location.pathname !== "/") {
+		const isAllowedBlockedHostAuthPath =
+			ctx.location.pathname === "/auth-complete" ||
+			ctx.location.pathname === "/callback";
+		if (
+			isBlockedPortalHost &&
+			ctx.location.pathname !== "/" &&
+			!isAllowedBlockedHostAuthPath
+		) {
 			throw redirect({ to: "/" });
 		}
 
