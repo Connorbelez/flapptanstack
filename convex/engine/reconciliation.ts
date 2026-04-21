@@ -1,9 +1,10 @@
+import type { FunctionReference, FunctionType } from "convex/server";
+import { makeFunctionReference } from "convex/server";
+import { v } from "convex/values";
 import { components } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
-import type { QueryCtx } from "../_generated/server";
+import { internalQuery } from "../_generated/server";
 import { AuditTrail } from "../auditTrailClient";
-import { adminQuery } from "../fluent";
-import { ENTITY_TABLE_MAP } from "./types";
+import { adminAction } from "../fluent";
 
 const auditTrail = new AuditTrail(components.auditTrail);
 const RECONCILIATION_PAGE_SIZE = 128;
@@ -16,158 +17,11 @@ interface Discrepancy {
 	journalNewState: string;
 }
 
-type ReconciliationCtx = Pick<QueryCtx, "db" | "runQuery">;
-interface LatestJournalEntry {
-	_id: string;
-	newState: string;
+interface StatusReconciliationResult {
+	checkedAt: number;
+	discrepancies: Discrepancy[];
+	isHealthy: boolean;
 }
-
-async function collectLatestJournalEntries(
-	ctx: ReconciliationCtx,
-	entityType: keyof typeof ENTITY_TABLE_MAP
-) {
-	const latestByEntity = new Map<string, LatestJournalEntry>();
-	let cursor: string | null = null;
-
-	let consecutiveEmptyPages = 0;
-
-	while (true) {
-		const { continueCursor, isDone, page } = await ctx.db
-			.query("auditJournal")
-			.withIndex("by_type_and_time", (q) => q.eq("entityType", entityType))
-			.order("desc")
-			.paginate({
-				cursor,
-				numItems: RECONCILIATION_PAGE_SIZE,
-			});
-
-		let foundNewEntity = false;
-		for (const entry of page) {
-			if (
-				entry.outcome === "transitioned" &&
-				!latestByEntity.has(entry.entityId)
-			) {
-				latestByEntity.set(entry.entityId, {
-					_id: entry._id,
-					newState: entry.newState,
-				});
-				foundNewEntity = true;
-			}
-		}
-
-		if (isDone) {
-			return latestByEntity;
-		}
-
-		// Early exit: entries arrive newest-first, so once we stop discovering
-		// new entities for several consecutive pages, all remaining pages contain
-		// only older entries for entities we already captured.
-		consecutiveEmptyPages = foundNewEntity ? 0 : consecutiveEmptyPages + 1;
-		if (consecutiveEmptyPages >= 3) {
-			return latestByEntity;
-		}
-
-		cursor = continueCursor;
-	}
-}
-
-async function getEntityStatus(
-	ctx: ReconciliationCtx,
-	entityType: keyof typeof ENTITY_TABLE_MAP,
-	entityId: string
-): Promise<string | null | undefined> {
-	// biome-ignore lint/style/useDefaultSwitchClause: entityType is an exhaustive union here.
-	switch (entityType) {
-		case "onboardingRequest": {
-			const entity = await ctx.db.get(entityId as Id<"onboardingRequests">);
-			return entity?.status ?? null;
-		}
-		case "mortgage": {
-			const entity = await ctx.db.get(entityId as Id<"mortgages">);
-			return entity?.status ?? null;
-		}
-		case "obligation": {
-			const entity = await ctx.db.get(entityId as Id<"obligations">);
-			return entity?.status ?? null;
-		}
-		case "collectionAttempt": {
-			const entity = await ctx.db.get(entityId as Id<"collectionAttempts">);
-			return entity?.status ?? null;
-		}
-		// Non-governed entity types: tables exist in schema but have no
-		// machine definitions. Skip to avoid false discrepancies.
-		case "deal":
-		case "provisionalApplication":
-		case "applicationPackage":
-		case "broker":
-		case "borrower":
-		case "lenderOnboarding":
-		case "provisionalOffer":
-		case "offerCondition":
-		case "lenderRenewalIntent":
-		case "dispersalEntry":
-			return undefined;
-	}
-}
-
-/**
- * Layer 1 reconciliation: verifies each governed entity's current status
- * matches the newState of its most recent "transitioned" journal entry.
- *
- * Any discrepancy means something changed status outside the transition engine.
- */
-export const reconcile = adminQuery
-	.input({})
-	.handler(async (ctx) => {
-		const discrepancies: Discrepancy[] = [];
-		const entityTypes = Object.keys(ENTITY_TABLE_MAP) as Array<
-			keyof typeof ENTITY_TABLE_MAP
-		>;
-
-		for (const entityType of entityTypes) {
-			const latestByEntity = await collectLatestJournalEntries(ctx, entityType);
-
-			// Skip entity types with no journal entries (handles missing tables gracefully)
-			if (latestByEntity.size === 0) {
-				continue;
-			}
-
-			for (const [entityId, journal] of latestByEntity) {
-				const entityStatus = await getEntityStatus(ctx, entityType, entityId);
-				// undefined = entity type not yet supported by transition engine — skip
-				if (entityStatus === undefined) {
-					continue;
-				}
-				if (entityStatus === null) {
-					discrepancies.push({
-						entityType,
-						entityId,
-						entityStatus: "ENTITY_NOT_FOUND",
-						journalNewState: journal.newState,
-						journalEntryId: journal._id,
-					});
-					continue;
-				}
-
-				if (entityStatus !== journal.newState) {
-					discrepancies.push({
-						entityType,
-						entityId,
-						entityStatus,
-						journalNewState: journal.newState,
-						journalEntryId: journal._id,
-					});
-				}
-			}
-		}
-
-		return {
-			checkedAt: Date.now(),
-			discrepancies,
-			isHealthy: discrepancies.length === 0,
-		};
-	})
-	.public();
 
 interface ChainVerification {
 	brokenAt?: number;
@@ -176,6 +30,44 @@ interface ChainVerification {
 	eventCount?: number;
 	valid: boolean;
 }
+
+interface Layer2ReconciliationResult {
+	brokenChains: ChainVerification[];
+	checkedAt: number;
+	isHealthy: boolean;
+	totalEntities: number;
+	verifications: ChainVerification[];
+}
+
+interface AuditJournalEntityIdPageResult {
+	continueCursor: string;
+	entityIds: string[];
+	isDone: boolean;
+}
+
+function makeInternalFunctionReference<
+	Type extends FunctionType,
+	Args extends Record<string, unknown>,
+	ReturnType,
+>(name: string) {
+	return makeFunctionReference<Type, Args, ReturnType>(
+		name
+	) as unknown as FunctionReference<Type, "internal", Args, ReturnType>;
+}
+
+const runStatusReconciliationRef = makeInternalFunctionReference<
+	"action",
+	Record<string, never>,
+	StatusReconciliationResult
+>("engine/reconciliationAction:runStatusReconciliation");
+
+const listAuditJournalEntityIdsPageRef = makeInternalFunctionReference<
+	"query",
+	{
+		cursor?: string | null;
+	},
+	AuditJournalEntityIdPageResult
+>("engine/reconciliation:listAuditJournalEntityIdsPage");
 
 function buildMissingChainVerification(entityId: string): ChainVerification {
 	return {
@@ -220,29 +112,36 @@ function normalizeChainVerification(
 	};
 }
 
-async function collectEntityIdsWithJournalEntries(ctx: ReconciliationCtx) {
-	const uniqueEntityIds = new Set<string>();
-	let cursor: string | null = null;
+export const listAuditJournalEntityIdsPage = internalQuery({
+	args: {
+		cursor: v.optional(v.union(v.string(), v.null())),
+	},
+	handler: async (ctx, args): Promise<AuditJournalEntityIdPageResult> => {
+		const result = await ctx.db.query("auditJournal").paginate({
+			cursor: args.cursor ?? null,
+			numItems: RECONCILIATION_PAGE_SIZE,
+		});
 
-	while (true) {
-		const { continueCursor, isDone, page } = await ctx.db
-			.query("auditJournal")
-			.paginate({
-				cursor,
-				numItems: RECONCILIATION_PAGE_SIZE,
-			});
+		return {
+			continueCursor: result.continueCursor,
+			entityIds: result.page.map((entry) => entry.entityId),
+			isDone: result.isDone,
+		};
+	},
+});
 
-		for (const entry of page) {
-			uniqueEntityIds.add(entry.entityId);
-		}
-
-		if (isDone) {
-			return uniqueEntityIds;
-		}
-
-		cursor = continueCursor;
-	}
-}
+/**
+ * Layer 1 reconciliation: verifies each governed entity's current status
+ * matches the newState of its most recent "transitioned" journal entry.
+ *
+ * Any discrepancy means something changed status outside the transition engine.
+ */
+export const reconcile = adminAction
+	.input({})
+	.handler(async (ctx) => {
+		return ctx.runAction(runStatusReconciliationRef, {});
+	})
+	.public();
 
 /**
  * Layer 2 reconciliation: verifies the SHA-256 hash chain integrity in the
@@ -250,18 +149,38 @@ async function collectEntityIdsWithJournalEntries(ctx: ReconciliationCtx) {
  *
  * A broken chain means a Layer 2 entry was tampered with or is missing.
  */
-export const reconcileLayer2 = adminQuery
+export const reconcileLayer2 = adminAction
 	.input({})
-	.handler(async (ctx) => {
-		const verifications: ChainVerification[] = [];
-		const uniqueEntityIds = await collectEntityIdsWithJournalEntries(ctx);
+	.handler(async (ctx): Promise<Layer2ReconciliationResult> => {
+		const uniqueEntityIds = new Set<string>();
+		let cursor: string | null = null;
 
+		while (true) {
+			const pageResult: AuditJournalEntityIdPageResult = await ctx.runQuery(
+				listAuditJournalEntityIdsPageRef,
+				{ cursor }
+			);
+
+			for (const entityId of pageResult.entityIds) {
+				uniqueEntityIds.add(entityId);
+			}
+
+			if (pageResult.isDone) {
+				break;
+			}
+
+			cursor = pageResult.continueCursor;
+		}
+
+		const verifications: ChainVerification[] = [];
 		for (const entityId of uniqueEntityIds) {
 			const result = await auditTrail.verifyChain(ctx, { entityId });
 			verifications.push(normalizeChainVerification(entityId, result));
 		}
 
-		const brokenChains = verifications.filter((v) => !v.valid);
+		const brokenChains = verifications.filter(
+			(verification) => !verification.valid
+		);
 
 		return {
 			checkedAt: Date.now(),

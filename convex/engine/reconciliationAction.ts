@@ -1,7 +1,7 @@
 import type { FunctionReference, FunctionType } from "convex/server";
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import {
 	internalAction,
@@ -33,6 +33,25 @@ interface ReconciliationResult {
 	isHealthy: boolean;
 }
 
+interface AuditJournalPageEntry {
+	_id: string;
+	entityId: string;
+	newState: string;
+	outcome: string;
+}
+
+interface AuditJournalPageResult {
+	continueCursor: string;
+	isDone: boolean;
+	page: AuditJournalPageEntry[];
+}
+
+interface EntityStatusLookupResult {
+	entityId: string;
+	status: string | null;
+	supported: boolean;
+}
+
 type ReconciliationCtx = Pick<QueryCtx, "db">;
 
 function makeInternalFunctionReference<
@@ -46,10 +65,28 @@ function makeInternalFunctionReference<
 }
 
 const reconcileInternalRef = makeInternalFunctionReference<
-	"query",
+	"action",
 	Record<string, never>,
 	ReconciliationResult
->("engine/reconciliationAction:reconcileInternal");
+>("engine/reconciliationAction:runStatusReconciliation");
+
+const listAuditJournalPageByEntityTypeRef = makeInternalFunctionReference<
+	"query",
+	{
+		cursor?: string | null;
+		entityType: string;
+	},
+	AuditJournalPageResult
+>("engine/reconciliationAction:listAuditJournalPageByEntityType");
+
+const lookupEntityStatusesRef = makeInternalFunctionReference<
+	"query",
+	{
+		entityIds: string[];
+		entityType: string;
+	},
+	EntityStatusLookupResult[]
+>("engine/reconciliationAction:lookupEntityStatuses");
 
 const logReconciliationDiscrepanciesRef = makeInternalFunctionReference<
 	"mutation",
@@ -75,37 +112,23 @@ const advanceReplayCursorRef = makeInternalFunctionReference<
 	null
 >("payments/cashLedger/replayIntegrity:advanceReplayCursor");
 
-async function collectLatestEntries(
+async function lookupStatuses(
 	ctx: ReconciliationCtx,
-	entityType: keyof typeof ENTITY_TABLE_MAP
-) {
-	const latestByEntity = new Map<string, LatestJournalEntry>();
-	let cursor: string | null = null;
+	entityType: string,
+	entityIds: string[]
+): Promise<EntityStatusLookupResult[]> {
+	const results: EntityStatusLookupResult[] = [];
 
-	while (true) {
-		const { continueCursor, isDone, page } = await ctx.db
-			.query("auditJournal")
-			.withIndex("by_type_and_time", (q) => q.eq("entityType", entityType))
-			.order("desc")
-			.paginate({ cursor, numItems: RECONCILIATION_PAGE_SIZE });
-
-		for (const entry of page) {
-			if (
-				entry.outcome === "transitioned" &&
-				!latestByEntity.has(entry.entityId)
-			) {
-				latestByEntity.set(entry.entityId, {
-					_id: entry._id,
-					newState: entry.newState,
-				});
-			}
-		}
-
-		if (isDone) {
-			return latestByEntity;
-		}
-		cursor = continueCursor;
+	for (const entityId of entityIds) {
+		const status = await lookupStatus(ctx, entityType, entityId);
+		results.push({
+			entityId,
+			status: status ?? null,
+			supported: status !== undefined,
+		});
 	}
+
+	return results;
 }
 
 async function lookupStatus(
@@ -130,44 +153,21 @@ async function lookupStatus(
 			return (
 				(await ctx.db.get(entityId as Id<"collectionAttempts">))?.status ?? null
 			);
+		// Non-governed entity types: tables exist in schema but have no
+		// machine definitions. Skip to avoid false discrepancies.
 		case "deal":
-			return (await ctx.db.get(entityId as Id<"deals">))?.status ?? null;
 		case "provisionalApplication":
-			return (
-				(await ctx.db.get(entityId as Id<"provisionalApplications">))?.status ??
-				null
-			);
 		case "applicationPackage":
-			return (
-				(await ctx.db.get(entityId as Id<"applicationPackages">))?.status ??
-				null
-			);
 		case "broker":
-			return (await ctx.db.get(entityId as Id<"brokers">))?.status ?? null;
 		case "borrower":
-			return (await ctx.db.get(entityId as Id<"borrowers">))?.status ?? null;
+		case "lenderOnboarding":
+		case "provisionalOffer":
+		case "offerCondition":
+		case "lenderRenewalIntent":
+		case "dispersalEntry":
+			return undefined;
 		case "lender":
 			return (await ctx.db.get(entityId as Id<"lenders">))?.status ?? null;
-		case "lenderOnboarding":
-			return (
-				(await ctx.db.get(entityId as Id<"lenderOnboardings">))?.status ?? null
-			);
-		case "provisionalOffer":
-			return (
-				(await ctx.db.get(entityId as Id<"provisionalOffers">))?.status ?? null
-			);
-		case "offerCondition":
-			return (
-				(await ctx.db.get(entityId as Id<"offerConditions">))?.status ?? null
-			);
-		case "lenderRenewalIntent":
-			return (
-				(await ctx.db.get(entityId as Id<"lenderRenewalIntents">))?.status ??
-				null
-			);
-		case "dispersalEntry":
-			// Non-governed entity: explicitly skipped by reconciliation.
-			return undefined;
 		default: {
 			// Log error for any entity type not yet covered — this prevents silent skipping
 			console.error(
@@ -205,11 +205,51 @@ function buildDiscrepancy(
 	return null;
 }
 
+export const listAuditJournalPageByEntityType = internalQuery({
+	args: {
+		cursor: v.optional(v.union(v.string(), v.null())),
+		entityType: v.string(),
+	},
+	handler: async (ctx, args): Promise<AuditJournalPageResult> => {
+		const result = await ctx.db
+			.query("auditJournal")
+			.withIndex("by_type_and_time", (q) =>
+				q.eq("entityType", args.entityType as Doc<"auditJournal">["entityType"])
+			)
+			.order("desc")
+			.paginate({
+				cursor: args.cursor ?? null,
+				numItems: RECONCILIATION_PAGE_SIZE,
+			});
+
+		return {
+			continueCursor: result.continueCursor,
+			isDone: result.isDone,
+			page: result.page.map((entry) => ({
+				_id: entry._id,
+				entityId: entry.entityId,
+				newState: entry.newState,
+				outcome: entry.outcome,
+			})),
+		};
+	},
+});
+
+export const lookupEntityStatuses = internalQuery({
+	args: {
+		entityIds: v.array(v.string()),
+		entityType: v.string(),
+	},
+	handler: async (ctx, args) => {
+		return lookupStatuses(ctx, args.entityType, args.entityIds);
+	},
+});
+
 /**
- * Internal query for reconciliation — no auth required.
- * Mirrors the logic in reconciliation.ts but callable from scheduled actions.
+ * Internal action for status reconciliation — no auth required.
+ * Called by the daily cron and the admin action wrapper.
  */
-export const reconcileInternal = internalQuery({
+export const runStatusReconciliation = internalAction({
 	handler: async (ctx) => {
 		const discrepancies: Discrepancy[] = [];
 		const entityTypes = Object.keys(ENTITY_TABLE_MAP) as Array<
@@ -217,20 +257,73 @@ export const reconcileInternal = internalQuery({
 		>;
 
 		for (const entityType of entityTypes) {
-			const latestByEntity = await collectLatestEntries(ctx, entityType);
-			if (latestByEntity.size === 0) {
-				continue;
-			}
+			const seenEntityIds = new Set<string>();
+			let cursor: string | null = null;
 
-			for (const [entityId, journal] of latestByEntity) {
-				const status = await lookupStatus(ctx, entityType, entityId);
-				if (status === undefined) {
-					continue;
+			while (true) {
+				const pageResult: AuditJournalPageResult = await ctx.runQuery(
+					listAuditJournalPageByEntityTypeRef,
+					{
+						cursor,
+						entityType,
+					}
+				);
+
+				const latestEntries: Array<{
+					entityId: string;
+					journal: LatestJournalEntry;
+				}> = [];
+
+				for (const entry of pageResult.page) {
+					if (
+						entry.outcome !== "transitioned" ||
+						seenEntityIds.has(entry.entityId)
+					) {
+						continue;
+					}
+
+					seenEntityIds.add(entry.entityId);
+					latestEntries.push({
+						entityId: entry.entityId,
+						journal: {
+							_id: entry._id,
+							newState: entry.newState,
+						},
+					});
 				}
-				const d = buildDiscrepancy(entityType, entityId, status, journal);
-				if (d) {
-					discrepancies.push(d);
+
+				if (latestEntries.length > 0) {
+					const statuses = await ctx.runQuery(lookupEntityStatusesRef, {
+						entityIds: latestEntries.map(({ entityId }) => entityId),
+						entityType,
+					});
+					const statusByEntityId = new Map(
+						statuses.map((status) => [status.entityId, status])
+					);
+
+					for (const { entityId, journal } of latestEntries) {
+						const statusResult = statusByEntityId.get(entityId);
+						if (!statusResult?.supported) {
+							continue;
+						}
+
+						const d = buildDiscrepancy(
+							entityType,
+							entityId,
+							statusResult.status,
+							journal
+						);
+						if (d) {
+							discrepancies.push(d);
+						}
+					}
 				}
+
+				if (pageResult.isDone) {
+					break;
+				}
+
+				cursor = pageResult.continueCursor;
 			}
 		}
 
@@ -292,7 +385,7 @@ export const dailyReconciliation = internalAction({
 			discrepancies: Discrepancy[];
 		} | null = null;
 		try {
-			layer1Result = await ctx.runQuery(reconcileInternalRef, {});
+			layer1Result = await ctx.runAction(reconcileInternalRef, {});
 
 			if (layer1Result.isHealthy) {
 				console.info(

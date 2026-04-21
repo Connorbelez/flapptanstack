@@ -170,11 +170,15 @@ const pollProviderManagedSchedulesRef = makeFunctionReference<
 		failedCount: number;
 		ingestedEventCount: number;
 		syncedCount: number;
+		drainedAllEligibleWork: boolean;
+		maxWavesReached: boolean;
+		remainingEligibleCount: number;
+		wavesRun: number;
 	}>
 >("payments/recurringSchedules/poller:pollProviderManagedSchedules");
 
-const listSchedulesEligibleForPollingRef = makeFunctionReference<
-	"query",
+const previewSchedulesEligibleForPollingRef = makeFunctionReference<
+	"action",
 	{
 		asOf: number;
 		limit?: number;
@@ -185,7 +189,7 @@ const listSchedulesEligibleForPollingRef = makeFunctionReference<
 			status: string;
 		}>
 	>
->("payments/recurringSchedules/queries:listSchedulesEligibleForPolling");
+>("payments/recurringSchedules/poller:previewSchedulesEligibleForPolling");
 
 const TRANSACTION_SCHEDULE_PATH_RE = /\/transaction_schedules\/\d+$/;
 
@@ -1180,8 +1184,8 @@ describe("provider-managed recurring schedules", () => {
 			])
 		);
 
-		const candidates = await fixture.t.query(
-			listSchedulesEligibleForPollingRef,
+		const candidates = await fixture.t.action(
+			previewSchedulesEligibleForPollingRef,
 			{
 				asOf,
 				limit: 2,
@@ -1265,8 +1269,8 @@ describe("provider-managed recurring schedules", () => {
 				])
 			);
 
-		const candidates = await fixture.t.query(
-			listSchedulesEligibleForPollingRef,
+		const candidates = await fixture.t.action(
+			previewSchedulesEligibleForPollingRef,
 			{
 				asOf,
 				limit: 2,
@@ -1280,6 +1284,58 @@ describe("provider-managed recurring schedules", () => {
 		expect(
 			candidates.some((schedule) => schedule._id === secondActiveScheduleId)
 		).toBe(false);
+	});
+
+	it("drains more than one polling wave in a single invocation", async () => {
+		const rotessa = installRotessaFetchHarness();
+		rotessa.setTransactionRows([]);
+		const fixture = await seedProviderManagedFixture();
+		const asOf = Date.now();
+		const coveredFromPlanEntryId = fixture.planEntries[0]?._id;
+		const coveredToPlanEntryId = fixture.planEntries[1]?._id;
+		if (!(coveredFromPlanEntryId && coveredToPlanEntryId)) {
+			throw new Error("expected plan entries for multi-wave polling test");
+		}
+
+		await fixture.t.run(async (ctx) => {
+			await Promise.all(
+				["wave-1", "wave-2", "wave-3"].map((suffix, index) =>
+					ctx.db.insert("externalCollectionSchedules", {
+						status: "active",
+						mortgageId: fixture.mortgageId,
+						borrowerId: fixture.borrowerId,
+						providerCode: "pad_rotessa",
+						bankAccountId: fixture.bankAccountId,
+						externalScheduleRef: `${701 + index}`,
+						activationIdempotencyKey: suffix,
+						startDate: asOf,
+						endDate: asOf + 86_400_000,
+						cadence: "Monthly",
+						coveredFromPlanEntryId,
+						coveredToPlanEntryId,
+						nextPollAt: asOf - (index + 1) * 1000,
+						consecutiveSyncFailures: 0,
+						source: "test",
+						createdAt: asOf - (index + 1) * 1000,
+					})
+				)
+			);
+		});
+
+		const summary = await fixture.t.action(pollProviderManagedSchedulesRef, {
+			asOf,
+			limit: 1,
+		});
+		await drainScheduledWork(fixture.t);
+
+		expect(summary.candidateCount).toBe(3);
+		expect(summary.claimedCount).toBe(3);
+		expect(summary.syncedCount).toBe(3);
+		expect(summary.failedCount).toBe(0);
+		expect(summary.wavesRun).toBe(3);
+		expect(summary.drainedAllEligibleWork).toBe(true);
+		expect(summary.remainingEligibleCount).toBe(0);
+		expect(summary.maxWavesReached).toBe(false);
 	});
 
 	it("materializes a webhook-driven lifecycle through Future, Pending, and Approved", async () => {
