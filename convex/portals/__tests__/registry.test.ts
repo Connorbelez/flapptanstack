@@ -12,6 +12,7 @@ import {
 	FAIRLEND_BROKERAGE_ORG_ID,
 	FAIRLEND_STAFF_ORG_ID,
 } from "../../constants";
+import { getLatestOnboardingPortalIdForUser } from "../borrowerPortalAttribution";
 import { DEFAULT_PORTAL_POST_AUTH_PATH } from "../helpers";
 import { assertPortalRegistryInvariants } from "../invariants";
 
@@ -20,6 +21,10 @@ const migrationsModules = import.meta.glob(
 );
 const ALREADY_CLAIMED_ERROR_REGEX = /already claimed/;
 const DUPLICATE_PORTAL_CLAIM_ERROR_REGEX = /Duplicate portal claim/;
+const LOCAL_HOST_COLLISION_ERROR_REGEX =
+	/collides with another portal's local host/;
+const PRODUCTION_HOST_COLLISION_ERROR_REGEX =
+	/collides with another portal's production host/;
 
 function createHarness() {
 	const t = createTestConvex();
@@ -255,6 +260,50 @@ async function seedPortalBackfillFixture(t: ReturnType<typeof createHarness>) {
 }
 
 describe("portal registry backfill", () => {
+	it("resolves the latest attributed onboarding portal without requiring the newest request to be attributed", async () => {
+		const t = createHarness();
+
+		const result = await t.run(async (ctx) => {
+			const now = Date.now();
+			const userId = await ctx.db.insert("users", {
+				authId: "user_latest_onboarding_portal",
+				email: "latest-onboarding-portal@test.fairlend.ca",
+				firstName: "Latest",
+				lastName: "Portal",
+			});
+			const portalId = await ctx.db.insert("portals", {
+				...buildPortalRecord({
+					orgId: "org_latest_onboarding_portal",
+					slug: "latest-onboarding",
+				}),
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("onboardingRequests", {
+				userId,
+				requestedRole: "broker",
+				status: "approved",
+				referralSource: "self_signup",
+				portalId,
+				createdAt: now,
+			});
+			await ctx.db.insert("onboardingRequests", {
+				userId,
+				requestedRole: "lender",
+				status: "pending_review",
+				referralSource: "self_signup",
+				createdAt: now + 1,
+			});
+
+			return {
+				portalId,
+				resolvedPortalId: await getLatestOnboardingPortalIdForUser(ctx, userId),
+			};
+		});
+
+		expect(result.resolvedPortalId).toBe(result.portalId);
+	});
+
 	it("syncs a freshly created user's home portal to the FairLend app portal", async () => {
 		const t = createHarness();
 		const authId = "user_marketing_signup";
@@ -739,7 +788,7 @@ describe("portal registry cross-host invariants", () => {
 					localHost: "cross-beta.localhost:3000",
 					productionHost: "cross-alpha.localhost:3000",
 				})
-			).rejects.toThrow(/collides with another portal's local host/);
+			).rejects.toThrow(LOCAL_HOST_COLLISION_ERROR_REGEX);
 		});
 	});
 
@@ -763,7 +812,7 @@ describe("portal registry cross-host invariants", () => {
 					localHost: "shared-prod-host.fairlend.ca",
 					productionHost: "cross-delta.fairlend.ca",
 				})
-			).rejects.toThrow(/collides with another portal's production host/);
+			).rejects.toThrow(PRODUCTION_HOST_COLLISION_ERROR_REGEX);
 		});
 	});
 });

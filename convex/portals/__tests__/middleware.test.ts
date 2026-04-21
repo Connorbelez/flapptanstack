@@ -480,7 +480,6 @@ describe("portal middleware proof consumers", () => {
 		expect(success.portalId).toBe(fixture.portalAId);
 		expect(success.borrowerId).toBe(fixture.multiPortalBorrowerPortalAId);
 	});
-
 	it("fails closed when borrower portal attribution is missing", async () => {
 		const t = createHarness();
 		const fixture = await seedPortalFixture(t);

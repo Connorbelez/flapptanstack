@@ -210,17 +210,17 @@ function PortalHomeContent({
 			<Authenticated>
 				<div className="flex justify-center">
 					<Button asChild>
-						<a href="/lender/listings">Open lender workspace</a>
+						<a href="/listings">Open marketplace</a>
 					</Button>
 				</div>
 			</Authenticated>
 			<Unauthenticated>
 				<div className="flex flex-wrap justify-center gap-3">
 					<Button asChild>
-						<a href="/sign-in?redirect=/lender/listings">Sign in</a>
+						<a href="/sign-in?redirect=/listings">Sign in</a>
 					</Button>
 					<Button asChild variant="outline">
-						<a href="/sign-up?redirect=/lender/listings">Sign up</a>
+						<a href="/sign-up?redirect=/listings">Sign up</a>
 					</Button>
 				</div>
 			</Unauthenticated>
