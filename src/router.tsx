@@ -9,6 +9,7 @@ import {
 } from "@workos/authkit-tanstack-react-start/client";
 import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { useCallback, useMemo } from "react";
+import { AppRoutePendingScreen } from "./components/AppRoutePendingScreen";
 import { AppErrorComponent } from "./components/error-boundary";
 import {
 	createPortalCacheScopeController,
@@ -50,6 +51,8 @@ export function getRouter() {
 		defaultViewTransition: true,
 		scrollRestoration: true,
 		defaultPreloadStaleTime: 0, // Let React Query handle all caching
+		defaultPendingMs: 0, // Show route pendingComponent immediately
+		defaultPendingComponent: AppRoutePendingScreen,
 		defaultErrorComponent: ({ error, reset }) => (
 			<AppErrorComponent error={error} reset={reset} />
 		),
