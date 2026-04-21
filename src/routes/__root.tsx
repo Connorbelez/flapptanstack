@@ -10,7 +10,6 @@ import {
 	useRouterState,
 } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { getAuth, type UserInfo } from "@workos/authkit-tanstack-react-start";
 import type { ConvexReactClient } from "convex/react";
 import type { ReactNode } from "react";
 import { AppErrorComponent } from "../components/error-boundary";
@@ -18,13 +17,10 @@ import Header from "../components/header";
 import { PortalStateBoundary } from "../components/portal/portal-state-boundary";
 import { Toaster } from "../components/ui/sonner";
 import { isAdminPathname } from "../lib/admin-routes";
-import {
-	normalizePermissions,
-	normalizeRoles,
-	resolvePrimaryRole,
-} from "../lib/auth-policy";
-import { resolveRootPortalContext } from "../lib/portal/host-resolution";
+import { getReturnPathname } from "../lib/auth-redirect";
 import { portalRequestMiddleware } from "../lib/portal/request-host";
+import { resolveRouteHostDecision } from "../lib/portal/route-host-decision";
+import { resolveRouteHostSession } from "../lib/portal/route-host-session";
 import appCss from "../styles.css?url";
 
 // Suppress known TanStack Start SSR hydration warning (dev-only, harmless)
@@ -34,46 +30,9 @@ const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getIte
 
 const fetchWorkosAuth = createServerFn({ method: "GET" })
 	.middleware([portalRequestMiddleware])
-	.handler(async ({ context }) => {
-		const auth = await getAuth();
-		const { user } = auth;
-		if (!user) {
-			const portalContext = await resolveRootPortalContext({
-				requestHost: context.requestHost,
-				token: null,
-			});
-			return {
-				userId: null as string | null,
-				token: null as string | null,
-				role: null as string | null,
-				roles: [] as string[],
-				permissions: [] as string[],
-				orgId: null as string | null,
-				portalCacheKey: portalContext.cacheKey,
-				portalContext,
-				requestHost: context.requestHost,
-			};
-		}
-
-		const info = auth as UserInfo;
-		const roles = normalizeRoles({ role: info.role, roles: info.roles });
-		const token = info.accessToken ?? null;
-		const portalContext = await resolveRootPortalContext({
-			requestHost: context.requestHost,
-			token,
-		});
-		return {
-			userId: user.id,
-			token,
-			role: resolvePrimaryRole({ role: info.role, roles }),
-			roles,
-			permissions: normalizePermissions(info.permissions),
-			orgId: info.organizationId ?? null,
-			portalCacheKey: portalContext.cacheKey,
-			portalContext,
-			requestHost: context.requestHost,
-		};
-	});
+	.handler(async ({ context }) =>
+		resolveRouteHostSession({ requestHost: context.requestHost })
+	);
 
 export const Route = createRootRouteWithContext<{
 	queryClient: QueryClient;
@@ -126,6 +85,7 @@ export const Route = createRootRouteWithContext<{
 			portalCacheKey,
 			portalContext,
 			requestHost,
+			viewerPortalAssignment,
 		} = await fetchWorkosAuth();
 
 		// During SSR only (the only time serverHttpClient exists),
@@ -151,6 +111,23 @@ export const Route = createRootRouteWithContext<{
 			throw redirect({ to: "/" });
 		}
 
+		const routeHostDecision = resolveRouteHostDecision({
+			pathname: ctx.location.pathname,
+			portalContext,
+			returnTo: getReturnPathname(ctx.location.href ?? ctx.location.pathname),
+			userId,
+			viewerPortalAssignment,
+		});
+		if (routeHostDecision.kind === "boundary") {
+			throw redirect({
+				to: "/host-boundary",
+				search: { returnTo: routeHostDecision.returnTo },
+			});
+		}
+		if (routeHostDecision.kind === "redirect") {
+			throw redirect({ href: routeHostDecision.href });
+		}
+
 		return {
 			userId,
 			token,
@@ -161,6 +138,7 @@ export const Route = createRootRouteWithContext<{
 			portalCacheKey,
 			portalContext,
 			requestHost,
+			viewerPortalAssignment,
 		};
 	},
 });

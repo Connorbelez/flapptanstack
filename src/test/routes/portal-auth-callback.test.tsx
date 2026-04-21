@@ -25,6 +25,17 @@ describe("resolveAuthCompletionDecision", () => {
 		defaultPostAuthPath: "/borrower/home",
 	};
 
+	const northstarPortal = {
+		portalId: "portal_northstar",
+		slug: "northstar",
+		portalType: "broker" as const,
+		productionHost: "northstar.fairlend.ca",
+		localHost: "northstar.localhost:3000",
+		status: "active" as const,
+		isPublished: true,
+		defaultPostAuthPath: "/broker/dashboard",
+	};
+
 	it("redirects marketing-host completions to the assigned home portal", () => {
 		expect(
 			resolveAuthCompletionDecision({
@@ -85,6 +96,39 @@ describe("resolveAuthCompletionDecision", () => {
 		).toEqual({
 			kind: "redirect",
 			href: "http://app.localhost:3000/borrower/home",
+		});
+	});
+
+	it("prefers the current organization portal for marketing-host completion targets", () => {
+		expect(
+			resolveAuthCompletionDecision({
+				authState: {
+					version: 1,
+					issuedAt: 1_000,
+					returnPathname: "/listings",
+					hostClass: "marketing",
+					hostType: "local",
+					requestedHost: "localhost:3000",
+					canonicalHost: "localhost:3000",
+				},
+				currentPortalContext: {
+					kind: "marketing",
+					requestedHost: "localhost:3000",
+					canonicalHost: "localhost:3000",
+					cacheKey: "marketing:localhost:3000",
+				},
+				viewerAssignment: {
+					userId: "user_multi_org",
+					homePortalId: "portal_app",
+					homePortal: fairLendPortal,
+					currentOrgPortalId: "portal_meridian",
+					currentOrgPortal: localBrokerPortal,
+					isFairLendAdmin: false,
+				},
+			})
+		).toEqual({
+			kind: "redirect",
+			href: "http://meridian.localhost:3000/listings",
 		});
 	});
 
@@ -262,6 +306,53 @@ describe("resolveAuthCompletionDecision", () => {
 		});
 	});
 
+	it("prefers the current organization portal for wrong-portal continuation targets", () => {
+		expect(
+			resolveAuthCompletionDecision({
+				authState: {
+					version: 1,
+					issuedAt: 1_000,
+					returnPathname: "/borrower/applications",
+					hostClass: "portal",
+					hostType: "local",
+					requestedHost: "meridian.localhost:3000",
+					canonicalHost: "meridian.localhost:3000",
+					portalId: "portal_meridian",
+					portalSlug: "meridian",
+				},
+				currentPortalContext: {
+					kind: "portal",
+					requestedHost: "meridian.localhost:3000",
+					canonicalHost: "meridian.localhost:3000",
+					cacheKey:
+						"portal:portal_meridian:active:local:meridian.localhost:3000",
+					availability: "active",
+					matchedHostType: "local",
+					portal: {
+						...localBrokerPortal,
+						portalId: "portal_meridian" as Id<"portals">,
+						publicTeaserEnabled: true,
+						teaserListingLimit: 12,
+					},
+				},
+				viewerAssignment: {
+					userId: "user_multi_org",
+					homePortalId: "portal_app",
+					homePortal: fairLendPortal,
+					currentOrgPortalId: "portal_northstar",
+					currentOrgPortal: northstarPortal,
+					isFairLendAdmin: false,
+				},
+			})
+		).toEqual({
+			kind: "wrong-portal",
+			continueHref: "http://northstar.localhost:3000/borrower/applications",
+			currentHost: "meridian.localhost:3000",
+			assignedHost: "northstar.localhost:3000",
+			assignedPortalLabel: "Northstar",
+		});
+	});
+
 	it("allows FairLend admins to bypass wrong-portal rejection explicitly", () => {
 		expect(
 			resolveAuthCompletionDecision({
@@ -423,6 +514,39 @@ describe("resolveAuthCompletionDecision", () => {
 		).toEqual({
 			kind: "redirect",
 			href: "http://app.localhost:3000/",
+		});
+	});
+
+	it("allows admin-host completions to resolve portal-boundary sign-ins", () => {
+		expect(
+			resolveAuthCompletionDecision({
+				authState: {
+					version: 1,
+					issuedAt: 1_000,
+					returnPathname: "/listings",
+					hostClass: "marketing",
+					hostType: "local",
+					requestedHost: "admin.localhost:3000",
+					canonicalHost: "admin.localhost:3000",
+				},
+				currentPortalContext: {
+					kind: "admin",
+					requestedHost: "admin.localhost:3000",
+					canonicalHost: "admin.localhost:3000",
+					cacheKey: "admin:admin.localhost:3000",
+				},
+				viewerAssignment: {
+					userId: "user_app",
+					homePortalId: "portal_app",
+					homePortal: fairLendPortal,
+					currentOrgPortalId: null,
+					currentOrgPortal: null,
+					isFairLendAdmin: false,
+				},
+			})
+		).toEqual({
+			kind: "redirect",
+			href: "http://app.localhost:3000/listings",
 		});
 	});
 

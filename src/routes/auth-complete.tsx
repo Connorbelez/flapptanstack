@@ -1,30 +1,15 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth } from "@workos/authkit-tanstack-react-start";
-import { ConvexHttpClient } from "convex/browser";
 import { WrongPortalState } from "#/components/portal/WrongPortalState";
-import {
-	resolveAuthCompletionDecision,
-	type ViewerHomePortalAssignment,
-} from "#/lib/portal/auth-completion";
+import { resolveAuthCompletionDecision } from "#/lib/portal/auth-completion";
 import {
 	getPortalAuthStateSecret,
 	verifyPortalAuthState,
 } from "#/lib/portal/auth-state";
 import { resolveRootPortalContext } from "#/lib/portal/host-resolution";
+import { getViewerPortalAssignment } from "#/lib/portal/portal-navigation-target";
 import { portalRequestMiddleware } from "#/lib/portal/request-host";
-import { api } from "../../convex/_generated/api";
-
-function createAuthedConvexClient(token: string) {
-	const convexUrl = import.meta.env.VITE_CONVEX_URL;
-	if (!convexUrl) {
-		throw new Error("missing VITE_CONVEX_URL env var");
-	}
-
-	const client = new ConvexHttpClient(convexUrl);
-	client.setAuth(token);
-	return client;
-}
 
 const resolveAuthCompletion = createServerFn({ method: "GET" })
 	.middleware([portalRequestMiddleware])
@@ -49,12 +34,7 @@ const resolveAuthCompletion = createServerFn({ method: "GET" })
 			data.authStateToken,
 			getPortalAuthStateSecret()
 		);
-		const viewerAssignment = (await createAuthedConvexClient(
-			auth.accessToken
-		).query(
-			api.portals.queries.getViewerHomePortal,
-			{}
-		)) as ViewerHomePortalAssignment;
+		const viewerAssignment = await getViewerPortalAssignment(auth.accessToken);
 
 		return resolveAuthCompletionDecision({
 			authState,

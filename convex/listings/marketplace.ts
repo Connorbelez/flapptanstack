@@ -13,6 +13,7 @@ import {
 	getListingEncumbrancesByProperty,
 	lienPositionToMortgageType,
 } from "./marketplaceShared";
+import { getRequiredPortalPricingPolicy } from "./portalProjection";
 import { readListingPublicDocuments } from "./publicDocuments";
 import { marketplaceListingPropertyTypeValidator } from "./validators";
 
@@ -219,7 +220,8 @@ async function collectMarketplaceListingCandidates(
 
 async function getSimilarMarketplaceListings(
 	ctx: Pick<QueryCtx, "db" | "storage">,
-	listing: ListingDoc
+	listing: ListingDoc,
+	pricingPolicy?: Parameters<typeof projectListingForPortal>[1]
 ) {
 	const candidates = await ctx.db
 		.query("listings")
@@ -235,17 +237,23 @@ async function getSimilarMarketplaceListings(
 			.filter((candidate) => candidate._id !== listing._id)
 			.sort(compareMarketplaceListings)
 			.slice(0, 3)
-			.map(async (candidate) => ({
-				heroImageUrl: await getHeroImageUrl(ctx, candidate.heroImages[0]),
-				id: String(candidate._id),
-				interestRate: candidate.interestRate,
-				locationLabel: buildLocationLabel(candidate) ?? "",
-				ltvRatio: candidate.ltvRatio,
-				mortgageTypeLabel: lienPositionToMortgageType(candidate.lienPosition),
-				principal: candidate.principal,
-				propertyTypeLabel: candidate.marketplacePropertyType,
-				title: candidate.title ?? "Mortgage Listing",
-			}))
+			.map(async (candidate) => {
+				const projectedCandidate = pricingPolicy
+					? projectListingForPortal(candidate, pricingPolicy)
+					: candidate;
+
+				return {
+					heroImageUrl: await getHeroImageUrl(ctx, candidate.heroImages[0]),
+					id: String(candidate._id),
+					interestRate: projectedCandidate.interestRate,
+					locationLabel: buildLocationLabel(candidate) ?? "",
+					ltvRatio: candidate.ltvRatio,
+					mortgageTypeLabel: lienPositionToMortgageType(candidate.lienPosition),
+					principal: candidate.principal,
+					propertyTypeLabel: candidate.marketplacePropertyType,
+					title: candidate.title ?? "Mortgage Listing",
+				};
+			})
 	);
 }
 
@@ -333,19 +341,40 @@ export const listMarketplaceListings = listingQuery
 		cursor: v.optional(v.union(v.string(), v.null())),
 		filters: v.optional(marketplaceFiltersValidator),
 		numItems: v.optional(v.number()),
+		portalId: v.id("portals"),
 	})
-	.handler(
-		async (ctx, args) => await listMarketplaceListingsSnapshot(ctx, args)
-	)
+	.handler(async (ctx, args) => {
+		const pricingPolicy = await getRequiredPortalPricingPolicy(
+			ctx,
+			args.portalId
+		);
+		return await listMarketplaceListingsSnapshot(
+			ctx,
+			{
+				cursor: args.cursor,
+				filters: args.filters,
+				numItems: args.numItems,
+			},
+			{
+				pricingPolicy,
+			}
+		);
+	})
 	.public();
 
 export const getMarketplaceListingDetail = listingQuery
-	.input({ listingId: v.id("listings") })
+	.input({ listingId: v.id("listings"), portalId: v.id("portals") })
 	.handler(async (ctx, args) => {
 		const listing = await ctx.db.get(args.listingId);
 		if (!listing || listing.status !== "published") {
 			return null;
 		}
+
+		const pricingPolicy = await getRequiredPortalPricingPolicy(
+			ctx,
+			args.portalId
+		);
+		const projectedListing = projectListingForPortal(listing, pricingPolicy);
 
 		const [
 			investmentSummary,
@@ -362,7 +391,7 @@ export const getMarketplaceListingDetail = listingQuery
 			listing.propertyId
 				? getListingEncumbrancesByProperty(ctx, listing.propertyId)
 				: Promise.resolve([]),
-			getSimilarMarketplaceListings(ctx, listing),
+			getSimilarMarketplaceListings(ctx, listing, pricingPolicy),
 		]);
 
 		return {
@@ -388,14 +417,14 @@ export const getMarketplaceListingDetail = listingQuery
 					}))
 				),
 				id: String(listing._id),
-				interestRate: listing.interestRate,
+				interestRate: projectedListing.interestRate,
 				locationLabel: buildLocationLabel(listing) ?? "",
 				lienPosition: listing.lienPosition,
 				ltvRatio: listing.ltvRatio,
 				marketplaceCopy: listing.marketplaceCopy ?? null,
 				maturityDate: listing.maturityDate,
 				mortgageTypeLabel: lienPositionToMortgageType(listing.lienPosition),
-				monthlyPayment: listing.monthlyPayment,
+				monthlyPayment: projectedListing.monthlyPayment,
 				paymentFrequency: listing.paymentFrequency,
 				paymentHistory: listing.paymentHistory ?? null,
 				principal: listing.principal,

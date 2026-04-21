@@ -13,6 +13,7 @@ import { Route as UnauthorizedRouteImport } from './routes/unauthorized'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignOutRouteImport } from './routes/sign-out'
 import { Route as SignInRouteImport } from './routes/sign-in'
+import { Route as HostBoundaryRouteImport } from './routes/host-boundary'
 import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as AuthCompleteRouteImport } from './routes/auth-complete'
 import { Route as AboutRouteImport } from './routes/about'
@@ -164,6 +165,11 @@ const SignOutRoute = SignOutRouteImport.update({
 const SignInRoute = SignInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HostBoundaryRoute = HostBoundaryRouteImport.update({
+  id: '/host-boundary',
+  path: '/host-boundary',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CallbackRoute = CallbackRouteImport.update({
@@ -880,6 +886,7 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
+  '/host-boundary': typeof HostBoundaryRoute
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
@@ -1017,6 +1024,7 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
+  '/host-boundary': typeof HostBoundaryRoute
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
@@ -1145,6 +1153,7 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
+  '/host-boundary': typeof HostBoundaryRoute
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
@@ -1285,6 +1294,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/auth-complete'
     | '/callback'
+    | '/host-boundary'
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
@@ -1422,6 +1432,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/auth-complete'
     | '/callback'
+    | '/host-boundary'
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
@@ -1549,6 +1560,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/auth-complete'
     | '/callback'
+    | '/host-boundary'
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
@@ -1688,6 +1700,7 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   AuthCompleteRoute: typeof AuthCompleteRoute
   CallbackRoute: typeof CallbackRoute
+  HostBoundaryRoute: typeof HostBoundaryRoute
   SignInRoute: typeof SignInRoute
   SignOutRoute: typeof SignOutRouteWithChildren
   SignUpRoute: typeof SignUpRoute
@@ -1761,6 +1774,13 @@ declare module '@tanstack/react-router' {
       path: '/sign-in'
       fullPath: '/sign-in'
       preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/host-boundary': {
+      id: '/host-boundary'
+      path: '/host-boundary'
+      fullPath: '/host-boundary'
+      preLoaderRoute: typeof HostBoundaryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/callback': {
@@ -3134,6 +3154,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   AuthCompleteRoute: AuthCompleteRoute,
   CallbackRoute: CallbackRoute,
+  HostBoundaryRoute: HostBoundaryRoute,
   SignInRoute: SignInRoute,
   SignOutRoute: SignOutRouteWithChildren,
   SignUpRoute: SignUpRoute,

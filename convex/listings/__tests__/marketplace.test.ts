@@ -86,6 +86,45 @@ async function insertMortgageFixture(t: ReturnType<typeof createHarness>) {
 	});
 }
 
+async function insertBrokerPortalPricingFixture(
+	t: ReturnType<typeof createHarness>,
+	brokerSplitPercent = 10
+) {
+	return await t.run(async (ctx) => {
+		const portalId = await ctx.db.insert("portals", {
+			brokerId: undefined,
+			createdAt: 1_710_000_500_000,
+			defaultPostAuthPath: "/",
+			isPublished: true,
+			landingPageId: undefined,
+			localHost: "meridian.localhost:3000",
+			orgId: "org_meridian",
+			portalType: "broker",
+			pricingPolicyId: undefined,
+			productionHost: "meridian.fairlend.ca",
+			publicTeaserEnabled: true,
+			slug: "meridian",
+			status: "active",
+			teaserListingLimit: 12,
+			updatedAt: 1_710_000_500_000,
+		});
+		const policyId = await ctx.db.insert("portalPricingPolicies", {
+			brokerSplitPercent,
+			createdAt: 1_710_000_500_000,
+			effectiveFrom: 1_710_000_495_000,
+			effectiveTo: undefined,
+			portalId,
+			status: "active",
+			updatedAt: 1_710_000_500_000,
+		});
+		await ctx.db.patch(portalId, {
+			pricingPolicyId: policyId,
+			updatedAt: 1_710_000_500_000,
+		});
+		return portalId;
+	});
+}
+
 function buildListingDoc(
 	overrides: Partial<Omit<Doc<"listings">, "_creationTime" | "_id">> = {}
 ): Omit<Doc<"listings">, "_creationTime" | "_id"> {
@@ -141,6 +180,7 @@ function buildListingDoc(
 describe("marketplace listings", () => {
 	it("requires listing:view for marketplace reads", async () => {
 		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
 		const viewerWithoutListingView = t.withIdentity({
 			subject: "member-user",
 			issuer: "https://api.workos.com",
@@ -157,12 +197,14 @@ describe("marketplace listings", () => {
 			viewerWithoutListingView.query(listingApi.listMarketplaceListings, {
 				cursor: null,
 				numItems: 20,
+				portalId,
 			})
 		).rejects.toThrow('permission "listing:view" required');
 	});
 
 	it("filters by the stored marketplace property type", async () => {
 		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
 		const auth = listingViewer(t);
 
 		await t.run(async (ctx) => {
@@ -181,6 +223,7 @@ describe("marketplace listings", () => {
 				propertyTypes: ["Duplex"],
 			},
 			numItems: 20,
+			portalId,
 		});
 
 		expect(result.page).toHaveLength(1);
@@ -189,6 +232,7 @@ describe("marketplace listings", () => {
 
 	it("searches, filters by mortgage type, and keeps featured rows first", async () => {
 		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
 		const auth = listingViewer(t);
 
 		await t.run(async (ctx) => {
@@ -224,6 +268,7 @@ describe("marketplace listings", () => {
 				searchQuery: "Toronto",
 			},
 			numItems: 20,
+			portalId,
 		});
 
 		expect(result.page.map((listing) => listing.title)).toEqual([
@@ -236,6 +281,7 @@ describe("marketplace listings", () => {
 
 	it("paginates marketplace listings with a stable cursor", async () => {
 		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
 		const auth = listingViewer(t);
 
 		await t.run(async (ctx) => {
@@ -268,10 +314,12 @@ describe("marketplace listings", () => {
 		const firstPage = await auth.query(listingApi.listMarketplaceListings, {
 			cursor: null,
 			numItems: 2,
+			portalId,
 		});
 		const secondPage = await auth.query(listingApi.listMarketplaceListings, {
 			cursor: firstPage.continueCursor,
 			numItems: 2,
+			portalId,
 		});
 
 		expect(firstPage.page.map((listing) => listing.title)).toEqual([
@@ -308,6 +356,7 @@ describe("marketplace listings", () => {
 
 	it("returns a read-only marketplace detail payload", async () => {
 		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
 		const auth = listingViewer(t);
 		const { mortgageId, propertyId } = await insertMortgageFixture(t);
 
@@ -323,20 +372,34 @@ describe("marketplace listings", () => {
 					title: "King West Bridge Opportunity",
 				})
 			);
+			await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					interestRate: 10,
+					mortgageId,
+					propertyId,
+					title: "West End Similar Opportunity",
+				})
+			);
 		});
 
 		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
 			listingId,
+			portalId,
 		});
 
 		expect(result?.listing.id).toBe(String(listingId));
 		expect(result?.listing.readOnly).toBe(true);
 		expect(result?.documents).toBeDefined();
 		expect(result?.investment.availableFractions).toBeTypeOf("number");
+		expect(result?.listing.interestRate).toBe(7.65);
+		expect(result?.listing.monthlyPayment).toBe(1125);
+		expect(result?.similarListings[0]?.interestRate).toBe(9);
 	});
 
 	it("returns null for unpublished marketplace detail", async () => {
 		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
 		const auth = listingViewer(t);
 
 		let listingId!: Doc<"listings">["_id"];
@@ -352,8 +415,33 @@ describe("marketplace listings", () => {
 
 		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
 			listingId,
+			portalId,
 		});
 
 		expect(result).toBeNull();
+	});
+
+	it("projects marketplace card rows through the active portal pricing policy", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+
+		await t.run(async (ctx) => {
+			await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					interestRate: 8.5,
+					title: "Projected Marketplace Listing",
+				})
+			);
+		});
+
+		const result = await auth.query(listingApi.listMarketplaceListings, {
+			cursor: null,
+			numItems: 20,
+			portalId,
+		});
+
+		expect(result.page[0]?.interestRate).toBe(7.65);
 	});
 });

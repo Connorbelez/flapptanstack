@@ -3,16 +3,13 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader } from "../_generated/server";
 import { adminQuery, authedQuery } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
-import {
-	loadPortalPricingSelection,
-	projectListingForPortal,
-	requirePortalPricingSelection,
-} from "../portals/pricing";
+import { projectListingForPortal } from "../portals/pricing";
 import {
 	buildMarketplaceAvailabilitySummary,
 	getListingAppraisalsByProperty,
 	getListingEncumbrancesByProperty,
 } from "./marketplaceShared";
+import { getRequiredPortalPricingPolicy } from "./portalProjection";
 import {
 	listingPropertyTypeValidator,
 	listingStatusValidator,
@@ -317,22 +314,6 @@ export async function getListingByIdOrNull(
 	listingId: Id<"listings">
 ) {
 	return await ctx.db.get(listingId);
-}
-
-async function getRequiredPortalPricingPolicy(
-	ctx: { db: Pick<DatabaseReader, "get" | "query"> },
-	portalId: Id<"portals">
-) {
-	const portal = await ctx.db.get(portalId);
-	if (!portal) {
-		throw new ConvexError("Portal no longer exists for listing projection");
-	}
-
-	const selection = await loadPortalPricingSelection(ctx, {
-		atTime: Date.now(),
-		portalId,
-	});
-	return requirePortalPricingSelection(selection, portal.slug).policy;
 }
 
 async function collectPublishedListingCandidates(

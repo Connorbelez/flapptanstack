@@ -4,12 +4,18 @@ import { AlertCircle, ArrowLeft } from "lucide-react";
 import { MarketplaceListingDetailPage } from "#/components/listings/MarketplaceListingDetailPage";
 import { marketplaceListingDetailQueryOptions } from "#/components/listings/query-options";
 import { guardRouteAccess } from "#/lib/auth";
+import { assertActivePortalId } from "#/lib/portal/active-portal";
+import { Route as RootRoute } from "../__root";
 
 export const Route = createFileRoute("/listings/$listingId")({
 	beforeLoad: guardRouteAccess("listings"),
 	loader: async ({ context, params }) => {
+		const portalId = assertActivePortalId(
+			context.portalContext,
+			"Marketplace listings require an active portal host."
+		);
 		const detail = await context.queryClient.ensureQueryData(
-			marketplaceListingDetailQueryOptions(params.listingId)
+			marketplaceListingDetailQueryOptions(portalId, params.listingId)
 		);
 		if (!detail) {
 			throw notFound();
@@ -23,8 +29,13 @@ export const Route = createFileRoute("/listings/$listingId")({
 
 function RouteComponent() {
 	const { listingId } = Route.useLoaderData();
+	const { portalContext } = RootRoute.useRouteContext();
+	const portalId = assertActivePortalId(
+		portalContext,
+		"Marketplace listings require an active portal host."
+	);
 	const { data } = useSuspenseQuery(
-		marketplaceListingDetailQueryOptions(listingId)
+		marketplaceListingDetailQueryOptions(portalId, listingId)
 	);
 
 	if (!data) {

@@ -127,13 +127,11 @@ export function buildHostAwareAuthRequest(args: {
 		args.portalContext.canonicalHost
 	);
 
-	if (requiresHostAwareAuthState(args.portalContext)) {
-		if (!args.authStateToken) {
-			throw new Error(
-				"Host-aware auth state is required for marketing and portal hosts."
-			);
-		}
-
+	if (
+		args.authStateToken &&
+		(args.portalContext.kind === "admin" ||
+			requiresHostAwareAuthState(args.portalContext))
+	) {
 		return {
 			redirectUri,
 			returnPathname: buildAuthCompletionPath(args.authStateToken),
