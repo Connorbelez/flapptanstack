@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { buildOriginationBorrowerWorkflowSourceKey } from "../mortgages/provenance";
+import { syncUserHomePortalAssignmentByUserId } from "../portals/homePortalAssignment";
 import { normalizeEmail } from "../seed/seedHelpers";
 
 type BorrowerParticipantRole = Doc<"mortgageBorrowers">["role"];
@@ -255,6 +256,7 @@ export async function ensureCanonicalBorrowerForOrigination(
 		);
 	}
 	if (sameOrgBorrowers[0]) {
+		await syncUserHomePortalAssignmentByUserId(ctx, args.userId);
 		return {
 			borrowerId: sameOrgBorrowers[0]._id,
 			wasCreated: false,
@@ -275,6 +277,7 @@ export async function ensureCanonicalBorrowerForOrigination(
 		workflowSourceKey: args.workflowSourceKey,
 		workflowSourceType: "admin_origination_case",
 	});
+	await syncUserHomePortalAssignmentByUserId(ctx, args.userId);
 
 	return { borrowerId, wasCreated: true };
 }

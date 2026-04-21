@@ -11,7 +11,6 @@ import {
 import {
 	createAuthStorageState,
 	TEST_ADMIN_ORG_ID,
-	TEST_MEMBER_ORG_ID,
 } from "../helpers/auth-storage";
 import {
 	buildHostAwareSignInHref,
@@ -26,10 +25,20 @@ const testAccountEmail = process.env.TEST_ACCOUNT_EMAIL;
 if (!testAccountEmail) {
 	throw new Error("TEST_ACCOUNT_EMAIL environment variable is required for e2e tests");
 }
+const testBrokerOrgId = process.env.TEST_BROKER_ORG;
+if (!testBrokerOrgId) {
+	throw new Error("TEST_BROKER_ORG environment variable is required for e2e tests");
+}
 
 const hostAwareAuthStateDir = join(process.cwd(), ".tmp", "auth", "host-aware");
 
 interface SessionSnapshot {
+	currentOrgPortal?: {
+		localHost: string;
+		portalType: "broker" | "fairlend";
+		slug: string;
+	} | null;
+	currentOrgPortalId?: string | null;
 	tokenOrganizationId?: string | null;
 	viewerHomePortal?: {
 		homePortal: null | {
@@ -51,6 +60,12 @@ function getProfileEmailCard(page: Page) {
 		.locator("xpath=..");
 }
 
+function getProfileSignOutButton(page: Page) {
+	return page
+		.getByRole("tabpanel", { name: /profile/i })
+		.getByRole("button", { name: "Sign Out", exact: true });
+}
+
 function getBaseURL(): string {
 	const baseURL = test.info().project.use.baseURL;
 	if (!baseURL) {
@@ -63,6 +78,7 @@ async function createScopedStorageState(
 	browser: Browser,
 	args: {
 		entryHref?: string;
+		expectedRole?: string;
 		orgId?: string;
 	}
 ) {
@@ -78,6 +94,7 @@ async function createScopedStorageState(
 	try {
 		await createAuthStorageState({
 			entryHref: args.entryHref,
+			expectedRole: args.expectedRole,
 			orgId: args.orgId,
 			page: bootstrapPage,
 			path: storageStatePath,
@@ -159,7 +176,7 @@ test("app.localhost admin auth stays on app host and signs out back to the app h
 			timeout: 15_000,
 		});
 
-		await page.getByRole("button", { name: /sign out/i }).click();
+			await getProfileSignOutButton(page).click();
 		await expectSignedOutRoot(page, {
 			expectedHeading: "FairLend Portal",
 			expectedHost: appLocalHost,
@@ -170,55 +187,59 @@ test("app.localhost admin auth stays on app host and signs out back to the app h
 	}
 });
 
-test("member org auth stays on the assigned broker localhost host and signs out back there", async ({
+test("broker org auth stays on the assigned broker localhost host and signs out back there", async ({
 	browser,
 }) => {
+	test.setTimeout(90_000);
+
 	const appLocalHost = getAppLocalHost(getBaseURL());
+	const appOrigin = buildLocalOrigin(appLocalHost);
 	const discoveryState = await createScopedStorageState(browser, {
-		orgId: TEST_MEMBER_ORG_ID,
+		entryHref: buildHostAwareSignInHref(appLocalHost),
+		expectedRole: "broker",
+		orgId: testBrokerOrgId,
 	});
 	const discoverySession = await (async () => {
 		const { context, page } = await openContextFromStorage(browser, discoveryState);
 		try {
-			return await readSessionSnapshot(page);
+			return await readSessionSnapshot(page, appOrigin);
 		} finally {
 			await context.close();
 			await rm(discoveryState, { force: true });
 		}
 	})();
 
-	expect(discoverySession.tokenOrganizationId).toBe(TEST_MEMBER_ORG_ID);
+	expect(discoverySession.tokenOrganizationId).toBe(testBrokerOrgId);
 	expect(discoverySession.viewerHomePortalError).toBeNull();
-	expect(discoverySession.viewerHomePortal?.homePortal?.portalType).toBe("broker");
+	expect(discoverySession.currentOrgPortal?.portalType).toBe("broker");
 
-	const assignedPortal = discoverySession.viewerHomePortal?.homePortal;
+	const assignedPortal = discoverySession.currentOrgPortal;
 	if (!(assignedPortal && assignedPortal.localHost)) {
-		throw new Error("Expected member org to resolve to a broker localhost portal");
+		throw new Error("Expected broker org to resolve to a broker localhost portal");
 	}
 	expect(assignedPortal.localHost).not.toBe(appLocalHost);
 
 	const brokerOrigin = buildLocalOrigin(assignedPortal.localHost);
 	const brokerStorage = await createScopedStorageState(browser, {
 		entryHref: buildHostAwareSignInHref(assignedPortal.localHost),
-		orgId: TEST_MEMBER_ORG_ID,
+		expectedRole: "broker",
+		orgId: testBrokerOrgId,
 	});
 	const { context, page } = await openContextFromStorage(browser, brokerStorage);
 
 	try {
 		const session = await readSessionSnapshot(page, brokerOrigin);
-		expect(session.tokenOrganizationId).toBe(TEST_MEMBER_ORG_ID);
+		expect(session.tokenOrganizationId).toBe(testBrokerOrgId);
 		expect(session.viewerHomePortalError).toBeNull();
-		expect(session.viewerHomePortal?.homePortal?.localHost).toBe(
-			assignedPortal.localHost
-		);
-		expect(session.viewerHomePortal?.homePortal?.portalType).toBe("broker");
+		expect(session.currentOrgPortal?.localHost).toBe(assignedPortal.localHost);
+		expect(session.currentOrgPortal?.portalType).toBe("broker");
 
 		await page.goto(`${brokerOrigin}/demo/workos`);
 		await expect(getProfileEmailCard(page)).toContainText(testAccountEmail, {
 			timeout: 15_000,
 		});
 
-		await page.getByRole("button", { name: /sign out/i }).click();
+			await getProfileSignOutButton(page).click();
 		await expectSignedOutRoot(page, {
 			expectedHeading: `${assignedPortal.slug} Portal`,
 			expectedHost: assignedPortal.localHost,

@@ -19,6 +19,8 @@ type ViewerHomePortalSnapshot = FunctionReturnType<
 
 interface ReadyTokenSnapshot {
 	accessToken: string;
+	currentOrgPortal: ViewerHomePortalSnapshot["currentOrgPortal"] | null;
+	currentOrgPortalId: string | null;
 	organizationId: string | null;
 	permissions: string[];
 	role: string | null;
@@ -37,6 +39,8 @@ type TokenSnapshot = ErrorTokenSnapshot | ReadyTokenSnapshot;
 function buildSignedOutTokenSnapshot(): ReadyTokenSnapshot {
 	return {
 		accessToken: "",
+		currentOrgPortal: null,
+		currentOrgPortalId: null,
 		status: "ready",
 		organizationId: null,
 		permissions: [],
@@ -73,6 +77,9 @@ async function loadTokenSnapshot(args: {
 		const viewerHomePortal = await loadViewerHomePortal(token);
 		return {
 			accessToken: token,
+			currentOrgPortal: viewerHomePortal.assignment?.currentOrgPortal ?? null,
+			currentOrgPortalId:
+				viewerHomePortal.assignment?.currentOrgPortalId ?? null,
 			status: "ready",
 			organizationId: claims.orgId,
 			permissions: claims.permissions,
@@ -178,6 +185,8 @@ function E2eSessionRoute() {
 				authOrganizationId: auth.organizationId ?? null,
 				authPermissions: auth.permissions ?? [],
 				authRole: auth.role ?? null,
+				currentOrgPortal: tokenSnapshot.currentOrgPortal,
+				currentOrgPortalId: tokenSnapshot.currentOrgPortalId,
 				tokenOrganizationId: tokenSnapshot.organizationId,
 				tokenPermissions: tokenSnapshot.permissions,
 				tokenRole: tokenSnapshot.role,

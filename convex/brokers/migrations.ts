@@ -16,7 +16,7 @@ import {
 	ensureFairLendPortal,
 	getPortalByBrokerId,
 	getPortalBySlug,
-	resolveUserHomePortalId,
+	syncUserHomePortalAssignmentByUserId,
 } from "../portals/homePortalAssignment";
 import { assertPortalRegistryInvariants } from "../portals/invariants";
 
@@ -251,16 +251,7 @@ export const backfillBrokerPortals = migrations.define({
 export const backfillUserHomePortalId = migrations.define({
 	table: "users",
 	migrateOne: async (ctx, user) => {
-		if (user.homePortalId) {
-			return;
-		}
-
-		const homePortalId = await resolveUserHomePortalId(ctx, user);
-		if (!homePortalId) {
-			return;
-		}
-
-		await ctx.db.patch(user._id, { homePortalId });
+		await syncUserHomePortalAssignmentByUserId(ctx, user._id);
 	},
 });
 

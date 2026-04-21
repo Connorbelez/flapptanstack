@@ -27,11 +27,16 @@ export async function loginViaWorkOS(
 	await emailInput.fill(email);
 	await page.getByRole("button").filter({ hasText: "Continue" }).click();
 
-	// ── Step 2: Password ──
+	// ── Step 2: Password (optional when the hosted session is still active) ──
 	const passwordInput = page.getByRole("textbox", { name: "Password" });
-	await passwordInput.waitFor({ state: "visible", timeout: 15_000 });
-	await passwordInput.fill(password);
-	await page.getByRole("button", { name: "Sign in", exact: true }).click();
+	const hasPasswordPrompt = await passwordInput
+		.waitFor({ state: "visible", timeout: 15_000 })
+		.then(() => true)
+		.catch(() => false);
+	if (hasPasswordPrompt) {
+		await passwordInput.fill(password);
+		await page.getByRole("button", { name: "Sign in", exact: true }).click();
+	}
 
 	// ── Step 3: Org picker (multi-org users only) ──
 	const orgHeading = page.getByRole("heading", {

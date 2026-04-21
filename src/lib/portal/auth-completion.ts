@@ -1,8 +1,20 @@
+import { getReturnPathname } from "../auth-redirect";
 import { buildAbsoluteHostUrl, buildPortalAbsoluteUrl } from "./auth-routing";
 import type { PortalAuthStatePayload } from "./auth-state";
 import type { RootPortalContext } from "./host-resolution";
 
 export interface ViewerHomePortalAssignment {
+	currentOrgPortal?: null | {
+		defaultPostAuthPath: string;
+		isPublished: boolean;
+		localHost: string;
+		portalId: string;
+		portalType: "broker" | "fairlend";
+		productionHost: string;
+		slug: string;
+		status: "active" | "archived" | "draft" | "suspended";
+	};
+	currentOrgPortalId?: string | null;
 	homePortal: null | {
 		defaultPostAuthPath: string;
 		isPublished: boolean;
@@ -61,6 +73,19 @@ function assertActiveHomePortal(
 	return assignment.homePortal;
 }
 
+function resolveCompletionReturnPath(
+	authState: PortalAuthStatePayload,
+	portal: {
+		defaultPostAuthPath?: string;
+	}
+) {
+	if (authState.hasExplicitReturnPath ?? true) {
+		return authState.returnPathname;
+	}
+
+	return getReturnPathname(portal.defaultPostAuthPath ?? "/");
+}
+
 export function resolveAuthCompletionDecision(args: {
 	authState: PortalAuthStatePayload;
 	currentPortalContext: RootPortalContext;
@@ -77,6 +102,10 @@ export function resolveAuthCompletionDecision(args: {
 	switch (authState.hostClass) {
 		case "marketing": {
 			const assignedPortal = assertActiveHomePortal(viewerAssignment);
+			const returnPathname = resolveCompletionReturnPath(
+				authState,
+				assignedPortal
+			);
 
 			if (currentPortalContext.kind !== "marketing") {
 				throw new Error(
@@ -89,7 +118,7 @@ export function resolveAuthCompletionDecision(args: {
 				href: buildPortalAbsoluteUrl(
 					assignedPortal,
 					authState.hostType,
-					authState.returnPathname
+					returnPathname
 				),
 			};
 		}
@@ -114,18 +143,27 @@ export function resolveAuthCompletionDecision(args: {
 
 			if (
 				viewerAssignment.isFairLendAdmin ||
-				authState.portalId === viewerAssignment.homePortalId
+				authState.portalId === viewerAssignment.homePortalId ||
+				authState.portalId === viewerAssignment.currentOrgPortalId
 			) {
+				const returnPathname = resolveCompletionReturnPath(
+					authState,
+					currentPortalContext.portal
+				);
 				return {
 					kind: "redirect",
 					href: buildAbsoluteHostUrl(
 						currentPortalContext.canonicalHost,
-						authState.returnPathname
+						returnPathname
 					),
 				};
 			}
 
 			const assignedPortal = assertActiveHomePortal(viewerAssignment);
+			const returnPathname = resolveCompletionReturnPath(
+				authState,
+				assignedPortal
+			);
 			const assignedHost =
 				authState.hostType === "local"
 					? assignedPortal.localHost
@@ -136,7 +174,7 @@ export function resolveAuthCompletionDecision(args: {
 				continueHref: buildPortalAbsoluteUrl(
 					assignedPortal,
 					authState.hostType,
-					authState.returnPathname
+					returnPathname
 				),
 				currentHost: currentPortalContext.canonicalHost,
 				assignedHost,

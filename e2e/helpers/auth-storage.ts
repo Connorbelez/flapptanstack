@@ -17,8 +17,17 @@ const testAccountPassword = requireEnv("TEST_ACCOUNT_PW");
 export const TEST_ADMIN_ORG_ID = requireEnv("TEST_ADMIN_ORG");
 export const TEST_MEMBER_ORG_ID = requireEnv("TEST_MEMBER_ORG");
 
+function buildSameOriginUrl(currentUrl: string, pathname: string) {
+	const url = new URL(currentUrl);
+	url.pathname = pathname;
+	url.search = "";
+	url.hash = "";
+	return url;
+}
+
 export async function createAuthStorageState(args: {
 	entryHref?: string;
+	expectedRole?: string;
 	orgId?: string;
 	page: Page;
 	path: string;
@@ -28,43 +37,65 @@ export async function createAuthStorageState(args: {
 	});
 
 	if (args.orgId) {
-		await args.page.goto(`/e2e/switch-org?orgId=${args.orgId}`);
-		await args.page.waitForURL("**/", { timeout: 15_000 });
+		const switchOrgUrl = buildSameOriginUrl(args.page.url(), "/e2e/switch-org");
+		switchOrgUrl.searchParams.set("orgId", args.orgId);
+		await args.page.goto(switchOrgUrl.toString());
+		await args.page.waitForURL(
+			(url) =>
+				url.origin === switchOrgUrl.origin &&
+				url.pathname === "/",
+			{ timeout: 15_000 }
+		);
 
 		const expectedRole =
-			args.orgId === TEST_MEMBER_ORG_ID ? "member" : "admin";
+			args.expectedRole ??
+			(args.orgId === TEST_MEMBER_ORG_ID ? "member" : "admin");
 
 		// Force the auth client to settle on the switched organization before
 		// persisting the browser state. Use a dedicated e2e route so setup does
 		// not depend on demo page tabs or layout structure.
-		await args.page.goto("/e2e/session");
-		await args.page.waitForFunction(
-			([expectedOrgId, expectedSessionRole]) => {
-				const el = document.querySelector('[data-testid="session-json"]');
-				if (!el?.textContent) {
-					return false;
-				}
-
-				try {
-					const session = JSON.parse(el.textContent) as {
-						tokenOrganizationId?: string | null;
-						tokenRole?: string | null;
-						error?: string;
-					};
-					if (session.error) {
-						return true;
-					}
-					return (
-						session.tokenOrganizationId === expectedOrgId &&
-						session.tokenRole === expectedSessionRole
-					);
-				} catch {
-					return false;
-				}
-			},
-			[args.orgId, expectedRole],
-			{ timeout: 15_000 }
+		await args.page.goto(
+			buildSameOriginUrl(args.page.url(), "/e2e/session").toString()
 		);
+		try {
+			await args.page.waitForFunction(
+				([expectedOrgId, expectedSessionRole]) => {
+					const el = document.querySelector('[data-testid="session-json"]');
+					if (!el?.textContent) {
+						return false;
+					}
+
+					try {
+						const session = JSON.parse(el.textContent) as {
+							tokenOrganizationId?: string | null;
+							tokenRole?: string | null;
+							error?: string;
+						};
+						if (session.error) {
+							return true;
+						}
+						return (
+							session.tokenOrganizationId === expectedOrgId &&
+							session.tokenRole === expectedSessionRole
+						);
+					} catch {
+						return false;
+					}
+				},
+				[args.orgId, expectedRole],
+				{ timeout: 15_000 }
+			);
+		} catch (error) {
+			const sessionJson = await args.page
+				.locator('[data-testid="session-json"]')
+				.textContent()
+				.catch(() => null);
+			const message =
+				error instanceof Error ? error.message : "unknown_wait_for_function_error";
+			throw new Error(
+				`E2E session bootstrap did not settle for org ${args.orgId} with expected role ${expectedRole}. url=${args.page.url()} session=${sessionJson ?? "<missing>"} cause=${message}`
+			);
+		}
 
 		const sessionJson = await args.page
 			.locator('[data-testid="session-json"]')

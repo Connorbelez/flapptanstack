@@ -4,6 +4,7 @@ import type { RootPortalContext } from "./host-resolution";
 export const AUTH_CALLBACK_PATH = "/callback";
 export const AUTH_COMPLETE_PATH = "/auth-complete";
 export const DEFAULT_PUBLIC_RETURN_PATH = "/";
+export const LOCAL_SESSION_SIGN_OUT_PATH = "/sign-out/local";
 
 interface PortalHostTarget {
 	localHost: string;
@@ -70,6 +71,41 @@ export function buildHostAwareSignOutReturnTo(
 				portalContext.requestedHost,
 				DEFAULT_PUBLIC_RETURN_PATH
 			);
+	}
+}
+
+export function buildLocalSessionSignOutHref(returnTo: string) {
+	const url = new URL(LOCAL_SESSION_SIGN_OUT_PATH, returnTo);
+	url.searchParams.set("returnTo", returnTo);
+	return url.toString();
+}
+
+export function resolveLocalSessionSignOutReturnTo(args: {
+	requestUrl: string | URL;
+	returnTo: string | null | undefined;
+}) {
+	const requestUrl =
+		typeof args.requestUrl === "string"
+			? new URL(args.requestUrl)
+			: args.requestUrl;
+	const fallbackReturnTo = buildAbsoluteHostUrl(
+		requestUrl.host,
+		DEFAULT_PUBLIC_RETURN_PATH
+	);
+
+	if (!args.returnTo) {
+		return fallbackReturnTo;
+	}
+
+	try {
+		const candidate = new URL(args.returnTo, requestUrl);
+		if (candidate.origin !== requestUrl.origin) {
+			return fallbackReturnTo;
+		}
+
+		return candidate.toString();
+	} catch {
+		return fallbackReturnTo;
 	}
 }
 

@@ -25,6 +25,7 @@ import { Route as BorrowerRouteRouteImport } from './routes/borrower/route'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ListingsListingIdRouteImport } from './routes/listings.$listingId'
+import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
 import { Route as LenderListingsRouteImport } from './routes/lender.listings'
 import { Route as LenderDealsRouteImport } from './routes/lender.deals'
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
@@ -223,6 +224,11 @@ const ListingsListingIdRoute = ListingsListingIdRouteImport.update({
   id: '/$listingId',
   path: '/$listingId',
   getParentRoute: () => ListingsRoute,
+} as any)
+const SignOutLocalRoute = SignOutLocalRouteImport.update({
+  id: '/local',
+  path: '/local',
+  getParentRoute: () => SignOutRoute,
 } as any)
 const LenderListingsRoute = LenderListingsRouteImport.update({
   id: '/listings',
@@ -869,7 +875,7 @@ export interface FileRoutesByFullPath {
   '/callback': typeof CallbackRoute
   '/listings': typeof ListingsRouteWithChildren
   '/sign-in': typeof SignInRoute
-  '/sign-out': typeof SignOutRoute
+  '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
@@ -926,6 +932,9 @@ export interface FileRoutesByFullPath {
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
+  '/sign-out/local': typeof SignOutLocalRoute
+  '/listings/$listingId': typeof ListingsListingIdRoute
+  '/sign-out/local': typeof SignOutLocalRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1005,7 +1014,7 @@ export interface FileRoutesByTo {
   '/callback': typeof CallbackRoute
   '/listings': typeof ListingsRouteWithChildren
   '/sign-in': typeof SignInRoute
-  '/sign-out': typeof SignOutRoute
+  '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
@@ -1052,6 +1061,9 @@ export interface FileRoutesByTo {
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
+  '/sign-out/local': typeof SignOutLocalRoute
+  '/listings/$listingId': typeof ListingsListingIdRoute
+  '/sign-out/local': typeof SignOutLocalRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
   '/demo/rbac/broker': typeof DemoRbacBrokerRouteRoute
@@ -1131,7 +1143,7 @@ export interface FileRoutesById {
   '/callback': typeof CallbackRoute
   '/listings': typeof ListingsRouteWithChildren
   '/sign-in': typeof SignInRoute
-  '/sign-out': typeof SignOutRoute
+  '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
@@ -1188,6 +1200,9 @@ export interface FileRoutesById {
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
+  '/sign-out/local': typeof SignOutLocalRoute
+  '/listings/$listingId': typeof ListingsListingIdRoute
+  '/sign-out/local': typeof SignOutLocalRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1326,6 +1341,9 @@ export interface FileRouteTypes {
     | '/lender/deals'
     | '/lender/listings'
     | '/listings/$listingId'
+    | '/sign-out/local'
+    | '/listings/$listingId'
+    | '/sign-out/local'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1452,6 +1470,9 @@ export interface FileRouteTypes {
     | '/lender/deals'
     | '/lender/listings'
     | '/listings/$listingId'
+    | '/sign-out/local'
+    | '/listings/$listingId'
+    | '/sign-out/local'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
     | '/demo/rbac/broker'
@@ -1587,6 +1608,9 @@ export interface FileRouteTypes {
     | '/lender/deals'
     | '/lender/listings'
     | '/listings/$listingId'
+    | '/sign-out/local'
+    | '/listings/$listingId'
+    | '/sign-out/local'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1667,7 +1691,7 @@ export interface RootRouteChildren {
   CallbackRoute: typeof CallbackRoute
   ListingsRoute: typeof ListingsRouteWithChildren
   SignInRoute: typeof SignInRoute
-  SignOutRoute: typeof SignOutRoute
+  SignOutRoute: typeof SignOutRouteWithChildren
   SignUpRoute: typeof SignUpRoute
   UnauthorizedRoute: typeof UnauthorizedRoute
   DemoAmpsRouteRoute: typeof DemoAmpsRouteRouteWithChildren
@@ -1824,6 +1848,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/listings/$listingId'
       preLoaderRoute: typeof ListingsListingIdRouteImport
       parentRoute: typeof ListingsRoute
+    }
+    '/sign-out/local': {
+      id: '/sign-out/local'
+      path: '/local'
+      fullPath: '/sign-out/local'
+      preLoaderRoute: typeof SignOutLocalRouteImport
+      parentRoute: typeof SignOutRoute
     }
     '/lender/listings': {
       id: '/lender/listings'
@@ -2858,6 +2889,17 @@ const ListingsRouteWithChildren = ListingsRoute._addFileChildren(
   ListingsRouteChildren,
 )
 
+interface SignOutRouteChildren {
+  SignOutLocalRoute: typeof SignOutLocalRoute
+}
+
+const SignOutRouteChildren: SignOutRouteChildren = {
+  SignOutLocalRoute: SignOutLocalRoute,
+}
+
+const SignOutRouteWithChildren =
+  SignOutRoute._addFileChildren(SignOutRouteChildren)
+
 interface DemoAmpsRouteRouteChildren {
   DemoAmpsCollectionAttemptsRoute: typeof DemoAmpsCollectionAttemptsRoute
   DemoAmpsCollectionPlanRoute: typeof DemoAmpsCollectionPlanRoute
@@ -3086,7 +3128,7 @@ const rootRouteChildren: RootRouteChildren = {
   CallbackRoute: CallbackRoute,
   ListingsRoute: ListingsRouteWithChildren,
   SignInRoute: SignInRoute,
-  SignOutRoute: SignOutRoute,
+  SignOutRoute: SignOutRouteWithChildren,
   SignUpRoute: SignUpRoute,
   UnauthorizedRoute: UnauthorizedRoute,
   DemoAmpsRouteRoute: DemoAmpsRouteRouteWithChildren,
