@@ -5,10 +5,12 @@ import {
 	INITIAL_ORIGINATION_STEP,
 } from "../../../src/lib/admin-origination";
 import type { Doc } from "../../_generated/dataModel";
+import type { MutationCtx } from "../../_generated/server";
 import {
 	adminMutation,
 	authedMutation,
 	authedQuery,
+	convex,
 	requirePermission,
 } from "../../fluent";
 import {
@@ -17,6 +19,7 @@ import {
 	ORIGINATION_CASE_ACCESS_REQUIRES_ORG_CONTEXT,
 } from "../../authz/origination";
 import {
+	type AdminOriginationCasePatch,
 	adminOriginationCasePatchValidator,
 	computeOriginationValidationSnapshot,
 	determineRecommendedOriginationStep,
@@ -36,6 +39,12 @@ const originationAdminMutation = adminMutation.use(
 	requirePermission("mortgage:originate")
 );
 
+interface OriginationCaseViewerContext {
+	authId: string;
+	isFairLendAdmin: boolean;
+	orgId?: string | null;
+}
+
 function assertMutableOriginationCase(
 	record: Pick<Doc<"adminOriginationCases">, "status">
 ) {
@@ -46,7 +55,7 @@ function assertMutableOriginationCase(
 	}
 }
 
-function requireViewerOrgId(viewer: { orgId?: string }) {
+function requireViewerOrgId(viewer: { orgId?: string | null }) {
 	if (!viewer.orgId) {
 		throw new ConvexError(ORIGINATION_CASE_ACCESS_REQUIRES_ORG_CONTEXT);
 	}
@@ -103,51 +112,133 @@ function summarizeCase(
 	};
 }
 
+async function requireViewerUser(ctx: Pick<MutationCtx, "db">, authId: string) {
+	const user = await ctx.db
+		.query("users")
+		.withIndex("authId", (query) => query.eq("authId", authId))
+		.unique();
+	if (!user) {
+		throw new ConvexError("User not found in database");
+	}
+
+	return user;
+}
+
+async function createOriginationCaseRecord(
+	ctx: Pick<MutationCtx, "db">,
+	args: {
+		bootstrapToken?: string;
+		viewer: OriginationCaseViewerContext;
+	}
+) {
+	const now = Date.now();
+	const orgId = args.viewer.isFairLendAdmin
+		? (args.viewer.orgId ?? undefined)
+		: requireViewerOrgId(args.viewer);
+	const user = await requireViewerUser(ctx, args.viewer.authId);
+
+	if (args.bootstrapToken) {
+		const existing = await ctx.db
+			.query("adminOriginationCases")
+			.withIndex("by_bootstrap_token", (query) =>
+				query.eq("bootstrapToken", args.bootstrapToken)
+			)
+			.unique();
+
+		if (existing) {
+			assertOriginationCaseAccess(args.viewer, existing);
+			return existing._id;
+		}
+	}
+
+	const validationSnapshot = computeOriginationValidationSnapshot({});
+
+	return await ctx.db.insert("adminOriginationCases", {
+		bootstrapToken: args.bootstrapToken,
+		createdByUserId: user._id,
+		updatedByUserId: user._id,
+		orgId,
+		status: "draft",
+		currentStep: INITIAL_ORIGINATION_STEP,
+		validationSnapshot,
+		createdAt: now,
+		updatedAt: now,
+	});
+}
+
+async function patchOriginationCaseRecord(
+	ctx: Pick<MutationCtx, "db">,
+	args: {
+		caseId: Doc<"adminOriginationCases">["_id"];
+		patch: AdminOriginationCasePatch;
+		viewer: OriginationCaseViewerContext;
+	}
+) {
+	assertOriginationCaseAccessContext(args.viewer);
+
+	const record = await ctx.db.get(args.caseId);
+	if (!record) {
+		throw new ConvexError("Origination case not found");
+	}
+
+	assertOriginationCaseAccess(args.viewer, record);
+	assertMutableOriginationCase(record);
+
+	const user = await requireViewerUser(ctx, args.viewer.authId);
+	const merged = mergeOriginationCaseDraftValues(
+		record as OriginationCaseDraftState,
+		args.patch
+	);
+	const validationSnapshot = computeOriginationValidationSnapshot(merged);
+	const nextStatus = resolveDraftOriginationCaseStatus({
+		currentStatus: record.status,
+		validationSnapshot,
+	});
+	const now = Date.now();
+
+	await ctx.db.patch(args.caseId, {
+		failedAt: undefined,
+		currentStep: merged.currentStep,
+		lastCommitError: undefined,
+		participantsDraft: merged.participantsDraft,
+		propertyDraft: merged.propertyDraft,
+		valuationDraft: merged.valuationDraft,
+		mortgageDraft: merged.mortgageDraft,
+		collectionsDraft: merged.collectionsDraft,
+		listingOverrides: merged.listingOverrides,
+		status: nextStatus,
+		validationSnapshot,
+		updatedByUserId: user._id,
+		updatedAt: now,
+	});
+
+	const updated = await ctx.db.get(args.caseId);
+	if (!updated) {
+		throw new ConvexError("Origination case disappeared during update");
+	}
+
+	return {
+		...updated,
+		recommendedStep: determineRecommendedOriginationStep(updated),
+		stepErrorsForCurrentStep: listOriginationStepErrors(
+			validationSnapshot,
+			(updated.currentStep ?? INITIAL_ORIGINATION_STEP) as Parameters<
+				typeof listOriginationStepErrors
+			>[1]
+		),
+	};
+}
+
 export const createCase = originationMutation
 	.input({
 		bootstrapToken: v.optional(v.string()),
 	})
-	.handler(async (ctx, args) => {
-		const now = Date.now();
-		const orgId = ctx.viewer.isFairLendAdmin
-			? ctx.viewer.orgId
-			: requireViewerOrgId(ctx.viewer);
-		const user = await ctx.db
-			.query("users")
-			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
-			.unique();
-		if (!user) {
-			throw new ConvexError("User not found in database");
-		}
-
-		if (args.bootstrapToken) {
-			const existing = await ctx.db
-				.query("adminOriginationCases")
-				.withIndex("by_bootstrap_token", (query) =>
-					query.eq("bootstrapToken", args.bootstrapToken)
-				)
-				.unique();
-
-			if (existing) {
-				assertOriginationCaseAccess(ctx.viewer, existing);
-				return existing._id;
-			}
-		}
-
-		const validationSnapshot = computeOriginationValidationSnapshot({});
-
-		return await ctx.db.insert("adminOriginationCases", {
+	.handler(async (ctx, args) =>
+		createOriginationCaseRecord(ctx, {
 			bootstrapToken: args.bootstrapToken,
-			createdByUserId: user._id,
-			updatedByUserId: user._id,
-			orgId,
-			status: "draft",
-			currentStep: INITIAL_ORIGINATION_STEP,
-			validationSnapshot,
-			createdAt: now,
-			updatedAt: now,
-		});
-	})
+			viewer: ctx.viewer,
+		})
+	)
 	.public();
 
 export const listCases = originationQuery
@@ -216,67 +307,13 @@ export const patchCase = originationMutation
 		caseId: v.id("adminOriginationCases"),
 		patch: adminOriginationCasePatchValidator,
 	})
-	.handler(async (ctx, args) => {
-		assertOriginationCaseAccessContext(ctx.viewer);
-
-		const record = await ctx.db.get(args.caseId);
-		if (!record) {
-			throw new ConvexError("Origination case not found");
-		}
-
-		assertOriginationCaseAccess(ctx.viewer, record);
-		assertMutableOriginationCase(record);
-
-		const user = await ctx.db
-			.query("users")
-			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
-			.unique();
-		if (!user) {
-			throw new ConvexError("User not found in database");
-		}
-		const merged = mergeOriginationCaseDraftValues(
-			record as OriginationCaseDraftState,
-			args.patch
-		);
-		const validationSnapshot = computeOriginationValidationSnapshot(merged);
-		const nextStatus = resolveDraftOriginationCaseStatus({
-			currentStatus: record.status,
-			validationSnapshot,
-		});
-		const now = Date.now();
-
-		await ctx.db.patch(args.caseId, {
-			failedAt: undefined,
-			currentStep: merged.currentStep,
-			lastCommitError: undefined,
-			participantsDraft: merged.participantsDraft,
-			propertyDraft: merged.propertyDraft,
-			valuationDraft: merged.valuationDraft,
-			mortgageDraft: merged.mortgageDraft,
-			collectionsDraft: merged.collectionsDraft,
-			listingOverrides: merged.listingOverrides,
-			status: nextStatus,
-			validationSnapshot,
-			updatedByUserId: user._id,
-			updatedAt: now,
-		});
-
-		const updated = await ctx.db.get(args.caseId);
-		if (!updated) {
-			throw new ConvexError("Origination case disappeared during update");
-		}
-
-		return {
-			...updated,
-			recommendedStep: determineRecommendedOriginationStep(updated),
-			stepErrorsForCurrentStep: listOriginationStepErrors(
-				validationSnapshot,
-				(updated.currentStep ?? INITIAL_ORIGINATION_STEP) as Parameters<
-					typeof listOriginationStepErrors
-				>[1]
-			),
-		};
-	})
+	.handler(async (ctx, args) =>
+		patchOriginationCaseRecord(ctx, {
+			caseId: args.caseId,
+			patch: args.patch,
+			viewer: ctx.viewer,
+		})
+	)
 	.public();
 
 export const recoverStuckCommittingCase = originationAdminMutation
@@ -335,6 +372,48 @@ export const recoverStuckCommittingCase = originationAdminMutation
 		};
 	})
 	.public();
+
+export const createCaseInternal = convex
+	.mutation()
+	.input({
+		bootstrapToken: v.optional(v.string()),
+		viewerAuthId: v.string(),
+		viewerIsFairLendAdmin: v.boolean(),
+		viewerOrgId: v.optional(v.string()),
+	})
+	.handler(async (ctx, args) =>
+		createOriginationCaseRecord(ctx, {
+			bootstrapToken: args.bootstrapToken,
+			viewer: {
+				authId: args.viewerAuthId,
+				isFairLendAdmin: args.viewerIsFairLendAdmin,
+				orgId: args.viewerOrgId,
+			},
+		})
+	)
+	.internal();
+
+export const patchCaseInternal = convex
+	.mutation()
+	.input({
+		caseId: v.id("adminOriginationCases"),
+		patch: adminOriginationCasePatchValidator,
+		viewerAuthId: v.string(),
+		viewerIsFairLendAdmin: v.boolean(),
+		viewerOrgId: v.optional(v.string()),
+	})
+	.handler(async (ctx, args) =>
+		patchOriginationCaseRecord(ctx, {
+			caseId: args.caseId,
+			patch: args.patch,
+			viewer: {
+				authId: args.viewerAuthId,
+				isFairLendAdmin: args.viewerIsFairLendAdmin,
+				orgId: args.viewerOrgId,
+			},
+		})
+	)
+	.internal();
 
 export const deleteCase = originationMutation
 	.input({

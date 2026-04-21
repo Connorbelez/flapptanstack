@@ -1,5 +1,9 @@
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import {
+	deleteOrphanUsersByAuthId,
+	findCanonicalUserByAuthId,
+} from "../users/byAuthId";
 import { getDeterministicPortalIdForOrgId } from "./borrowerPortalAttribution";
 import {
 	FAIRLEND_PORTAL_LOCAL_HOST,
@@ -209,12 +213,24 @@ export async function syncUserHomePortalAssignmentByAuthId(
 	ctx: PortalWriterCtx,
 	authId: string
 ) {
-	const user = await ctx.db
-		.query("users")
-		.withIndex("authId", (query) => query.eq("authId", authId))
-		.unique();
+	const { canonicalUser } = await findCanonicalUserByAuthId(ctx, authId);
+	const user = canonicalUser;
 	if (!user) {
 		return null;
+	}
+	const duplicateCleanup = await deleteOrphanUsersByAuthId(ctx, {
+		authId,
+		keepUserId: user._id,
+	});
+	if (duplicateCleanup.deletedUserIds.length > 0) {
+		console.warn(
+			`[portals] Collapsed ${duplicateCleanup.deletedUserIds.length} duplicate user row(s) for ${authId} during home portal sync.`
+		);
+	}
+	if (duplicateCleanup.blockedUserIds.length > 0) {
+		console.warn(
+			`[portals] Referenced duplicate user row(s) remain for ${authId}: ${duplicateCleanup.blockedUserIds.join(", ")}`
+		);
 	}
 
 	return syncUserHomePortalAssignment(ctx, user);

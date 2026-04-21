@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { Building2, CheckCircle2, LoaderCircle, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -35,16 +35,20 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import { api } from "../../../../convex/_generated/api";
+import type { MockOriginationBatchStatusSnapshot } from "../../../../convex/admin/settings/mockMortgages";
 import type {
 	AdminOrgMemberSummary,
 	AdminOrgSettingsSnapshot,
 } from "../../../../convex/admin/settings/queries";
 
-function getErrorMessage(error: unknown) {
+function getErrorMessage(
+	error: unknown,
+	fallback = "Something went wrong while bootstrapping CRM objects."
+) {
 	if (error instanceof Error && error.message.trim().length > 0) {
 		return error.message;
 	}
-	return "Something went wrong while bootstrapping CRM objects.";
+	return fallback;
 }
 
 function formatTimestamp(value: number | null) {
@@ -64,6 +68,27 @@ function formatMemberName(member: AdminOrgMemberSummary): string {
 		return joined;
 	}
 	return member.email ?? member.userWorkosId;
+}
+
+function formatMockBatchStatus(
+	status: MockOriginationBatchStatusSnapshot["status"]
+) {
+	switch (status) {
+		case "seeding":
+			return "Seeding";
+		case "ready":
+			return "Ready";
+		case "cleaning":
+			return "Cleaning";
+		case "failed":
+			return "Seed failed";
+		case "clean_failed":
+			return "Cleanup failed";
+		case "cleaned":
+			return "Cleaned";
+		default:
+			return "Not seeded";
+	}
 }
 
 function OrganizationCard({
@@ -451,10 +476,197 @@ function BootstrapCard({
 	);
 }
 
+export function MockMortgagesCard({
+	status,
+}: {
+	readonly status: MockOriginationBatchStatusSnapshot | null;
+}) {
+	const [isCleaning, setIsCleaning] = useState(false);
+	const [isSeeding, setIsSeeding] = useState(false);
+	const seedMockMortgages = useAction(
+		api.admin.settings.actions.seedMockMortgages
+	);
+	const cleanupMockMortgages = useAction(
+		api.admin.settings.actions.cleanupMockMortgages
+	);
+
+	async function handleSeed() {
+		setIsSeeding(true);
+		try {
+			const result = await seedMockMortgages({});
+			toast.success(
+				`Seeded ${result.itemCount} mock mortgages in batch ${result.batchId}.`
+			);
+		} catch (error) {
+			toast.error(
+				getErrorMessage(
+					error,
+					"Something went wrong while seeding mock mortgages."
+				)
+			);
+		} finally {
+			setIsSeeding(false);
+		}
+	}
+
+	async function handleCleanup() {
+		setIsCleaning(true);
+		try {
+			const result = await cleanupMockMortgages({});
+			if (result.status === "noop") {
+				toast.success("No active mock mortgage batch needed cleanup.");
+			} else {
+				toast.success(
+					`Cleaned ${result.cleanedCount} mock mortgages from batch ${result.batchId}.`
+				);
+			}
+		} catch (error) {
+			toast.error(
+				getErrorMessage(
+					error,
+					"Something went wrong while cleaning up mock mortgages."
+				)
+			);
+		} finally {
+			setIsCleaning(false);
+		}
+	}
+
+	const hasActiveBatch = status?.activeBatchExists ?? false;
+
+	return (
+		<Card>
+			<CardHeader>
+				<div className="flex items-start justify-between gap-3">
+					<div className="flex items-start gap-3">
+						<div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+							<Sparkles className="size-5" />
+						</div>
+						<div>
+							<CardTitle>Mock mortgages</CardTitle>
+							<CardDescription>
+								Seed or clean the fixed 12-mortgage QA catalog through the live
+								admin origination workflow, including borrower creation, Rotessa
+								schedule setup, commit, and listing publication.
+							</CardDescription>
+						</div>
+					</div>
+					<Badge variant={hasActiveBatch ? "default" : "outline"}>
+						{formatMockBatchStatus(status?.status ?? null)}
+					</Badge>
+				</div>
+			</CardHeader>
+			<CardContent className="space-y-4 text-sm">
+				<dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Batch ID
+						</dt>
+						<dd className="break-all font-mono text-xs">
+							{status?.batchId ?? "—"}
+						</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Published
+						</dt>
+						<dd>
+							{status
+								? `${status.publishedCount} / ${status.itemCount}`
+								: "0 / 0"}
+						</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Ready for QA
+						</dt>
+						<dd>{status?.readyCount ?? 0}</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Provider cleanup
+						</dt>
+						<dd>{status?.providerCleanupCount ?? 0}</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Started
+						</dt>
+						<dd>{formatTimestamp(status?.startedAt ?? null)}</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Completed
+						</dt>
+						<dd>{formatTimestamp(status?.completedAt ?? null)}</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Cleaned
+						</dt>
+						<dd>{formatTimestamp(status?.cleanedAt ?? null)}</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Failures
+						</dt>
+						<dd>{status?.failedCount ?? 0}</dd>
+					</div>
+				</dl>
+				<div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+					<p className="text-muted-foreground text-sm">
+						{status?.lastError
+							? `Last error: ${status.lastError}`
+							: "The seeded catalog is fail-closed. If a batch exists, cleanup must finish before reseeding."}
+					</p>
+				</div>
+				<div className="flex flex-col gap-3 sm:flex-row">
+					<Button
+						disabled={hasActiveBatch || isSeeding || isCleaning}
+						onClick={() => {
+							void handleSeed();
+						}}
+						type="button"
+					>
+						{isSeeding ? (
+							<>
+								<LoaderCircle className="size-4 animate-spin" />
+								Seeding…
+							</>
+						) : (
+							"Seed mock mortgages"
+						)}
+					</Button>
+					<Button
+						disabled={!hasActiveBatch || isSeeding || isCleaning}
+						onClick={() => {
+							void handleCleanup();
+						}}
+						type="button"
+						variant="outline"
+					>
+						{isCleaning ? (
+							<>
+								<LoaderCircle className="size-4 animate-spin" />
+								Cleaning…
+							</>
+						) : (
+							"Clean up mock mortgages"
+						)}
+					</Button>
+				</div>
+			</CardContent>
+		</Card>
+	);
+}
+
 export function AdminSettingsPage() {
 	const snapshot = useQuery(api.admin.settings.queries.getOrgSettings);
+	const mockMortgageBatchStatus = useQuery(
+		api.admin.settings.queries.getMockOriginationBatchStatus
+	);
 
-	if (snapshot === undefined) {
+	if (snapshot === undefined || mockMortgageBatchStatus === undefined) {
 		return (
 			<AdminPageSkeleton descriptionWidth="w-80" titleWidth="w-40">
 				<AdminTableSkeleton columnCount={4} rowCount={5} />
@@ -481,8 +693,8 @@ export function AdminSettingsPage() {
 			<header className="space-y-1">
 				<h1 className="font-semibold text-2xl tracking-tight">Settings</h1>
 				<p className="text-muted-foreground text-sm">
-					Manage the active organization, members, broker portal pricing, and
-					CRM bootstrap state.
+					Manage the active organization, members, broker portal pricing, CRM
+					bootstrap state, and mock mortgage QA data.
 				</p>
 			</header>
 			<OrganizationCard organization={snapshot.organization} />
@@ -491,6 +703,7 @@ export function AdminSettingsPage() {
 				brokerPortalPricing={snapshot.brokerPortalPricing}
 			/>
 			<BootstrapCard bootstrapStatus={snapshot.bootstrapStatus} />
+			<MockMortgagesCard status={mockMortgageBatchStatus} />
 		</div>
 	);
 }
