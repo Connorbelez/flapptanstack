@@ -2,6 +2,8 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { listingQuery } from "../fluent";
+import type { PortalPricingPolicyDoc } from "../portals/pricing";
+import { projectListingForPortal } from "../portals/pricing";
 import {
 	attachMarketplaceAvailabilityToListings,
 	buildLocationLabel,
@@ -28,7 +30,7 @@ type MarketplacePropertyType = NonNullable<
 >;
 type MortgageTypeLabel = "First" | "Second" | "Other";
 
-interface MarketplaceFilters {
+export interface MarketplaceFilters {
 	interestRate?: { max?: number; min?: number };
 	ltv?: { max?: number; min?: number };
 	maturityDate?: { end?: string };
@@ -36,6 +38,45 @@ interface MarketplaceFilters {
 	principalAmount?: { max?: number; min?: number };
 	propertyTypes?: MarketplacePropertyType[];
 	searchQuery?: string;
+}
+
+export const marketplaceFiltersValidator = v.object({
+	searchQuery: v.optional(v.string()),
+	mortgageTypes: v.optional(
+		v.array(
+			v.union(v.literal("First"), v.literal("Second"), v.literal("Other"))
+		)
+	),
+	propertyTypes: v.optional(v.array(marketplaceListingPropertyTypeValidator)),
+	ltv: v.optional(
+		v.object({
+			max: v.optional(v.number()),
+			min: v.optional(v.number()),
+		})
+	),
+	interestRate: v.optional(
+		v.object({
+			max: v.optional(v.number()),
+			min: v.optional(v.number()),
+		})
+	),
+	principalAmount: v.optional(
+		v.object({
+			max: v.optional(v.number()),
+			min: v.optional(v.number()),
+		})
+	),
+	maturityDate: v.optional(
+		v.object({
+			end: v.optional(v.string()),
+		})
+	),
+});
+
+export interface MarketplaceListingsSnapshotArgs {
+	cursor?: string | null;
+	filters?: MarketplaceFilters;
+	numItems?: number;
 }
 
 function normalizePageSize(value: number | undefined): number {
@@ -91,7 +132,7 @@ function paginateResults<T>(
 	};
 }
 
-function matchesMarketplaceFilters(
+export function matchesMarketplaceFilters(
 	listing: ListingDoc,
 	filters: MarketplaceFilters | undefined
 ) {
@@ -109,10 +150,10 @@ function matchesMarketplaceFilters(
 			listing.province.toLowerCase().includes(searchQuery) ||
 			listing.marketplaceCopy?.toLowerCase().includes(searchQuery) ||
 			listing.description?.toLowerCase().includes(searchQuery),
-		!filters.mortgageTypes?.length ||
+		filters.mortgageTypes === undefined ||
 			filters.mortgageTypes.includes(mortgageType),
-		!filters.propertyTypes?.length ||
-			filters.propertyTypes.includes(getMarketplacePropertyType(listing)),
+		filters.propertyTypes === undefined ||
+			filters.propertyTypes.includes(listing.marketplacePropertyType),
 		filters.ltv?.min === undefined || listing.ltvRatio >= filters.ltv.min,
 		filters.ltv?.max === undefined || listing.ltvRatio <= filters.ltv.max,
 		filters.interestRate?.min === undefined ||
@@ -253,90 +294,94 @@ async function getSimilarMarketplaceListings(
 	);
 }
 
+function resolveRequestedPageSize(args: {
+	numItems: number | undefined;
+	pageSizeCap?: number;
+}) {
+	if (args.pageSizeCap === undefined) {
+		return args.numItems;
+	}
+
+	return Math.min(normalizePageSize(args.numItems), args.pageSizeCap);
+}
+
+export async function listMarketplaceListingsSnapshot(
+	ctx: Pick<QueryCtx, "db" | "storage">,
+	args: MarketplaceListingsSnapshotArgs,
+	options?: {
+		pageSizeCap?: number;
+		pricingPolicy?: Pick<PortalPricingPolicyDoc, "brokerSplitPercent"> | null;
+	}
+) {
+	const candidates = await collectMarketplaceListingCandidates(
+		ctx,
+		args.filters
+	);
+	const filtered = candidates
+		.filter((listing) => matchesMarketplaceFilters(listing, args.filters))
+		.sort(compareMarketplaceListings);
+	const paginated = paginateResults(
+		filtered,
+		args.cursor ?? null,
+		resolveRequestedPageSize({
+			numItems: args.numItems,
+			pageSizeCap: options?.pageSizeCap,
+		})
+	);
+	const page = await attachMarketplaceAvailabilityToListings(
+		ctx,
+		paginated.page
+	);
+
+	return {
+		continueCursor: paginated.continueCursor,
+		isDone: paginated.isDone,
+		page: await Promise.all(
+			page.map(async ({ availability, listing }) => {
+				const projectedListing = options?.pricingPolicy
+					? projectListingForPortal(listing, options.pricingPolicy)
+					: listing;
+
+				return {
+					approximateLatitude: projectedListing.approximateLatitude ?? null,
+					approximateLongitude: projectedListing.approximateLongitude ?? null,
+					availability,
+					displayOrder: projectedListing.displayOrder ?? null,
+					featured: projectedListing.featured,
+					heroImageUrl: await getHeroImageUrl(
+						ctx,
+						projectedListing.heroImages[0]
+					),
+					id: String(projectedListing._id),
+					interestRate: projectedListing.interestRate,
+					locationLabel: buildLocationLabel(projectedListing) ?? "",
+					ltvRatio: projectedListing.ltvRatio,
+					marketplaceCopy:
+						projectedListing.marketplaceCopy ??
+						projectedListing.description ??
+						"",
+					maturityDate: projectedListing.maturityDate,
+					mortgageTypeLabel: lienPositionToMortgageType(
+						projectedListing.lienPosition
+					),
+					principal: projectedListing.principal,
+					propertyTypeLabel: projectedListing.marketplacePropertyType,
+					title: projectedListing.title ?? "Mortgage Listing",
+				};
+			})
+		),
+	};
+}
+
 export const listMarketplaceListings = listingQuery
 	.input({
 		cursor: v.optional(v.union(v.string(), v.null())),
-		filters: v.optional(
-			v.object({
-				searchQuery: v.optional(v.string()),
-				mortgageTypes: v.optional(
-					v.array(
-						v.union(v.literal("First"), v.literal("Second"), v.literal("Other"))
-					)
-				),
-				propertyTypes: v.optional(
-					v.array(marketplaceListingPropertyTypeValidator)
-				),
-				ltv: v.optional(
-					v.object({
-						max: v.optional(v.number()),
-						min: v.optional(v.number()),
-					})
-				),
-				interestRate: v.optional(
-					v.object({
-						max: v.optional(v.number()),
-						min: v.optional(v.number()),
-					})
-				),
-				principalAmount: v.optional(
-					v.object({
-						max: v.optional(v.number()),
-						min: v.optional(v.number()),
-					})
-				),
-				maturityDate: v.optional(
-					v.object({
-						end: v.optional(v.string()),
-					})
-				),
-			})
-		),
+		filters: v.optional(marketplaceFiltersValidator),
 		numItems: v.optional(v.number()),
 	})
-	.handler(async (ctx, args) => {
-		const candidates = await collectMarketplaceListingCandidates(
-			ctx,
-			args.filters
-		);
-		const filtered = candidates
-			.filter((listing) => matchesMarketplaceFilters(listing, args.filters))
-			.sort(compareMarketplaceListings);
-		const paginated = paginateResults(
-			filtered,
-			args.cursor ?? null,
-			args.numItems
-		);
-		const page = await attachMarketplaceAvailabilityToListings(
-			ctx,
-			paginated.page
-		);
-
-		return {
-			continueCursor: paginated.continueCursor,
-			isDone: paginated.isDone,
-			page: await Promise.all(
-				page.map(async ({ availability, listing }) => ({
-					approximateLatitude: listing.approximateLatitude ?? null,
-					approximateLongitude: listing.approximateLongitude ?? null,
-					availability,
-					displayOrder: listing.displayOrder ?? null,
-					featured: listing.featured,
-					heroImageUrl: await getHeroImageUrl(ctx, listing.heroImages[0]),
-					id: String(listing._id),
-					interestRate: listing.interestRate,
-					locationLabel: buildLocationLabel(listing) ?? "",
-					ltvRatio: listing.ltvRatio,
-					marketplaceCopy: buildListingSummary(listing),
-					maturityDate: listing.maturityDate,
-					mortgageTypeLabel: lienPositionToMortgageType(listing.lienPosition),
-					principal: listing.principal,
-					propertyTypeLabel: getMarketplacePropertyType(listing),
-					title: listing.title ?? "Mortgage Listing",
-				}))
-			),
-		};
-	})
+	.handler(
+		async (ctx, args) => await listMarketplaceListingsSnapshot(ctx, args)
+	)
 	.public();
 
 export const getMarketplaceListingDetail = listingQuery
