@@ -312,7 +312,7 @@ function getTransactionEventType(
 	return "purchase";
 }
 
-async function getListingByIdOrNull(
+export async function getListingByIdOrNull(
 	ctx: { db: Pick<DatabaseReader, "get"> },
 	listingId: Id<"listings">
 ) {
@@ -555,6 +555,31 @@ async function attachAvailabilityToListings(
 	}));
 }
 
+export async function getListingWithAvailabilitySnapshot(
+	ctx: Parameters<typeof buildListingAvailability>[0] &
+		Parameters<typeof getRequiredPortalPricingPolicy>[0],
+	args: {
+		listingId: Id<"listings">;
+		portalId?: Id<"portals">;
+	}
+) {
+	const listing = await getListingByIdOrNull(ctx, args.listingId);
+	if (!listing) {
+		return null;
+	}
+
+	const pricingPolicy = args.portalId
+		? await getRequiredPortalPricingPolicy(ctx, args.portalId)
+		: null;
+
+	return {
+		availability: await buildListingAvailability(ctx, listing.mortgageId),
+		listing: pricingPolicy
+			? projectListingForPortal(listing, pricingPolicy)
+			: listing,
+	};
+}
+
 export const getListingById = authedQuery
 	.input({ listingId: v.id("listings") })
 	.handler(async (ctx, args) => {
@@ -567,23 +592,9 @@ export const getListingWithAvailability = authedQuery
 		listingId: v.id("listings"),
 		portalId: v.optional(v.id("portals")),
 	})
-	.handler(async (ctx, args) => {
-		const listing = await getListingByIdOrNull(ctx, args.listingId);
-		if (!listing) {
-			return null;
-		}
-
-		const pricingPolicy = args.portalId
-			? await getRequiredPortalPricingPolicy(ctx, args.portalId)
-			: null;
-
-		return {
-			availability: await buildListingAvailability(ctx, listing.mortgageId),
-			listing: pricingPolicy
-				? projectListingForPortal(listing, pricingPolicy)
-				: listing,
-		};
-	})
+	.handler(
+		async (ctx, args) => await getListingWithAvailabilitySnapshot(ctx, args)
+	)
 	.public();
 
 export const listPublishedListings = authedQuery

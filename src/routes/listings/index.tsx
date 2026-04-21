@@ -9,7 +9,7 @@ import {
 } from "#/components/listings/search";
 
 export const Route = createFileRoute("/listings/")({
-	component: ListingsRoutePage,
+	component: ListingsIndexRoutePage,
 	loaderDeps: ({ search }) => ({ search }),
 	loader: async ({ context, deps: { search } }) => {
 		await context.queryClient.ensureQueryData(
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/listings/")({
 		parseMarketplaceListingsSearch(search),
 });
 
-function ListingsRoutePage() {
+export function ListingsIndexRoutePage() {
 	const search = Route.useSearch();
 	const navigate = useNavigate();
 	const { data } = useSuspenseQuery(marketplaceListingsQueryOptions(search));

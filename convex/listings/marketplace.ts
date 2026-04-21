@@ -153,7 +153,8 @@ export function matchesMarketplaceFilters(
 		filters.mortgageTypes === undefined ||
 			filters.mortgageTypes.includes(mortgageType),
 		filters.propertyTypes === undefined ||
-			filters.propertyTypes.includes(listing.marketplacePropertyType),
+			(listing.marketplacePropertyType !== undefined &&
+				filters.propertyTypes.includes(listing.marketplacePropertyType)),
 		filters.ltv?.min === undefined || listing.ltvRatio >= filters.ltv.min,
 		filters.ltv?.max === undefined || listing.ltvRatio <= filters.ltv.max,
 		filters.interestRate?.min === undefined ||
