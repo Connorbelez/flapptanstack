@@ -60,10 +60,10 @@ describe("hash-chain and reconciliation", () => {
 
 		const layer1 = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.engine.reconciliation.reconcile, {});
+			.action(api.engine.reconciliation.reconcile, {});
 		const layer2 = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.engine.reconciliation.reconcileLayer2, {});
+			.action(api.engine.reconciliation.reconcileLayer2, {});
 
 		expect(layer1).toMatchObject({
 			discrepancies: [],
@@ -324,7 +324,7 @@ describe("hash-chain and reconciliation", () => {
 
 		const result = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.engine.reconciliation.reconcile, {});
+			.action(api.engine.reconciliation.reconcile, {});
 		// Deal is not yet governed — reconciler skips it entirely
 		expect(result.discrepancies).not.toContainEqual(
 			expect.objectContaining({ entityType: "deal" })
@@ -358,7 +358,7 @@ describe("hash-chain and reconciliation", () => {
 
 		const result = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.engine.reconciliation.reconcileLayer2, {});
+			.action(api.engine.reconciliation.reconcileLayer2, {});
 		expect(result.isHealthy).toBe(false);
 		expect(result.brokenChains).toContainEqual(
 			expect.objectContaining({
@@ -379,7 +379,7 @@ describe("hash-chain and reconciliation", () => {
 
 		const result = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.engine.reconciliation.reconcileLayer2, {});
+			.action(api.engine.reconciliation.reconcileLayer2, {});
 
 		expect(result.brokenChains).toContainEqual(
 			expect.objectContaining({
@@ -403,7 +403,7 @@ describe("hash-chain and reconciliation", () => {
 
 		const result = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.engine.reconciliation.reconcileLayer2, {});
+			.action(api.engine.reconciliation.reconcileLayer2, {});
 
 		expect(result.brokenChains).toContainEqual(
 			expect.objectContaining({
@@ -480,7 +480,7 @@ describe("hash-chain and reconciliation", () => {
 
 		const result = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.engine.reconciliation.reconcileLayer2, {});
+			.action(api.engine.reconciliation.reconcileLayer2, {});
 		expect(result.totalEntities).toBe(2);
 		expect(result.brokenChains).toHaveLength(1);
 		expect(result.brokenChains[0]?.entityId).toBe(brokenEntityId);
@@ -536,10 +536,10 @@ describe("hash-chain and reconciliation", () => {
 
 		const layer1 = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.engine.reconciliation.reconcile, {});
+			.action(api.engine.reconciliation.reconcile, {});
 		const layer2 = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.engine.reconciliation.reconcileLayer2, {});
+			.action(api.engine.reconciliation.reconcileLayer2, {});
 
 		expect(layer1.discrepancies).toEqual([]);
 		expect(layer1.isHealthy).toBe(true);

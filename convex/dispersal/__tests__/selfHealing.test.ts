@@ -30,7 +30,15 @@ const RETRIGGER = makeFunctionReference<
 		settledAmount: number;
 		settledDate: string;
 	},
-	{ action: "skipped" | "escalated" | "retriggered"; attemptCount: number }
+	{
+		action: "skipped" | "escalated" | "retriggered";
+		attemptCount: number;
+		reason?:
+			| "already_escalated"
+			| "scheduled_retrigger"
+			| "suspense_routed"
+			| "missing_borrower_receivable_account";
+	}
 >("dispersal/selfHealing:retriggerDispersal");
 
 const RESOLVE = makeFunctionReference<
@@ -448,15 +456,27 @@ describe("dispersal self-healing", () => {
 		// Calls 1–3: should be "retriggered"
 		const r1 = await t.mutation(RETRIGGER, args);
 		await t.finishAllScheduledFunctions(vi.runAllTimers);
-		expect(r1).toEqual({ action: "retriggered", attemptCount: 1 });
+		expect(r1).toEqual({
+			action: "retriggered",
+			attemptCount: 1,
+			reason: "scheduled_retrigger",
+		});
 
 		const r2 = await t.mutation(RETRIGGER, args);
 		await t.finishAllScheduledFunctions(vi.runAllTimers);
-		expect(r2).toEqual({ action: "retriggered", attemptCount: 2 });
+		expect(r2).toEqual({
+			action: "retriggered",
+			attemptCount: 2,
+			reason: "scheduled_retrigger",
+		});
 
 		const r3 = await t.mutation(RETRIGGER, args);
 		await t.finishAllScheduledFunctions(vi.runAllTimers);
-		expect(r3).toEqual({ action: "retriggered", attemptCount: 3 });
+		expect(r3).toEqual({
+			action: "retriggered",
+			attemptCount: 3,
+			reason: "scheduled_retrigger",
+		});
 
 		// Call 4: should escalate (attemptCount > MAX_HEALING_ATTEMPTS=3)
 		const r4 = await t.mutation(RETRIGGER, args);
@@ -523,6 +543,57 @@ describe("dispersal self-healing", () => {
 				: null;
 			expect(debitAccount?.family).toBe("SUSPENSE");
 			expect(creditAccount?.family).toBe("BORROWER_RECEIVABLE");
+		});
+		vi.useRealTimers();
+	});
+
+	it("escalates without throwing when the borrower receivable account is missing", async () => {
+		vi.useFakeTimers();
+		const t = createHarness();
+		const { borrowerReceivableAccountId, obligationB, mortgageId } =
+			await seedScenario(t);
+
+		await t.run(async (ctx) => {
+			await ctx.db.delete(borrowerReceivableAccountId);
+		});
+
+		const args = {
+			obligationId: obligationB,
+			mortgageId,
+			settledAmount: 50_000,
+			settledDate: "2026-03-01",
+		};
+
+		await t.mutation(RETRIGGER, args);
+		await t.finishAllScheduledFunctions(vi.runAllTimers);
+		await t.mutation(RETRIGGER, args);
+		await t.finishAllScheduledFunctions(vi.runAllTimers);
+		await t.mutation(RETRIGGER, args);
+		await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+		const escalated = await t.mutation(RETRIGGER, args);
+		await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+		expect(escalated).toEqual({
+			action: "escalated",
+			attemptCount: 4,
+			reason: "missing_borrower_receivable_account",
+		});
+
+		await t.run(async (ctx) => {
+			const attempts = await ctx.db.query("dispersalHealingAttempts").collect();
+			const attempt = attempts.find((row) => row.obligationId === obligationB);
+			expect(attempt?.status).toBe("escalated");
+
+			const journalEntries = await ctx.db
+				.query("cash_ledger_journal_entries")
+				.collect();
+			expect(
+				journalEntries.some(
+					(entry) =>
+						entry.idempotencyKey === `suspense-escalation:${obligationB}`
+				)
+			).toBe(false);
 		});
 		vi.useRealTimers();
 	});
