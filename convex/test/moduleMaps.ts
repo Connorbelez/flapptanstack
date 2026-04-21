@@ -70,8 +70,12 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../admin/origination/commit.ts"),
 	"/convex/admin/origination/validators.ts": async () =>
 		await import("./../admin/origination/validators.ts"),
+	"/convex/admin/settings/actions.ts": async () =>
+		await import("./../admin/settings/actions.ts"),
 	"/convex/admin/settings/mutations.ts": async () =>
 		await import("./../admin/settings/mutations.ts"),
+	"/convex/admin/settings/mockMortgages.ts": async () =>
+		await import("./../admin/settings/mockMortgages.ts"),
 	"/convex/admin/settings/queries.ts": async () =>
 		await import("./../admin/settings/queries.ts"),
 	"/convex/brokers/migrations.ts": async () =>
@@ -370,6 +374,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../listings/create.ts"),
 	"/convex/listings/curation.ts": async () =>
 		await import("./../listings/curation.ts"),
+	"/convex/listings/lifecycle.ts": async () =>
+		await import("./../listings/lifecycle.ts"),
 	"/convex/listings/marketplace.ts": async () =>
 		await import("./../listings/marketplace.ts"),
 	"/convex/listings/math.ts": async () => await import("./../listings/math.ts"),

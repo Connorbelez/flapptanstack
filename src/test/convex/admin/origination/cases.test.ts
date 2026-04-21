@@ -368,14 +368,14 @@ describe("admin origination cases", () => {
 				api.admin.origination.cases.getCase,
 				{ caseId }
 			)
-		).rejects.toThrow("Forbidden: origination case is outside your org");
+		).rejects.toThrow("Origination case not found or access denied");
 
 		await expect(
 			t.withIdentity(EXTERNAL_ORG_ADMIN).mutation(
 				api.admin.origination.cases.createCase,
 				{ bootstrapToken }
 			)
-		).rejects.toThrow("Forbidden: origination case is outside your org");
+		).rejects.toThrow("Origination case not found or access denied");
 
 		await t.run(async (ctx) => {
 			await ctx.db.patch(caseId, { orgId: undefined });
@@ -386,14 +386,14 @@ describe("admin origination cases", () => {
 				api.admin.origination.cases.getCase,
 				{ caseId }
 			)
-		).rejects.toThrow("Forbidden: origination case access requires org context");
+		).rejects.toThrow("Origination case not found or access denied");
 
 		await expect(
 			t.withIdentity(EXTERNAL_ORG_ADMIN).mutation(
 				api.admin.origination.cases.createCase,
 				{ bootstrapToken }
 			)
-		).rejects.toThrow("Forbidden: origination case access requires org context");
+		).rejects.toThrow("Origination case not found or access denied");
 	});
 
 	it("reuses the same draft when createCase receives the same bootstrap token", async () => {

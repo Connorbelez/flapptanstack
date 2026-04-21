@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	createRotessaClient,
 	getRotessaClient,
 	resetRotessaClient,
 	RotessaConfigError,
@@ -32,5 +33,24 @@ describe("getRotessaClient", () => {
 				baseUrl: "https://sandbox.rotessa.test",
 			})
 		).toThrow(RotessaConfigError);
+	});
+
+	it("accepts ROTESSA_API_URL as a base-url fallback", async () => {
+		vi.stubEnv("ROTESSA_API_KEY", "test-rotessa-key");
+		vi.stubEnv("ROTESSA_API_URL", "https://sandbox.rotessa.test");
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			text: async () => "[]",
+		});
+
+		const client = createRotessaClient({
+			fetchFn: fetchMock as unknown as typeof fetch,
+		});
+		await client.customers.list();
+
+		expect(fetchMock).toHaveBeenCalledWith(
+			"https://sandbox.rotessa.test/customers",
+			expect.objectContaining({ method: "GET" })
+		);
 	});
 });

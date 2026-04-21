@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import { auditLog } from "../../auditLog";
-import { adminMutation } from "../../fluent";
+import { adminMutation, requirePermission } from "../../fluent";
+import {
+	type PublishListingResult,
+	publishListingRecord,
+} from "../../listings/lifecycle";
 import {
 	getBrokerPortalPricingSetting,
 	setBrokerPortalPricingSetting,
@@ -46,5 +50,19 @@ export const setBrokerPortalPricing = adminMutation
 			fairLendPortalsUpdated: sync.fairLendPortalsUpdated,
 			lastUpdatedAt: setting.updatedAt,
 		};
+	})
+	.public();
+
+export const publishListing = adminMutation
+	.use(requirePermission("listing:manage"))
+	.input({
+		listingId: v.id("listings"),
+	})
+	.handler(async (ctx, args): Promise<PublishListingResult> => {
+		return publishListingRecord(ctx, {
+			actorAuthId: ctx.viewer.authId,
+			listingId: args.listingId,
+			now: Date.now(),
+		});
 	})
 	.public();

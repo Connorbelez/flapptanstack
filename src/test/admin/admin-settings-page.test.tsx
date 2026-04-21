@@ -2,13 +2,21 @@
  * @vitest-environment jsdom
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { useMutation } from "convex/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BrokerPortalPricingCard } from "#/components/admin/settings/AdminSettingsPage";
 
 vi.mock("convex/react", () => ({
+	useAction: vi.fn(),
 	useMutation: vi.fn(),
+	useQuery: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({

@@ -733,6 +733,67 @@ export default defineSchema({
 		.index("by_updated_at", ["updatedAt"])
 		.index("by_org_updated_at", ["orgId", "updatedAt"]),
 
+	mockOriginationBatches: defineTable({
+		orgId: v.string(),
+		catalogVersion: v.string(),
+		status: v.union(
+			v.literal("seeding"),
+			v.literal("ready"),
+			v.literal("cleaning"),
+			v.literal("failed"),
+			v.literal("clean_failed"),
+			v.literal("cleaned")
+		),
+		itemCount: v.number(),
+		startedAt: v.number(),
+		completedAt: v.optional(v.number()),
+		cleanedAt: v.optional(v.number()),
+		failedAt: v.optional(v.number()),
+		lastError: v.optional(v.string()),
+		createdByAuthId: v.string(),
+		createdByUserId: v.id("users"),
+		updatedAt: v.number(),
+	})
+		.index("by_org_started_at", ["orgId", "startedAt"])
+		.index("by_org_status", ["orgId", "status"]),
+
+	mockOriginationBatchItems: defineTable({
+		batchId: v.id("mockOriginationBatches"),
+		catalogKey: v.string(),
+		bootstrapToken: v.string(),
+		borrowerDisplayName: v.string(),
+		imageStorageId: v.id("_storage"),
+		listingTitle: v.string(),
+		status: v.union(
+			v.literal("pending"),
+			v.literal("case_created"),
+			v.literal("borrower_created"),
+			v.literal("schedule_created"),
+			v.literal("committed"),
+			v.literal("published"),
+			v.literal("cleanup_provider_done"),
+			v.literal("cleanup_local_done"),
+			v.literal("cleaned"),
+			v.literal("failed")
+		),
+		caseId: v.optional(v.id("adminOriginationCases")),
+		borrowerId: v.optional(v.id("borrowers")),
+		userId: v.optional(v.id("users")),
+		bankAccountId: v.optional(v.id("bankAccounts")),
+		customerProfileId: v.optional(v.id("externalCustomerProfiles")),
+		providerScheduleId: v.optional(v.id("externalProviderSchedules")),
+		mortgageId: v.optional(v.id("mortgages")),
+		listingId: v.optional(v.id("listings")),
+		propertyId: v.optional(v.id("properties")),
+		valuationSnapshotId: v.optional(v.id("mortgageValuationSnapshots")),
+		lastError: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_batch", ["batchId", "createdAt"])
+		.index("by_batch_catalog_key", ["batchId", "catalogKey"])
+		.index("by_batch_status", ["batchId", "status", "updatedAt"]),
+
 	originationCaseDocumentDrafts: defineTable({
 		caseId: v.id("adminOriginationCases"),
 		class: mortgageDocumentBlueprintClassValidator,

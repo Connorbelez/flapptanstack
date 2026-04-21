@@ -6,6 +6,11 @@ import type { DataModel } from "./_generated/dataModel";
 import { internalAction, internalMutation } from "./_generated/server";
 import { authedQuery } from "./fluent";
 import { syncUserHomePortalAssignmentByAuthId } from "./portals/homePortalAssignment";
+import {
+	deleteOrphanUsersByAuthId,
+	findCanonicalUserByAuthId,
+	upsertUserByAuthId,
+} from "./users/byAuthId";
 
 const authFunctions: AuthFunctions = internal.auth;
 
@@ -203,12 +208,22 @@ export const { authKitEvent } = authKit.events({
 	// ── User events ───────────────────────────────────────────────────
 	"user.created": async (ctx, event) => {
 		console.log("Received user.created event for", event.data.id);
-		await ctx.db.insert("users", {
+		const userUpsert = await upsertUserByAuthId(ctx, {
 			authId: event.data.id,
 			email: event.data.email,
-			firstName: `${event.data.firstName}`,
-			lastName: `${event.data.lastName}`,
+			firstName: event.data.firstName ?? "",
+			lastName: event.data.lastName ?? "",
 		});
+		if (userUpsert.deletedDuplicateUserIds.length > 0) {
+			console.warn(
+				`[auth] Collapsed ${userUpsert.deletedDuplicateUserIds.length} duplicate user row(s) for ${event.data.id}.`
+			);
+		}
+		if (userUpsert.survivingDuplicateUserIds.length > 0) {
+			console.warn(
+				`[auth] Duplicate referenced user rows still exist for ${event.data.id}: ${userUpsert.survivingDuplicateUserIds.join(", ")}`
+			);
+		}
 		await ctx.scheduler.runAfter(0, internal.auth.syncUserRelatedData, {
 			userId: event.data.id,
 		});
@@ -216,44 +231,46 @@ export const { authKitEvent } = authKit.events({
 	},
 	"user.updated": async (ctx, event) => {
 		console.log("Received user.updated event for", event.data.id);
-		const user = await ctx.db
-			.query("users")
-			.withIndex("authId", (q) => q.eq("authId", event.data.id))
-			.unique();
-		if (!user) {
+		const userUpsert = await upsertUserByAuthId(ctx, {
+			authId: event.data.id,
+			email: event.data.email,
+			firstName: event.data.firstName ?? "",
+			lastName: event.data.lastName ?? "",
+		});
+		if (userUpsert.deletedDuplicateUserIds.length > 0) {
+			console.warn(
+				`[auth] Collapsed ${userUpsert.deletedDuplicateUserIds.length} duplicate user row(s) during update for ${event.data.id}.`
+			);
+		}
+		if (userUpsert.survivingDuplicateUserIds.length > 0) {
+			console.warn(
+				`[auth] Duplicate referenced user rows still exist for ${event.data.id}: ${userUpsert.survivingDuplicateUserIds.join(", ")}`
+			);
+		}
+		if (userUpsert.wasCreated) {
 			// User doesn't exist yet (event arrived before user.created, or it was lost).
 			// Create the user from event data, then backfill related data from WorkOS.
 			console.log(
 				`user.updated for unknown user ${event.data.id} — creating and scheduling backfill`
 			);
-			await ctx.db.insert("users", {
-				authId: event.data.id,
-				email: event.data.email,
-				firstName: `${event.data.firstName}`,
-				lastName: `${event.data.lastName}`,
-			});
 			await ctx.scheduler.runAfter(0, internal.auth.syncUserRelatedData, {
 				userId: event.data.id,
 			});
 			await queueUserHomePortalAssignmentSync(ctx, event.data.id);
-			return;
 		}
-		await ctx.db.patch(user._id, {
-			email: event.data.email,
-			firstName: `${event.data.firstName}`,
-			lastName: `${event.data.lastName}`,
-		});
 	},
 	"user.deleted": async (ctx, event) => {
-		const user = await ctx.db
-			.query("users")
-			.withIndex("authId", (q) => q.eq("authId", event.data.id))
-			.unique();
+		const { canonicalUser } = await findCanonicalUserByAuthId(
+			ctx,
+			event.data.id
+		);
+		const user = canonicalUser;
 		if (!user) {
 			console.warn(`User not found: ${event.data.id}`);
 			return;
 		}
 		await ctx.db.delete(user._id);
+		await deleteOrphanUsersByAuthId(ctx, { authId: event.data.id });
 	},
 
 	// ── Organization events ───────────────────────────────────────────
