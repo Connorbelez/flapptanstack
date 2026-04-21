@@ -1244,13 +1244,18 @@ export const createBorrowerForCollections = originationAction
 		transitNumber: v.string(),
 	})
 	.handler(async (ctx, args): Promise<CanonicalBorrowerProfileResult> => {
-		const commitContext: { portalId: Id<"portals"> | null } | null =
-			await ctx.runQuery(internal.admin.origination.commit.getCommitContext, {
+		const commitContext: {
+			orgId?: string;
+			portalId: Id<"portals"> | null;
+		} | null = await ctx.runQuery(
+			internal.admin.origination.commit.getCommitContext,
+			{
 				caseId: args.caseId,
 				viewerAuthId: ctx.viewer.authId,
 				viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
 				viewerOrgId: ctx.viewer.orgId,
-			});
+			}
+		);
 		if (!commitContext) {
 			throw new ConvexError("Origination case not found");
 		}
@@ -1265,7 +1270,7 @@ export const createBorrowerForCollections = originationAction
 			email: args.email,
 			fullName: args.fullName,
 			institutionNumber: args.institutionNumber,
-			orgId: ctx.viewer.orgId,
+			orgId: commitContext.orgId,
 			portalId: commitContext.portalId,
 			phone: args.phone,
 			sourceLabel: `origination_case:${args.caseId}`,

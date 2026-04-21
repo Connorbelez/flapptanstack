@@ -19,7 +19,10 @@ import { authedAction, convex, requirePermissionAction } from "../../fluent";
 import { activateMortgageAggregate } from "../../mortgages/activateMortgageAggregate";
 import { buildAdminDirectMortgageActivationSource } from "../../mortgages/provenance";
 import { ensureBorrowerPortalAttribution } from "../../portals/borrowerPortalAttribution";
-import { getPortalByBrokerId } from "../../portals/homePortalAssignment";
+import {
+	getPortalByBrokerId,
+	syncUserHomePortalAssignmentByUserId,
+} from "../../portals/homePortalAssignment";
 import { activateCommittedCaseCollectionsRuntime } from "./collections";
 import { runPostCommitCollectionsActivation } from "./postCommitCollectionsActivation";
 import { normalizeOriginationCollectionsDraft } from "./validators";
@@ -88,6 +91,7 @@ interface OriginationCommitContext {
 	committedAt: number | null;
 	committedMortgageId: Id<"mortgages"> | null;
 	committedValuationSnapshotId: Id<"mortgageValuationSnapshots"> | null;
+	orgId: string | undefined;
 	participantResolutions: OriginationParticipantResolution[];
 	portalId: Id<"portals"> | null;
 	validationErrors: string[];
@@ -392,6 +396,10 @@ async function buildBorrowerLinksForCommit(
 				borrower: existingBorrower,
 				portalId,
 			});
+			await syncUserHomePortalAssignmentByUserId(
+				ctx,
+				attributedBorrower.userId
+			);
 			borrowerLinks.push({
 				borrowerId: attributedBorrower._id,
 				role: participant.role,
@@ -509,6 +517,7 @@ export const getCommitContext = convex
 			committedValuationSnapshotId:
 				caseRecord.committedValuationSnapshotId ?? null,
 			collectionsDraft: caseRecord.collectionsDraft,
+			orgId: caseRecord.orgId,
 			participantResolutions,
 			portalId: brokerPortal?._id ?? null,
 			validationErrors: collectCommitBlockingErrors(caseRecord),

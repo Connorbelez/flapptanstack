@@ -1,11 +1,7 @@
 import { ConvexError, type ObjectType, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import {
-	getBorrowerByAuthId,
-	getLenderByAuthId,
-	getUserByAuthId,
-} from "../auth/actorResolution";
+import { getLenderByAuthId, getUserByAuthId } from "../auth/actorResolution";
 import type { Viewer } from "../fluent";
 import type { PortalSummary } from "./validators";
 
@@ -145,8 +141,18 @@ export async function resolvePortalAccess(
 export async function resolvePortalBorrower(
 	context: PortalAuthedBaseContext & PortalResolvedContext
 ): Promise<Doc<"borrowers">> {
-	const borrower = await getBorrowerByAuthId(context, context.viewer.authId);
-	if (!borrower?.portalId || borrower.portalId !== context.portal.portalId) {
+	const viewerUser = await getUserByAuthId(context, context.viewer.authId);
+	if (!viewerUser) {
+		throw new ConvexError("Forbidden: borrower does not belong to this portal");
+	}
+
+	const borrower = await context.db
+		.query("borrowers")
+		.withIndex("by_portal_user", (query) =>
+			query.eq("portalId", context.portal.portalId).eq("userId", viewerUser._id)
+		)
+		.first();
+	if (!borrower) {
 		throw new ConvexError("Forbidden: borrower does not belong to this portal");
 	}
 

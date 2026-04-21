@@ -56,6 +56,16 @@ const UNMAPPED_ORG_BORROWER = createMockViewer({
 	lastName: "UnmappedOrg",
 });
 
+const MULTI_PORTAL_BORROWER = createMockViewer({
+	roles: ["borrower"],
+	orgId: BROKER.org_id,
+	orgName: BROKER.organization_name,
+	subject: "user_borrower_multi_portal",
+	email: "borrower-multi-portal@test.fairlend.ca",
+	firstName: "Borrower",
+	lastName: "MultiPortal",
+});
+
 const SAME_ORG_WRONG_BROKER_LENDER = createMockViewer({
 	roles: ["lender"],
 	orgId: BROKER.org_id,
@@ -107,6 +117,7 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 		seedFromIdentity(t, MISMATCHED_LENDER),
 		seedFromIdentity(t, MISSING_ORG_BORROWER),
 		seedFromIdentity(t, UNMAPPED_ORG_BORROWER),
+		seedFromIdentity(t, MULTI_PORTAL_BORROWER),
 		seedFromIdentity(t, SAME_ORG_WRONG_BROKER_LENDER),
 	]);
 
@@ -130,6 +141,9 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 		const missingOrgBorrowerUser = await findUser(MISSING_ORG_BORROWER.subject);
 		const unmappedOrgBorrowerUser = await findUser(
 			UNMAPPED_ORG_BORROWER.subject
+		);
+		const multiPortalBorrowerUser = await findUser(
+			MULTI_PORTAL_BORROWER.subject
 		);
 		const sameOrgWrongBrokerLenderUser = await findUser(
 			SAME_ORG_WRONG_BROKER_LENDER.subject
@@ -210,6 +224,7 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 			ctx.db.patch(mismatchedLenderUser._id, { homePortalId: portalAId }),
 			ctx.db.patch(missingOrgBorrowerUser._id, { homePortalId: portalAId }),
 			ctx.db.patch(unmappedOrgBorrowerUser._id, { homePortalId: portalAId }),
+			ctx.db.patch(multiPortalBorrowerUser._id, { homePortalId: portalAId }),
 			ctx.db.patch(sameOrgWrongBrokerLenderUser._id, {
 				homePortalId: portalAId,
 			}),
@@ -241,6 +256,22 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 			userId: unmappedOrgBorrowerUser._id,
 			status: "active",
 			orgId: "org_unmapped_portal",
+			createdAt: NOW,
+		});
+
+		await ctx.db.insert("borrowers", {
+			userId: multiPortalBorrowerUser._id,
+			status: "active",
+			orgId: "org_brokerage_portal_b",
+			portalId: portalBId,
+			createdAt: NOW,
+		});
+
+		const multiPortalBorrowerPortalAId = await ctx.db.insert("borrowers", {
+			userId: multiPortalBorrowerUser._id,
+			status: "active",
+			orgId: BROKER.org_id,
+			portalId: portalAId,
 			createdAt: NOW,
 		});
 
@@ -313,6 +344,7 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 		return {
 			lenderId,
 			mortgageId,
+			multiPortalBorrowerPortalAId,
 			portalAId,
 			portalBId,
 			suspendedPortalId,
@@ -432,6 +464,21 @@ describe("portal middleware proof consumers", () => {
 					portalId: fixture.portalAId,
 				})
 		).rejects.toThrow("Forbidden: borrower does not belong to this portal");
+	});
+
+	it("resolves the borrower row scoped to the requested portal", async () => {
+		const t = createHarness();
+		const fixture = await seedPortalFixture(t);
+
+		const success = await t
+			.withIdentity(MULTI_PORTAL_BORROWER)
+			.query(api.portals.proof.getPortalBorrowerContextProof, {
+				portalId: fixture.portalAId,
+			});
+
+		expect(success.accessMode).toBe("same-portal");
+		expect(success.portalId).toBe(fixture.portalAId);
+		expect(success.borrowerId).toBe(fixture.multiPortalBorrowerPortalAId);
 	});
 
 	it("fails closed when borrower portal attribution is missing", async () => {

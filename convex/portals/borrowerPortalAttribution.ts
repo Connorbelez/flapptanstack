@@ -5,6 +5,46 @@ import { getPortalByBrokerId } from "./homePortalAssignment";
 
 type PortalReaderCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
 type PortalWriterCtx = Pick<MutationCtx, "db">;
+type OnboardingRequestPortalSnapshot = Pick<
+	Doc<"onboardingRequests">,
+	"_id" | "createdAt" | "portalId" | "userId"
+>;
+
+function isNewerAttributedRequest(
+	candidate: OnboardingRequestPortalSnapshot,
+	current: OnboardingRequestPortalSnapshot
+) {
+	if (candidate.createdAt !== current.createdAt) {
+		return candidate.createdAt > current.createdAt;
+	}
+
+	return String(candidate._id).localeCompare(String(current._id)) > 0;
+}
+
+export function buildLatestOnboardingPortalIdByUserId(
+	requests: readonly OnboardingRequestPortalSnapshot[]
+) {
+	const latestByUser = new Map<string, OnboardingRequestPortalSnapshot>();
+
+	for (const request of requests) {
+		if (!request.portalId) {
+			continue;
+		}
+
+		const key = String(request.userId);
+		const existing = latestByUser.get(key);
+		if (!existing || isNewerAttributedRequest(request, existing)) {
+			latestByUser.set(key, request);
+		}
+	}
+
+	return new Map(
+		Array.from(latestByUser.entries(), ([userId, request]) => [
+			userId,
+			request.portalId as Id<"portals">,
+		])
+	);
+}
 
 export async function getDeterministicPortalIdForOrgId(
 	ctx: PortalReaderCtx,
@@ -30,22 +70,17 @@ export async function getLatestOnboardingPortalIdForUser(
 ) {
 	const requests = await ctx.db
 		.query("onboardingRequests")
-		.withIndex("by_user", (query) => query.eq("userId", userId))
+		.withIndex("by_user_created_at", (query) => query.eq("userId", userId))
+		.order("desc")
 		.collect();
 
-	const attributedRequests = requests
-		.filter(
-			(request): request is typeof request & { portalId: Id<"portals"> } =>
-				request.portalId !== undefined
-		)
-		.sort((left, right) => {
-			if (left.createdAt !== right.createdAt) {
-				return right.createdAt - left.createdAt;
-			}
-			return String(right._id).localeCompare(String(left._id));
-		});
+	for (const request of requests) {
+		if (request.portalId) {
+			return request.portalId;
+		}
+	}
 
-	return attributedRequests[0]?.portalId;
+	return undefined;
 }
 
 export async function resolveBorrowerPortalIdForWrite(
@@ -58,7 +93,18 @@ export async function resolveBorrowerPortalIdForWrite(
 	}
 ) {
 	if (args.explicitPortalId) {
-		return args.explicitPortalId;
+		const explicitPortal = await ctx.db.get(args.explicitPortalId);
+		if (
+			!explicitPortal ||
+			explicitPortal.status !== "active" ||
+			!explicitPortal.isPublished ||
+			(args.brokerId && explicitPortal.brokerId !== args.brokerId) ||
+			(args.orgId && explicitPortal.orgId !== args.orgId)
+		) {
+			return undefined;
+		}
+
+		return explicitPortal._id;
 	}
 
 	if (args.brokerId) {
@@ -66,6 +112,8 @@ export async function resolveBorrowerPortalIdForWrite(
 		if (brokerPortal) {
 			return brokerPortal._id;
 		}
+
+		return undefined;
 	}
 
 	if (args.orgId) {
