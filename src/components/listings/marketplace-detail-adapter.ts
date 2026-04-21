@@ -299,11 +299,14 @@ function buildDocuments(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>
 ): ListingDocumentItem[] {
 	return detail.documents.map((document) => ({
+		assetId: String(document.assetId),
+		contentType: document.contentType ?? null,
 		description: document.description,
+		fileName: document.fileName ?? null,
 		id: String(document.assetId),
+		kind: document.kind,
 		label: document.displayName,
 		meta: titleCase(document.class),
-		pageLabel: document.description ?? "Document available for download",
 		url: document.url,
 	}));
 }
