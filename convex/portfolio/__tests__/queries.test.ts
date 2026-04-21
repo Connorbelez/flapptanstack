@@ -8,7 +8,7 @@ import {
 	MEMBER,
 } from "../../../src/test/auth/identities";
 import { api, internal } from "../../_generated/api";
-import type { Doc } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import { deriveMarketplacePropertyType } from "../../listings/marketplaceShared";
 import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
@@ -635,6 +635,107 @@ describe("portfolio portal queries", () => {
 			email: "broker@fairlend.ca",
 			name: "Morgan Broker",
 		});
+	});
+
+	it("treats empty stored allowlists as deny-all for portfolio suggestions", async () => {
+		const t = createHarness();
+		const lender = t.withIdentity(LENDER);
+		const { lenderId, portalId } = await createPortfolioFixture(t);
+
+		await t.run(async (ctx) => {
+			const [constraint] = await ctx.db
+				.query("lenderFilterConstraints")
+				.withIndex("by_lender", (query) => query.eq("lenderId", lenderId))
+				.collect();
+			if (!constraint) {
+				throw new Error("Expected lender constraint fixture");
+			}
+			await ctx.db.patch(constraint._id, {
+				allowedMortgageTypes: [],
+				allowedPropertyTypes: [],
+				updatedAt: FIXTURE_TIME + 1,
+			});
+		});
+
+		const result = await lender.query(
+			portfolioApi.getLenderPortfolioCommandCenter,
+			{
+				portalId,
+			}
+		);
+
+		expect(result.limitsStrip.effectiveFilters).toEqual({
+			interestRate: undefined,
+			ltv: { max: 0.7, min: 0.5 },
+			maturityDate: { end: "2027-12-31" },
+			mortgageTypes: [],
+			principalAmount: { max: 350_000, min: 200_000 },
+			propertyTypes: [],
+			searchQuery: undefined,
+		});
+		expect(result.suggestedOpportunities).toEqual({
+			excludedOwnedMortgageCount: 0,
+			rows: [],
+		});
+		expect(result.emptyStates.hasSuggestions).toBe(false);
+	});
+
+	it("backfills portfolio suggestions after excluding already-owned listings", async () => {
+		const t = createHarness();
+		const lender = t.withIdentity(LENDER);
+		const {
+			mortgageId,
+			portalId,
+			secondSuggestionListingId,
+			suggestionListingId,
+		} = await createPortfolioFixture(t);
+
+		const additionalSuggestionIds = await t.run(async (ctx) => {
+			for (let index = 0; index < 24; index += 1) {
+				await ctx.db.insert(
+					"listings",
+					buildListingDoc({
+						mortgageId,
+						publishedAt: FIXTURE_TIME + 1000 + index,
+						title: `Owned filler ${String(index)}`,
+					})
+				);
+			}
+
+			const suggestionIds: Id<"listings">[] = [];
+			for (let index = 0; index < 5; index += 1) {
+				suggestionIds.push(
+					await ctx.db.insert(
+						"listings",
+						buildListingDoc({
+							publishedAt: FIXTURE_TIME + 14 - index,
+							title: `Extra eligible suggestion ${String(index)}`,
+						})
+					)
+				);
+			}
+
+			return suggestionIds;
+		});
+
+		const result = await lender.query(
+			portfolioApi.getLenderPortfolioCommandCenter,
+			{
+				portalId,
+			}
+		);
+
+		expect(result.suggestedOpportunities.excludedOwnedMortgageCount).toBe(25);
+		expect(
+			result.suggestedOpportunities.rows.map((row) => row.listingId)
+		).toEqual([
+			String(suggestionListingId),
+			String(secondSuggestionListingId),
+			String(additionalSuggestionIds[0]),
+			String(additionalSuggestionIds[1]),
+			String(additionalSuggestionIds[2]),
+		]);
+		expect(result.suggestedOpportunities.rows).toHaveLength(5);
 	});
 
 	it("rejects lender portfolio reads when the portal does not belong to the lender's broker context", async () => {

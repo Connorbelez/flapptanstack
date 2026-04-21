@@ -1009,6 +1009,58 @@ describe("listing queries", () => {
 		expect(result.page).toEqual([]);
 	});
 
+	it("treats empty stored portal allowlists as deny-all filters", async () => {
+		const t = createHarness();
+		const lenderAuth = t.withIdentity(LENDER);
+		const { brokerId, lenderId, portalId } = await insertPortalLenderFixture(t);
+
+		await t.run(async (ctx) => {
+			await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					lienPosition: 1,
+					propertyType: "residential",
+					publishedAt: 1_710_000_000_200,
+					title: "Would otherwise match",
+				})
+			);
+			await ctx.db.insert("lenderFilterConstraints", {
+				allowedMortgageTypes: [],
+				allowedPropertyTypes: [],
+				brokerId,
+				createdAt: 1_710_000_500_000,
+				interestRateRange: undefined,
+				lastUpdatedBy: "test",
+				lenderId,
+				loanAmountRange: undefined,
+				ltvRange: undefined,
+				maturityDateMax: undefined,
+				setByOnboardingId: undefined,
+				updatedAt: 1_710_000_500_000,
+			});
+		});
+
+		const result = await lenderAuth.query(
+			portalListingApi.listLenderPortalListings,
+			{
+				cursor: null,
+				numItems: 24,
+				portalId,
+			}
+		);
+
+		expect(result.effectiveFilters).toEqual({
+			interestRate: undefined,
+			ltv: undefined,
+			maturityDate: undefined,
+			mortgageTypes: [],
+			principalAmount: undefined,
+			propertyTypes: [],
+			searchQuery: undefined,
+		});
+		expect(result.page).toEqual([]);
+	});
+
 	it("returns projected lender portal listing detail with public documents", async () => {
 		const t = createHarness();
 		const lenderAuth = t.withIdentity(LENDER);

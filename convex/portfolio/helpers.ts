@@ -19,7 +19,10 @@ import {
 } from "../listings/marketplaceShared";
 import { getAvailableLenderPayableBalanceImpl } from "../payments/cashLedger/queries";
 import type { PortalLenderContext } from "../portals/middleware";
-import { loadPortalPricingSelection } from "../portals/pricing";
+import {
+	loadPortalPricingSelection,
+	type PortalPricingPolicyDoc,
+} from "../portals/pricing";
 import type {
 	PortfolioActionItem,
 	PortfolioBrokerPrefillContext,
@@ -37,9 +40,14 @@ import type {
 
 const DAYS_PER_MILLISECOND = 1000 * 60 * 60 * 24;
 const POSITION_UNITS_PER_FRACTION = 1000;
+const SUGGESTED_OPPORTUNITY_LIMIT = 5;
+const SUGGESTED_OPPORTUNITY_PAGE_SIZE = 24;
 
 type PortfolioQueryContext = Pick<QueryCtx, "db" | "storage"> &
 	PortalLenderContext & { viewer: Pick<Viewer, "authId"> };
+type MarketplaceSuggestionRow = Awaited<
+	ReturnType<typeof listMarketplaceListingsSnapshot>
+>["page"][number];
 
 interface ActiveLenderPositionAccount {
 	accountId: Id<"ledger_accounts">;
@@ -52,6 +60,11 @@ interface MortgagePaymentContext {
 	latestTransfer: Doc<"transferRequests"> | null;
 	obligation: Doc<"obligations">;
 	row: PortfolioPaymentRow;
+}
+
+interface SuggestedOpportunityCandidate {
+	listing: Doc<"listings">;
+	suggestion: MarketplaceSuggestionRow;
 }
 
 const PORTFOLIO_SOURCE_OF_TRUTH: PortfolioSourceOfTruth = {
@@ -431,6 +444,66 @@ async function loadPaymentContextsForMortgage(
 			};
 			return { latestAttempt, latestTransfer, obligation, row };
 		});
+}
+
+async function loadSuggestedOpportunityCandidates(
+	ctx: PortfolioQueryContext,
+	args: {
+		filters: Parameters<typeof listMarketplaceListingsSnapshot>[1]["filters"];
+		heldMortgageIds: ReadonlySet<string>;
+		pricingPolicy: Pick<PortalPricingPolicyDoc, "brokerSplitPercent"> | null;
+	}
+): Promise<{
+	excludedOwnedMortgageCount: number;
+	rows: SuggestedOpportunityCandidate[];
+}> {
+	let cursor: string | null = null;
+	let isDone = false;
+	let excludedOwnedMortgageCount = 0;
+	const rows: SuggestedOpportunityCandidate[] = [];
+
+	do {
+		const snapshot = await listMarketplaceListingsSnapshot(
+			ctx,
+			{
+				cursor,
+				filters: args.filters,
+				numItems: SUGGESTED_OPPORTUNITY_PAGE_SIZE,
+			},
+			{ pricingPolicy: args.pricingPolicy }
+		);
+		const pageCandidates = await Promise.all(
+			snapshot.page.map(async (suggestion) => {
+				const listingId = suggestion.id as Id<"listings">;
+				const listing = await ctx.db.get(listingId);
+				if (!listing) {
+					return null;
+				}
+				return { listing, suggestion };
+			})
+		);
+
+		for (const candidate of pageCandidates) {
+			if (!candidate) {
+				continue;
+			}
+			if (
+				candidate.listing.mortgageId &&
+				args.heldMortgageIds.has(String(candidate.listing.mortgageId))
+			) {
+				excludedOwnedMortgageCount += 1;
+				continue;
+			}
+			if (rows.length < SUGGESTED_OPPORTUNITY_LIMIT) {
+				rows.push(candidate);
+			}
+		}
+
+		cursor = snapshot.continueCursor;
+		isDone = snapshot.isDone;
+	} while (!isDone && rows.length < SUGGESTED_OPPORTUNITY_LIMIT);
+
+	return { excludedOwnedMortgageCount, rows };
 }
 
 function buildSuggestionReasonTags(args: {
@@ -923,45 +996,16 @@ export async function buildPortfolioCommandCenter(
 		atTime: generatedAt,
 		portalId: ctx.portal.portalId,
 	});
-	const suggestionSnapshot = await listMarketplaceListingsSnapshot(
-		ctx,
-		{
-			filters: effectiveFilters,
-			numItems: 24,
-		},
-		{
-			pricingPolicy:
-				pricingSelection.kind === "ready" ? pricingSelection.policy : null,
-		}
-	);
 	const heldMortgageIds = new Set(
 		mortgageIds.map((mortgageId) => String(mortgageId))
 	);
-	const suggestionCandidates = await Promise.all(
-		suggestionSnapshot.page.map(async (suggestion) => {
-			const listingId = suggestion.id as Id<"listings">;
-			const listing = await ctx.db.get(listingId);
-			if (!listing) {
-				return null;
-			}
-			return { listing, suggestion };
-		})
-	);
-	const filteredSuggestions = suggestionCandidates.filter(
-		(
-			candidate
-		): candidate is {
-			listing: Doc<"listings">;
-			suggestion: Awaited<typeof suggestionSnapshot.page>[number];
-		} =>
-			candidate !== null &&
-			!(
-				candidate.listing.mortgageId &&
-				heldMortgageIds.has(String(candidate.listing.mortgageId))
-			)
-	);
-	const excludedOwnedMortgageCount =
-		suggestionCandidates.length - filteredSuggestions.length;
+	const { excludedOwnedMortgageCount, rows: suggestedOpportunityCandidates } =
+		await loadSuggestedOpportunityCandidates(ctx, {
+			filters: effectiveFilters,
+			heldMortgageIds,
+			pricingPolicy:
+				pricingSelection.kind === "ready" ? pricingSelection.policy : null,
+		});
 	const heldPropertyTypes = new Set<string>(
 		positions
 			.map((position) => {
@@ -1009,9 +1053,8 @@ export async function buildPortfolioCommandCenter(
 					}, 0) / weightedRateDenominator
 				);
 
-	const suggestedRows: PortfolioSuggestedOpportunity[] = filteredSuggestions
-		.slice(0, 5)
-		.map(({ listing, suggestion }) => ({
+	const suggestedRows: PortfolioSuggestedOpportunity[] =
+		suggestedOpportunityCandidates.map(({ listing, suggestion }) => ({
 			explanationTags: buildSuggestionReasonTags({
 				heldMortgageTypes,
 				heldPropertyTypes,
@@ -1137,7 +1180,7 @@ export async function buildPortfolioCommandCenter(
 			},
 			effectiveFilters: effectiveFilters ?? null,
 			hasConstraints: constraint !== null,
-			suggestionSeedCount: filteredSuggestions.length,
+			suggestionSeedCount: suggestedOpportunityCandidates.length,
 		},
 		paymentActivity: {
 			rows: paymentRows,
