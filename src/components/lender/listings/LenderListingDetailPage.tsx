@@ -1,8 +1,10 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
 import { FileText, MapPin, Percent, Wallet } from "lucide-react";
+import type { PortalLenderListingDetailSnapshot } from "#/components/listings/marketplace-types";
+import { lenderPortalListingDetailQueryOptions } from "#/components/listings/portal-query-options";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -13,8 +15,6 @@ import {
 	CardTitle,
 } from "#/components/ui/card";
 import { Route as RootRoute } from "#/routes/__root";
-import { api } from "../../../../convex/_generated/api";
-import type { Id } from "../../../../convex/_generated/dataModel";
 
 function formatCurrency(value: number | undefined) {
 	if (typeof value !== "number") {
@@ -40,24 +40,50 @@ interface LenderListingDetailPageProps {
 	listingId: string;
 }
 
+type PortalListingDocument = NonNullable<
+	NonNullable<PortalLenderListingDetailSnapshot>["documents"]
+>[number];
+
 export function LenderListingDetailPage({
 	listingId,
 }: LenderListingDetailPageProps) {
 	const { portalContext } = RootRoute.useRouteContext();
-	const portalId =
-		portalContext.kind === "portal" ? portalContext.portal.portalId : undefined;
-	const detail = useQuery(api.listings.queries.getListingWithAvailability, {
-		listingId: listingId as Id<"listings">,
-		portalId,
-	});
-	const publicDocuments = useQuery(
-		api.listings.publicDocuments.listForListing,
-		{
-			listingId: listingId as Id<"listings">,
-		}
+
+	if (portalContext.kind !== "portal") {
+		return (
+			<div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
+				<Card>
+					<CardHeader>
+						<CardTitle>Portal host required</CardTitle>
+						<CardDescription>
+							Lender listing detail is only available on an active portal host.
+						</CardDescription>
+					</CardHeader>
+				</Card>
+			</div>
+		);
+	}
+
+	return (
+		<PortalLenderListingDetailContent
+			listingId={listingId}
+			portalId={String(portalContext.portal.portalId)}
+		/>
+	);
+}
+
+function PortalLenderListingDetailContent({
+	listingId,
+	portalId,
+}: {
+	listingId: string;
+	portalId: string;
+}) {
+	const detailQuery = useQuery(
+		lenderPortalListingDetailQueryOptions(portalId, listingId)
 	);
 
-	if (detail === undefined || publicDocuments === undefined) {
+	if (detailQuery.isPending) {
 		return (
 			<div className="flex min-h-[40vh] items-center justify-center">
 				<p className="text-muted-foreground text-sm">Loading listing...</p>
@@ -65,7 +91,22 @@ export function LenderListingDetailPage({
 		);
 	}
 
-	if (detail === null) {
+	if (detailQuery.error) {
+		return (
+			<div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
+				<Card>
+					<CardHeader>
+						<CardTitle>Listing unavailable</CardTitle>
+						<CardDescription>
+							The lender listing detail could not be loaded for this portal.
+						</CardDescription>
+					</CardHeader>
+				</Card>
+			</div>
+		);
+	}
+
+	if (detailQuery.data === null || detailQuery.data === undefined) {
 		return (
 			<div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
 				<Card>
@@ -80,7 +121,7 @@ export function LenderListingDetailPage({
 		);
 	}
 
-	const { availability, listing } = detail;
+	const { availability, documents, listing } = detailQuery.data;
 
 	return (
 		<div className="mx-auto max-w-5xl space-y-8 px-4 py-10 sm:px-6">
@@ -175,8 +216,8 @@ export function LenderListingDetailPage({
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="space-y-3">
-						{publicDocuments.length > 0 ? (
-							publicDocuments.map((document) => (
+						{documents.length > 0 ? (
+							documents.map((document: PortalListingDocument) => (
 								<div
 									className="rounded-lg border border-border/60 p-3"
 									key={String(document.blueprintId)}

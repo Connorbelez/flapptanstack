@@ -3,6 +3,7 @@ import {
 	MARKETPLACE_PROPERTY_TYPES,
 	MARKETPLACE_SORT_KEYS,
 	type MarketplaceListingsSearchState,
+	type PortalEffectiveMarketplaceFilters,
 } from "./marketplace-types";
 
 function parseCsvEnum<T extends string>(
@@ -93,4 +94,23 @@ export function cleanMarketplaceListingsSearch(
 			return true;
 		})
 	) as Partial<MarketplaceListingsSearchState>;
+}
+
+export function marketplaceFiltersToSearchState(
+	filters: PortalEffectiveMarketplaceFilters,
+	currentSort: MarketplaceListingsSearchState["sort"]
+): MarketplaceListingsSearchState {
+	return {
+		maturityBefore: filters?.maturityDate?.end,
+		mortgageTypes: filters?.mortgageTypes,
+		principalMax: filters?.principalAmount?.max,
+		principalMin: filters?.principalAmount?.min,
+		propertyTypes: filters?.propertyTypes,
+		q: filters?.searchQuery,
+		rateMax: filters?.interestRate?.max,
+		rateMin: filters?.interestRate?.min,
+		sort: currentSort ?? "featured",
+		ltvMax: filters?.ltv?.max,
+		ltvMin: filters?.ltv?.min,
+	};
 }
