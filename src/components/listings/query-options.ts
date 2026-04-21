@@ -4,6 +4,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import type { MarketplaceListingsSearchState } from "./marketplace-types";
 
 export function marketplaceListingsQueryOptions(
+	portalId: Id<"portals">,
 	search: MarketplaceListingsSearchState
 ) {
 	return convexQuery(api.listings.marketplace.listMarketplaceListings, {
@@ -29,11 +30,16 @@ export function marketplaceListingsQueryOptions(
 			searchQuery: search.q,
 		},
 		numItems: 24,
+		portalId,
 	});
 }
 
-export function marketplaceListingDetailQueryOptions(listingId: string) {
+export function marketplaceListingDetailQueryOptions(
+	portalId: Id<"portals">,
+	listingId: string
+) {
 	return convexQuery(api.listings.marketplace.getMarketplaceListingDetail, {
 		listingId: listingId as Id<"listings">,
+		portalId,
 	});
 }

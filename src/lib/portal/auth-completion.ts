@@ -2,33 +2,12 @@ import { getReturnPathname } from "../auth-redirect";
 import { buildAbsoluteHostUrl, buildPortalAbsoluteUrl } from "./auth-routing";
 import type { PortalAuthStatePayload } from "./auth-state";
 import type { RootPortalContext } from "./host-resolution";
-
-export interface ViewerHomePortalAssignment {
-	currentOrgPortal?: null | {
-		defaultPostAuthPath: string;
-		isPublished: boolean;
-		localHost: string;
-		portalId: string;
-		portalType: "broker" | "fairlend";
-		productionHost: string;
-		slug: string;
-		status: "active" | "archived" | "draft" | "suspended";
-	};
-	currentOrgPortalId?: string | null;
-	homePortal: null | {
-		defaultPostAuthPath: string;
-		isPublished: boolean;
-		localHost: string;
-		portalId: string;
-		portalType: "broker" | "fairlend";
-		productionHost: string;
-		slug: string;
-		status: "active" | "archived" | "draft" | "suspended";
-	};
-	homePortalId: string | null;
-	isFairLendAdmin: boolean;
-	userId: string | null;
-}
+import {
+	buildViewerPortalLabel,
+	requireActiveHomePortal,
+	resolvePreferredViewerPortal,
+	type ViewerHomePortalAssignment,
+} from "./portal-navigation-target";
 
 export type AuthCompletionDecision =
 	| {
@@ -46,31 +25,7 @@ export type AuthCompletionDecision =
 function buildPortalLabel(
 	portal: NonNullable<ViewerHomePortalAssignment["homePortal"]>
 ) {
-	if (portal.portalType === "fairlend") {
-		return "FairLend";
-	}
-
-	return portal.slug
-		.split("-")
-		.map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-		.join(" ");
-}
-
-function assertActiveHomePortal(
-	assignment: ViewerHomePortalAssignment
-): NonNullable<ViewerHomePortalAssignment["homePortal"]> {
-	if (!(assignment.homePortalId && assignment.homePortal)) {
-		throw new Error("Authenticated user is missing a valid home portal.");
-	}
-
-	if (
-		!assignment.homePortal.isPublished ||
-		assignment.homePortal.status !== "active"
-	) {
-		throw new Error("Authenticated user's assigned portal is unavailable.");
-	}
-
-	return assignment.homePortal;
+	return buildViewerPortalLabel(portal);
 }
 
 function resolveCompletionReturnPath(
@@ -101,15 +56,20 @@ export function resolveAuthCompletionDecision(args: {
 
 	switch (authState.hostClass) {
 		case "marketing": {
-			const assignedPortal = assertActiveHomePortal(viewerAssignment);
+			const assignedPortal =
+				resolvePreferredViewerPortal(viewerAssignment) ??
+				requireActiveHomePortal(viewerAssignment);
 			const returnPathname = resolveCompletionReturnPath(
 				authState,
 				assignedPortal
 			);
 
-			if (currentPortalContext.kind !== "marketing") {
+			if (
+				currentPortalContext.kind !== "marketing" &&
+				currentPortalContext.kind !== "admin"
+			) {
 				throw new Error(
-					"Marketing auth completion must land on a marketing host."
+					"Marketing auth completion must land on a marketing or admin host."
 				);
 			}
 
@@ -159,7 +119,9 @@ export function resolveAuthCompletionDecision(args: {
 				};
 			}
 
-			const assignedPortal = assertActiveHomePortal(viewerAssignment);
+			const assignedPortal =
+				resolvePreferredViewerPortal(viewerAssignment) ??
+				requireActiveHomePortal(viewerAssignment);
 			const returnPathname = resolveCompletionReturnPath(
 				authState,
 				assignedPortal

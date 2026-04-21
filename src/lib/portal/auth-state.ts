@@ -9,7 +9,7 @@ export const DEFAULT_PORTAL_AUTH_STATE_MAX_AGE_MS = 15 * 60 * 1000;
 
 type SupportedPortalContext = Extract<
 	RootPortalContext,
-	{ kind: "marketing" | "portal" }
+	{ kind: "admin" | "marketing" | "portal" }
 >;
 
 export type PortalAuthHostClass = "marketing" | "portal";
@@ -191,6 +191,19 @@ export function buildPortalAuthStatePayload(args: {
 	const hasExplicitReturnPath = explicitReturnPath !== undefined;
 
 	if (portalContext.kind === "marketing") {
+		return {
+			version: PORTAL_AUTH_STATE_VERSION,
+			issuedAt: args.issuedAt ?? Date.now(),
+			returnPathname,
+			hasExplicitReturnPath,
+			hostClass: "marketing",
+			hostType: resolvePortalHostTypeFromHost(portalContext.canonicalHost),
+			requestedHost: portalContext.requestedHost,
+			canonicalHost: portalContext.canonicalHost,
+		};
+	}
+
+	if (portalContext.kind === "admin") {
 		return {
 			version: PORTAL_AUTH_STATE_VERSION,
 			issuedAt: args.issuedAt ?? Date.now(),

@@ -26,6 +26,11 @@ interface PermissionCheckOptions {
 	allowAdminOverride?: boolean;
 }
 
+interface RouteNavigationLocation {
+	href?: string;
+	pathname?: string;
+}
+
 export interface RouteAuthContext {
 	orgId: string | null;
 	permissions: string[];
@@ -250,35 +255,57 @@ export function guardAuthenticated() {
 		location,
 	}: {
 		context: RouteAuthContext;
-		location: { href: string };
+		location: RouteNavigationLocation;
 	}) => {
 		if (!context.userId) {
-			throw redirect(buildSignInRedirect(location.href));
+			throw redirect(
+				buildSignInRedirect(location.href ?? location.pathname ?? "/")
+			);
 		}
 	};
+}
+
+function assertAuthorization(
+	requirement: AuthorizationRequirement | RouteAuthorizationKey,
+	args: {
+		context: RouteAuthContext;
+		location: RouteNavigationLocation;
+	}
+) {
+	if (!args.context.userId) {
+		throw redirect(
+			buildSignInRedirect(args.location.href ?? args.location.pathname ?? "/")
+		);
+	}
+
+	if (!isAuthorized(args.context, requirement)) {
+		throw redirect({ to: "/unauthorized" });
+	}
 }
 
 function guardAuthorization(
 	requirement: AuthorizationRequirement | RouteAuthorizationKey
 ) {
-	return ({
-		context,
-		location,
-	}: {
+	return (args: {
 		context: RouteAuthContext;
-		location: { href: string };
+		location: RouteNavigationLocation;
 	}) => {
-		if (!context.userId) {
-			throw redirect(buildSignInRedirect(location.href));
-		}
-		if (!isAuthorized(context, requirement)) {
-			throw redirect({ to: "/unauthorized" });
-		}
+		assertAuthorization(requirement, args);
 	};
 }
 
 export function guardRouteAccess(routeKey: RouteAuthorizationKey) {
 	return guardAuthorization(routeKey);
+}
+
+export function assertRouteAccess(
+	routeKey: RouteAuthorizationKey,
+	args: {
+		context: RouteAuthContext;
+		location: RouteNavigationLocation;
+	}
+) {
+	assertAuthorization(routeKey, args);
 }
 
 export function guardPermission(
