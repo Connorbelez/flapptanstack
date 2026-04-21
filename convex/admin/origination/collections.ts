@@ -1329,7 +1329,8 @@ export const createBorrowerForCollections = originationAction
 				viewerAuthId: ctx.viewer.authId,
 				viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
 				viewerOrgId: ctx.viewer.orgId,
-			});
+			}
+		);
 		if (!commitContext) {
 			throw new ConvexError("Origination case not found");
 		}
