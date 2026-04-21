@@ -30,6 +30,34 @@ function listingViewer(t: ReturnType<typeof createHarness>) {
 	});
 }
 
+function publicDocumentViewer(t: ReturnType<typeof createHarness>) {
+	return t.withIdentity({
+		subject: "public-document-viewer",
+		issuer: "https://api.workos.com",
+		org_id: "org_public_document_viewer",
+		role: "lawyer",
+		roles: JSON.stringify(["lawyer"]),
+		permissions: JSON.stringify([]),
+		user_email: "public-document-viewer@fairlend.ca",
+		user_first_name: "Public",
+		user_last_name: "Viewer",
+	});
+}
+
+function memberViewer(t: ReturnType<typeof createHarness>) {
+	return t.withIdentity({
+		subject: "member-user",
+		issuer: "https://api.workos.com",
+		org_id: "org_member",
+		role: "member",
+		roles: JSON.stringify(["member"]),
+		permissions: JSON.stringify([]),
+		user_email: "member@fairlend.ca",
+		user_first_name: "Member",
+		user_last_name: "Viewer",
+	});
+}
+
 async function insertMortgageFixture(t: ReturnType<typeof createHarness>) {
 	return await t.run(async (ctx) => {
 		const timestamp = Date.now();
@@ -249,17 +277,7 @@ describe("marketplace listings", () => {
 	it("requires listing:view for marketplace reads", async () => {
 		const t = createHarness();
 		const portalId = await insertBrokerPortalPricingFixture(t);
-		const viewerWithoutListingView = t.withIdentity({
-			subject: "member-user",
-			issuer: "https://api.workos.com",
-			org_id: "org_member",
-			role: "member",
-			roles: JSON.stringify(["member"]),
-			permissions: JSON.stringify([]),
-			user_email: "member@fairlend.ca",
-			user_first_name: "Member",
-			user_last_name: "Viewer",
-		});
+		const viewerWithoutListingView = memberViewer(t);
 
 		await expect(
 			viewerWithoutListingView.query(listingApi.listMarketplaceListings, {
@@ -268,6 +286,38 @@ describe("marketplace listings", () => {
 				portalId,
 			})
 		).rejects.toThrow('permission "listing:view" required');
+	});
+
+	it("allows public listing documents for authenticated non-member roles without listing:view", async () => {
+		const t = createHarness();
+		const auth = publicDocumentViewer(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			listingId = await ctx.db.insert("listings", buildListingDoc());
+		});
+
+		const documents = await auth.query(publicDocumentsApi.listForListing, {
+			listingId,
+		});
+
+		expect(documents).toEqual([]);
+	});
+
+	it("denies public listing documents for member-only users", async () => {
+		const t = createHarness();
+		const auth = memberViewer(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			listingId = await ctx.db.insert("listings", buildListingDoc());
+		});
+
+		await expect(
+			auth.query(publicDocumentsApi.listForListing, {
+				listingId,
+			})
+		).rejects.toThrow("public document access required");
 	});
 
 	it("filters by the stored marketplace property type", async () => {

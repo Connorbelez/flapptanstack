@@ -9,7 +9,6 @@ import {
 	ChevronLeft,
 	ChevronRight,
 	ExternalLink,
-	FileText,
 	Heart,
 	ImageIcon,
 	Loader2,
@@ -21,6 +20,8 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { cn } from "#/lib/utils";
+import { ListingDocumentSidebar } from "./ListingDocumentSidebar";
+import { ListingDocumentViewer } from "./ListingDocumentViewer";
 import { ListingMap } from "./ListingMap";
 import type {
 	ListingBadge,
@@ -443,6 +444,7 @@ export function ListingDetailPage({
 				<DesktopBorrowerAndHistory listing={listing} />
 				<DesktopDocuments
 					documents={listing.documents}
+					listingId={listing.id}
 					onDocumentSelect={setSelectedDocumentId}
 					selectedDocumentId={selectedDocument?.id}
 				/>
@@ -699,93 +701,24 @@ export function ListingDetailPage({
 					<SectionLabel>Documents</SectionLabel>
 					{listing.documents.length > 0 ? (
 						<div className="mt-3 space-y-3">
-							<div className="space-y-2">
-								{listing.documents.map((document) => {
-									const isSelected = document.id === selectedDocument?.id;
-									return (
-										<button
-											aria-pressed={isSelected}
-											className={cn(
-												"flex w-full items-center justify-between rounded-xl border px-4 py-4 text-left transition-colors",
-												isSelected
-													? "border-primary/40 bg-primary/10 dark:border-primary/50 dark:bg-primary/15"
-													: "border-border/80 bg-background/50 hover:bg-muted/40"
-											)}
-											key={document.id}
-											onClick={() => setSelectedDocumentId(document.id)}
-											type="button"
-										>
-											<div className="flex items-center gap-3">
-												<FileText
-													className={cn(
-														"size-4",
-														isSelected
-															? "text-[var(--palm)]"
-															: "text-muted-foreground"
-													)}
-												/>
-												<div>
-													<span className="block font-medium text-sm">
-														{document.label}
-													</span>
-													<span className="text-[12px] text-muted-foreground">
-														{document.meta}
-													</span>
-												</div>
-											</div>
-											<ChevronRight
-												className={cn(
-													"size-4",
-													isSelected
-														? "text-[var(--palm)]"
-														: "text-muted-foreground/70"
-												)}
-											/>
-										</button>
-									);
-								})}
-							</div>
+							<ListingDocumentSidebar
+								documents={listing.documents}
+								mobile
+								onSelect={setSelectedDocumentId}
+								selectedDocumentId={selectedDocument?.id}
+							/>
 
 							<WhiteSurface className="px-4 py-4">
-								{selectedDocument ? (
-									<div className="space-y-4">
-										<div className="flex items-start justify-between gap-4">
-											<div>
-												<p className="font-semibold text-[18px] leading-tight">
-													{selectedDocument.label}
-												</p>
-												<p className="mt-1 text-muted-foreground text-sm">
-													{selectedDocument.meta}
-												</p>
-											</div>
-											<span className="rounded-full border border-primary/15 bg-primary/10 px-3 py-1 font-medium text-[12px] text-[var(--palm)] dark:border-primary/25 dark:bg-primary/15">
-												Selected
-											</span>
-										</div>
-
-										<div className="flex h-[170px] items-center justify-center rounded-xl border border-border/70 border-dashed bg-muted/25">
-											<div className="text-center">
-												<FileText className="mx-auto size-8 text-muted-foreground" />
-												<p className="mt-3 font-medium text-muted-foreground text-sm">
-													{selectedDocument.pageLabel}
-												</p>
-												<p className="mt-1 text-muted-foreground text-xs">
-													Preview details update as you switch documents.
-												</p>
-											</div>
-										</div>
-									</div>
-								) : (
-									<div className="space-y-2 text-muted-foreground text-sm">
-										<p>No documents are attached to this demo listing yet.</p>
-										<p>Tap a document above to preview it here.</p>
-									</div>
-								)}
+								<ListingDocumentViewer
+									document={selectedDocument}
+									listingId={listing.id}
+									mobile
+								/>
 							</WhiteSurface>
 						</div>
 					) : (
-						<WhiteSurface className="mt-3 border-dashed px-4 py-5 text-muted-foreground text-sm">
-							No documents are attached to this demo listing yet.
+						<WhiteSurface className="mt-3 px-4 py-4">
+							<ListingDocumentViewer listingId={listing.id} mobile />
 						</WhiteSurface>
 					)}
 				</ListingScrollReveal>
@@ -1134,11 +1067,13 @@ function DesktopBorrowerAndHistory({
 }
 
 function DesktopDocuments({
+	listingId,
 	documents,
 	selectedDocumentId,
 	onDocumentSelect,
 }: {
 	documents: ListingDocumentItem[];
+	listingId: string;
 	onDocumentSelect: (documentId: string) => void;
 	selectedDocumentId?: string;
 }) {
@@ -1153,60 +1088,17 @@ function DesktopDocuments({
 				className={cn("mt-5 flex overflow-hidden p-0", LISTING_ISLAND_CLASS)}
 			>
 				<div className="w-[260px] border-border/70 border-r bg-muted/15 p-3">
-					<div className="space-y-1">
-						{documents.map((document) => {
-							const isSelected = document.id === selectedDocument?.id;
-							return (
-								<button
-									className={cn(
-										"flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
-										isSelected
-											? "bg-primary/12 text-[var(--palm)] dark:bg-primary/18"
-											: "text-foreground/90 hover:bg-muted/50"
-									)}
-									key={document.id}
-									onClick={() => onDocumentSelect(document.id)}
-									type="button"
-								>
-									<FileText className="size-4 shrink-0" />
-									<div>
-										<p className="font-medium text-sm">{document.label}</p>
-										<p className="text-[12px] text-muted-foreground">
-											{document.meta}
-										</p>
-									</div>
-								</button>
-							);
-						})}
-					</div>
+					<ListingDocumentSidebar
+						documents={documents}
+						onSelect={onDocumentSelect}
+						selectedDocumentId={selectedDocument?.id}
+					/>
 				</div>
-				<div className="flex h-[358px] flex-1 flex-col items-center justify-center bg-muted/25 text-center">
-					<FileText className="size-10 text-muted-foreground" />
-					{selectedDocument ? (
-						<>
-							<p className="mt-4 font-medium text-muted-foreground text-sm">
-								{selectedDocument.pageLabel}
-							</p>
-							{selectedDocument.url ? (
-								<a
-									className="mt-3 inline-flex items-center rounded-full border border-border/80 bg-background/70 px-4 py-2 font-medium text-[var(--palm)] text-sm backdrop-blur-sm hover:bg-muted/40"
-									href={selectedDocument.url}
-									rel="noreferrer"
-									target="_blank"
-								>
-									Open document
-								</a>
-							) : (
-								<p className="mt-2 text-muted-foreground text-sm">
-									Inline PDF viewer renders here
-								</p>
-							)}
-						</>
-					) : (
-						<p className="mt-4 text-muted-foreground text-sm">
-							No documents are attached to this demo listing yet.
-						</p>
-					)}
+				<div className="h-[358px] min-h-0 flex-1 overflow-hidden bg-muted/25 p-4">
+					<ListingDocumentViewer
+						document={selectedDocument}
+						listingId={listingId}
+					/>
 				</div>
 			</div>
 		</ListingScrollReveal>
