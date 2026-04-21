@@ -9,6 +9,7 @@ import {
 } from "../fluent";
 import {
 	buildLenderRenewalTimeline,
+	isLenderRenewalWindowOpen,
 	LENDER_RENEWAL_PARTIAL_EXIT_MIN_FRACTIONS,
 	type LenderRenewalIntentChoice,
 	renewalSignalEventForIntent,
@@ -59,6 +60,15 @@ interface SignalOperationPlan {
 		| null;
 	transitionPayload: Record<string, unknown> | undefined;
 }
+type ResolveSignalIntentResult =
+	| {
+			intentRecord: LenderRenewalIntentDoc;
+			kind: "expired";
+	  }
+	| {
+			intentRecord: LenderRenewalIntentDoc;
+			kind: "ready";
+	  };
 
 function buildPortalTransitionSource(authId: string) {
 	return {
@@ -239,7 +249,7 @@ async function resolveSignalIntentRecord(args: {
 	mortgageId: LenderRenewalIntentDoc["mortgageId"];
 	nowMs: number;
 	positionAccount: PositionAccountDoc;
-}) {
+}): Promise<ResolveSignalIntentResult> {
 	let intentRecord = await findExistingLenderRenewalIntent({
 		ctx: args.ctx,
 		lenderId: args.ctx.lender._id,
@@ -247,12 +257,11 @@ async function resolveSignalIntentRecord(args: {
 	});
 
 	if (!intentRecord) {
-		const timeline = buildLenderRenewalTimeline(args.mortgage.maturityDate);
 		if (
-			!(
-				args.nowMs >= timeline.creationWindowOpensAt &&
-				args.nowMs < timeline.signalDeadlineAt
-			)
+			!isLenderRenewalWindowOpen({
+				asOf: args.nowMs,
+				maturityDate: args.mortgage.maturityDate,
+			})
 		) {
 			throw new ConvexError(
 				"Renewal intent is not currently available for this mortgage"
@@ -275,13 +284,31 @@ async function resolveSignalIntentRecord(args: {
 		intentRecord.status === "pending_signal" &&
 		args.nowMs >= intentRecord.signalDeadline
 	) {
-		await executeTransition(args.ctx, {
+		const transitionResult = await executeTransition(args.ctx, {
 			entityType: "lenderRenewalIntent",
 			entityId: intentRecord._id,
 			eventType: "DEADLINE_PASSED",
 			source: buildSystemExpirySource(),
 		});
-		throw new ConvexError("Renewal deadline has passed");
+		if (!transitionResult.success) {
+			throw new ConvexError(
+				transitionResult.reason ?? "Renewal transition was rejected"
+			);
+		}
+
+		const expiredIntent = await findExistingLenderRenewalIntent({
+			ctx: args.ctx,
+			lenderId: args.ctx.lender._id,
+			mortgageId: args.mortgageId,
+		});
+		if (!expiredIntent) {
+			throw new ConvexError("Failed to reload expired lender renewal intent");
+		}
+
+		return {
+			intentRecord: expiredIntent,
+			kind: "expired",
+		};
 	}
 
 	if (args.nowMs >= intentRecord.maturityDate) {
@@ -290,7 +317,10 @@ async function resolveSignalIntentRecord(args: {
 		);
 	}
 
-	return intentRecord;
+	return {
+		intentRecord,
+		kind: "ready",
+	};
 }
 
 function decideSignalOperation(args: {
@@ -442,7 +472,7 @@ export const signalLenderRenewalIntent = portalLenderMutation({
 			partialExitFractions: args.partialExitFractions,
 		});
 
-		const intentRecord = await resolveSignalIntentRecord({
+		const resolvedIntent = await resolveSignalIntentRecord({
 			ctx,
 			currentHeldFractions,
 			mortgage,
@@ -450,6 +480,15 @@ export const signalLenderRenewalIntent = portalLenderMutation({
 			nowMs,
 			positionAccount,
 		});
+		if (resolvedIntent.kind === "expired") {
+			return projectRenewalIntent({
+				ctx,
+				intent: resolvedIntent.intentRecord,
+				nowMs,
+			});
+		}
+
+		const intentRecord = resolvedIntent.intentRecord;
 		const {
 			shouldPatchOnly,
 			shouldTransition,

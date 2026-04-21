@@ -750,6 +750,55 @@ describe("portfolio portal queries", () => {
 		).rejects.toThrow();
 	});
 
+	it("renders pending renewal prompts without undefined copy", async () => {
+		const t = createHarness();
+		const lender = t.withIdentity(LENDER);
+		const { lenderId, mortgageId, portalId } = await createPortfolioFixture(t);
+
+		await t.run(async (ctx) => {
+			const renewalIntent = await ctx.db
+				.query("lenderRenewalIntents")
+				.withIndex("by_mortgage_and_lender", (query) =>
+					query.eq("mortgageId", mortgageId).eq("lenderId", lenderId)
+				)
+				.unique();
+			if (!renewalIntent) {
+				throw new Error("Expected lender renewal intent fixture");
+			}
+
+			await ctx.db.patch(renewalIntent._id, {
+				intent: undefined,
+			});
+		});
+
+		const commandCenter = await lender.query(
+			portfolioApi.getLenderPortfolioCommandCenter,
+			{
+				portalId,
+			}
+		);
+		const renewalAction = commandCenter.actionsRequired.items.find(
+			(item) => item.kind === "renewal_prompt"
+		);
+		expect(renewalAction?.prefillContext.summary).toBe(
+			"Renewal intent is awaiting lender decision with status pending_signal"
+		);
+
+		const positionDetail = await lender.query(
+			portfolioApi.getLenderPortfolioPositionDetail,
+			{
+				mortgageId,
+				portalId,
+			}
+		);
+		const quickRenewalAction = positionDetail.quickActions.find(
+			(item) => item.kind === "renewal_prompt"
+		);
+		expect(quickRenewalAction?.prefillContext.summary).toBe(
+			"Renewal intent is awaiting lender decision with status pending_signal"
+		);
+	});
+
 	it("returns lender-owned position and payment detail contracts from portal-scoped ids", async () => {
 		const t = createHarness();
 		const lender = t.withIdentity(LENDER);

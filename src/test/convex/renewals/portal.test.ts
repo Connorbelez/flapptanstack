@@ -134,6 +134,64 @@ async function seedRenewalFixture(
 	});
 }
 
+async function seedAdditionalWindowMortgages(
+	t: ReturnType<typeof createHarness>,
+	args: {
+		brokerId: Id<"brokers">;
+		count: number;
+		maturityDate?: string;
+		positionFractions?: bigint;
+	}
+) {
+	return t.run(async (ctx) => {
+		for (let index = 0; index < args.count; index += 1) {
+			const createdAt = Date.now() + index + 1;
+			const propertyId = await ctx.db.insert("properties", {
+				streetAddress: `${index + 200} Renewal Street`,
+				city: "Toronto",
+				province: "ON",
+				postalCode: "M5V1E1",
+				propertyType: "residential",
+				createdAt,
+			});
+			const mortgageId = await ctx.db.insert("mortgages", {
+				status: "active",
+				machineContext: {
+					lastPaymentAt: 0,
+					missedPayments: 0,
+				},
+				lastTransitionAt: createdAt,
+				propertyId,
+				principal: 500_000_00,
+				interestRate: 5.5,
+				rateType: "fixed",
+				termMonths: 12,
+				amortizationMonths: 300,
+				paymentAmount: 3_000_00,
+				paymentFrequency: "monthly",
+				loanType: "conventional",
+				lienPosition: 1,
+				interestAdjustmentDate: "2026-01-01",
+				termStartDate: "2026-01-15",
+				maturityDate: args.maturityDate ?? MATURITY_DATE,
+				firstPaymentDate: "2026-02-15",
+				brokerOfRecordId: args.brokerId,
+				createdAt,
+			});
+			await ctx.db.insert("ledger_accounts", {
+				type: "POSITION",
+				mortgageId,
+				lenderId: LENDER.subject,
+				cumulativeDebits: args.positionFractions ?? POSITION_FRACTIONS,
+				cumulativeCredits: 0n,
+				pendingDebits: 0n,
+				pendingCredits: 0n,
+				createdAt,
+			});
+		}
+	});
+}
+
 async function getStoredIntent(
 	t: ReturnType<typeof createHarness>,
 	args: {
@@ -255,6 +313,39 @@ describe("lender renewal portal runtime", () => {
 		expect(storedIntent.intent).toBeUndefined();
 	});
 
+	it("scans the full renewal window instead of stopping at the first batch", async () => {
+		const t = createHarness();
+		const fixture = await seedRenewalFixture(t);
+
+		await seedAdditionalWindowMortgages(t, {
+			brokerId: fixture.brokerId,
+			count: 130,
+		});
+
+		const creationResult = await t.action(
+			internal.renewals.internal.createRenewalIntentsInWindow,
+			{
+				asOf: Date.now(),
+			}
+		);
+		expect(creationResult).toMatchObject({
+			candidatesChecked: 131,
+			created: 131,
+			skipped: 0,
+			updated: 0,
+		});
+
+		const intentCount = await t.run(async (ctx) => {
+			return (
+				await ctx.db
+					.query("lenderRenewalIntents")
+					.withIndex("by_lender", (query) => query.eq("lenderId", fixture.lenderId))
+					.collect()
+			).length;
+		});
+		expect(intentCount).toBe(131);
+	});
+
 	it("rejects partial exits below the configured minimum", async () => {
 		const t = createHarness();
 		const fixture = await seedRenewalFixture(t);
@@ -369,6 +460,45 @@ describe("lender renewal portal runtime", () => {
 			candidatesChecked: 1,
 			expired: 1,
 			rejected: 0,
+		});
+
+		const storedIntent = await getStoredIntent(t, fixture);
+		expect(storedIntent.status).toBe("expired");
+
+		const journalRows = await getRenewalJournalRows(t, storedIntent._id);
+		expect(journalRows.at(-1)).toMatchObject({
+			actorId: "system",
+			actorType: "system",
+			channel: "scheduler",
+			eventType: "DEADLINE_PASSED",
+			newState: "expired",
+		});
+	});
+
+	it("persists expiry when a lender tries to signal after the deadline", async () => {
+		const t = createHarness();
+		const fixture = await seedRenewalFixture(t);
+		const timeline = buildLenderRenewalTimeline(MATURITY_DATE);
+
+		await t.action(internal.renewals.internal.createRenewalIntentsInWindow, {
+			asOf: Date.now(),
+		});
+		vi.setSystemTime(new Date(timeline.signalDeadlineAt + 60_000));
+
+		const expired = await t.withIdentity(LENDER).mutation(
+			api.renewals.portal.signalLenderRenewalIntent,
+			{
+				portalId: fixture.portalId,
+				mortgageId: fixture.mortgageId,
+				intent: "renew",
+			}
+		);
+		expect(expired).toMatchObject({
+			actionBlockedReason: "expired",
+			actionRequired: false,
+			availableChoices: [],
+			intent: null,
+			status: "expired",
 		});
 
 		const storedIntent = await getStoredIntent(t, fixture);
