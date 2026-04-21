@@ -54,16 +54,19 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				valueAsIs: 675000,
 			},
 		],
-		documents: [
-			{
-				assetId: "asset-1",
-				blueprintId: "blueprint-1",
-				class: "appraisal_report",
-				description: "Certified third-party appraisal package.",
-				displayName: "Appraisal Report",
-				url: "https://example.com/appraisal-report.pdf",
-			},
-		],
+			documents: [
+				{
+					assetId: "asset-1",
+					blueprintId: "blueprint-1",
+					class: "appraisal_report",
+					contentType: "application/pdf",
+					description: "Certified third-party appraisal package.",
+					displayName: "Appraisal Report",
+					fileName: "appraisal-report.pdf",
+					kind: "pdf",
+					url: "https://example.com/appraisal-report.pdf",
+				},
+			],
 		encumbrances: [
 			{
 				balanceAsOfDate: "2026-01-05",
@@ -162,6 +165,8 @@ describe("marketplace listing detail adapter", () => {
 		expect(model.documents[0]?.url).toBe(
 			"https://example.com/appraisal-report.pdf"
 		);
+		expect(model.documents[0]?.assetId).toBe("asset-1");
+		expect(model.documents[0]?.kind).toBe("pdf");
 		expect(model.badges[0]?.label).toBe("1ST MORTGAGE");
 		expect(model.paymentHistory).toMatchObject({
 			lateCount: 1,
@@ -174,7 +179,6 @@ describe("marketplace listing detail adapter", () => {
 			{ id: "Mar", label: "Mar", status: "missed" },
 		]);
 	});
-});
 
 describe("marketplace listing detail page", () => {
 	it("passes the shared detail page a read-only listing model", () => {

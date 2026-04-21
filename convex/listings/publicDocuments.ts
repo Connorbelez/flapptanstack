@@ -8,6 +8,44 @@ type ReadListingPublicDocumentsArgs =
 	| { listingId: Id<"listings"> }
 	| { mortgageId: Id<"mortgages"> | undefined };
 
+function deriveListingPublicDocumentKind(args: {
+	contentType?: string | null;
+	fileName?: string | null;
+}) {
+	if (args.contentType?.toLowerCase().includes("pdf")) {
+		return "pdf" as const;
+	}
+
+	if (args.fileName?.toLowerCase().endsWith(".pdf")) {
+		return "pdf" as const;
+	}
+
+	return "other" as const;
+}
+
+async function serializeListingPublicDocument(
+	ctx: Pick<QueryCtx, "storage">,
+	entry: Awaited<
+		ReturnType<typeof listActivePublicStaticBlueprintAssets>
+	>[number]
+) {
+	const { asset, blueprint } = entry;
+	const contentType = asset.mimeType ?? null;
+	const fileName = asset.originalFilename ?? asset.name ?? null;
+
+	return {
+		assetId: asset._id,
+		blueprintId: blueprint._id,
+		class: blueprint.class,
+		contentType,
+		description: blueprint.description ?? null,
+		displayName: blueprint.displayName,
+		fileName,
+		kind: deriveListingPublicDocumentKind({ contentType, fileName }),
+		url: await ctx.storage.getUrl(asset.fileRef),
+	};
+}
+
 export async function readListingPublicDocuments(
 	ctx: Pick<QueryCtx, "db" | "storage">,
 	args: ReadListingPublicDocumentsArgs
@@ -22,15 +60,20 @@ export async function readListingPublicDocuments(
 
 	const assets = await listActivePublicStaticBlueprintAssets(ctx, mortgageId);
 	return Promise.all(
-		assets.map(async ({ asset, blueprint }) => ({
-			assetId: asset._id,
-			blueprintId: blueprint._id,
-			class: blueprint.class,
-			description: blueprint.description ?? null,
-			displayName: blueprint.displayName,
-			url: await ctx.storage.getUrl(asset.fileRef),
-		}))
+		assets.map((entry) => serializeListingPublicDocument(ctx, entry))
 	);
+}
+
+async function requirePublishedListing(
+	ctx: Pick<QueryCtx, "db">,
+	listingId: Id<"listings">
+) {
+	const listing = await ctx.db.get(listingId);
+	if (!listing || listing.status !== "published") {
+		throw new ConvexError("Listing not found");
+	}
+
+	return listing;
 }
 
 export const listForListing = listingQuery
@@ -38,16 +81,25 @@ export const listForListing = listingQuery
 		listingId: v.id("listings"),
 	})
 	.handler(async (ctx, args) => {
-		const listing = await ctx.db.get(args.listingId);
-		if (!listing) {
-			throw new ConvexError("Listing not found");
-		}
-		if (listing.status !== "published") {
-			throw new ConvexError("Listing not found");
-		}
+		await requirePublishedListing(ctx, args.listingId);
 
 		return readListingPublicDocuments(ctx, {
 			mortgageId: listing.mortgageId,
 		});
+	})
+	.public();
+
+export const refreshForListingAsset = listingQuery
+	.input({
+		assetId: v.id("documentAssets"),
+		listingId: v.id("listings"),
+	})
+	.handler(async (ctx, args) => {
+		await requirePublishedListing(ctx, args.listingId);
+
+		const documents = await readListingPublicDocuments(ctx, args.listingId);
+		return (
+			documents.find((document) => document.assetId === args.assetId) ?? null
+		);
 	})
 	.public();
