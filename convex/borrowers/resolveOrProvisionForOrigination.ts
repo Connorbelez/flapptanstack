@@ -2,11 +2,11 @@ import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { buildOriginationBorrowerWorkflowSourceKey } from "../mortgages/provenance";
-import { syncUserHomePortalAssignmentByUserId } from "../portals/homePortalAssignment";
 import {
 	ensureBorrowerPortalAttribution,
 	resolveBorrowerPortalIdForWrite,
 } from "../portals/borrowerPortalAttribution";
+import { syncUserHomePortalAssignmentByUserId } from "../portals/homePortalAssignment";
 import { normalizeEmail } from "../seed/seedHelpers";
 
 type BorrowerParticipantRole = Doc<"mortgageBorrowers">["role"];

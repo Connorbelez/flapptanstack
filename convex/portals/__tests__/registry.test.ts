@@ -245,6 +245,7 @@ async function seedPortalBackfillFixture(t: ReturnType<typeof createHarness>) {
 			fallbackUserId,
 			onboardingAttributedRequestId,
 			orgFallbackBorrowerId,
+			orgFallbackBorrowerAuthId: "user_borrower_org_fallback",
 			orgFallbackBorrowerUserId,
 			unresolvedBorrowerId,
 			unresolvedBorrowerUserId,
@@ -479,7 +480,7 @@ describe("portal registry backfill", () => {
 		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
 
 		await t.mutation(internal.auth.syncUserHomePortalAssignment, {
-			authId: fixture.borrowerAuthId,
+			authId: fixture.orgFallbackBorrowerAuthId,
 		});
 
 		const fairLendPortal = await t.query(
@@ -487,7 +488,7 @@ describe("portal registry backfill", () => {
 			{}
 		);
 		const beforeBackfill = await t.run(async (ctx) => {
-			return ctx.db.get(fixture.borrowerUserId);
+			return ctx.db.get(fixture.orgFallbackBorrowerUserId);
 		});
 		expect(beforeBackfill?.homePortalId).toBe(
 			fairLendPortal?.portalId as Id<"portals">
@@ -505,7 +506,7 @@ describe("portal registry backfill", () => {
 			}
 		);
 		const afterBackfill = await t.run(async (ctx) => {
-			return ctx.db.get(fixture.borrowerUserId);
+			return ctx.db.get(fixture.orgFallbackBorrowerUserId);
 		});
 		expect(afterBackfill?.homePortalId).toBe(
 			brokerPortal?.portal.portalId as Id<"portals">
