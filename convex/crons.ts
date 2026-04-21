@@ -45,6 +45,16 @@ crons.daily(
 	internal.payments.obligations.crons.processObligationTransitions
 );
 
+// Portfolio snapshot materialization: captures the just-completed UTC business
+// date for lender portfolio history and year-end export seams. The handler is
+// replay-safe and skips periods that have already been materialized.
+crons.daily(
+	"lender portfolio snapshot materialization",
+	{ hourUTC: 5, minuteUTC: 45 },
+	internal.portfolio.snapshots.materializeCompletedPortfolioSnapshots,
+	{}
+);
+
 // Collection plan execution spine: discover due planned entries and execute
 // them through the canonical page-02 contract. Runs in bounded batches and
 // relies on plan-entry consumption plus business-layer idempotency for replay

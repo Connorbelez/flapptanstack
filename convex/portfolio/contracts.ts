@@ -18,6 +18,55 @@ export type PortfolioSourceOfTruth = Infer<
 	typeof portfolioSourceOfTruthValidator
 >;
 
+export const portfolioDataCompletenessValidator = v.union(
+	v.literal("live_fallback"),
+	v.literal("snapshot_complete")
+);
+export type PortfolioDataCompleteness = Infer<
+	typeof portfolioDataCompletenessValidator
+>;
+
+export const portfolioHistoricalPointValidator = v.object({
+	cumulativeIncome: v.number(),
+	dataCompleteness: portfolioDataCompletenessValidator,
+	periodEndDate: v.string(),
+	periodIncome: v.number(),
+	periodLabel: v.string(),
+	periodSource: v.union(
+		v.literal("live_fallback"),
+		v.literal("monthly_snapshot")
+	),
+	totalFractions: v.number(),
+	totalInvestedValue: v.number(),
+	totalPositions: v.number(),
+});
+export type PortfolioHistoricalPoint = Infer<
+	typeof portfolioHistoricalPointValidator
+>;
+
+export const portfolioHistoricalSeriesValidator = v.object({
+	asOfDate: v.string(),
+	dataCompleteness: portfolioDataCompletenessValidator,
+	generatedAt: v.number(),
+	liveFallbackPeriodLabel: v.optional(v.string()),
+	points: v.array(portfolioHistoricalPointValidator),
+	snapshotBackedThrough: v.optional(v.string()),
+});
+export type PortfolioHistoricalSeries = Infer<
+	typeof portfolioHistoricalSeriesValidator
+>;
+
+export const portfolioTaxExportValidator = v.object({
+	csv: v.optional(v.string()),
+	dataCompleteness: portfolioDataCompletenessValidator,
+	filename: v.optional(v.string()),
+	generatedAt: v.number(),
+	isAvailable: v.boolean(),
+	periodLabel: v.string(),
+	unavailableReason: v.optional(v.string()),
+});
+export type PortfolioTaxExport = Infer<typeof portfolioTaxExportValidator>;
+
 export const portfolioBreakdownEntryValidator = v.object({
 	count: v.number(),
 	key: v.string(),

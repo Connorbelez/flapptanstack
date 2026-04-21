@@ -619,10 +619,16 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../payments/webhooks/vopay.ts"),
 	"/convex/portfolio/contracts.ts": async () =>
 		await import("./../portfolio/contracts.ts"),
+	"/convex/portfolio/export.ts": async () =>
+		await import("./../portfolio/export.ts"),
 	"/convex/portfolio/helpers.ts": async () =>
 		await import("./../portfolio/helpers.ts"),
+	"/convex/portfolio/history.ts": async () =>
+		await import("./../portfolio/history.ts"),
 	"/convex/portfolio/queries.ts": async () =>
 		await import("./../portfolio/queries.ts"),
+	"/convex/portfolio/snapshots.ts": async () =>
+		await import("./../portfolio/snapshots.ts"),
 	"/convex/prorateEntries/mutations.ts": async () =>
 		await import("./../prorateEntries/mutations.ts"),
 	"/convex/prorateEntries/queries.ts": async () =>
