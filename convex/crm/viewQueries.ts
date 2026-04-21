@@ -52,7 +52,6 @@ import {
 type FieldDef = Doc<"fieldDefs">;
 const OFFSET_CURSOR_PATTERN = /^[0-9]+$/;
 const NATIVE_CURSOR_PREFIX = "native:";
-const COUNT_PAGE_SIZE = 256;
 const KANBAN_PREVIEW_COLUMN_LIMIT = 3;
 const UNFILTERED_TOTAL_COUNT_CAP = 1000;
 
