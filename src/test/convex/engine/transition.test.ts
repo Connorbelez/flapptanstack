@@ -6,6 +6,7 @@ import { effectRegistry } from "../../../../convex/engine/effects/registry";
 import { machineRegistry } from "../../../../convex/engine/machines/registry";
 import { executeTransition } from "../../../../convex/engine/transition";
 import type { EntityType } from "../../../../convex/engine/types";
+import { ensureFairLendPortal } from "../../../../convex/portals/homePortalAssignment";
 import {
 	approveRequest,
 	createGovernedTestConvex,
@@ -162,6 +163,7 @@ async function seedPendingOnboardingRequest(
 ): Promise<Id<"onboardingRequests">> {
 	return t.run(async (ctx) => {
 		const createdAt = Date.now();
+		const portalId = await ensureFairLendPortal(ctx);
 		const userId = await ctx.db.insert("users", {
 			authId: `user_onboarding_${createdAt}`,
 			email: `onboarding-${createdAt}@fairlend.test`,
@@ -171,6 +173,7 @@ async function seedPendingOnboardingRequest(
 
 		return ctx.db.insert("onboardingRequests", {
 			userId,
+			portalId,
 			requestedRole: "lender",
 			status: "pending_review",
 			referralSource: "self_signup",

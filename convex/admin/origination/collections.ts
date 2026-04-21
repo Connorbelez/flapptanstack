@@ -251,6 +251,7 @@ const commitCanonicalBorrowerProfileRef = makeFunctionReference<
 		institutionNumber?: string;
 		lastName?: string;
 		orgId?: string;
+		portalId?: Id<"portals">;
 		phone?: string;
 		sourceLabel: string;
 		transitNumber?: string;
@@ -266,6 +267,7 @@ const createCanonicalBorrowerProfileRef = makeFunctionReference<
 		fullName: string;
 		institutionNumber?: string;
 		orgId?: string;
+		portalId?: Id<"portals">;
 		phone?: string;
 		sourceLabel: string;
 		transitNumber?: string;
@@ -1090,6 +1092,7 @@ export const commitCanonicalBorrowerProfile = convex
 		institutionNumber: v.optional(v.string()),
 		lastName: v.optional(v.string()),
 		orgId: v.optional(v.string()),
+		portalId: v.optional(v.id("portals")),
 		phone: v.optional(v.string()),
 		sourceLabel: v.string(),
 		transitNumber: v.optional(v.string()),
@@ -1114,6 +1117,7 @@ export const commitCanonicalBorrowerProfile = convex
 			orgId: args.orgId,
 			originatingWorkflowId: args.sourceLabel,
 			originatingWorkflowType: "admin_origination_collections",
+			portalId: args.portalId,
 			userId,
 			workflowSourceId: args.sourceLabel,
 			workflowSourceKey,
@@ -1188,6 +1192,7 @@ export const createCanonicalBorrowerProfile = convex
 		fullName: v.string(),
 		institutionNumber: v.optional(v.string()),
 		orgId: v.optional(v.string()),
+		portalId: v.optional(v.id("portals")),
 		phone: v.optional(v.string()),
 		sourceLabel: v.string(),
 		transitNumber: v.optional(v.string()),
@@ -1220,6 +1225,7 @@ export const createCanonicalBorrowerProfile = convex
 			institutionNumber: args.institutionNumber,
 			lastName,
 			orgId: args.orgId,
+			portalId: args.portalId,
 			phone: args.phone,
 			sourceLabel: args.sourceLabel,
 			transitNumber: args.transitNumber,
@@ -1237,18 +1243,21 @@ export const createBorrowerForCollections = originationAction
 		phone: v.optional(v.string()),
 		transitNumber: v.string(),
 	})
-	.handler(async (ctx, args) => {
-		const commitContext = await ctx.runQuery(
-			internal.admin.origination.commit.getCommitContext,
-			{
+	.handler(async (ctx, args): Promise<CanonicalBorrowerProfileResult> => {
+		const commitContext: { portalId: Id<"portals"> | null } | null =
+			await ctx.runQuery(internal.admin.origination.commit.getCommitContext, {
 				caseId: args.caseId,
 				viewerAuthId: ctx.viewer.authId,
 				viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
 				viewerOrgId: ctx.viewer.orgId,
-			}
-		);
+			});
 		if (!commitContext) {
 			throw new ConvexError("Origination case not found");
+		}
+		if (!commitContext.portalId) {
+			throw new ConvexError(
+				"Borrower portal attribution could not be resolved"
+			);
 		}
 
 		return ctx.runAction(createCanonicalBorrowerProfileRef, {
@@ -1257,6 +1266,7 @@ export const createBorrowerForCollections = originationAction
 			fullName: args.fullName,
 			institutionNumber: args.institutionNumber,
 			orgId: ctx.viewer.orgId,
+			portalId: commitContext.portalId,
 			phone: args.phone,
 			sourceLabel: `origination_case:${args.caseId}`,
 			transitNumber: args.transitNumber,

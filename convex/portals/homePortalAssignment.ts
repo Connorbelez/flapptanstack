@@ -1,5 +1,6 @@
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { getDeterministicPortalIdForOrgId } from "./borrowerPortalAttribution";
 import {
 	FAIRLEND_PORTAL_LOCAL_HOST,
 	FAIRLEND_PORTAL_PRODUCTION_HOST,
@@ -139,10 +140,16 @@ export async function resolveUserHomePortalId(
 		.query("borrowers")
 		.withIndex("by_user", (query) => query.eq("userId", user._id))
 		.first();
+	if (borrower?.portalId) {
+		return borrower.portalId;
+	}
 	if (borrower?.orgId) {
-		const borrowerPortal = await getPortalByOrgId(ctx, borrower.orgId);
-		if (borrowerPortal) {
-			return borrowerPortal._id;
+		const borrowerPortalId = await getDeterministicPortalIdForOrgId(
+			ctx,
+			borrower.orgId
+		);
+		if (borrowerPortalId) {
+			return borrowerPortalId;
 		}
 	}
 

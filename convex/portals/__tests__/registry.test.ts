@@ -141,11 +141,69 @@ async function seedPortalBackfillFixture(t: ReturnType<typeof createHarness>) {
 			firstName: "Borrower",
 			lastName: "Meridian",
 		});
-		await ctx.db.insert("borrowers", {
+		const borrowerId = await ctx.db.insert("borrowers", {
 			status: "active",
 			lastTransitionAt: undefined,
 			orgId: brokerOrgId,
 			userId: borrowerUserId,
+			financialProfile: undefined,
+			idvStatus: undefined,
+			personaInquiryId: undefined,
+			creationSource: undefined,
+			originatingWorkflowId: undefined,
+			originatingWorkflowType: undefined,
+			workflowSourceId: undefined,
+			workflowSourceKey: undefined,
+			workflowSourceType: undefined,
+			onboardedAt: now,
+			createdAt: now,
+		});
+		const onboardingAttributedRequestId = await ctx.db.insert(
+			"onboardingRequests",
+			{
+				userId: borrowerUserId,
+				requestedRole: "lender",
+				status: "pending_review",
+				referralSource: "self_signup",
+				targetOrganizationId: FAIRLEND_BROKERAGE_ORG_ID,
+				createdAt: now + 1,
+			}
+		);
+
+		const orgFallbackBorrowerUserId = await ctx.db.insert("users", {
+			authId: "user_borrower_org_fallback",
+			email: "borrower-org-fallback@test.fairlend.ca",
+			firstName: "Borrower",
+			lastName: "OrgFallback",
+		});
+		const orgFallbackBorrowerId = await ctx.db.insert("borrowers", {
+			status: "active",
+			lastTransitionAt: undefined,
+			orgId: brokerOrgId,
+			userId: orgFallbackBorrowerUserId,
+			financialProfile: undefined,
+			idvStatus: undefined,
+			personaInquiryId: undefined,
+			creationSource: undefined,
+			originatingWorkflowId: undefined,
+			originatingWorkflowType: undefined,
+			workflowSourceId: undefined,
+			workflowSourceKey: undefined,
+			workflowSourceType: undefined,
+			onboardedAt: now,
+			createdAt: now,
+		});
+
+		const unresolvedBorrowerUserId = await ctx.db.insert("users", {
+			authId: "user_borrower_unresolved",
+			email: "borrower-unresolved@test.fairlend.ca",
+			firstName: "Borrower",
+			lastName: "Unresolved",
+		});
+		const unresolvedBorrowerId = await ctx.db.insert("borrowers", {
+			status: "active",
+			lastTransitionAt: undefined,
+			userId: unresolvedBorrowerUserId,
 			financialProfile: undefined,
 			idvStatus: undefined,
 			personaInquiryId: undefined,
@@ -165,15 +223,32 @@ async function seedPortalBackfillFixture(t: ReturnType<typeof createHarness>) {
 			firstName: "Default",
 			lastName: "Member",
 		});
+		const unresolvedOnboardingRequestId = await ctx.db.insert(
+			"onboardingRequests",
+			{
+				userId: brokerUserId,
+				requestedRole: "broker",
+				status: "pending_review",
+				referralSource: "self_signup",
+				createdAt: now + 2,
+			}
+		);
 
 		return {
 			adminUserId: adminUser._id,
 			borrowerAuthId: "user_borrower_meridian",
+			borrowerId,
 			borrowerUserId,
 			brokerId,
 			brokerOrgId,
 			brokerUserId,
 			fallbackUserId,
+			onboardingAttributedRequestId,
+			orgFallbackBorrowerId,
+			orgFallbackBorrowerUserId,
+			unresolvedBorrowerId,
+			unresolvedBorrowerUserId,
+			unresolvedOnboardingRequestId,
 		};
 	});
 }
@@ -232,7 +307,7 @@ describe("portal registry backfill", () => {
 		const fixture = await seedPortalBackfillFixture(t);
 		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
 
-		await asAdmin.mutation(
+		const runResult = await asAdmin.mutation(
 			api.brokers.migrations.runPortalRegistryBackfill,
 			{}
 		);
@@ -244,7 +319,18 @@ describe("portal registry backfill", () => {
 		expect(status.fairLendPortalExists).toBe(true);
 		expect(status.brokersMissingOrgIdCount).toBe(0);
 		expect(status.brokersMissingPortalCount).toBe(0);
+		expect(status.onboardingRequestsMissingPortalCount).toBe(1);
+		expect(status.unresolvedOnboardingRequestCount).toBe(1);
+		expect(status.unresolvedOnboardingRequestIds).toEqual([
+			fixture.unresolvedOnboardingRequestId,
+		]);
+		expect(status.borrowersMissingPortalCount).toBe(1);
+		expect(status.unresolvedBorrowerCount).toBe(1);
+		expect(status.unresolvedBorrowerIds).toEqual([
+			fixture.unresolvedBorrowerId,
+		]);
 		expect(status.usersMissingHomePortalCount).toBe(0);
+		expect(runResult).toEqual(status);
 
 		const fairLendPortal = await t.query(
 			api.portals.queries.getFairLendPortal,
@@ -275,10 +361,27 @@ describe("portal registry backfill", () => {
 
 		const records = await t.run(async (ctx) => {
 			const broker = await ctx.db.get(fixture.brokerId);
+			const borrower = await ctx.db.get(fixture.borrowerId);
 			const brokerUser = await ctx.db.get(fixture.brokerUserId);
 			const borrowerUser = await ctx.db.get(fixture.borrowerUserId);
+			const orgFallbackBorrower = await ctx.db.get(
+				fixture.orgFallbackBorrowerId
+			);
+			const orgFallbackBorrowerUser = await ctx.db.get(
+				fixture.orgFallbackBorrowerUserId
+			);
+			const unresolvedBorrower = await ctx.db.get(fixture.unresolvedBorrowerId);
+			const unresolvedBorrowerUser = await ctx.db.get(
+				fixture.unresolvedBorrowerUserId
+			);
 			const fallbackUser = await ctx.db.get(fixture.fallbackUserId);
 			const adminUser = await ctx.db.get(fixture.adminUserId);
+			const onboardingAttributedRequest = await ctx.db.get(
+				fixture.onboardingAttributedRequestId
+			);
+			const unresolvedOnboardingRequest = await ctx.db.get(
+				fixture.unresolvedOnboardingRequestId
+			);
 			const brokerPortalRow = await ctx.db
 				.query("portals")
 				.withIndex("by_broker", (query) =>
@@ -307,6 +410,7 @@ describe("portal registry backfill", () => {
 				: [];
 			return {
 				adminUser,
+				borrower,
 				borrowerUser,
 				broker,
 				brokerPolicies,
@@ -315,6 +419,12 @@ describe("portal registry backfill", () => {
 				fairLendPolicies,
 				fairLendPortalRow,
 				fallbackUser,
+				onboardingAttributedRequest,
+				orgFallbackBorrower,
+				orgFallbackBorrowerUser,
+				unresolvedBorrower,
+				unresolvedBorrowerUser,
+				unresolvedOnboardingRequest,
 			};
 		});
 
@@ -332,11 +442,28 @@ describe("portal registry backfill", () => {
 				(policy) => policy._id === records.fairLendPortalRow?.pricingPolicyId
 			)?.brokerSplitPercent
 		).toBe(0);
+		expect(records.onboardingAttributedRequest?.portalId).toBe(
+			fairLendPortal?.portalId as Id<"portals">
+		);
+		expect(records.unresolvedOnboardingRequest?.portalId).toBeUndefined();
+		expect(records.borrower?.portalId).toBe(
+			fairLendPortal?.portalId as Id<"portals">
+		);
+		expect(records.orgFallbackBorrower?.portalId).toBe(
+			brokerPortal?.portal.portalId as Id<"portals">
+		);
+		expect(records.unresolvedBorrower?.portalId).toBeUndefined();
 		expect(records.brokerUser?.homePortalId).toBe(
 			brokerPortal?.portal.portalId as Id<"portals">
 		);
 		expect(records.borrowerUser?.homePortalId).toBe(
+			fairLendPortal?.portalId as Id<"portals">
+		);
+		expect(records.orgFallbackBorrowerUser?.homePortalId).toBe(
 			brokerPortal?.portal.portalId as Id<"portals">
+		);
+		expect(records.unresolvedBorrowerUser?.homePortalId).toBe(
+			fairLendPortal?.portalId as Id<"portals">
 		);
 		expect(records.fallbackUser?.homePortalId).toBe(
 			fairLendPortal?.portalId as Id<"portals">

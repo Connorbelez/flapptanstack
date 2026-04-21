@@ -219,13 +219,15 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 			userId: borrowerUser._id,
 			status: "active",
 			orgId: BROKER.org_id,
+			portalId: portalAId,
 			createdAt: NOW,
 		});
 
 		await ctx.db.insert("borrowers", {
 			userId: mismatchedBorrowerUser._id,
 			status: "active",
-			orgId: "org_brokerage_portal_b",
+			orgId: BROKER.org_id,
+			portalId: portalBId,
 			createdAt: NOW,
 		});
 
@@ -432,7 +434,7 @@ describe("portal middleware proof consumers", () => {
 		).rejects.toThrow("Forbidden: borrower does not belong to this portal");
 	});
 
-	it("fails closed when borrower org attribution is missing or unmapped", async () => {
+	it("fails closed when borrower portal attribution is missing", async () => {
 		const t = createHarness();
 		const fixture = await seedPortalFixture(t);
 

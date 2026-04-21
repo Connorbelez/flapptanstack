@@ -174,24 +174,7 @@ export async function resolvePortalBorrower(
 	context: PortalAuthedBaseContext & PortalResolvedContext
 ): Promise<Doc<"borrowers">> {
 	const borrower = await getBorrowerByAuthId(context, context.viewer.authId);
-	const borrowerOrgId = borrower?.orgId;
-	if (!borrowerOrgId) {
-		throw new ConvexError("Forbidden: borrower does not belong to this portal");
-	}
-
-	// Transitional deterministic mapping for ENG-299. ENG-302 owns the
-	// permanent borrower/onboarding portalId fields and migration cutover.
-	const mappedLivePortals = (
-		await context.db
-			.query("portals")
-			.withIndex("by_org", (query) => query.eq("orgId", borrowerOrgId))
-			.collect()
-	).filter((portal) => portal.status === "active" && portal.isPublished);
-
-	if (
-		mappedLivePortals.length !== 1 ||
-		mappedLivePortals[0]?._id !== context.portal.portalId
-	) {
+	if (!borrower?.portalId || borrower.portalId !== context.portal.portalId) {
 		throw new ConvexError("Forbidden: borrower does not belong to this portal");
 	}
 

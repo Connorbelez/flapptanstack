@@ -3,6 +3,10 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { buildOriginationBorrowerWorkflowSourceKey } from "../mortgages/provenance";
 import { syncUserHomePortalAssignmentByUserId } from "../portals/homePortalAssignment";
+import {
+	ensureBorrowerPortalAttribution,
+	resolveBorrowerPortalIdForWrite,
+} from "../portals/borrowerPortalAttribution";
 import { normalizeEmail } from "../seed/seedHelpers";
 
 type BorrowerParticipantRole = Doc<"mortgageBorrowers">["role"];
@@ -227,16 +231,27 @@ export async function resolveOriginationBorrowerParticipants(
 export async function ensureCanonicalBorrowerForOrigination(
 	ctx: Pick<MutationCtx, "db">,
 	args: {
+		brokerId?: Id<"brokers">;
 		creationSource: string;
 		now: number;
 		orgId?: string;
 		originatingWorkflowId: string;
 		originatingWorkflowType: string;
+		portalId?: Id<"portals">;
 		userId: Id<"users">;
 		workflowSourceId: string;
 		workflowSourceKey: string;
 	}
 ) {
+	const resolvedPortalId = await resolveBorrowerPortalIdForWrite(ctx, {
+		brokerId: args.brokerId,
+		explicitPortalId: args.portalId,
+		orgId: args.orgId,
+		userId: args.userId,
+	});
+	if (!resolvedPortalId) {
+		throw new ConvexError("Borrower portal attribution could not be resolved");
+	}
 	const borrowers = await collectBorrowersForUser(ctx, args.userId);
 	const sameOrgBorrowers = borrowers.filter(
 		(borrower) => borrower.orgId === args.orgId
@@ -256,9 +271,13 @@ export async function ensureCanonicalBorrowerForOrigination(
 		);
 	}
 	if (sameOrgBorrowers[0]) {
+		const attributedBorrower = await ensureBorrowerPortalAttribution(ctx, {
+			borrower: sameOrgBorrowers[0],
+			portalId: resolvedPortalId,
+		});
 		await syncUserHomePortalAssignmentByUserId(ctx, args.userId);
 		return {
-			borrowerId: sameOrgBorrowers[0]._id,
+			borrowerId: attributedBorrower._id,
 			wasCreated: false,
 		};
 	}
@@ -271,6 +290,7 @@ export async function ensureCanonicalBorrowerForOrigination(
 		orgId: args.orgId,
 		originatingWorkflowId: args.originatingWorkflowId,
 		originatingWorkflowType: args.originatingWorkflowType,
+		portalId: resolvedPortalId,
 		status: "active",
 		userId: args.userId,
 		workflowSourceId: args.workflowSourceId,

@@ -112,6 +112,14 @@ export const requestRole = authedMutation
 			args.referralSource,
 			invitingBrokerOrgId
 		);
+		const homePortal =
+			user.homePortalId !== undefined
+				? await ctx.db.get(user.homePortalId)
+				: null;
+		const portalId =
+			homePortal && homePortal.status === "active" && homePortal.isPublished
+				? homePortal._id
+				: undefined;
 		const createdAt = Date.now();
 
 		// Create entity
@@ -122,6 +130,7 @@ export const requestRole = authedMutation
 			referralSource: args.referralSource,
 			invitedByBrokerId: args.invitedByBrokerId,
 			targetOrganizationId,
+			portalId,
 			createdAt,
 		});
 		const journalEntryId = await appendAuditJournalEntry(ctx, {
@@ -137,6 +146,7 @@ export const requestRole = authedMutation
 				referralSource: args.referralSource,
 				targetOrganizationId,
 				invitedByBrokerId: args.invitedByBrokerId,
+				portalId,
 			},
 			previousState: "none",
 			newState: "pending_review",
@@ -161,6 +171,7 @@ export const requestRole = authedMutation
 				referralSource: args.referralSource,
 				targetOrganizationId,
 				invitedByBrokerId: args.invitedByBrokerId,
+				portalId,
 				source: {
 					channel: "onboarding_portal",
 					actorId: ctx.viewer.authId,
