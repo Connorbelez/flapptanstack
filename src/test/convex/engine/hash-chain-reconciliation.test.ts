@@ -11,7 +11,8 @@ import {
 	startHashChain,
 } from "../../../../convex/engine/hashChain";
 import { ensureFairLendPortal } from "../../../../convex/portals/homePortalAssignment";
-import { FAIRLEND_ADMIN } from "../../auth/identities";
+import { ensureSeededIdentity } from "../../auth/helpers";
+import { BROKER, FAIRLEND_ADMIN, LENDER } from "../../auth/identities";
 import {
 	createGovernedTestConvex,
 	createSelfSignupRequest,
@@ -42,6 +43,122 @@ function buildAuditJournalEntry(
 		timestamp,
 		...overrides,
 	};
+}
+
+async function seedLenderRenewalIntent(
+	t: ReturnType<typeof createGovernedTestConvex>
+) {
+	await Promise.all([
+		ensureSeededIdentity(t, BROKER),
+		ensureSeededIdentity(t, LENDER),
+	]);
+
+	return t.run(async (ctx) => {
+		const [brokerUser, lenderUser] = await Promise.all([
+			ctx.db
+				.query("users")
+				.withIndex("authId", (query) => query.eq("authId", BROKER.subject))
+				.unique(),
+			ctx.db
+				.query("users")
+				.withIndex("authId", (query) => query.eq("authId", LENDER.subject))
+				.unique(),
+		]);
+		if (!brokerUser || !lenderUser) {
+			throw new Error("Expected seeded broker and lender users");
+		}
+
+		const createdAt = Date.now();
+		const brokerId = await ctx.db.insert("brokers", {
+			status: "active",
+			userId: brokerUser._id,
+			brokerageName: "Meridian Mortgage Group",
+			orgId: BROKER.org_id,
+			onboardedAt: createdAt,
+			createdAt,
+		});
+		const lenderId = await ctx.db.insert("lenders", {
+			userId: lenderUser._id,
+			orgId: BROKER.org_id,
+			brokerId,
+			accreditationStatus: "accredited",
+			idvStatus: "verified",
+			kycStatus: "approved",
+			onboardingEntryPath: "broker_invite",
+			status: "active",
+			activatedAt: createdAt,
+			createdAt,
+		});
+		const propertyId = await ctx.db.insert("properties", {
+			streetAddress: "123 Renewal Street",
+			city: "Toronto",
+			province: "ON",
+			postalCode: "M5V1E1",
+			propertyType: "residential",
+			createdAt,
+		});
+		const mortgageId = await ctx.db.insert("mortgages", {
+			status: "active",
+			machineContext: {
+				lastPaymentAt: 0,
+				missedPayments: 0,
+			},
+			lastTransitionAt: createdAt,
+			propertyId,
+			principal: 500_000_00,
+			interestRate: 5.5,
+			rateType: "fixed",
+			termMonths: 12,
+			amortizationMonths: 300,
+			paymentAmount: 3_000_00,
+			paymentFrequency: "monthly",
+			loanType: "conventional",
+			lienPosition: 1,
+			interestAdjustmentDate: "2026-01-01",
+			termStartDate: "2026-01-15",
+			maturityDate: "2026-08-15",
+			firstPaymentDate: "2026-02-15",
+			brokerOfRecordId: brokerId,
+			createdAt,
+		});
+		const intentId = await ctx.db.insert("lenderRenewalIntents", {
+			borrowerRenewalIntentId: undefined,
+			brokerAcknowledgedAt: undefined,
+			brokerId,
+			brokerNotes: undefined,
+			createdAt,
+			fractionCount: 400,
+			intent: "renew",
+			lastTransitionAt: createdAt,
+			lenderId,
+			machineContext: undefined,
+			maturityDate: Date.UTC(2026, 7, 15),
+			mortgageId,
+			notes: undefined,
+			partialExitFractions: undefined,
+			positionAccountId: "position-account-reconcile-test",
+			signalDeadline: Date.UTC(2026, 5, 15),
+			signalledAt: createdAt,
+			status: "renewed",
+		});
+
+		await ctx.db.insert(
+			"auditJournal",
+			buildAuditJournalEntry({
+				actorId: LENDER.subject,
+				channel: "scheduler",
+				entityId: intentId,
+				entityType: "lenderRenewalIntent",
+				eventType: "SIGNAL_RENEW",
+				previousState: "pending_signal",
+				newState: "pending_signal",
+				outcome: "transitioned",
+				timestamp: createdAt,
+			})
+		);
+
+		return intentId;
+	});
 }
 
 describe("hash-chain and reconciliation", () => {
@@ -331,6 +448,27 @@ describe("hash-chain and reconciliation", () => {
 			expect.objectContaining({ entityType: "deal" })
 		);
 		expect(result.isHealthy).toBe(true);
+	});
+
+	it("reconciles governed lender renewal intents", async () => {
+		const t = createGovernedTestConvex();
+		await seedDefaultGovernedActors(t);
+
+		const intentId = await seedLenderRenewalIntent(t);
+
+		const result = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.action(api.engine.reconciliation.reconcile, {});
+
+		expect(result.discrepancies).toContainEqual(
+			expect.objectContaining({
+				entityType: "lenderRenewalIntent",
+				entityId: intentId,
+				entityStatus: "renewed",
+				journalNewState: "pending_signal",
+			})
+		);
+		expect(result.isHealthy).toBe(false);
 	});
 
 	it("reports broken chains when Layer 2 verification indicates tampering", async () => {

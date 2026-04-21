@@ -30,7 +30,8 @@ export type GovernedEntityType =
 	| "obligation"
 	| "collectionAttempt"
 	| "deal"
-	| "transfer";
+	| "transfer"
+	| "lenderRenewalIntent";
 
 // ── Command Source ──────────────────────────────────────────────────
 export type CommandChannel =

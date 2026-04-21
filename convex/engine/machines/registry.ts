@@ -2,6 +2,7 @@ import type { AnyStateMachine } from "xstate";
 import type { GovernedEntityType } from "../types";
 import { collectionAttemptMachine } from "./collectionAttempt.machine";
 import { dealMachine } from "./deal.machine";
+import { lenderRenewalIntentMachine } from "./lenderRenewalIntent.machine";
 import { mortgageMachine } from "./mortgage.machine";
 import { obligationMachine } from "./obligation.machine";
 import { onboardingRequestMachine } from "./onboardingRequest.machine";
@@ -15,6 +16,7 @@ import { transferMachine } from "./transfer.machine";
 export const machineRegistry: Record<GovernedEntityType, AnyStateMachine> = {
 	collectionAttempt: collectionAttemptMachine,
 	deal: dealMachine,
+	lenderRenewalIntent: lenderRenewalIntentMachine,
 	mortgage: mortgageMachine,
 	obligation: obligationMachine,
 	onboardingRequest: onboardingRequestMachine,

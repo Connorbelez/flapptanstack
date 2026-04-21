@@ -22,7 +22,6 @@ interface StatusReconciliationResult {
 	discrepancies: Discrepancy[];
 	isHealthy: boolean;
 }
-
 interface ChainVerification {
 	brokenAt?: number;
 	entityId: string;

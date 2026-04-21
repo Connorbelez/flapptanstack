@@ -13,6 +13,16 @@ const rotessaReadModelSyncRef = makeFunctionReference<
 	{ trigger: "cron" | "manual" },
 	Promise<unknown>
 >("admin/origination/collections:runRotessaReadModelSync");
+const createRenewalIntentsInWindowRef = makeFunctionReference<
+	"action",
+	{ asOf?: number; limit?: number },
+	Promise<unknown>
+>("renewals/internal:createRenewalIntentsInWindow");
+const expireLenderRenewalIntentsPastDeadlineRef = makeFunctionReference<
+	"action",
+	{ asOf?: number; limit?: number },
+	Promise<unknown>
+>("renewals/internal:expireLenderRenewalIntentsPastDeadline");
 
 // Audit trail crons (outbox processor + retention) are managed by the
 // auditTrail component — see convex/components/auditTrail/crons.ts
@@ -65,6 +75,27 @@ crons.interval(
 	{ minutes: 360 },
 	rotessaReadModelSyncRef,
 	{ trigger: "cron" }
+);
+
+// Lender renewal-intent window sync: materializes pending renewal intents for
+// active mortgages inside the 180-day window. Runs every six hours so the
+// lender portal does not depend on a once-per-day rollover to surface intent
+// records after a position becomes eligible.
+crons.interval(
+	"lender renewal intent creation",
+	{ minutes: 360 },
+	createRenewalIntentsInWindowRef,
+	{}
+);
+
+// Lender renewal-intent expiry: transitions unsigned pending intents to
+// expired after the 60-day deadline passes. Runs every six hours on the same
+// cadence as creation so stale actionable intents are retired promptly.
+crons.interval(
+	"lender renewal intent expiry",
+	{ minutes: 360 },
+	expireLenderRenewalIntentsPastDeadlineRef,
+	{}
 );
 
 // Dispersal self-healing: detect settled obligations missing dispersal entries.

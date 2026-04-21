@@ -305,6 +305,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../engine/machines/collectionAttempt.machine.ts"),
 	"/convex/engine/machines/deal.machine.ts": async () =>
 		await import("./../engine/machines/deal.machine.ts"),
+	"/convex/engine/machines/lenderRenewalIntent.machine.ts": async () =>
+		await import("./../engine/machines/lenderRenewalIntent.machine.ts"),
 	"/convex/engine/machines/mortgage.machine.ts": async () =>
 		await import("./../engine/machines/mortgage.machine.ts"),
 	"/convex/engine/machines/obligation.machine.ts": async () =>
@@ -625,6 +627,14 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../prorateEntries/mutations.ts"),
 	"/convex/prorateEntries/queries.ts": async () =>
 		await import("./../prorateEntries/queries.ts"),
+	"/convex/renewals/constants.ts": async () =>
+		await import("./../renewals/constants.ts"),
+	"/convex/renewals/internal.ts": async () =>
+		await import("./../renewals/internal.ts"),
+	"/convex/renewals/portal.ts": async () =>
+		await import("./../renewals/portal.ts"),
+	"/convex/renewals/runtime.ts": async () =>
+		await import("./../renewals/runtime.ts"),
 	"/convex/schema.ts": async () => await import("./../schema.ts"),
 	"/convex/seed/seedAll.ts": async () => await import("./../seed/seedAll.ts"),
 	"/convex/seed/seedBorrower.ts": async () =>
