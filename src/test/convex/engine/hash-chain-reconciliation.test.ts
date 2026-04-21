@@ -10,6 +10,7 @@ import {
 	runHashChainJournalStep,
 	startHashChain,
 } from "../../../../convex/engine/hashChain";
+import { ensureFairLendPortal } from "../../../../convex/portals/homePortalAssignment";
 import { FAIRLEND_ADMIN } from "../../auth/identities";
 import {
 	createGovernedTestConvex,
@@ -420,6 +421,7 @@ describe("hash-chain and reconciliation", () => {
 
 		const healthyRequestId = await createSelfSignupRequest(t, "lender");
 		await t.run(async (ctx) => {
+			const portalId = await ensureFairLendPortal(ctx);
 			const userId = await ctx.db.insert("users", {
 				authId: "user_member_mixed",
 				email: "member-mixed@test.fairlend.ca",
@@ -428,6 +430,7 @@ describe("hash-chain and reconciliation", () => {
 			});
 			const requestId = await ctx.db.insert("onboardingRequests", {
 				userId,
+				portalId,
 				requestedRole: "lender",
 				status: "pending_review",
 				referralSource: "self_signup",
@@ -495,6 +498,7 @@ describe("hash-chain and reconciliation", () => {
 		await seedDefaultGovernedActors(t);
 
 		await t.run(async (ctx) => {
+			const portalId = await ensureFairLendPortal(ctx);
 			const baseUserId = await ctx.db.insert("users", {
 				authId: "user_member_paged",
 				email: "member-paged@test.fairlend.ca",
@@ -504,6 +508,7 @@ describe("hash-chain and reconciliation", () => {
 			for (let index = 0; index < 130; index += 1) {
 				const requestId = await ctx.db.insert("onboardingRequests", {
 					userId: baseUserId,
+					portalId,
 					requestedRole: "lender",
 					status: "pending_review",
 					referralSource: "self_signup",

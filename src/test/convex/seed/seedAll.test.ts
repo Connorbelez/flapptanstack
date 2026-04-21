@@ -6,6 +6,7 @@ import {
 	deserializeStatus,
 	serializeStatus,
 } from "../../../../convex/engine/serialization";
+import { FAIRLEND_PORTAL_SLUG } from "../../../../convex/portals/helpers";
 import { createTestConvex, ensureSeededIdentity } from "../../auth/helpers";
 import { FAIRLEND_ADMIN } from "../../auth/identities";
 
@@ -94,6 +95,50 @@ describe("seedAll", () => {
 		expect(countsAfterFirstRun.deals).toHaveLength(3);
 		expect(countsAfterFirstRun.obligations).toHaveLength(15);
 		expect(countsAfterFirstRun.onboardingRequests).toHaveLength(3);
+		const initiallyAttributedBorrowers = countsAfterFirstRun.borrowers.filter(
+			(
+				borrower
+			): borrower is (typeof countsAfterFirstRun.borrowers)[number] & {
+				portalId: Id<"portals">;
+			} => borrower.portalId !== undefined
+		);
+		expect(initiallyAttributedBorrowers).toHaveLength(
+			countsAfterFirstRun.borrowers.length
+		);
+		const initialBorrowerPortalIds = new Set(
+			initiallyAttributedBorrowers.map((borrower) => borrower.portalId)
+		);
+		expect(initialBorrowerPortalIds.size).toBe(1);
+		const [initialBorrowerPortalId] = [...initialBorrowerPortalIds];
+		const initiallyAttributedOnboardingRequests =
+			countsAfterFirstRun.onboardingRequests.filter(
+				(
+					request
+				): request is (typeof countsAfterFirstRun.onboardingRequests)[number] & {
+					portalId: Id<"portals">;
+				} => request.portalId !== undefined
+			);
+		expect(initiallyAttributedOnboardingRequests).toHaveLength(
+			countsAfterFirstRun.onboardingRequests.length
+		);
+		const initialOnboardingPortalIds = new Set(
+			initiallyAttributedOnboardingRequests.map((request) => request.portalId)
+		);
+		expect(initialOnboardingPortalIds.size).toBe(1);
+		const [initialOnboardingPortalId] = [...initialOnboardingPortalIds];
+		expect(initialBorrowerPortalId).toBe(initialOnboardingPortalId);
+		const borrowerToRepair = countsAfterFirstRun.borrowers[0]?._id;
+		const onboardingRequestToRepair =
+			countsAfterFirstRun.onboardingRequests[0]?._id;
+		if (!(borrowerToRepair && onboardingRequestToRepair)) {
+			throw new Error("Expected seeded borrower and onboarding request rows");
+		}
+		await t.run(async (ctx) => {
+			await Promise.all([
+				ctx.db.patch(borrowerToRepair, { portalId: undefined }),
+				ctx.db.patch(onboardingRequestToRepair, { portalId: undefined }),
+			]);
+		});
 
 		const secondRun = await t.withIdentity(FAIRLEND_ADMIN).action(
 			api.seed.seedAll.seedAll,
@@ -153,6 +198,17 @@ describe("seedAll", () => {
 			obligations: 15,
 			onboardingRequests: 3,
 		});
+		const repairedRows = await t.run(async (ctx) => {
+			const [borrower, onboardingRequest] = await Promise.all([
+				ctx.db.get(borrowerToRepair),
+				ctx.db.get(onboardingRequestToRepair),
+			]);
+			return { borrower, onboardingRequest };
+		});
+		expect(repairedRows.borrower?.portalId).toBe(initialBorrowerPortalId);
+		expect(repairedRows.onboardingRequest?.portalId).toBe(
+			initialOnboardingPortalId
+		);
 
 		const dealStatuses = new Set(
 			countsAfterFirstRun.deals.map((deal) => deal.status)
@@ -212,6 +268,27 @@ describe("seedAll", () => {
 		expect(onboardingStates).toEqual(
 			new Set(["pending_review", "approved", "rejected"])
 		);
+		const attributedOnboardingRequests =
+			countsAfterFirstRun.onboardingRequests.filter(
+				(
+					request
+				): request is (typeof countsAfterFirstRun.onboardingRequests)[number] & {
+					portalId: Id<"portals">;
+				} => request.portalId !== undefined
+			);
+		expect(attributedOnboardingRequests).toHaveLength(
+			countsAfterFirstRun.onboardingRequests.length
+		);
+		const onboardingPortalIds = new Set(
+			attributedOnboardingRequests.map((request) => request.portalId)
+		);
+		expect(onboardingPortalIds.size).toBe(1);
+		const [seededOnboardingPortalId] = [...onboardingPortalIds];
+		const seededOnboardingPortal = await t.run(async (ctx) =>
+			ctx.db.get(seededOnboardingPortalId)
+		);
+		expect(seededOnboardingPortal?.portalType).toBe("fairlend");
+		expect(seededOnboardingPortal?.slug).toBe(FAIRLEND_PORTAL_SLUG);
 
 		for (const mortgage of countsAfterFirstRun.mortgages) {
 			expect(mortgage.status).toBe("active");

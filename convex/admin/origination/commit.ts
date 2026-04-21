@@ -18,6 +18,8 @@ import {
 import { authedAction, convex, requirePermissionAction } from "../../fluent";
 import { activateMortgageAggregate } from "../../mortgages/activateMortgageAggregate";
 import { buildAdminDirectMortgageActivationSource } from "../../mortgages/provenance";
+import { ensureBorrowerPortalAttribution } from "../../portals/borrowerPortalAttribution";
+import { getPortalByBrokerId } from "../../portals/homePortalAssignment";
 import { activateCommittedCaseCollectionsRuntime } from "./collections";
 import { runPostCommitCollectionsActivation } from "./postCommitCollectionsActivation";
 import { normalizeOriginationCollectionsDraft } from "./validators";
@@ -78,6 +80,7 @@ function dedupeStrings(values: string[]) {
 }
 
 interface OriginationCommitContext {
+	brokerOfRecordId: Id<"brokers"> | null;
 	caseId: Id<"adminOriginationCases">;
 	caseStatus: Doc<"adminOriginationCases">["status"];
 	caseUpdatedAt: number;
@@ -86,6 +89,7 @@ interface OriginationCommitContext {
 	committedMortgageId: Id<"mortgages"> | null;
 	committedValuationSnapshotId: Id<"mortgageValuationSnapshots"> | null;
 	participantResolutions: OriginationParticipantResolution[];
+	portalId: Id<"portals"> | null;
 	validationErrors: string[];
 	viewerUserId: Id<"users">;
 }
@@ -354,6 +358,7 @@ async function resolveBrokerAssignmentsForCommit(
 async function buildBorrowerLinksForCommit(
 	ctx: Pick<MutationCtx, "db">,
 	args: {
+		brokerOfRecordId: Id<"brokers">;
 		caseId: Id<"adminOriginationCases">;
 		creationSource: string;
 		now: number;
@@ -367,6 +372,11 @@ async function buildBorrowerLinksForCommit(
 		borrowerId: Id<"borrowers">;
 		role: Doc<"mortgageBorrowers">["role"];
 	}> = [];
+	const brokerPortal = await getPortalByBrokerId(ctx, args.brokerOfRecordId);
+	if (!brokerPortal) {
+		throw new ConvexError("Broker of record portal no longer exists");
+	}
+	const portalId = brokerPortal._id;
 
 	for (const participant of args.participantResolutions) {
 		if (participant.kind !== "ready") {
@@ -374,19 +384,29 @@ async function buildBorrowerLinksForCommit(
 		}
 
 		if (participant.borrowerId) {
+			const existingBorrower = await ctx.db.get(participant.borrowerId);
+			if (!existingBorrower) {
+				throw new ConvexError("Staged borrower reference no longer exists");
+			}
+			const attributedBorrower = await ensureBorrowerPortalAttribution(ctx, {
+				borrower: existingBorrower,
+				portalId,
+			});
 			borrowerLinks.push({
-				borrowerId: participant.borrowerId,
+				borrowerId: attributedBorrower._id,
 				role: participant.role,
 			});
 			continue;
 		}
 
 		const ensuredBorrower = await ensureCanonicalBorrowerForOrigination(ctx, {
+			brokerId: args.brokerOfRecordId,
 			creationSource: args.creationSource,
 			now: args.now,
 			orgId: args.orgId,
 			originatingWorkflowId: args.originatingWorkflowId,
 			originatingWorkflowType: args.originatingWorkflowType,
+			portalId,
 			userId: participant.userId,
 			workflowSourceId: String(args.caseId),
 			workflowSourceKey: participant.workflowSourceKey,
@@ -473,8 +493,14 @@ export const getCommitContext = convex
 				participants: collectOriginationParticipants(caseRecord),
 			}
 		);
+		const brokerOfRecordId =
+			caseRecord.participantsDraft?.brokerOfRecordId ?? null;
+		const brokerPortal = brokerOfRecordId
+			? await getPortalByBrokerId(ctx, brokerOfRecordId)
+			: null;
 
 		return {
+			brokerOfRecordId,
 			caseId: caseRecord._id,
 			caseStatus: caseRecord.status,
 			caseUpdatedAt: caseRecord.updatedAt,
@@ -484,6 +510,7 @@ export const getCommitContext = convex
 				caseRecord.committedValuationSnapshotId ?? null,
 			collectionsDraft: caseRecord.collectionsDraft,
 			participantResolutions,
+			portalId: brokerPortal?._id ?? null,
 			validationErrors: collectCommitBlockingErrors(caseRecord),
 			viewerUserId: viewerUser._id,
 		};
@@ -650,6 +677,7 @@ export const finalizeCommit = convex
 		const { assignedBrokerId, brokerOfRecordId } =
 			await resolveBrokerAssignmentsForCommit(ctx, caseRecord);
 		const borrowerLinks = await buildBorrowerLinksForCommit(ctx, {
+			brokerOfRecordId,
 			caseId: caseRecord._id,
 			creationSource: activationSource.creationSource,
 			now,

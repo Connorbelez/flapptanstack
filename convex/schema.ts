@@ -278,6 +278,8 @@ export default defineSchema({
 
 		/** WorkOS organization id — org scope for this borrower record. */
 		orgId: v.optional(v.string()),
+		/** Explicit portal attribution for borrower access and home-portal derivation. */
+		portalId: v.optional(v.id("portals")),
 
 		// ─── Auth link ───
 		userId: v.id("users"),
@@ -300,6 +302,8 @@ export default defineSchema({
 		createdAt: v.number(),
 	})
 		.index("by_user", ["userId"])
+		.index("by_portal", ["portalId"])
+		.index("by_portal_user", ["portalId", "userId"])
 		.index("by_org_user", ["orgId", "userId"])
 		.index("by_status", ["status"])
 		.index("by_org", ["orgId"])
@@ -513,12 +517,16 @@ export default defineSchema({
 		),
 		invitedByBrokerId: v.optional(v.string()),
 		targetOrganizationId: v.optional(v.string()),
+		/** Explicit portal attribution for portal-aware onboarding requests. */
+		portalId: v.optional(v.id("portals")),
 		reviewedBy: v.optional(v.string()),
 		reviewedAt: v.optional(v.number()),
 		rejectionReason: v.optional(v.string()),
 		createdAt: v.number(),
 	})
 		.index("by_user", ["userId"])
+		.index("by_portal", ["portalId"])
+		.index("by_portal_status", ["portalId", "status"])
 		.index("by_status", ["status"])
 		.index("by_user_and_status", ["userId", "status"]),
 

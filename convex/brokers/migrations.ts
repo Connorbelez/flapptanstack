@@ -5,6 +5,10 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { adminMutation, adminQuery } from "../fluent";
 import { orgIdFromMortgageId } from "../lib/orgScope";
 import {
+	resolveBorrowerPortalIdForBackfill,
+	resolveOnboardingRequestPortalIdForBackfill,
+} from "../portals/borrowerPortalAttribution";
+import {
 	buildPortalHosts,
 	DEFAULT_PORTAL_POST_AUTH_PATH,
 	DEFAULT_PORTAL_TEASER_LIMIT,
@@ -36,6 +40,8 @@ const migrationRefs = internal as unknown as {
 			backfillLenderOrgId: never;
 			backfillAuditJournalOrganizationId: never;
 			backfillBrokerPortals: never;
+			backfillOnboardingRequestPortalId: never;
+			backfillBorrowerPortalId: never;
 			backfillUserHomePortalId: never;
 		};
 	};
@@ -262,6 +268,41 @@ export const backfillBrokerPortals = migrations.define({
 	},
 });
 
+export const backfillOnboardingRequestPortalId = migrations.define({
+	table: "onboardingRequests",
+	migrateOne: async (ctx, onboardingRequest) => {
+		if (onboardingRequest.portalId) {
+			return;
+		}
+
+		const portalId = await resolveOnboardingRequestPortalIdForBackfill(
+			ctx,
+			onboardingRequest
+		);
+		if (!portalId) {
+			return;
+		}
+
+		await ctx.db.patch(onboardingRequest._id, { portalId });
+	},
+});
+
+export const backfillBorrowerPortalId = migrations.define({
+	table: "borrowers",
+	migrateOne: async (ctx, borrower) => {
+		if (borrower.portalId) {
+			return;
+		}
+
+		const portalId = await resolveBorrowerPortalIdForBackfill(ctx, borrower);
+		if (!portalId) {
+			return;
+		}
+
+		await ctx.db.patch(borrower._id, { portalId });
+	},
+});
+
 export const backfillUserHomePortalId = migrations.define({
 	table: "users",
 	migrateOne: async (ctx, user) => {
@@ -321,53 +362,101 @@ export const runPortalRegistryBackfill = adminMutation
 		);
 		await migrations.runOne(
 			ctx,
+			migrationRefs.brokers.migrations.backfillOnboardingRequestPortalId
+		);
+		await migrations.runOne(
+			ctx,
+			migrationRefs.brokers.migrations.backfillBorrowerPortalId
+		);
+		await migrations.runOne(
+			ctx,
 			migrationRefs.brokers.migrations.backfillUserHomePortalId
 		);
 		await syncAllPortalPricingSelections(ctx, {
 			updatedByAuthId: ctx.viewer.authId,
 		});
+		return getPortalRegistryBackfillStatusSnapshot(ctx);
 	})
 	.public();
 
+async function getPortalRegistryBackfillStatusSnapshot(ctx: PortalReaderCtx) {
+	const fairLendPortal = await getPortalBySlug(ctx, FAIRLEND_PORTAL_SLUG);
+	const brokers = await ctx.db.query("brokers").collect();
+	const onboardingRequests = await ctx.db.query("onboardingRequests").collect();
+	const borrowers = await ctx.db.query("borrowers").collect();
+	const users = await ctx.db.query("users").collect();
+	const portals = await ctx.db.query("portals").collect();
+
+	let brokersMissingOrgIdCount = 0;
+	let brokersMissingPortalCount = 0;
+	for (const broker of brokers) {
+		if (!broker.orgId) {
+			brokersMissingOrgIdCount += 1;
+			continue;
+		}
+
+		const brokerPortal = await getPortalByBrokerId(ctx, broker._id);
+		if (!brokerPortal) {
+			brokersMissingPortalCount += 1;
+		}
+	}
+
+	const onboardingRequestsMissingPortal = onboardingRequests.filter(
+		(request) => !request.portalId
+	);
+	const unresolvedOnboardingRequestIds: Id<"onboardingRequests">[] = [];
+	for (const onboardingRequest of onboardingRequestsMissingPortal) {
+		const resolvedPortalId = await resolveOnboardingRequestPortalIdForBackfill(
+			ctx,
+			onboardingRequest
+		);
+		if (!resolvedPortalId) {
+			unresolvedOnboardingRequestIds.push(onboardingRequest._id);
+		}
+	}
+
+	const borrowersMissingPortal = borrowers.filter(
+		(borrower) => !borrower.portalId
+	);
+	const unresolvedBorrowerIds: Id<"borrowers">[] = [];
+	for (const borrower of borrowersMissingPortal) {
+		const resolvedPortalId = await resolveBorrowerPortalIdForBackfill(
+			ctx,
+			borrower
+		);
+		if (!resolvedPortalId) {
+			unresolvedBorrowerIds.push(borrower._id);
+		}
+	}
+
+	let usersMissingHomePortalCount = 0;
+	for (const user of users) {
+		if (user.homePortalId) {
+			continue;
+		}
+		usersMissingHomePortalCount += 1;
+	}
+
+	return {
+		fairLendPortalExists: fairLendPortal !== null,
+		portalCount: portals.length,
+		brokerPortalCount: portals.filter(
+			(portal) => portal.portalType === "broker"
+		).length,
+		brokersMissingOrgIdCount,
+		brokersMissingPortalCount,
+		onboardingRequestsMissingPortalCount:
+			onboardingRequestsMissingPortal.length,
+		unresolvedOnboardingRequestCount: unresolvedOnboardingRequestIds.length,
+		unresolvedOnboardingRequestIds,
+		borrowersMissingPortalCount: borrowersMissingPortal.length,
+		unresolvedBorrowerCount: unresolvedBorrowerIds.length,
+		unresolvedBorrowerIds,
+		usersMissingHomePortalCount,
+	};
+}
+
 export const getPortalRegistryBackfillStatus = adminQuery
 	.input({})
-	.handler(async (ctx) => {
-		const fairLendPortal = await getPortalBySlug(ctx, FAIRLEND_PORTAL_SLUG);
-		const brokers = await ctx.db.query("brokers").collect();
-		const users = await ctx.db.query("users").collect();
-		const portals = await ctx.db.query("portals").collect();
-
-		let brokersMissingOrgIdCount = 0;
-		let brokersMissingPortalCount = 0;
-		for (const broker of brokers) {
-			if (!broker.orgId) {
-				brokersMissingOrgIdCount += 1;
-				continue;
-			}
-
-			const brokerPortal = await getPortalByBrokerId(ctx, broker._id);
-			if (!brokerPortal) {
-				brokersMissingPortalCount += 1;
-			}
-		}
-
-		let usersMissingHomePortalCount = 0;
-		for (const user of users) {
-			if (user.homePortalId) {
-				continue;
-			}
-			usersMissingHomePortalCount += 1;
-		}
-
-		return {
-			fairLendPortalExists: fairLendPortal !== null,
-			portalCount: portals.length,
-			brokerPortalCount: portals.filter(
-				(portal) => portal.portalType === "broker"
-			).length,
-			brokersMissingOrgIdCount,
-			brokersMissingPortalCount,
-			usersMissingHomePortalCount,
-		};
-	})
+	.handler(async (ctx) => getPortalRegistryBackfillStatusSnapshot(ctx))
 	.public();

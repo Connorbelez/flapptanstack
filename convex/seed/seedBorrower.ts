@@ -1,6 +1,7 @@
 import type { Id } from "../_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../constants";
 import { adminMutation } from "../fluent";
+import { ensureFairLendPortal } from "../portals/homePortalAssignment";
 import {
 	ensureUserByEmail,
 	findBorrowerByUserId,
@@ -196,6 +197,7 @@ export const seedBorrower = adminMutation
 		let createdUsers = 0;
 		let reusedBorrowers = 0;
 		let reusedUsers = 0;
+		const portalId = await ensureFairLendPortal(ctx);
 
 		for (let index = 0; index < BORROWER_FIXTURES.length; index += 1) {
 			const fixture = BORROWER_FIXTURES[index];
@@ -211,6 +213,9 @@ export const seedBorrower = adminMutation
 
 			const existingBorrower = await findBorrowerByUserId(ctx, userId);
 			if (existingBorrower) {
+				if (!existingBorrower.portalId) {
+					await ctx.db.patch(existingBorrower._id, { portalId });
+				}
 				reusedBorrowers += 1;
 				borrowerIds.push(existingBorrower._id);
 				continue;
@@ -223,6 +228,7 @@ export const seedBorrower = adminMutation
 
 			const borrowerId = await ctx.db.insert("borrowers", {
 				orgId: FAIRLEND_STAFF_ORG_ID,
+				portalId,
 				status: fixture.borrower.status,
 				userId,
 				financialProfile: fixture.borrower.financialProfile,

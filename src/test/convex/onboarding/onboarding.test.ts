@@ -8,6 +8,7 @@ import {
 } from "../../../../convex/constants";
 // biome-ignore lint/performance/noNamespaceImport: module spying in this test needs a namespace import.
 import * as transitionModule from "../../../../convex/engine/transition";
+import { fairLendPortalFields } from "../../../../convex/portals/helpers";
 import {
 	createTestConvex,
 	ensureSeededIdentity,
@@ -100,6 +101,31 @@ describe("onboarding mutations", () => {
 			expect(request?.requestedRole).toBe("lender");
 			expect(request?.referralSource).toBe("self_signup");
 			expect(request?.targetOrganizationId).toBe(FAIRLEND_BROKERAGE_ORG_ID);
+		});
+
+		it("persists trusted home portal attribution for portal-aware requests", async () => {
+			const t = createTestConvex();
+			const memberUserId = await seedFromIdentity(t, MEMBER);
+
+			const portalId = await t.run(async (ctx) => {
+				const portalId = await ctx.db.insert(
+					"portals",
+					fairLendPortalFields(Date.now())
+				);
+				await ctx.db.patch(memberUserId, { homePortalId: portalId });
+				return portalId;
+			});
+
+			const requestId = await t.withIdentity(MEMBER).mutation(
+				api.onboarding.mutations.requestRole,
+				{
+					requestedRole: "lender",
+					referralSource: "self_signup",
+				}
+			);
+
+			const request = await t.run(async (ctx) => ctx.db.get(requestId));
+			expect(request?.portalId).toBe(portalId);
 		});
 
 		it("assigns correct target org for lawyer", async () => {

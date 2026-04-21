@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { FAIRLEND_BROKERAGE_ORG_ID, FAIRLEND_STAFF_ORG_ID } from "../constants";
 import { adminMutation } from "../fluent";
+import { ensureFairLendPortal } from "../portals/homePortalAssignment";
 import {
 	ensureUserByEmail,
 	findOnboardingRequestByUserAndRole,
@@ -105,6 +106,7 @@ export const seedOnboardingRequest = adminMutation
 		let createdUsers = 0;
 		let reusedRequests = 0;
 		let reusedUsers = 0;
+		const portalId = await ensureFairLendPortal(ctx);
 
 		for (let index = 0; index < ONBOARDING_FIXTURES.length; index += 1) {
 			const fixture = ONBOARDING_FIXTURES[index];
@@ -124,6 +126,9 @@ export const seedOnboardingRequest = adminMutation
 				status: fixture.request.status,
 			});
 			if (existingRequest) {
+				if (!existingRequest.portalId) {
+					await ctx.db.patch(existingRequest._id, { portalId });
+				}
 				reusedRequests += 1;
 				requestIds.push(existingRequest._id);
 				continue;
@@ -137,6 +142,7 @@ export const seedOnboardingRequest = adminMutation
 					: createdAt + 60_000;
 			const requestId = await ctx.db.insert("onboardingRequests", {
 				userId,
+				portalId,
 				requestedRole: fixture.request.requestedRole,
 				status: fixture.request.status,
 				machineContext: undefined,
@@ -158,6 +164,7 @@ export const seedOnboardingRequest = adminMutation
 				organizationId: fixture.request.targetOrganizationId,
 				payload: {
 					userId,
+					portalId,
 					requestedRole: fixture.request.requestedRole,
 					referralSource: fixture.request.referralSource,
 				},
