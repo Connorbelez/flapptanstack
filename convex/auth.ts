@@ -5,7 +5,7 @@ import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { internalAction, internalMutation } from "./_generated/server";
 import { authedQuery } from "./fluent";
-import { resolveUserHomePortalId } from "./portals/homePortalAssignment";
+import { syncUserHomePortalAssignmentByAuthId } from "./portals/homePortalAssignment";
 
 const authFunctions: AuthFunctions = internal.auth;
 
@@ -157,29 +157,6 @@ async function deleteRole(ctx: GenericMutationCtx<DataModel>, slug: string) {
 	if (role) {
 		await ctx.db.delete(role._id);
 	}
-}
-
-async function syncUserHomePortalAssignmentByAuthId(
-	ctx: GenericMutationCtx<DataModel>,
-	authId: string
-) {
-	const user = await ctx.db
-		.query("users")
-		.withIndex("authId", (query) => query.eq("authId", authId))
-		.unique();
-	if (!user) {
-		return null;
-	}
-
-	const homePortalId = await resolveUserHomePortalId(ctx, user);
-	if (user.homePortalId !== homePortalId) {
-		await ctx.db.patch(user._id, { homePortalId });
-	}
-
-	return {
-		homePortalId,
-		userId: user._id,
-	};
 }
 
 async function queueUserHomePortalAssignmentSync(
