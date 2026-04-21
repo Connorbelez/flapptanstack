@@ -522,6 +522,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../payments/payout/transferOwnedFlow.ts"),
 	"/convex/payments/payout/validators.ts": async () =>
 		await import("./../payments/payout/validators.ts"),
+	"/convex/payments/migrations.ts": async () =>
+		await import("./../payments/migrations.ts"),
 	"/convex/payments/recurringSchedules/activation.ts": async () =>
 		await import("./../payments/recurringSchedules/activation.ts"),
 	"/convex/payments/recurringSchedules/occurrenceIngestion.ts": async () =>

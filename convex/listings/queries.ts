@@ -4,18 +4,15 @@ import type { DatabaseReader } from "../_generated/server";
 import { adminQuery, authedQuery } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
 import {
-	buildMarketplaceAvailabilitySummary,
-	getListingAppraisalsByProperty,
-	getListingEncumbrancesByProperty,
-} from "./marketplaceShared";
-import { getPostedBalance } from "../ledger/accounts";
-import { TOTAL_SUPPLY } from "../ledger/constants";
-import {
 	loadPortalPricingSelection,
 	projectListingForPortal,
 	requirePortalPricingSelection,
 } from "../portals/pricing";
-import { roundToTwoDecimals } from "./math";
+import {
+	buildMarketplaceAvailabilitySummary,
+	getListingAppraisalsByProperty,
+	getListingEncumbrancesByProperty,
+} from "./marketplaceShared";
 import {
 	listingPropertyTypeValidator,
 	listingStatusValidator,

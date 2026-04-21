@@ -191,6 +191,7 @@ import type * as ledger_validation from "../ledger/validation.js";
 import type * as ledger_validators from "../ledger/validators.js";
 import type * as lib_businessDates from "../lib/businessDates.js";
 import type * as lib_businessDays from "../lib/businessDays.js";
+import type * as lib_drainLoops from "../lib/drainLoops.js";
 import type * as lib_orgScope from "../lib/orgScope.js";
 import type * as listings_create from "../listings/create.js";
 import type * as listings_curation from "../listings/curation.js";
@@ -266,6 +267,7 @@ import type * as payments_collectionPlan_stubs from "../payments/collectionPlan/
 import type * as payments_collectionPlan_workout from "../payments/collectionPlan/workout.js";
 import type * as payments_collectionPlan_workoutContract from "../payments/collectionPlan/workoutContract.js";
 import type * as payments_dispersal_stubs from "../payments/dispersal/stubs.js";
+import type * as payments_migrations from "../payments/migrations.js";
 import type * as payments_obligations_createCorrectiveObligation from "../payments/obligations/createCorrectiveObligation.js";
 import type * as payments_obligations_crons from "../payments/obligations/crons.js";
 import type * as payments_obligations_generate from "../payments/obligations/generate.js";
@@ -542,6 +544,7 @@ declare const fullApi: ApiFromModules<{
   "ledger/validators": typeof ledger_validators;
   "lib/businessDates": typeof lib_businessDates;
   "lib/businessDays": typeof lib_businessDays;
+  "lib/drainLoops": typeof lib_drainLoops;
   "lib/orgScope": typeof lib_orgScope;
   "listings/create": typeof listings_create;
   "listings/curation": typeof listings_curation;
@@ -617,6 +620,7 @@ declare const fullApi: ApiFromModules<{
   "payments/collectionPlan/workout": typeof payments_collectionPlan_workout;
   "payments/collectionPlan/workoutContract": typeof payments_collectionPlan_workoutContract;
   "payments/dispersal/stubs": typeof payments_dispersal_stubs;
+  "payments/migrations": typeof payments_migrations;
   "payments/obligations/createCorrectiveObligation": typeof payments_obligations_createCorrectiveObligation;
   "payments/obligations/crons": typeof payments_obligations_crons;
   "payments/obligations/generate": typeof payments_obligations_generate;

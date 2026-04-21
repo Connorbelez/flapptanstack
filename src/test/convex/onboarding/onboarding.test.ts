@@ -712,7 +712,7 @@ describe("onboarding mutations", () => {
 
 			const result = await t
 				.withIdentity(FAIRLEND_ADMIN)
-				.query(api.engine.reconciliation.reconcile, {});
+				.action(api.engine.reconciliation.reconcile, {});
 
 			expect(result.discrepancies).toEqual([]);
 			expect(result.isHealthy).toBe(true);
@@ -738,7 +738,7 @@ describe("onboarding mutations", () => {
 
 			const result = await t
 				.withIdentity(FAIRLEND_ADMIN)
-				.query(api.engine.reconciliation.reconcile, {});
+				.action(api.engine.reconciliation.reconcile, {});
 
 			expect(result.isHealthy).toBe(false);
 			expect(result.discrepancies).toContainEqual(
@@ -769,7 +769,7 @@ describe("onboarding mutations", () => {
 
 			const result = await t
 				.withIdentity(FAIRLEND_ADMIN)
-				.query(api.engine.reconciliation.reconcile, {});
+				.action(api.engine.reconciliation.reconcile, {});
 
 			expect(result.isHealthy).toBe(false);
 			expect(result.discrepancies).toContainEqual(
@@ -796,7 +796,7 @@ describe("onboarding mutations", () => {
 
 			const result = await t
 				.withIdentity(FAIRLEND_ADMIN)
-				.query(api.engine.reconciliation.reconcileLayer2, {});
+				.action(api.engine.reconciliation.reconcileLayer2, {});
 
 			expect(result.isHealthy).toBe(false);
 			expect(result.brokenChains).toContainEqual(
@@ -828,7 +828,7 @@ describe("onboarding mutations", () => {
 
 			const result = await t
 				.withIdentity(FAIRLEND_ADMIN)
-				.query(api.engine.reconciliation.reconcileLayer2, {});
+				.action(api.engine.reconciliation.reconcileLayer2, {});
 
 			expect(result.isHealthy).toBe(true);
 			expect(result.verifications).toContainEqual(
