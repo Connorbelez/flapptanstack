@@ -24,10 +24,7 @@ import {
 	syncUserHomePortalAssignmentByUserId,
 } from "../../portals/homePortalAssignment";
 import { runPostCommitCollectionsActivation } from "./postCommitCollectionsActivation";
-import {
-	computeOriginationValidationSnapshot,
-	normalizeOriginationCollectionsDraft,
-} from "./validators";
+import { normalizeOriginationCollectionsDraft } from "./validators";
 
 function collectOriginationParticipants(
 	record: Pick<Doc<"adminOriginationCases">, "participantsDraft">
