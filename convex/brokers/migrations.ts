@@ -6,6 +6,7 @@ import { FAIRLEND_STAFF_ORG_ID } from "../constants";
 import { adminMutation, adminQuery } from "../fluent";
 import { orgIdFromMortgageId } from "../lib/orgScope";
 import {
+	buildLatestOnboardingPortalIdByUserId,
 	resolveBorrowerPortalIdForBackfill,
 	resolveOnboardingRequestPortalIdForBackfill,
 } from "../portals/borrowerPortalAttribution";
@@ -380,13 +381,92 @@ export const runPortalRegistryBackfill = adminMutation
 	})
 	.public();
 
+function hasUniquePortalSlug(
+	portals: DataModel["portals"]["document"][],
+	slug: string
+) {
+	let found = false;
+
+	for (const portal of portals) {
+		if (portal.slug !== slug) {
+			continue;
+		}
+		if (found) {
+			throw new Error(`Duplicate portal claim for slug:${slug}`);
+		}
+		found = true;
+	}
+
+	return found;
+}
+
+function buildPortalIdsByBrokerId(portals: DataModel["portals"]["document"][]) {
+	const portalIdsByBrokerId = new Map<string, Id<"portals">>();
+
+	for (const portal of portals) {
+		if (!portal.brokerId) {
+			continue;
+		}
+
+		const key = String(portal.brokerId);
+		if (portalIdsByBrokerId.has(key)) {
+			throw new Error(`Duplicate portal claim for brokerId:${key}`);
+		}
+		portalIdsByBrokerId.set(key, portal._id);
+	}
+
+	return portalIdsByBrokerId;
+}
+
+function buildDeterministicPortalIdsByOrgId(
+	portals: DataModel["portals"]["document"][]
+) {
+	const livePortalCountsByOrgId = new Map<
+		string,
+		{ count: number; portalId: Id<"portals"> }
+	>();
+
+	for (const portal of portals) {
+		if (portal.status !== "active" || !portal.isPublished) {
+			continue;
+		}
+
+		const existing = livePortalCountsByOrgId.get(portal.orgId);
+		if (!existing) {
+			livePortalCountsByOrgId.set(portal.orgId, {
+				count: 1,
+				portalId: portal._id,
+			});
+			continue;
+		}
+
+		livePortalCountsByOrgId.set(portal.orgId, {
+			count: existing.count + 1,
+			portalId: existing.portalId,
+		});
+	}
+
+	const deterministicPortalIdsByOrgId = new Map<string, Id<"portals">>();
+	for (const [orgId, result] of livePortalCountsByOrgId) {
+		if (result.count === 1) {
+			deterministicPortalIdsByOrgId.set(orgId, result.portalId);
+		}
+	}
+
+	return deterministicPortalIdsByOrgId;
+}
+
 async function getPortalRegistryBackfillStatusSnapshot(ctx: PortalReaderCtx) {
-	const fairLendPortal = await getPortalBySlug(ctx, FAIRLEND_PORTAL_SLUG);
 	const brokers = await ctx.db.query("brokers").collect();
 	const onboardingRequests = await ctx.db.query("onboardingRequests").collect();
 	const borrowers = await ctx.db.query("borrowers").collect();
 	const users = await ctx.db.query("users").collect();
 	const portals = await ctx.db.query("portals").collect();
+	const portalIdsByBrokerId = buildPortalIdsByBrokerId(portals);
+	const deterministicPortalIdsByOrgId =
+		buildDeterministicPortalIdsByOrgId(portals);
+	const latestOnboardingPortalIdByUserId =
+		buildLatestOnboardingPortalIdByUserId(onboardingRequests);
 
 	let brokersMissingOrgIdCount = 0;
 	let brokersMissingPortalCount = 0;
@@ -396,8 +476,7 @@ async function getPortalRegistryBackfillStatusSnapshot(ctx: PortalReaderCtx) {
 			continue;
 		}
 
-		const brokerPortal = await getPortalByBrokerId(ctx, broker._id);
-		if (!brokerPortal) {
+		if (!portalIdsByBrokerId.has(String(broker._id))) {
 			brokersMissingPortalCount += 1;
 		}
 	}
@@ -407,10 +486,11 @@ async function getPortalRegistryBackfillStatusSnapshot(ctx: PortalReaderCtx) {
 	);
 	const unresolvedOnboardingRequestIds: Id<"onboardingRequests">[] = [];
 	for (const onboardingRequest of onboardingRequestsMissingPortal) {
-		const resolvedPortalId = await resolveOnboardingRequestPortalIdForBackfill(
-			ctx,
-			onboardingRequest
-		);
+		const resolvedPortalId = onboardingRequest.targetOrganizationId
+			? deterministicPortalIdsByOrgId.get(
+					onboardingRequest.targetOrganizationId
+				)
+			: undefined;
 		if (!resolvedPortalId) {
 			unresolvedOnboardingRequestIds.push(onboardingRequest._id);
 		}
@@ -421,25 +501,22 @@ async function getPortalRegistryBackfillStatusSnapshot(ctx: PortalReaderCtx) {
 	);
 	const unresolvedBorrowerIds: Id<"borrowers">[] = [];
 	for (const borrower of borrowersMissingPortal) {
-		const resolvedPortalId = await resolveBorrowerPortalIdForBackfill(
-			ctx,
-			borrower
-		);
+		const resolvedPortalId =
+			latestOnboardingPortalIdByUserId.get(String(borrower.userId)) ??
+			(borrower.orgId
+				? deterministicPortalIdsByOrgId.get(borrower.orgId)
+				: undefined);
 		if (!resolvedPortalId) {
 			unresolvedBorrowerIds.push(borrower._id);
 		}
 	}
 
-	let usersMissingHomePortalCount = 0;
-	for (const user of users) {
-		if (user.homePortalId) {
-			continue;
-		}
-		usersMissingHomePortalCount += 1;
-	}
+	const usersMissingHomePortalCount = users.filter(
+		(user) => !user.homePortalId
+	).length;
 
 	return {
-		fairLendPortalExists: fairLendPortal !== null,
+		fairLendPortalExists: hasUniquePortalSlug(portals, FAIRLEND_PORTAL_SLUG),
 		portalCount: portals.length,
 		brokerPortalCount: portals.filter(
 			(portal) => portal.portalType === "broker"

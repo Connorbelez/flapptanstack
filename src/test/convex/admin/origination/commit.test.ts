@@ -1577,29 +1577,78 @@ describe("admin origination commit", () => {
 		});
 
 		const before = await countCanonicalRows(t);
-		const result = await t.withIdentity(FAIRLEND_ADMIN).action(
-			api.admin.origination.commit.commitCase,
-			{ caseId }
-		);
-		const after = await countCanonicalRows(t);
-		const reusedBorrower = await t.run(async (ctx) => ctx.db.get(borrowerId));
+			const result = await t.withIdentity(FAIRLEND_ADMIN).action(
+				api.admin.origination.commit.commitCase,
+				{ caseId }
+			);
+			const after = await countCanonicalRows(t);
+			const { reusedBorrower, reusedUser } = await t.run(async (ctx) => ({
+				reusedBorrower: await ctx.db.get(borrowerId),
+				reusedUser: await ctx.db.get(userId),
+			}));
 
-		expect(result.status).toBe("committed");
-		expect(result.borrowerIds).toEqual([String(borrowerId)]);
-		expect(result.propertyId).toBe(String(propertyId));
-		expect(reusedBorrower?.portalId).toBeDefined();
-		expect(after.borrowers).toBe(before.borrowers);
-		expect(after.listings).toBe(before.listings + 1);
-		expect(after.properties).toBe(before.properties);
+			expect(result.status).toBe("committed");
+			expect(result.borrowerIds).toEqual([String(borrowerId)]);
+			expect(result.propertyId).toBe(String(propertyId));
+			expect(reusedBorrower?.portalId).toBeDefined();
+			expect(reusedUser?.homePortalId).toBe(reusedBorrower?.portalId);
+			expect(after.borrowers).toBe(before.borrowers);
+			expect(after.listings).toBe(before.listings + 1);
+			expect(after.properties).toBe(before.properties);
 		expect(after.mortgageValuationSnapshots).toBe(
 			before.mortgageValuationSnapshots + 1
 		);
 		expect(after.mortgages).toBe(before.mortgages + 1);
-		expect(after.mortgageBorrowers).toBe(before.mortgageBorrowers + 1);
-	});
+			expect(after.mortgageBorrowers).toBe(before.mortgageBorrowers + 1);
+		});
 
-	it("prefers the current broker portal over stale onboarding attribution", async () => {
-		const t = createTestConvex();
+		it("creates collections borrowers in the staged case org", async () => {
+			const t = createTestConvex();
+			await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+			const brokerOrgId = "org_collections_case";
+			const brokerOfRecordId = await seedBrokerRecord(t, {
+				email: "collections.case.broker@test.fairlend.ca",
+				orgId: brokerOrgId,
+				subject: "user_collections_case_broker",
+			});
+			const caseId = await stageCommitReadyCase(t, {
+				brokerOfRecordId,
+				primaryBorrowerEmail: "collections.borrower@test.fairlend.ca",
+			});
+			const brokerPortalId = await t.run(async (ctx) => {
+				await ctx.db.patch(caseId, { orgId: brokerOrgId });
+				const brokerPortal = await ctx.db
+					.query("portals")
+					.withIndex("by_broker", (query) =>
+						query.eq("brokerId", brokerOfRecordId)
+					)
+					.unique();
+				if (!brokerPortal) {
+					throw new Error("Expected broker portal for collections case");
+				}
+				return brokerPortal._id;
+			});
+			setWorkosProvisioningForTests(createProvisioningMock());
+
+			const result = await t.withIdentity(FAIRLEND_ADMIN).action(
+				api.admin.origination.collections.createBorrowerForCollections,
+				{
+					accountNumber: "1234567",
+					caseId,
+					email: "collections.borrower@test.fairlend.ca",
+					fullName: "Collections Borrower",
+					institutionNumber: "001",
+					transitNumber: "00011",
+				}
+			);
+
+			const borrower = await t.run(async (ctx) => ctx.db.get(result.borrowerId));
+			expect(borrower?.orgId).toBe(brokerOrgId);
+			expect(borrower?.portalId).toBe(brokerPortalId);
+		});
+
+		it("prefers the current broker portal over stale onboarding attribution", async () => {
+			const t = createTestConvex();
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
 		const brokerOfRecordId = await seedBrokerRecord(t);
 		const staleBrokerId = await seedBrokerRecord(t, {

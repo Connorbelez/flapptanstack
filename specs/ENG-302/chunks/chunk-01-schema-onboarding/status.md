@@ -12,6 +12,6 @@
 - `bun run test -- src/test/convex/onboarding/onboarding.test.ts src/test/convex/onboarding/onboarding-queries.test.ts src/test/auth/integration/onboarding-auth.test.ts`: pass
 
 ## Notes
-- `requestRole` currently has no portal context input. This chunk decides the mutation contract that downstream portal-aware callers and tests will use.
+- `requestRole` intentionally takes no caller-provided portal context. Trusted attribution is derived server-side from `users.homePortalId`.
 - Work started on 2026-04-20 after `ready-to-edit` validation passed.
-- The mutation now accepts optional trusted `portalId`, re-resolves it server-side, and persists it on the onboarding request plus audit payloads.
+- The mutation resolves `portalId` from the authenticated user's `homePortalId`, gates on `status === "active"` and `isPublished`, and persists it on the onboarding request plus audit payloads.

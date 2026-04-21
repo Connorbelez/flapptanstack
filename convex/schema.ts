@@ -591,6 +591,7 @@ export default defineSchema({
 		createdAt: v.number(),
 	})
 		.index("by_user", ["userId"])
+		.index("by_user_created_at", ["userId", "createdAt"])
 		.index("by_portal", ["portalId"])
 		.index("by_portal_status", ["portalId", "status"])
 		.index("by_status", ["status"])
