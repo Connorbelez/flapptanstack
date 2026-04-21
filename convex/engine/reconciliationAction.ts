@@ -139,7 +139,7 @@ async function lookupStatus(
 	// Table-driven lookup: entityType → typed getter.
 	// biome-ignore: cognitive complexity is 28 because each entity type requires
 	// a separate db.get call — this is unavoidable for a data-access function
-	// that must handle 14 distinct entity table types.
+	// that must handle the full governed entity set.
 	switch (entityType) {
 		case "brokerOnboardingApplication":
 			return (
@@ -158,6 +158,11 @@ async function lookupStatus(
 			return (
 				(await ctx.db.get(entityId as Id<"collectionAttempts">))?.status ?? null
 			);
+		case "lenderRenewalIntent":
+			return (
+				(await ctx.db.get(entityId as Id<"lenderRenewalIntents">))?.status ??
+				null
+			);
 		// Non-governed entity types: tables exist in schema but have no
 		// machine definitions. Skip to avoid false discrepancies.
 		case "deal":
@@ -168,7 +173,6 @@ async function lookupStatus(
 		case "lenderOnboarding":
 		case "provisionalOffer":
 		case "offerCondition":
-		case "lenderRenewalIntent":
 		case "dispersalEntry":
 			return undefined;
 		case "lender":

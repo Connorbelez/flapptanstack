@@ -540,10 +540,8 @@ export default defineSchema({
 
 		// ─── Intent ───
 		fractionCount: v.number(),
-		intent: v.union(
-			v.literal("renew"),
-			v.literal("exit"),
-			v.literal("partial_exit")
+		intent: v.optional(
+			v.union(v.literal("renew"), v.literal("exit"), v.literal("partial_exit"))
 		),
 		partialExitFractions: v.optional(v.number()),
 		notes: v.optional(v.string()),
@@ -560,10 +558,11 @@ export default defineSchema({
 		createdAt: v.number(),
 	})
 		.index("by_mortgage", ["mortgageId"])
+		.index("by_mortgage_and_lender", ["mortgageId", "lenderId"])
 		.index("by_lender", ["lenderId", "status"])
 		.index("by_broker", ["brokerId", "status"])
-		.index("by_deadline", ["signalDeadline", "status"])
-		.index("by_maturity", ["maturityDate", "status"]),
+		.index("by_deadline", ["status", "signalDeadline"])
+		.index("by_maturity", ["status", "maturityDate"]),
 
 	portfolioSnapshots: defineTable({
 		lenderId: v.id("lenders"),
