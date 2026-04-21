@@ -5,6 +5,7 @@ import type { MarketplaceListingsSearchState } from "#/components/listings/marke
 import { marketplaceListingsQueryOptions } from "#/components/listings/query-options";
 import {
 	cleanMarketplaceListingsSearch,
+	marketplaceFiltersToSearchState,
 	parseMarketplaceListingsSearch,
 } from "#/components/listings/search";
 import { assertActivePortalId } from "#/lib/portal/active-portal";
@@ -37,10 +38,14 @@ export function ListingsIndexRoutePage() {
 	const { data } = useSuspenseQuery(
 		marketplaceListingsQueryOptions(portalId, search)
 	);
+	const effectiveSearch = marketplaceFiltersToSearchState(
+		data.effectiveFilters,
+		search.sort
+	);
 
 	return (
 		<MarketplaceListingsPage
-			search={search}
+			search={effectiveSearch}
 			setSearch={(updater) =>
 				void navigate({
 					search: (current) =>

@@ -1,7 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { HostAccessBoundaryState } from "#/components/portal/HostAccessBoundaryState";
-import { sanitizeRedirectPath } from "#/lib/auth-redirect";
+import {
+	getReturnOnlyPathname,
+	sanitizeRedirectPath,
+} from "#/lib/auth-redirect";
 import { portalRequestMiddleware } from "#/lib/portal/request-host";
 import { resolveRouteHostDecision } from "#/lib/portal/route-host-decision";
 import { resolveRouteHostSession } from "#/lib/portal/route-host-session";
@@ -19,7 +22,7 @@ const resolveHostBoundary = createServerFn({ method: "GET" })
 			requestHost: context.requestHost,
 		});
 		const decision = resolveRouteHostDecision({
-			pathname: data.returnTo,
+			pathname: getReturnOnlyPathname(data.returnTo),
 			portalContext: session.portalContext,
 			returnTo: data.returnTo,
 			userId: session.userId,

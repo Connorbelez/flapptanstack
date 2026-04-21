@@ -44,6 +44,9 @@ export type MarketplaceListingsSnapshot = FunctionReturnType<
 	typeof api.listings.marketplace.listMarketplaceListings
 >;
 
+export type MarketplaceEffectiveFilters =
+	MarketplaceListingsSnapshot["effectiveFilters"];
+
 export type PortalLenderListingsSnapshot = FunctionReturnType<
 	typeof api.listings.portalQueries.listLenderPortalListings
 >;

@@ -181,4 +181,39 @@ describe("route host decisions", () => {
 			returnTo: "/listings",
 		});
 	});
+
+	it("keeps admin policy classification when the return target includes search params", () => {
+		expect(
+			resolveRouteHostDecision({
+				pathname: "/admin",
+				portalContext: buildPortalContext({
+					host: "app.localhost:3000",
+					portalId: "portal_app",
+					slug: "app",
+				}),
+				returnTo: "/admin?detailOpen=false",
+				userId: "user_app",
+				viewerPortalAssignment: {
+					userId: "user_app",
+					homePortalId: "portal_app",
+					homePortal: buildPortalSummary({
+						portalId: "portal_app",
+						portalType: "fairlend",
+						slug: "app",
+					}),
+					currentOrgPortalId: null,
+					currentOrgPortal: null,
+					isFairLendAdmin: false,
+				},
+			})
+		).toEqual({
+			kind: "boundary",
+			boundaryKind: "admin-required",
+			continueHref: "http://admin.localhost:3000/admin?detailOpen=false",
+			continueLabel: "Continue to FairLend admin",
+			currentHost: "app.localhost:3000",
+			expectedHost: "admin.localhost:3000",
+			returnTo: "/admin?detailOpen=false",
+		});
+	});
 });
