@@ -15,7 +15,7 @@ import { getAccountLenderId } from "../ledger/accountOwnership";
 import { unixMsToBusinessDate } from "../lib/businessDates";
 import {
 	addDaysToBusinessDate,
-	buildLenderRenewalTimeline,
+	isLenderRenewalWindowOpen,
 	LENDER_RENEWAL_CREATE_WINDOW_DAYS,
 } from "./constants";
 import {
@@ -65,30 +65,47 @@ export const listCreateWindowMortgages = internalQuery({
 			businessDate,
 			LENDER_RENEWAL_CREATE_WINDOW_DAYS
 		);
-		const mortgages = await ctx.db
-			.query("mortgages")
-			.withIndex("by_maturity", (query) =>
-				query
-					.gte("maturityDate", businessDate)
-					.lte("maturityDate", maxMaturityDate)
-			)
-			.take(args.limit ?? 128);
+		const candidateMortgages: Array<{ mortgageId: Id<"mortgages"> }> = [];
+		let cursor: string | null = null;
 
-		return mortgages
-			.filter((mortgage) => {
-				if (mortgage.status !== "active") {
-					return false;
-				}
+		// Scan the full maturity window in bounded pages so later mortgages are
+		// not starved by earlier rows that are already synced or not actionable.
+		while (true) {
+			const { continueCursor, isDone, page } = await ctx.db
+				.query("mortgages")
+				.withIndex("by_maturity", (query) =>
+					query
+						.gte("maturityDate", businessDate)
+						.lte("maturityDate", maxMaturityDate)
+				)
+				.paginate({
+					cursor,
+					numItems: args.limit ?? 128,
+				});
 
-				const timeline = buildLenderRenewalTimeline(mortgage.maturityDate);
-				return (
-					asOf >= timeline.creationWindowOpensAt &&
-					asOf < timeline.signalDeadlineAt
-				);
-			})
-			.map((mortgage) => ({
-				mortgageId: mortgage._id,
-			}));
+			candidateMortgages.push(
+				...page
+					.filter((mortgage) => {
+						if (mortgage.status !== "active") {
+							return false;
+						}
+
+						return isLenderRenewalWindowOpen({
+							asOf,
+							maturityDate: mortgage.maturityDate,
+						});
+					})
+					.map((mortgage) => ({
+						mortgageId: mortgage._id,
+					}))
+			);
+
+			if (isDone) {
+				return candidateMortgages;
+			}
+
+			cursor = continueCursor;
+		}
 	},
 });
 
@@ -104,12 +121,11 @@ export const syncRenewalIntentsForMortgage = internalMutation({
 			return { created: 0, skipped: 0, updated: 0 };
 		}
 
-		const timeline = buildLenderRenewalTimeline(mortgage.maturityDate);
 		if (
-			!(
-				asOf >= timeline.creationWindowOpensAt &&
-				asOf < timeline.signalDeadlineAt
-			)
+			!isLenderRenewalWindowOpen({
+				asOf,
+				maturityDate: mortgage.maturityDate,
+			})
 		) {
 			return { created: 0, skipped: 0, updated: 0 };
 		}

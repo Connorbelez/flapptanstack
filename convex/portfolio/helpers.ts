@@ -704,6 +704,8 @@ function buildRenewalAction(args: {
 	intent: Doc<"lenderRenewalIntents">;
 	propertyLabel: string;
 }): PortfolioActionItem {
+	const renewalIntentSummary = args.intent.intent ?? "awaiting lender decision";
+
 	return {
 		dueDate: businessDateFromUnixMs(args.intent.signalDeadline),
 		id: `renewal-${String(args.intent._id)}`,
@@ -712,7 +714,7 @@ function buildRenewalAction(args: {
 		prefillContext: buildMortgagePrefillContext({
 			mortgageId: String(args.intent.mortgageId),
 			propertyLabel: args.propertyLabel,
-			summary: `Renewal intent is ${args.intent.intent} with status ${args.intent.status}`,
+			summary: `Renewal intent is ${renewalIntentSummary} with status ${args.intent.status}`,
 			title: "Renewal coordination",
 		}),
 		priority: "medium",
