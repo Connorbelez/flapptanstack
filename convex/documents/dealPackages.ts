@@ -1,9 +1,14 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { assertDealAccess } from "../authz/resourceAccess";
 import type { ActionCtx, QueryCtx } from "../_generated/server";
-import { adminAction, convex, dealQuery, requirePermissionAction } from "../fluent";
+import { assertDealAccess } from "../authz/resourceAccess";
+import {
+	adminAction,
+	convex,
+	dealQuery,
+	requirePermissionAction,
+} from "../fluent";
 import {
 	type DealDocumentPackageStatus,
 	type DealDocumentSourceBlueprintSnapshot,

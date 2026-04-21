@@ -4,14 +4,16 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useMatch, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarketplaceListingsPage } from "#/components/listings/MarketplaceListingsPage";
 import { marketplaceListingsQueryOptions } from "#/components/listings/query-options";
 import {
-	ListingsRouteComponent,
+	ListingsIndexRoutePage,
 	Route,
-} from "#/routes/listings";
+} from "#/routes/listings/index";
+import { ListingsLayout } from "#/routes/listings/route";
 
 vi.mock("@tanstack/react-query", () => ({
 	useSuspenseQuery: vi.fn(),
@@ -25,10 +27,18 @@ vi.mock("@tanstack/react-router", async () => {
 	return {
 		...actual,
 		Outlet: () => <div data-testid="listing-detail-outlet" />,
-		useMatch: vi.fn(),
 		useNavigate: vi.fn(),
 	};
 });
+
+vi.mock("convex/react", () => ({
+	Authenticated: ({ children }: { children: ReactNode }) => (
+		<div data-testid="authenticated-shell">{children}</div>
+	),
+	AuthLoading: ({ children }: { children: ReactNode }) => (
+		<div data-testid="auth-loading-shell">{children}</div>
+	),
+}));
 
 vi.mock("#/components/listings/query-options", () => ({
 	marketplaceListingsQueryOptions: vi.fn(),
@@ -46,12 +56,11 @@ afterEach(() => {
 const LIST_QUERY_OPTIONS = { queryKey: ["marketplace-listings"] };
 
 describe("public listings route", () => {
-	it("renders the marketplace listings surface when no detail child route is active", () => {
+	it("renders the marketplace listings surface from the index route", () => {
 		const search = { q: "toronto", sort: "featured" } as const;
 		const navigate = vi.fn();
 
 		vi.spyOn(Route, "useSearch").mockReturnValue(search as never);
-		vi.mocked(useMatch).mockReturnValue(null);
 		vi.mocked(useNavigate).mockReturnValue(navigate);
 		vi.mocked(marketplaceListingsQueryOptions).mockReturnValue(
 			LIST_QUERY_OPTIONS as never
@@ -64,7 +73,7 @@ describe("public listings route", () => {
 			},
 		} as never);
 
-		render(<ListingsRouteComponent />);
+		render(<ListingsIndexRoutePage />);
 
 		expect(marketplaceListingsQueryOptions).toHaveBeenCalledWith(search);
 		expect(useSuspenseQuery).toHaveBeenCalledWith(LIST_QUERY_OPTIONS);
@@ -82,14 +91,11 @@ describe("public listings route", () => {
 		});
 	});
 
-	it("renders the nested detail outlet when a listing child route is active", () => {
-		vi.spyOn(Route, "useSearch").mockReturnValue({ sort: "featured" } as never);
-		vi.mocked(useMatch).mockReturnValue("listing_1" as never);
+	it("renders a nested auth-aware listings layout", () => {
+		render(<ListingsLayout />);
 
-		render(<ListingsRouteComponent />);
-
+		expect(screen.getByTestId("authenticated-shell")).toBeTruthy();
+		expect(screen.getByTestId("auth-loading-shell")).toBeTruthy();
 		expect(screen.getByTestId("listing-detail-outlet")).toBeTruthy();
-		expect(useSuspenseQuery).not.toHaveBeenCalled();
-		expect(MarketplaceListingsPage).not.toHaveBeenCalled();
 	});
 });

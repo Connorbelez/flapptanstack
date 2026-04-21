@@ -10,7 +10,7 @@ export const Route = createFileRoute("/listings/$listingId")({
 	loader: async ({ context, params }) => {
 		const detail = await context.queryClient.ensureQueryData(
 			marketplaceListingDetailQueryOptions(params.listingId)
-		)
+		);
 		if (!detail) {
 			throw notFound();
 		}
@@ -25,7 +25,7 @@ function RouteComponent() {
 	const { listingId } = Route.useLoaderData();
 	const { data } = useSuspenseQuery(
 		marketplaceListingDetailQueryOptions(listingId)
-	)
+	);
 
 	if (!data) {
 		throw notFound();
@@ -64,5 +64,5 @@ function MarketplaceListingNotFoundComponent() {
 				</Link>
 			</div>
 		</div>
-	)
+	);
 }

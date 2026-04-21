@@ -16,6 +16,13 @@ import {
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "#/components/ui/radio-group";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "#/components/ui/select";
 import { Textarea } from "#/components/ui/textarea";
 import type {
 	OriginationCollectionsDraft,
@@ -180,6 +187,13 @@ function buildBankAccountOptionClass(args: {
 
 	return "cursor-pointer border-border/70 hover:bg-muted/50";
 }
+
+const COLLECTION_PROVIDER_OPTIONS = [
+	{
+		value: "pad_rotessa",
+		label: "pad_rotessa",
+	},
+] as const;
 
 export function CollectionsStep({
 	caseId,
@@ -637,9 +651,43 @@ export function CollectionsStep({
 				</div>
 			) : null}
 
-			{isProviderManagedNow ? (
-				<div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-					<div className="space-y-4 rounded-2xl border border-border/70 bg-background/80 px-4 py-4">
+				{isProviderManagedNow ? (
+					<div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+						<div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 px-4 py-4 lg:col-span-2">
+							<div className="space-y-1">
+								<p className="font-medium text-sm">Provider configuration</p>
+							<p className="text-muted-foreground text-sm leading-6">
+								This flow is currently constrained to Rotessa-backed PAD
+								schedules, but the provider selection stays explicit so the
+								staged draft matches the operational setup.
+							</p>
+						</div>
+						<div className="max-w-sm space-y-2">
+							<Label htmlFor="providerCode">Provider code</Label>
+							<Select
+								onValueChange={(value) =>
+									onChange(
+										buildProviderManagedDraft(nextDraft, {
+											providerCode: value === "pad_rotessa" ? value : undefined,
+										})
+									)
+								}
+								value={nextDraft.providerCode ?? ""}
+							>
+								<SelectTrigger className="w-full" id="providerCode">
+									<SelectValue placeholder="Select provider" />
+								</SelectTrigger>
+								<SelectContent>
+									{COLLECTION_PROVIDER_OPTIONS.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+								</Select>
+							</div>
+						</div>
+						<div className="space-y-4 rounded-2xl border border-border/70 bg-background/80 px-4 py-4">
 						<div className="space-y-1">
 							<div className="flex items-center gap-2">
 								<p className="font-medium text-sm">1. Select borrower</p>

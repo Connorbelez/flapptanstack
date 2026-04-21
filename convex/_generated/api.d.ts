@@ -20,7 +20,6 @@ import type * as admin_origination_caseDocuments from "../admin/origination/case
 import type * as admin_origination_cases from "../admin/origination/cases.js";
 import type * as admin_origination_collections from "../admin/origination/collections.js";
 import type * as admin_origination_commit from "../admin/origination/commit.js";
-import type * as admin_origination_postCommitCollectionsActivation from "../admin/origination/postCommitCollectionsActivation.js";
 import type * as admin_origination_media from "../admin/origination/media.js";
 import type * as admin_origination_participants from "../admin/origination/participants.js";
 import type * as admin_origination_postCommitCollectionsActivation from "../admin/origination/postCommitCollectionsActivation.js";
@@ -201,6 +200,7 @@ import type * as listings_lifecycle from "../listings/lifecycle.js";
 import type * as listings_marketplace from "../listings/marketplace.js";
 import type * as listings_marketplaceShared from "../listings/marketplaceShared.js";
 import type * as listings_math from "../listings/math.js";
+import type * as listings_portalQueries from "../listings/portalQueries.js";
 import type * as listings_projection from "../listings/projection.js";
 import type * as listings_publicDocuments from "../listings/publicDocuments.js";
 import type * as listings_queries from "../listings/queries.js";
@@ -378,7 +378,6 @@ declare const fullApi: ApiFromModules<{
   "admin/origination/cases": typeof admin_origination_cases;
   "admin/origination/collections": typeof admin_origination_collections;
   "admin/origination/commit": typeof admin_origination_commit;
-  "admin/origination/postCommitCollectionsActivation": typeof admin_origination_postCommitCollectionsActivation;
   "admin/origination/media": typeof admin_origination_media;
   "admin/origination/participants": typeof admin_origination_participants;
   "admin/origination/postCommitCollectionsActivation": typeof admin_origination_postCommitCollectionsActivation;
@@ -559,6 +558,7 @@ declare const fullApi: ApiFromModules<{
   "listings/marketplace": typeof listings_marketplace;
   "listings/marketplaceShared": typeof listings_marketplaceShared;
   "listings/math": typeof listings_math;
+  "listings/portalQueries": typeof listings_portalQueries;
   "listings/projection": typeof listings_projection;
   "listings/publicDocuments": typeof listings_publicDocuments;
   "listings/queries": typeof listings_queries;

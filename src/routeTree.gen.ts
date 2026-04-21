@@ -13,7 +13,6 @@ import { Route as UnauthorizedRouteImport } from './routes/unauthorized'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignOutRouteImport } from './routes/sign-out'
 import { Route as SignInRouteImport } from './routes/sign-in'
-import { Route as ListingsRouteImport } from './routes/listings'
 import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as AuthCompleteRouteImport } from './routes/auth-complete'
 import { Route as AboutRouteImport } from './routes/about'
@@ -167,11 +166,6 @@ const SignInRoute = SignInRouteImport.update({
   path: '/sign-in',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ListingsRoute = ListingsRouteImport.update({
-  id: '/listings',
-  path: '/listings',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CallbackRoute = CallbackRouteImport.update({
   id: '/callback',
   path: '/callback',
@@ -230,7 +224,7 @@ const IndexRoute = IndexRouteImport.update({
 const ListingsIndexRoute = ListingsIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => ListingsRoute,
+  getParentRoute: () => ListingsRouteRoute,
 } as any)
 const SignOutLocalRoute = SignOutLocalRouteImport.update({
   id: '/local',
@@ -240,7 +234,7 @@ const SignOutLocalRoute = SignOutLocalRouteImport.update({
 const ListingsListingIdRoute = ListingsListingIdRouteImport.update({
   id: '/$listingId',
   path: '/$listingId',
-  getParentRoute: () => ListingsRoute,
+  getParentRoute: () => ListingsRouteRoute,
 } as any)
 const LenderListingsRoute = LenderListingsRouteImport.update({
   id: '/listings',
@@ -881,7 +875,7 @@ export interface FileRoutesByFullPath {
   '/broker': typeof BrokerRouteRoute
   '/lawyer': typeof LawyerRouteRoute
   '/lender': typeof LenderRouteRouteWithChildren
-  '/listings': typeof ListingsRouteWithChildren
+  '/listings': typeof ListingsRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
   '/auth-complete': typeof AuthCompleteRoute
@@ -1019,7 +1013,6 @@ export interface FileRoutesByTo {
   '/broker': typeof BrokerRouteRoute
   '/lawyer': typeof LawyerRouteRoute
   '/lender': typeof LenderRouteRouteWithChildren
-  '/listings': typeof ListingsIndexRoute
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
   '/auth-complete': typeof AuthCompleteRoute
@@ -1073,6 +1066,7 @@ export interface FileRoutesByTo {
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
+  '/listings': typeof ListingsIndexRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
   '/demo/rbac/broker': typeof DemoRbacBrokerRouteRoute
@@ -1146,7 +1140,7 @@ export interface FileRoutesById {
   '/broker': typeof BrokerRouteRoute
   '/lawyer': typeof LawyerRouteRoute
   '/lender': typeof LenderRouteRouteWithChildren
-  '/listings': typeof ListingsRouteWithChildren
+  '/listings': typeof ListingsRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
   '/auth-complete': typeof AuthCompleteRoute
@@ -1424,7 +1418,6 @@ export interface FileRouteTypes {
     | '/broker'
     | '/lawyer'
     | '/lender'
-    | '/listings'
     | '/onboard'
     | '/about'
     | '/auth-complete'
@@ -1478,6 +1471,7 @@ export interface FileRouteTypes {
     | '/lender/listings'
     | '/listings/$listingId'
     | '/sign-out/local'
+    | '/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
     | '/demo/rbac/broker'
@@ -1689,12 +1683,11 @@ export interface RootRouteChildren {
   BrokerRouteRoute: typeof BrokerRouteRoute
   LawyerRouteRoute: typeof LawyerRouteRoute
   LenderRouteRoute: typeof LenderRouteRouteWithChildren
-  ListingsRouteRoute: typeof ListingsRouteRoute
+  ListingsRouteRoute: typeof ListingsRouteRouteWithChildren
   OnboardRouteRoute: typeof OnboardRouteRoute
   AboutRoute: typeof AboutRoute
   AuthCompleteRoute: typeof AuthCompleteRoute
   CallbackRoute: typeof CallbackRoute
-  ListingsRoute: typeof ListingsRouteWithChildren
   SignInRoute: typeof SignInRoute
   SignOutRoute: typeof SignOutRouteWithChildren
   SignUpRoute: typeof SignUpRoute
@@ -1768,13 +1761,6 @@ declare module '@tanstack/react-router' {
       path: '/sign-in'
       fullPath: '/sign-in'
       preLoaderRoute: typeof SignInRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/listings': {
-      id: '/listings'
-      path: '/listings'
-      fullPath: '/listings'
-      preLoaderRoute: typeof ListingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/callback': {
@@ -1859,7 +1845,7 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/listings/'
       preLoaderRoute: typeof ListingsIndexRouteImport
-      parentRoute: typeof ListingsRoute
+      parentRoute: typeof ListingsRouteRoute
     }
     '/sign-out/local': {
       id: '/sign-out/local'
@@ -1873,7 +1859,7 @@ declare module '@tanstack/react-router' {
       path: '/$listingId'
       fullPath: '/listings/$listingId'
       preLoaderRoute: typeof ListingsListingIdRouteImport
-      parentRoute: typeof ListingsRoute
+      parentRoute: typeof ListingsRouteRoute
     }
     '/lender/listings': {
       id: '/lender/listings'
@@ -2896,18 +2882,18 @@ const LenderRouteRouteWithChildren = LenderRouteRoute._addFileChildren(
   LenderRouteRouteChildren,
 )
 
-interface ListingsRouteChildren {
+interface ListingsRouteRouteChildren {
   ListingsListingIdRoute: typeof ListingsListingIdRoute
   ListingsIndexRoute: typeof ListingsIndexRoute
 }
 
-const ListingsRouteChildren: ListingsRouteChildren = {
+const ListingsRouteRouteChildren: ListingsRouteRouteChildren = {
   ListingsListingIdRoute: ListingsListingIdRoute,
   ListingsIndexRoute: ListingsIndexRoute,
 }
 
-const ListingsRouteWithChildren = ListingsRoute._addFileChildren(
-  ListingsRouteChildren,
+const ListingsRouteRouteWithChildren = ListingsRouteRoute._addFileChildren(
+  ListingsRouteRouteChildren,
 )
 
 interface SignOutRouteChildren {
@@ -3143,12 +3129,11 @@ const rootRouteChildren: RootRouteChildren = {
   BrokerRouteRoute: BrokerRouteRoute,
   LawyerRouteRoute: LawyerRouteRoute,
   LenderRouteRoute: LenderRouteRouteWithChildren,
-  ListingsRouteRoute: ListingsRouteRoute,
+  ListingsRouteRoute: ListingsRouteRouteWithChildren,
   OnboardRouteRoute: OnboardRouteRoute,
   AboutRoute: AboutRoute,
   AuthCompleteRoute: AuthCompleteRoute,
   CallbackRoute: CallbackRoute,
-  ListingsRoute: ListingsRouteWithChildren,
   SignInRoute: SignInRoute,
   SignOutRoute: SignOutRouteWithChildren,
   SignUpRoute: SignUpRoute,

@@ -355,7 +355,7 @@ export const getMarketplaceListingDetail = listingQuery
 			similarListings,
 		] = await Promise.all([
 			buildMarketplaceAvailabilitySummary(ctx, listing.mortgageId),
-			readListingPublicDocuments(ctx, args.listingId),
+			readListingPublicDocuments(ctx, { listingId: args.listingId }),
 			listing.propertyId
 				? getListingAppraisalsByProperty(ctx, listing.propertyId)
 				: Promise.resolve([]),
