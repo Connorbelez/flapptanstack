@@ -240,6 +240,7 @@ describe("portal registry backfill", () => {
 				host: "APP.localhost:3000",
 			}
 		);
+		expect(fairLendPortalByHost?.availability).toBe("active");
 		expect(fairLendPortalByHost?.portal.portalType).toBe("fairlend");
 		expect(fairLendPortalByHost?.canonicalHost).toBe("app.localhost:3000");
 
@@ -249,6 +250,7 @@ describe("portal registry backfill", () => {
 				host: "MERIDIAN.localhost:3000",
 			}
 		);
+		expect(brokerPortal?.availability).toBe("active");
 		expect(brokerPortal?.portal.slug).toBe("meridian");
 		expect(brokerPortal?.portal.portalType).toBe("broker");
 		expect(brokerPortal?.canonicalHost).toBe("meridian.localhost:3000");
@@ -265,18 +267,53 @@ describe("portal registry backfill", () => {
 					query.eq("brokerId", fixture.brokerId)
 				)
 				.unique();
+			const fairLendPortalRow = await ctx.db
+				.query("portals")
+				.withIndex("by_slug", (query) => query.eq("slug", "app"))
+				.unique();
+			const brokerPolicies = brokerPortalRow
+				? await ctx.db
+						.query("portalPricingPolicies")
+						.withIndex("by_portal", (query) =>
+							query.eq("portalId", brokerPortalRow._id)
+						)
+						.collect()
+				: [];
+			const fairLendPolicies = fairLendPortalRow
+				? await ctx.db
+						.query("portalPricingPolicies")
+						.withIndex("by_portal", (query) =>
+							query.eq("portalId", fairLendPortalRow._id)
+						)
+						.collect()
+				: [];
 			return {
 				adminUser,
 				borrowerUser,
 				broker,
+				brokerPolicies,
 				brokerPortalRow,
 				brokerUser,
+				fairLendPolicies,
+				fairLendPortalRow,
 				fallbackUser,
 			};
 		});
 
 		expect(records.broker?.orgId).toBe(fixture.brokerOrgId);
 		expect(records.brokerPortalRow?.orgId).toBe(fixture.brokerOrgId);
+		expect(records.brokerPortalRow?.pricingPolicyId).toBeDefined();
+		expect(
+			records.brokerPolicies.find(
+				(policy) => policy._id === records.brokerPortalRow?.pricingPolicyId
+			)?.brokerSplitPercent
+		).toBe(0);
+		expect(records.fairLendPortalRow?.pricingPolicyId).toBeDefined();
+		expect(
+			records.fairLendPolicies.find(
+				(policy) => policy._id === records.fairLendPortalRow?.pricingPolicyId
+			)?.brokerSplitPercent
+		).toBe(0);
 		expect(records.brokerUser?.homePortalId).toBe(
 			brokerPortal?.portal.portalId as Id<"portals">
 		);

@@ -161,6 +161,25 @@ describe("portal pricing contract", () => {
 		});
 	});
 
+	it("treats malformed stored policies as unavailable when no valid active policy exists", () => {
+		const invalidWindowPolicy = buildPolicy({
+			_id: "policy_meridian_invalid_unselected" as Id<"portalPricingPolicies">,
+			effectiveFrom: NOW,
+			effectiveTo: NOW - 1,
+		});
+
+		const selection = selectEffectivePortalPricingPolicy({
+			atTime: NOW,
+			policies: [invalidWindowPolicy],
+			portal: buildPortal({ pricingPolicyId: undefined }),
+		});
+
+		expect(selection).toEqual({
+			kind: "unavailable",
+			reason: "invalid-policy",
+		});
+	});
+
 	it("rejects invalid effective windows at validation time", () => {
 		expect(() =>
 			validatePortalPricingPolicyContract({
@@ -186,6 +205,19 @@ describe("portal pricing contract", () => {
 		expect(projected.monthlyPayment).toBe(1429.17);
 		expect(projected.principal).toBe(250_000);
 		expect(projected.ltvRatio).toBe(65);
+	});
+
+	it("leaves projected listing values unchanged for a persisted 0% policy", () => {
+		const projected = projectListingForPortal(
+			{
+				interestRate: 8.75,
+				monthlyPayment: 1633.34,
+			},
+			{ brokerSplitPercent: 0 }
+		);
+
+		expect(projected.interestRate).toBe(8.75);
+		expect(projected.monthlyPayment).toBe(1633.34);
 	});
 
 	it("loads and requires the selected pricing policy from stored portal rows", async () => {

@@ -15,14 +15,8 @@ type ResolvedPortalLookup = NonNullable<
 	FunctionReturnType<typeof api.portals.queries.resolvePortalByHost>
 >;
 type PortalSummary = ResolvedPortalLookup["portal"];
+export type PortalAvailability = ResolvedPortalLookup["availability"];
 type PortalMatchedHostType = ResolvedPortalLookup["matchedHostType"];
-
-export type PortalAvailability =
-	| "active"
-	| "archived"
-	| "draft"
-	| "suspended"
-	| "unpublished";
 
 interface RootPortalContextBase {
 	canonicalHost: string;
@@ -69,13 +63,6 @@ function portalContextWithCacheKey(
 		...portalContext,
 		cacheKey: buildPortalCacheKey(portalContext),
 	};
-}
-
-function resolvePortalAvailability(portal: PortalSummary): PortalAvailability {
-	if (!portal.isPublished) {
-		return "unpublished";
-	}
-	return portal.status;
 }
 
 function buildPortalLookup(token: string | null) {
@@ -134,7 +121,7 @@ export async function resolveRootPortalContext(
 			canonicalHost: resolvedPortal.canonicalHost,
 			matchedHostType: resolvedPortal.matchedHostType,
 			portal: resolvedPortal.portal,
-			availability: resolvePortalAvailability(resolvedPortal.portal),
+			availability: resolvedPortal.availability,
 		});
 	}
 
