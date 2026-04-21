@@ -428,4 +428,52 @@ describe("processDuePlanEntries", () => {
 			asOf + 3 * 86_400_000
 		);
 	});
+
+	it("drains more than one due batch in a single invocation", async () => {
+		const t = createBackendTestConvex();
+		const asOf = Date.now();
+		const seeded = await Promise.all([
+			seedExecutionFixture(t, {
+				method: "manual",
+				scheduledDate: asOf - 3000,
+			}),
+			seedExecutionFixture(t, {
+				method: "manual",
+				scheduledDate: asOf - 2000,
+			}),
+			seedExecutionFixture(t, {
+				method: "manual",
+				scheduledDate: asOf - 1000,
+			}),
+		]);
+
+		for (const fixture of seeded) {
+			await seedCollectionSettlementPrereqs(t, {
+				mortgageId: fixture.mortgageId,
+				obligationId: fixture.obligationId,
+			});
+		}
+
+		const summary = (await t.action(
+			internal.payments.collectionPlan.runner.processDuePlanEntries,
+			{
+				asOf,
+				batchSize: 1,
+			}
+		)) as Record<string, number | boolean>;
+		await drainScheduledWork(t);
+
+		expect(summary.selectedCount).toBe(3);
+		expect(summary.attemptedCount).toBe(3);
+		expect(summary.attemptCreatedCount).toBe(3);
+		expect(summary.wavesRun).toBe(3);
+		expect(summary.drainedAllEligibleWork).toBe(true);
+		expect(summary.remainingEligibleCount).toBe(0);
+		expect(summary.maxWavesReached).toBe(false);
+
+		for (const fixture of seeded) {
+			const attempts = await getAttemptsForPlanEntry(t, fixture.planEntryId);
+			expect(attempts).toHaveLength(1);
+		}
+	});
 });

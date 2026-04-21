@@ -20,10 +20,7 @@ import { activateMortgageAggregate } from "../../mortgages/activateMortgageAggre
 import { buildAdminDirectMortgageActivationSource } from "../../mortgages/provenance";
 import { activateCommittedCaseCollectionsRuntime } from "./collections";
 import { runPostCommitCollectionsActivation } from "./postCommitCollectionsActivation";
-import {
-	computeOriginationValidationSnapshot,
-	normalizeOriginationCollectionsDraft,
-} from "./validators";
+import { normalizeOriginationCollectionsDraft } from "./validators";
 
 function collectOriginationParticipants(
 	record: Pick<Doc<"adminOriginationCases">, "participantsDraft">

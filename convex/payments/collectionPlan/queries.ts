@@ -184,6 +184,54 @@ export const getDuePlannedEntries = internalQuery({
 	},
 });
 
+export const countDuePlannedEntries = internalQuery({
+	args: {
+		asOf: v.number(),
+		mortgageId: v.optional(v.id("mortgages")),
+	},
+	handler: async (ctx, { asOf, mortgageId }) => {
+		const duePlannedEntries =
+			mortgageId === undefined
+				? ctx.db
+						.query("collectionPlanEntries")
+						.withIndex("by_status_scheduled_date", (q) =>
+							q.eq("status", "planned").lte("scheduledDate", asOf)
+						)
+				: ctx.db
+						.query("collectionPlanEntries")
+						.withIndex("by_mortgage_status_scheduled", (q) =>
+							q
+								.eq("mortgageId", mortgageId)
+								.eq("status", "planned")
+								.lte("scheduledDate", asOf)
+						);
+
+		return (
+			await duePlannedEntries
+				.filter((q) =>
+					q.or(
+						q.eq(q.field("executionMode"), undefined),
+						q.eq(q.field("executionMode"), "app_owned")
+					)
+				)
+				.filter((q) =>
+					q.or(
+						q.eq(q.field("balancePreCheckDecision"), undefined),
+						q.eq(q.field("balancePreCheckDecision"), "proceed"),
+						q.and(
+							q.eq(q.field("balancePreCheckDecision"), "defer"),
+							q.or(
+								q.eq(q.field("balancePreCheckNextEvaluationAt"), undefined),
+								q.lte(q.field("balancePreCheckNextEvaluationAt"), asOf)
+							)
+						)
+					)
+				)
+				.collect()
+		).length;
+	},
+});
+
 /**
  * Idempotency check for the retry rule.
  * Returns the first retry-sourced plan entry that was rescheduled from the

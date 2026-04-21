@@ -5,6 +5,7 @@ import { internalAction } from "../../_generated/server";
 
 const DEFAULT_BATCH_SIZE = 25;
 const MAX_BATCH_SIZE = 100;
+const MAX_WAVES_PER_RUN = 500;
 
 function clampBatchSize(batchSize: number | undefined) {
 	return Math.max(1, Math.min(batchSize ?? DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE));
@@ -19,12 +20,16 @@ interface DuePlanEntriesSummary {
 	attemptCreatedCount: number;
 	attemptedCount: number;
 	batchSize: number;
+	drainedAllEligibleWork: boolean;
 	handoffFailureCount: number;
+	maxWavesReached: boolean;
 	noopCount: number;
 	notEligibleCount: number;
 	rejectedCount: number;
+	remainingEligibleCount: number;
 	requestedAt: number;
 	selectedCount: number;
+	wavesRun: number;
 }
 
 export const processDuePlanEntries = internalAction({
@@ -36,19 +41,11 @@ export const processDuePlanEntries = internalAction({
 	handler: async (ctx, args): Promise<DuePlanEntriesSummary> => {
 		const requestedAt = args.asOf ?? Date.now();
 		const batchSize = clampBatchSize(args.batchSize);
-		const dueEntries: Doc<"collectionPlanEntries">[] = await ctx.runQuery(
-			internal.payments.collectionPlan.queries.getDuePlannedEntries,
-			{
-				asOf: requestedAt,
-				limit: batchSize,
-				mortgageId: args.mortgageId,
-			}
-		);
 
 		const summary: DuePlanEntriesSummary = {
 			requestedAt,
 			batchSize,
-			selectedCount: dueEntries.length,
+			selectedCount: 0,
 			attemptedCount: 0,
 			attemptCreatedCount: 0,
 			alreadyExecutedCount: 0,
@@ -56,57 +53,97 @@ export const processDuePlanEntries = internalAction({
 			rejectedCount: 0,
 			noopCount: 0,
 			handoffFailureCount: 0,
+			wavesRun: 0,
+			drainedAllEligibleWork: true,
+			remainingEligibleCount: 0,
+			maxWavesReached: false,
 		};
 
-		for (const entry of dueEntries) {
-			summary.attemptedCount += 1;
-
-			try {
-				const result = await ctx.runAction(
-					internal.payments.collectionPlan.execution.executePlanEntry,
-					{
-						planEntryId: entry._id,
-						triggerSource: "system_scheduler",
-						requestedAt,
-						idempotencyKey: buildSchedulerExecutionIdempotencyKey(
-							`${entry._id}`
-						),
-						requestedByActorType: "system",
-						requestedByActorId: "collection-plan-runner",
-					}
-				);
-
-				switch (result.outcome) {
-					case "attempt_created":
-						summary.attemptCreatedCount += 1;
-						if (result.reasonCode === "transfer_handoff_failed") {
-							summary.handoffFailureCount += 1;
-						}
-						break;
-					case "already_executed":
-						summary.alreadyExecutedCount += 1;
-						break;
-					case "not_eligible":
-						summary.notEligibleCount += 1;
-						break;
-					case "rejected":
-						summary.rejectedCount += 1;
-						break;
-					case "noop":
-						summary.noopCount += 1;
-						break;
-					default:
-						break;
+		while (summary.wavesRun < MAX_WAVES_PER_RUN) {
+			const dueEntries: Doc<"collectionPlanEntries">[] = await ctx.runQuery(
+				internal.payments.collectionPlan.queries.getDuePlannedEntries,
+				{
+					asOf: requestedAt,
+					limit: batchSize,
+					mortgageId: args.mortgageId,
 				}
-			} catch (error) {
-				console.error(
-					"[collection-plan-runner] failed to execute due plan entry",
-					{
-						error,
-						planEntryId: `${entry._id}`,
-					}
-				);
+			);
+			if (dueEntries.length === 0) {
+				break;
 			}
+
+			summary.wavesRun += 1;
+			summary.selectedCount += dueEntries.length;
+
+			for (const entry of dueEntries) {
+				summary.attemptedCount += 1;
+
+				try {
+					const result = await ctx.runAction(
+						internal.payments.collectionPlan.execution.executePlanEntry,
+						{
+							planEntryId: entry._id,
+							triggerSource: "system_scheduler",
+							requestedAt,
+							idempotencyKey: buildSchedulerExecutionIdempotencyKey(
+								`${entry._id}`
+							),
+							requestedByActorType: "system",
+							requestedByActorId: "collection-plan-runner",
+						}
+					);
+
+					switch (result.outcome) {
+						case "attempt_created":
+							summary.attemptCreatedCount += 1;
+							if (result.reasonCode === "transfer_handoff_failed") {
+								summary.handoffFailureCount += 1;
+							}
+							break;
+						case "already_executed":
+							summary.alreadyExecutedCount += 1;
+							break;
+						case "not_eligible":
+							summary.notEligibleCount += 1;
+							break;
+						case "rejected":
+							summary.rejectedCount += 1;
+							break;
+						case "noop":
+							summary.noopCount += 1;
+							break;
+						default:
+							break;
+					}
+				} catch (error) {
+					console.error(
+						"[collection-plan-runner] failed to execute due plan entry",
+						{
+							error,
+							planEntryId: `${entry._id}`,
+						}
+					);
+				}
+			}
+
+			if (dueEntries.length < batchSize) {
+				break;
+			}
+		}
+
+		if (summary.wavesRun >= MAX_WAVES_PER_RUN) {
+			summary.remainingEligibleCount = await ctx.runQuery(
+				internal.payments.collectionPlan.queries.countDuePlannedEntries,
+				{
+					asOf: requestedAt,
+					mortgageId: args.mortgageId,
+				}
+			);
+			summary.maxWavesReached = summary.remainingEligibleCount > 0;
+			summary.drainedAllEligibleWork = summary.remainingEligibleCount === 0;
+		} else {
+			summary.drainedAllEligibleWork = true;
+			summary.remainingEligibleCount = 0;
 		}
 
 		console.info(
