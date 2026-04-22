@@ -5,13 +5,17 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	emptyPortfolioHistoricalSeriesFixture,
 	emptyPortfolioCommandCenterFixture,
 	portfolioCommandCenterFixture,
+	portfolioHistoricalSeriesFixture,
 	portfolioPaymentDetailFixture,
 	portfolioPositionDetailFixture,
+	portfolioTaxExportFixture,
 } from "#/components/lender/portfolio/fixtures";
 import { LenderPortfolioPage } from "#/components/lender/portfolio/LenderPortfolioPage";
 import {
@@ -55,6 +59,10 @@ vi.mock("convex/react", () => ({
 	),
 }));
 
+vi.mock("@workos/authkit-tanstack-react-start/client", () => ({
+	useAuth: vi.fn(),
+}));
+
 vi.mock("#/components/lender/portfolio/query-options", () => ({
 	lenderPortfolioCommandCenterQueryOptions: vi.fn(),
 	lenderPortfolioPaymentDetailQueryOptions: vi.fn(),
@@ -64,6 +72,52 @@ vi.mock("#/components/lender/portfolio/query-options", () => ({
 vi.mock("#/hooks/use-mobile", () => ({
 	useIsMobile: vi.fn(),
 }));
+
+const TEST_CHART_RECT = {
+	bottom: 320,
+	height: 320,
+	left: 0,
+	right: 960,
+	toJSON: () => undefined,
+	top: 0,
+	width: 960,
+	x: 0,
+	y: 0,
+} satisfies DOMRectReadOnly;
+
+class ResizeObserverMock {
+	constructor(private readonly callback: ResizeObserverCallback) {}
+
+	disconnect() {}
+	observe(target: Element) {
+		this.callback(
+			[
+				{
+					borderBoxSize: [],
+					contentBoxSize: [],
+					contentRect: TEST_CHART_RECT,
+					devicePixelContentBoxSize: [],
+					target,
+				} as ResizeObserverEntry,
+			],
+			this as never
+		);
+	}
+	unobserve() {}
+}
+
+vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+	() => TEST_CHART_RECT
+);
+Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+	configurable: true,
+	get: () => TEST_CHART_RECT.height,
+});
+Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+	configurable: true,
+	get: () => TEST_CHART_RECT.width,
+});
 
 afterEach(() => {
 	cleanup();
@@ -97,9 +151,21 @@ const ROOT_ROUTE_CONTEXT = {
 
 function renderPage({
 	initialSearch = DEFAULT_LENDER_PORTFOLIO_SEARCH,
+	leafStateOverrides = {
+		cockpit: {
+			historySeries: portfolioHistoricalSeriesFixture,
+			historyState: "ready" as const,
+		},
+		exportStrip: {
+			canExportTax: true,
+			exportContract: portfolioTaxExportFixture,
+			exportState: "ready" as const,
+		},
+	},
 	snapshot = portfolioCommandCenterFixture,
 }: {
 	initialSearch?: LenderPortfolioSearchState;
+	leafStateOverrides?: Parameters<typeof LenderPortfolioPage>[0]["leafStateOverrides"];
 	snapshot?: typeof portfolioCommandCenterFixture;
 }) {
 	let search = initialSearch;
@@ -107,6 +173,7 @@ function renderPage({
 
 	const renderPageNode = () => (
 		<LenderPortfolioPage
+			leafStateOverrides={leafStateOverrides}
 			portalId={PORTAL_ID}
 			search={search}
 			setSearch={(updater) => {
@@ -186,9 +253,19 @@ describe("lender portfolio route", () => {
 		);
 		vi.mocked(useNavigate).mockReturnValue(navigate);
 		vi.mocked(useIsMobile).mockReturnValue(false);
+		vi.mocked(useAuth).mockReturnValue({
+			loading: false,
+			permissions: ["portfolio:export_tax", "portfolio:view"],
+		} as never);
 		vi.mocked(lenderPortfolioCommandCenterQueryOptions).mockReturnValue(
 			COMMAND_CENTER_QUERY_OPTIONS as never
 		);
+		vi.mocked(useQuery).mockReturnValue({
+			data: portfolioHistoricalSeriesFixture,
+			error: null,
+			isError: false,
+			isPending: false,
+		} as never);
 		vi.mocked(useSuspenseQuery).mockReturnValue({
 			data: portfolioCommandCenterFixture,
 		} as never);
@@ -197,7 +274,7 @@ describe("lender portfolio route", () => {
 		expect(screen.getByTestId("authenticated-shell")).toBeTruthy();
 		expect(screen.getByTestId("auth-loading-shell")).toBeTruthy();
 		expect(screen.getByTestId("lender-portfolio-shell")).toBeTruthy();
-		expect(screen.getByTestId("cockpit-slot-host")).toBeTruthy();
+		expect(screen.getByTestId("portfolio-cockpit")).toBeTruthy();
 		expect(screen.getAllByTestId("sticky-rail-slot-host")).toHaveLength(2);
 		expect(screen.getByTestId("positions-ledger")).toBeTruthy();
 		expect(screen.getByTestId("payment-activity-ledger")).toBeTruthy();
@@ -212,10 +289,24 @@ describe("lender portfolio page", () => {
 	it("renders the empty-state-safe command-center shell", () => {
 		vi.mocked(useIsMobile).mockReturnValue(false);
 
-		renderPage({ snapshot: emptyPortfolioCommandCenterFixture });
+		renderPage({
+			leafStateOverrides: {
+				cockpit: {
+					historySeries: emptyPortfolioHistoricalSeriesFixture,
+					historyState: "ready",
+				},
+				exportStrip: {
+					canExportTax: false,
+					exportContract: null,
+					exportState: "forbidden",
+				},
+			},
+			snapshot: emptyPortfolioCommandCenterFixture,
+		});
 
 		expect(screen.getByText("No active positions yet")).toBeTruthy();
 		expect(screen.getByText("No payment activity yet")).toBeTruthy();
+		expect(screen.getByText("No historical trend data yet")).toBeTruthy();
 		expect(screen.getByTestId("suggested-slot-host")).toBeTruthy();
 		expect(screen.getAllByTestId("sticky-rail-slot-host")).toHaveLength(2);
 	});

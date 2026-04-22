@@ -74,3 +74,38 @@ export function formatPortfolioPercent(value: number | null | undefined) {
 		maximumFractionDigits: 1,
 	})}%`;
 }
+
+export function formatPortfolioRate(value: number | null | undefined) {
+	if (typeof value !== "number") {
+		return "Unavailable";
+	}
+
+	return `${value.toLocaleString("en-CA", {
+		maximumFractionDigits: 2,
+	})}%`;
+}
+
+export function formatPortfolioDateTime(value: number | null | undefined) {
+	if (typeof value !== "number") {
+		return "Unavailable";
+	}
+
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) {
+		return "Unavailable";
+	}
+
+	return parsed.toLocaleString("en-CA", {
+		day: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+		month: "short",
+		year: "numeric",
+	});
+}
+
+export function formatPortfolioDataCompleteness(
+	value: string | null | undefined
+) {
+	return formatPortfolioEnumLabel(value);
+}

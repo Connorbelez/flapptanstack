@@ -1,7 +1,9 @@
 import type {
 	PortfolioCommandCenterSnapshot,
+	PortfolioHistoricalSeries,
 	PortfolioPaymentDetail,
 	PortfolioPositionDetail,
+	PortfolioTaxExport,
 } from "./portfolio-types";
 
 export const portfolioCommandCenterFixture: PortfolioCommandCenterSnapshot = {
@@ -276,6 +278,91 @@ export const emptyPortfolioCommandCenterFixture: PortfolioCommandCenterSnapshot 
 			rows: [],
 		},
 	};
+
+export const portfolioHistoricalSeriesFixture: PortfolioHistoricalSeries = {
+	asOfDate: "2026-04-21",
+	dataCompleteness: "live_fallback",
+	generatedAt: 1_710_000_500_000,
+	liveFallbackPeriodLabel: "Apr 2026",
+	points: [
+		{
+			cumulativeIncome: 4200,
+			dataCompleteness: "snapshot_complete",
+			periodEndDate: "2026-01-31",
+			periodIncome: 1050,
+			periodLabel: "Jan 2026",
+			periodSource: "monthly_snapshot",
+			projectedAggregateEarnings: 46_800,
+			totalFractions: 10,
+			totalInvestedValue: 330_000,
+			totalPositions: 2,
+		},
+		{
+			cumulativeIncome: 8900,
+			dataCompleteness: "snapshot_complete",
+			periodEndDate: "2026-02-28",
+			periodIncome: 4700,
+			periodLabel: "Feb 2026",
+			periodSource: "monthly_snapshot",
+			projectedAggregateEarnings: 46_100,
+			totalFractions: 10,
+			totalInvestedValue: 346_000,
+			totalPositions: 2,
+		},
+		{
+			cumulativeIncome: 15_300,
+			dataCompleteness: "snapshot_complete",
+			periodEndDate: "2026-03-31",
+			periodIncome: 6400,
+			periodLabel: "Mar 2026",
+			periodSource: "monthly_snapshot",
+			projectedAggregateEarnings: 45_900,
+			totalFractions: 10,
+			totalInvestedValue: 357_000,
+			totalPositions: 2,
+		},
+		{
+			cumulativeIncome: 18_100,
+			dataCompleteness: "live_fallback",
+			periodEndDate: "2026-04-21",
+			periodIncome: 2800,
+			periodLabel: "Apr 2026",
+			periodSource: "live_fallback",
+			projectedAggregateEarnings: 45_400,
+			totalFractions: 10,
+			totalInvestedValue: 360_000,
+			totalPositions: 2,
+		},
+	],
+	snapshotBackedThrough: "2026-03-31",
+};
+
+export const emptyPortfolioHistoricalSeriesFixture: PortfolioHistoricalSeries =
+	{
+		asOfDate: "2026-04-21",
+		dataCompleteness: "live_fallback",
+		generatedAt: 1_710_000_500_000,
+		liveFallbackPeriodLabel: "Apr 2026",
+		points: [],
+	};
+
+export const portfolioTaxExportFixture: PortfolioTaxExport = {
+	csv: "period_label,snapshot_date,mortgage_id\n2026 year-to-date,2026-04-21,mortgage_king",
+	dataCompleteness: "live_fallback",
+	filename: "lender-portfolio-tax-export-2026-ytd.csv",
+	generatedAt: 1_710_000_500_000,
+	isAvailable: true,
+	periodLabel: "2026 year-to-date",
+};
+
+export const unavailablePortfolioTaxExportFixture: PortfolioTaxExport = {
+	dataCompleteness: "live_fallback",
+	generatedAt: 1_710_000_500_000,
+	isAvailable: false,
+	periodLabel: "2026 year-to-date",
+	unavailableReason:
+		"No lender interest income is available for 2026 year-to-date.",
+};
 
 export const portfolioPositionDetailFixture: PortfolioPositionDetail = {
 	generatedAt: 1_710_000_500_000,
