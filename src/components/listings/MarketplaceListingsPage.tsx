@@ -45,7 +45,7 @@ function groupItemsForMobile(items: readonly MarketplaceListingCardItem[]) {
 
 interface MarketplaceListingsPageProps {
 	description?: string;
-	detailRoute?: "/listings/$listingId" | "/lender/listings/$listingId";
+	detailRoute?: "/listings/$listingId";
 	eyebrow?: string;
 	heading?: string;
 	search: MarketplaceListingsSearchState;

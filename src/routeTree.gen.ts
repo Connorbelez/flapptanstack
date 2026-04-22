@@ -28,7 +28,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ListingsIndexRouteImport } from './routes/listings/index'
 import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
 import { Route as ListingsListingIdRouteImport } from './routes/listings/$listingId'
-import { Route as LenderListingsRouteImport } from './routes/lender.listings'
 import { Route as LenderDealsRouteImport } from './routes/lender.deals'
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
 import { Route as E2eSessionRouteImport } from './routes/e2e/session'
@@ -91,7 +90,6 @@ import { Route as DemoBrokerWhitelabelIndexRouteImport } from './routes/demo/bro
 import { Route as DemoAuditTraceabilityIndexRouteImport } from './routes/demo/audit-traceability/index'
 import { Route as DemoAmpsIndexRouteImport } from './routes/demo/amps/index'
 import { Route as AdminDocumentEngineIndexRouteImport } from './routes/admin.document-engine.index'
-import { Route as LenderListingsListingIdRouteImport } from './routes/lender.listings.$listingId'
 import { Route as LenderDealsDealIdRouteImport } from './routes/lender.deals.$dealId'
 import { Route as DemoRbacAuthRolesRouteImport } from './routes/demo/rbac-auth/roles'
 import { Route as DemoRbacAuthOnboardingRouteImport } from './routes/demo/rbac-auth/onboarding'
@@ -241,11 +239,6 @@ const ListingsListingIdRoute = ListingsListingIdRouteImport.update({
   id: '/$listingId',
   path: '/$listingId',
   getParentRoute: () => ListingsRouteRoute,
-} as any)
-const LenderListingsRoute = LenderListingsRouteImport.update({
-  id: '/listings',
-  path: '/listings',
-  getParentRoute: () => LenderRouteRoute,
 } as any)
 const LenderDealsRoute = LenderDealsRouteImport.update({
   id: '/deals',
@@ -569,11 +562,6 @@ const AdminDocumentEngineIndexRoute =
     path: '/',
     getParentRoute: () => AdminDocumentEngineRoute,
   } as any)
-const LenderListingsListingIdRoute = LenderListingsListingIdRouteImport.update({
-  id: '/$listingId',
-  path: '/$listingId',
-  getParentRoute: () => LenderListingsRoute,
-} as any)
 const LenderDealsDealIdRoute = LenderDealsDealIdRouteImport.update({
   id: '/$dealId',
   path: '/$dealId',
@@ -943,7 +931,6 @@ export interface FileRoutesByFullPath {
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
-  '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/listings/': typeof ListingsIndexRoute
@@ -994,7 +981,6 @@ export interface FileRoutesByFullPath {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
-  '/lender/listings/$listingId': typeof LenderListingsListingIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
   '/demo/amps/': typeof DemoAmpsIndexRoute
   '/demo/audit-traceability/': typeof DemoAuditTraceabilityIndexRoute
@@ -1071,7 +1057,6 @@ export interface FileRoutesByTo {
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
-  '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/listings': typeof ListingsIndexRoute
@@ -1121,7 +1106,6 @@ export interface FileRoutesByTo {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
-  '/lender/listings/$listingId': typeof LenderListingsListingIdRoute
   '/admin/document-engine': typeof AdminDocumentEngineIndexRoute
   '/demo/amps': typeof DemoAmpsIndexRoute
   '/demo/audit-traceability': typeof DemoAuditTraceabilityIndexRoute
@@ -1210,7 +1194,6 @@ export interface FileRoutesById {
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
-  '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/listings/': typeof ListingsIndexRoute
@@ -1261,7 +1244,6 @@ export interface FileRoutesById {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
-  '/lender/listings/$listingId': typeof LenderListingsListingIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
   '/demo/amps/': typeof DemoAmpsIndexRoute
   '/demo/audit-traceability/': typeof DemoAuditTraceabilityIndexRoute
@@ -1351,7 +1333,6 @@ export interface FileRouteTypes {
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
-    | '/lender/listings'
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/listings/'
@@ -1402,7 +1383,6 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lender/deals/$dealId'
-    | '/lender/listings/$listingId'
     | '/admin/document-engine/'
     | '/demo/amps/'
     | '/demo/audit-traceability/'
@@ -1479,7 +1459,6 @@ export interface FileRouteTypes {
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
-    | '/lender/listings'
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/listings'
@@ -1529,7 +1508,6 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lender/deals/$dealId'
-    | '/lender/listings/$listingId'
     | '/admin/document-engine'
     | '/demo/amps'
     | '/demo/audit-traceability'
@@ -1617,7 +1595,6 @@ export interface FileRouteTypes {
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
-    | '/lender/listings'
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/listings/'
@@ -1668,7 +1645,6 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lender/deals/$dealId'
-    | '/lender/listings/$listingId'
     | '/admin/document-engine/'
     | '/demo/amps/'
     | '/demo/audit-traceability/'
@@ -1880,13 +1856,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/listings/$listingId'
       preLoaderRoute: typeof ListingsListingIdRouteImport
       parentRoute: typeof ListingsRouteRoute
-    }
-    '/lender/listings': {
-      id: '/lender/listings'
-      path: '/listings'
-      fullPath: '/lender/listings'
-      preLoaderRoute: typeof LenderListingsRouteImport
-      parentRoute: typeof LenderRouteRoute
     }
     '/lender/deals': {
       id: '/lender/deals'
@@ -2321,13 +2290,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/document-engine/'
       preLoaderRoute: typeof AdminDocumentEngineIndexRouteImport
       parentRoute: typeof AdminDocumentEngineRoute
-    }
-    '/lender/listings/$listingId': {
-      id: '/lender/listings/$listingId'
-      path: '/$listingId'
-      fullPath: '/lender/listings/$listingId'
-      preLoaderRoute: typeof LenderListingsListingIdRouteImport
-      parentRoute: typeof LenderListingsRoute
     }
     '/lender/deals/$dealId': {
       id: '/lender/deals/$dealId'
@@ -2876,26 +2838,12 @@ const LenderDealsRouteWithChildren = LenderDealsRoute._addFileChildren(
   LenderDealsRouteChildren,
 )
 
-interface LenderListingsRouteChildren {
-  LenderListingsListingIdRoute: typeof LenderListingsListingIdRoute
-}
-
-const LenderListingsRouteChildren: LenderListingsRouteChildren = {
-  LenderListingsListingIdRoute: LenderListingsListingIdRoute,
-}
-
-const LenderListingsRouteWithChildren = LenderListingsRoute._addFileChildren(
-  LenderListingsRouteChildren,
-)
-
 interface LenderRouteRouteChildren {
   LenderDealsRoute: typeof LenderDealsRouteWithChildren
-  LenderListingsRoute: typeof LenderListingsRouteWithChildren
 }
 
 const LenderRouteRouteChildren: LenderRouteRouteChildren = {
   LenderDealsRoute: LenderDealsRouteWithChildren,
-  LenderListingsRoute: LenderListingsRouteWithChildren,
 }
 
 const LenderRouteRouteWithChildren = LenderRouteRoute._addFileChildren(

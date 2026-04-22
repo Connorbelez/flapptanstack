@@ -172,7 +172,7 @@ describe("root route blocked-host handling", () => {
 					},
 					setPortalCacheScope: vi.fn(),
 				},
-				location: { pathname: "/lender/listings" },
+				location: { pathname: "/listings" },
 			} as never)
 		).rejects.toMatchObject({
 			options: {
