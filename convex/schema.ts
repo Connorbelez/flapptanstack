@@ -573,6 +573,7 @@ export default defineSchema({
 		totalInvestedValue: v.number(),
 		periodIncome: v.number(),
 		cumulativeIncome: v.number(),
+		projectedAggregateEarnings: v.number(),
 		positions: v.array(
 			v.object({
 				mortgageId: v.string(),
@@ -581,6 +582,7 @@ export default defineSchema({
 				investedValue: v.number(),
 				periodIncome: v.number(),
 				cumulativeIncome: v.number(),
+				projectedAggregateEarnings: v.number(),
 				mortgageStatus: v.string(),
 			})
 		),

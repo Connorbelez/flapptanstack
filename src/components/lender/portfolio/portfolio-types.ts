@@ -60,3 +60,14 @@ export type PortfolioPositionDetail = FunctionReturnType<
 export type PortfolioPaymentDetail = FunctionReturnType<
 	typeof api.portfolio.queries.getLenderPortfolioPaymentDetail
 >;
+
+export type PortfolioHistoricalSeries = FunctionReturnType<
+	typeof api.portfolio.queries.getLenderPortfolioHistoricalSeries
+>;
+
+export type PortfolioTaxExport = FunctionReturnType<
+	typeof api.portfolio.queries.getLenderPortfolioTaxExport
+>;
+
+export type PortfolioAsyncState = "error" | "loading" | "ready";
+export type PortfolioExportAsyncState = PortfolioAsyncState | "forbidden";
