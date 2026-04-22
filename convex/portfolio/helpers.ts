@@ -7,16 +7,16 @@ import { getAccountLenderId } from "../ledger/accountOwnership";
 import { getPostedBalance } from "../ledger/accounts";
 import { TOTAL_SUPPLY } from "../ledger/constants";
 import { unixMsToBusinessDate } from "../lib/businessDates";
-import {
-	clampMarketplaceFiltersToLenderConstraints,
-	loadLenderFilterConstraint,
-} from "../listings/portalVisibility";
 import { listMarketplaceListingsSnapshot } from "../listings/marketplace";
 import {
 	deriveMarketplacePropertyType,
 	getHeroImageUrl,
 	lienPositionToMortgageType,
 } from "../listings/marketplaceShared";
+import {
+	clampMarketplaceFiltersToLenderConstraints,
+	loadLenderFilterConstraint,
+} from "../listings/portalVisibility";
 import { getAvailableLenderPayableBalanceImpl } from "../payments/cashLedger/queries";
 import type { PortalLenderContext } from "../portals/middleware";
 import {
