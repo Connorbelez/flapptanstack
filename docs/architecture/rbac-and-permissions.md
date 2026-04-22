@@ -112,10 +112,18 @@
 
 - `onboarding:access`
 
+## Onboarding Permission Contract
+
+- `onboarding:review` is the reviewer-decision permission for approving or rejecting individual onboarding requests and later broker-onboarding verification decisions.
+- `onboarding:manage` is the operational permission for onboarding queue, history, bulk-admin, and repair surfaces. It stays explicit in the runtime catalog even when no non-admin role receives it yet.
+- Later onboarding slices may consume both slugs without re-deciding their semantics. `onboarding:review` is not a synonym for `onboarding:manage`, and `admin:access` does not erase the distinction in code or docs.
+
 ## Additional WorkOS Permissions To Provision
 
 These permissions should exist in the WorkOS environment even if no non-admin role receives them yet. The point is to keep the WorkOS permission catalog aligned with the codebase while the enforcement pass is underway.
 
+- `onboarding:review`
+- `onboarding:manage`
 - `payment:view`
 - `payment:manage`
 - `payment:retry`
@@ -148,7 +156,6 @@ These permissions are referenced in repo analysis, but they are not yet approved
 - `documents:sensitive_access`
 - `mortgage:transition`
 - `obligation:manage`
-- `onboarding:manage`
 
 ## Delivery Sequence
 
