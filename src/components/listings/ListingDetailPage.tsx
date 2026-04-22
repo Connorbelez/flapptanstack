@@ -226,6 +226,9 @@ export function ListingDetailPage({
 	}
 
 	function handleLockFeeCheckout() {
+		if (checkoutSubmitted) {
+			return;
+		}
 		setCheckoutSubmitted(true);
 	}
 
@@ -416,10 +419,11 @@ export function ListingDetailPage({
 						<CheckoutCard
 							calculatedInvestment={calculatedInvestment}
 							checkout={checkout}
+							checkoutSubmitted={checkoutSubmitted}
 							ctaLabel={ctaLabel}
-							disableSubmit={checkoutSubmitted}
 							fractions={effectiveFractions}
 							listingTitle={listing.title}
+							onCheckout={handleLockFeeCheckout}
 							selectedLawyerLabel={selectedLawyer?.label}
 						/>
 					</ListingScrollReveal>
@@ -786,11 +790,12 @@ export function ListingDetailPage({
 							<CheckoutCard
 								calculatedInvestment={calculatedInvestment}
 								checkout={checkout}
+								checkoutSubmitted={checkoutSubmitted}
 								className="w-full px-5 py-5"
 								ctaLabel={ctaLabel}
-								disableSubmit={checkoutSubmitted}
 								fractions={effectiveFractions}
 								listingTitle={listing.title}
+								onCheckout={handleLockFeeCheckout}
 								selectedLawyerLabel={selectedLawyer?.label}
 							/>
 						</div>
@@ -1250,20 +1255,22 @@ function InvestmentSummaryCard({
 function CheckoutCard({
 	calculatedInvestment,
 	checkout,
+	checkoutSubmitted,
 	className,
 	ctaLabel,
-	disableSubmit = false,
 	fractions,
 	listingTitle,
+	onCheckout,
 	selectedLawyerLabel,
 }: {
 	calculatedInvestment: number;
 	checkout: NonNullable<ListingDetailData["checkout"]>;
+	checkoutSubmitted: boolean;
 	className?: string;
 	ctaLabel: string;
-	disableSubmit?: boolean;
 	fractions: number;
 	listingTitle: string;
+	onCheckout: () => void;
 	selectedLawyerLabel?: string;
 }) {
 	const idBase = useId();
@@ -1329,7 +1336,7 @@ function CheckoutCard({
 
 			<Button
 				className="mt-6 h-11 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
-				disabled={disableSubmit}
+				disabled={checkoutSubmitted}
 				onClick={onCheckout}
 				type="button"
 			>
