@@ -267,7 +267,7 @@ async function insertPortalLenderFixture(t: ReturnType<typeof createHarness>) {
 		const portalId = await ctx.db.insert("portals", {
 			brokerId,
 			createdAt: 1_710_000_500_000,
-			defaultPostAuthPath: "/lender/listings",
+			defaultPostAuthPath: "/listings",
 			isPublished: true,
 			landingPageId: undefined,
 			localHost: "meridian.localhost:3000",
