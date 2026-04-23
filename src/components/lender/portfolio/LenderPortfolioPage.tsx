@@ -362,15 +362,17 @@ function ConnectedPortfolioExportStrip({
 					? "error"
 					: "ready"
 			: "forbidden";
+	const visibleExportContract =
+		exportState === "ready" ? (exportQuery.data ?? null) : null;
+	const visibleExportErrorMessage =
+		exportState === "error" && exportQuery.error instanceof Error
+			? exportQuery.error.message
+			: undefined;
 
 	return (
 		<PortfolioExportStrip
-			exportContract={exportQuery.data ?? null}
-			exportErrorMessage={
-				exportQuery.error instanceof Error
-					? exportQuery.error.message
-					: undefined
-			}
+			exportContract={visibleExportContract}
+			exportErrorMessage={visibleExportErrorMessage}
 			exportState={exportState}
 			limitsStrip={snapshot.limitsStrip}
 		/>
