@@ -98,7 +98,21 @@ import {
 	brokerOnboardingReviewEntryTypeValidator,
 	brokerOnboardingVerificationReasonCodeValidator,
 	brokerOnboardingVerificationSnapshotValidator,
+	fsraImportRunStatusValidator,
+	fsraImportTriggerValidator,
+	fsraLicenseStatusValidator,
+	fsraLicenseTypeValidator,
+	fsraRawRecordValidator,
+	fsraSourceRecordFields,
 } from "./onboarding/brokerApplication/validators";
+import {
+	fsraImportRunStatusValidator,
+	fsraImportTriggerValidator,
+	fsraLicenseStatusValidator,
+	fsraLicenseTypeValidator,
+	fsraRawRecordValidator,
+	fsraSourceRecordFields,
+} from "./onboarding/verification/validators";
 import {
 	balancePreCheckDecisionValidator,
 	balancePreCheckReasonCodeValidator,
@@ -648,6 +662,51 @@ export default defineSchema({
 		.index("by_application", ["applicationId"])
 		.index("by_application_created_at", ["applicationId", "createdAt"])
 		.index("by_application_entry_type", ["applicationId", "entryType"]),
+
+	fsraLicenses: defineTable({
+		licenseNumber: v.string(),
+		licenseeFullName: v.string(),
+		brokerageNumber: v.optional(v.string()),
+		brokerageName: v.optional(v.string()),
+		licenseType: fsraLicenseTypeValidator,
+		status: fsraLicenseStatusValidator,
+		province: v.string(),
+		lastVerifiedAt: v.number(),
+		sourceImportedAt: v.number(),
+		rawRecord: fsraRawRecordValidator,
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_license_number", ["licenseNumber"])
+		.index("by_brokerage_number", ["brokerageNumber"])
+		.index("by_province_license_number", ["province", "licenseNumber"])
+		.index("by_province_brokerage_number", ["province", "brokerageNumber"])
+		.index("by_source_imported_at", ["sourceImportedAt"]),
+
+	fsraSourceRows: defineTable({
+		...fsraSourceRecordFields,
+		sourceSuppliedAt: v.number(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_license_number", ["licenseNumber"])
+		.index("by_province_license_number", ["province", "licenseNumber"])
+		.index("by_source_supplied_at", ["sourceSuppliedAt"]),
+
+	fsraImportRuns: defineTable({
+		status: fsraImportRunStatusValidator,
+		trigger: fsraImportTriggerValidator,
+		startedAt: v.number(),
+		finishedAt: v.optional(v.number()),
+		recordCount: v.number(),
+		createdCount: v.number(),
+		updatedCount: v.number(),
+		failedCount: v.number(),
+		errorMessage: v.optional(v.string()),
+	})
+		.index("by_started_at", ["startedAt"])
+		.index("by_status", ["status", "startedAt"])
+		.index("by_trigger_started_at", ["trigger", "startedAt"]),
 
 	onboardingRequests: defineTable({
 		userId: v.id("users"),

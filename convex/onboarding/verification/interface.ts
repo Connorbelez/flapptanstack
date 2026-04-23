@@ -1,5 +1,6 @@
 import type {
 	BrokerOnboardingApprovalRecommendation,
+	BrokerOnboardingBrokerageCheck,
 	BrokerOnboardingEmailVerificationCheck,
 	BrokerOnboardingIdentityVerificationCheck,
 	BrokerOnboardingPersonNameInput,
@@ -14,6 +15,8 @@ import type {
 } from "./config";
 
 export interface RegulatorDirectoryLookupRequest {
+	expectedBrokerageName?: string | null;
+	expectedBrokerageNumber?: string | null;
 	licenseNumber: string;
 	province: string;
 	requestedAt: number;
@@ -21,6 +24,15 @@ export interface RegulatorDirectoryLookupRequest {
 }
 
 export type RegulatorDirectoryLookupResult = BrokerOnboardingRegulatorCheck;
+
+export interface RegulatorDirectoryBrokerageLookupRequest {
+	brokerageNumber: string;
+	province: string;
+	requestedAt: number;
+}
+
+export type RegulatorDirectoryBrokerageLookupResult =
+	BrokerOnboardingBrokerageCheck;
 
 export interface IdentityVerificationStartRequest {
 	applicantName: BrokerOnboardingPersonNameInput;
@@ -80,6 +92,9 @@ export interface TrustedIdentityVerificationGateDecision {
 }
 
 export interface RegulatorDirectoryProvider {
+	lookupBrokerage(
+		request: RegulatorDirectoryBrokerageLookupRequest
+	): Promise<RegulatorDirectoryBrokerageLookupResult>;
 	lookupLicense(
 		request: RegulatorDirectoryLookupRequest
 	): Promise<RegulatorDirectoryLookupResult>;
