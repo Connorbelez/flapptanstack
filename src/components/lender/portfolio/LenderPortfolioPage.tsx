@@ -29,6 +29,10 @@ import {
 	buildPortfolioDetailSearch,
 	clearPortfolioDetailSelection,
 } from "./search";
+import {
+	SuggestedOpportunities,
+	type SuggestedOpportunitiesState,
+} from "./suggested-opportunities";
 
 const COCKPIT_HISTORY_MONTHS = 6;
 
@@ -52,6 +56,7 @@ export interface LenderPortfolioPageProps {
 	search: LenderPortfolioSearchState;
 	setSearch: (updater: PortfolioSearchUpdater) => void;
 	snapshot: PortfolioCommandCenterSnapshot;
+	suggestedOpportunitiesState?: SuggestedOpportunitiesState;
 }
 
 export function LenderPortfolioPage({
@@ -60,6 +65,7 @@ export function LenderPortfolioPage({
 	search,
 	setSearch,
 	snapshot,
+	suggestedOpportunitiesState = "ready",
 }: LenderPortfolioPageProps) {
 	const positionRows = applyPortfolioPositionSearch(
 		snapshot.positions.rows,
@@ -243,33 +249,19 @@ export function LenderPortfolioPage({
 					</PortfolioSlotHost>
 				}
 				suggestedOpportunitiesSlot={
-					<PortfolioSlotHost
-						dataTestId="suggested-slot-host"
-						description="The route owns the bottom-of-page host and keeps suggestion counts visible without taking over the ENG-314 listing cards."
-						eyebrow="Suggested opportunities slot"
-						summary={`${snapshot.suggestedOpportunities.rows.length} suggestion-ready rows`}
-						title="Suggested opportunities host"
-					>
-						<div className="grid gap-3 md:grid-cols-2">
-							<div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-								<p className="font-medium text-sm">Explanation tags ready</p>
-								<p className="mt-2 text-muted-foreground text-sm leading-6">
-									Already-owned exclusions:{" "}
-									{snapshot.suggestedOpportunities.excludedOwnedMortgageCount}.
-									Downstream UI can render contract-backed reasoning tags
-									without recomputing them in React.
-								</p>
-							</div>
-							<div className="rounded-lg border border-border/70 border-dashed bg-background px-4 py-3">
-								<p className="font-medium text-sm">Placement reserved</p>
-								<p className="mt-2 text-muted-foreground text-sm leading-6">
-									Suggested opportunities remain anchored below the export strip
-									so positions and payment activity stay ahead of prospecting
-									work.
-								</p>
-							</div>
-						</div>
-					</PortfolioSlotHost>
+					<SuggestedOpportunities
+						excludedOwnedMortgageCount={
+							snapshot.suggestedOpportunities.excludedOwnedMortgageCount
+						}
+						generatedAt={snapshot.generatedAt}
+						hasBrokerConstraints={snapshot.limitsStrip.hasConstraints}
+						hasPositions={snapshot.positions.rows.length > 0}
+						rows={snapshot.suggestedOpportunities.rows}
+						state={suggestedOpportunitiesState}
+						unavailableReason={
+							snapshot.suggestedOpportunities.unavailableReason
+						}
+					/>
 				}
 			/>
 

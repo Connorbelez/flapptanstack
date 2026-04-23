@@ -564,6 +564,7 @@ describe("portfolio portal queries", () => {
 		expect(result.positions.rows).toEqual([]);
 		expect(result.paymentActivity.rows).toEqual([]);
 		expect(result.suggestedOpportunities.rows).toEqual([]);
+		expect(result.suggestedOpportunities.availabilityState).toBe("ready");
 		expect(result.emptyStates).toEqual({
 			hasActions: false,
 			hasPayments: false,
@@ -620,6 +621,7 @@ describe("portfolio portal queries", () => {
 				allowedPropertyTypes: ["Detached Home"],
 			},
 		});
+		expect(result.suggestedOpportunities.availabilityState).toBe("ready");
 		expect(result.suggestedOpportunities.excludedOwnedMortgageCount).toBe(1);
 		expect(
 			result.suggestedOpportunities.rows.map((row) => row.listingId)
@@ -674,6 +676,7 @@ describe("portfolio portal queries", () => {
 			searchQuery: undefined,
 		});
 		expect(result.suggestedOpportunities).toEqual({
+			availabilityState: "ready",
 			excludedOwnedMortgageCount: 0,
 			rows: [],
 		});
@@ -726,6 +729,7 @@ describe("portfolio portal queries", () => {
 		);
 
 		expect(result.suggestedOpportunities.excludedOwnedMortgageCount).toBe(25);
+		expect(result.suggestedOpportunities.availabilityState).toBe("ready");
 		expect(
 			result.suggestedOpportunities.rows.map((row) => row.listingId)
 		).toEqual([
