@@ -283,6 +283,46 @@ describe("lender portfolio route", () => {
 		);
 		expect(useSuspenseQuery).toHaveBeenCalledWith(COMMAND_CENTER_QUERY_OPTIONS);
 	});
+
+	it("hides cached export metadata when the viewer loses export permission", () => {
+		vi.mocked(useAuth).mockReturnValue({
+			loading: false,
+			permissions: ["portfolio:view"],
+		} as never);
+		vi.mocked(useQuery)
+			.mockReturnValueOnce({
+				data: portfolioHistoricalSeriesFixture,
+				error: null,
+				isError: false,
+				isPending: false,
+			} as never)
+			.mockReturnValueOnce({
+				data: portfolioTaxExportFixture,
+				error: null,
+				isError: false,
+				isPending: false,
+			} as never);
+
+		render(
+			<LenderPortfolioPage
+				portalId={PORTAL_ID}
+				search={DEFAULT_LENDER_PORTFOLIO_SEARCH}
+				setSearch={() => undefined}
+				snapshot={portfolioCommandCenterFixture}
+			/>
+		);
+
+		expect(screen.getByText("CSV export unavailable for this role")).toBeTruthy();
+		expect(screen.queryByText("2026 year-to-date")).toBeNull();
+		expect(
+			screen.queryByText("lender-portfolio-tax-export-2026-ytd.csv")
+		).toBeNull();
+		expect(
+			(screen.getByRole("button", {
+				name: /download csv/i,
+			}) as HTMLButtonElement).disabled
+		).toBe(true);
+	});
 });
 
 describe("lender portfolio page", () => {
