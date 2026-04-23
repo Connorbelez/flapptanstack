@@ -1,3 +1,9 @@
+import {
+	formatDecileAvailability,
+	formatDecileCountForDisplay,
+	ledgerUnitsToDecilesExact,
+	wholeDecilesFromLedger,
+} from "#/lib/mortgage-ownership-display";
 import type {
 	ListingBadge,
 	ListingBorrowerSignal,
@@ -398,10 +404,15 @@ export function buildMarketplaceListingDetailModel(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>
 ): ListingDetailData {
 	const latestAppraisal = detail.appraisals[0];
-	const perFractionAmount =
-		detail.investment.totalFractions > 0
-			? Math.round(detail.listing.principal / detail.investment.totalFractions)
-			: detail.listing.principal;
+	const availableLedger = detail.investment.availableFractions;
+	const totalLedger = detail.investment.totalFractions;
+	const totalDecilesExact = ledgerUnitsToDecilesExact(totalLedger);
+	const totalDecilesForPricing = Math.max(totalDecilesExact, 1);
+	const perFractionAmount = Math.round(
+		detail.listing.principal / totalDecilesForPricing
+	);
+	const availableDecilesWhole = wholeDecilesFromLedger(availableLedger);
+	const totalDecilesWhole = wholeDecilesFromLedger(totalLedger);
 	const encumbranceCount = detail.encumbrances.length;
 	const positionLabel = ordinal(detail.listing.lienPosition);
 
@@ -449,8 +460,8 @@ export function buildMarketplaceListingDetailModel(
 			{ label: "Term", value: `${detail.listing.termMonths} months` },
 			{
 				label: "Available",
-				tone: detail.investment.availableFractions > 0 ? "positive" : "warning",
-				value: `${detail.investment.availableFractions}/${detail.investment.totalFractions} frac.`,
+				tone: availableLedger > 0 ? "positive" : "warning",
+				value: `${formatDecileCountForDisplay(ledgerUnitsToDecilesExact(availableLedger))} / ${formatDecileCountForDisplay(ledgerUnitsToDecilesExact(totalLedger))} at 10%`,
 			},
 			{
 				label: "Prior Charges",
@@ -467,26 +478,20 @@ export function buildMarketplaceListingDetailModel(
 		heroImages: buildHeroImages(detail),
 		id: detail.listing.id,
 		investment: {
-			availabilityLabel: `${detail.investment.availableFractions.toLocaleString("en-CA")} of ${detail.investment.totalFractions.toLocaleString("en-CA")} available`,
+			availabilityLabel: formatDecileAvailability(availableLedger, totalLedger),
 			availabilityValue:
-				detail.investment.totalFractions > 0
-					? Math.round(
-							(detail.investment.availableFractions /
-								detail.investment.totalFractions) *
-								100
-						)
-					: 0,
-			availableFractions: detail.investment.availableFractions,
+				totalLedger > 0 ? Math.round((availableLedger / totalLedger) * 100) : 0,
+			availableFractions: availableDecilesWhole,
 			investorCountLabel:
 				detail.investment.investorCount > 0
 					? `${detail.investment.investorCount} investors currently committed`
 					: "No investors have locked fractions yet.",
 			lockedPercent: detail.investment.lockedPercent,
-			minimumFractions: detail.investment.availableFractions > 0 ? 1 : 0,
+			minimumFractions: availableLedger > 0 ? 1 : 0,
 			perFractionAmount,
 			projectedYield: `${formatPercent(detail.listing.interestRate)} APR`,
 			soldPercent: detail.investment.soldPercent,
-			totalFractions: detail.investment.totalFractions,
+			totalFractions: totalDecilesWhole,
 		},
 		keyFinancials: [
 			{

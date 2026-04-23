@@ -1,3 +1,4 @@
+import { formatDecilesCardSummary } from "#/lib/mortgage-ownership-display";
 import type {
 	MarketplaceListingCardItem,
 	MarketplaceListingsSearchState,
@@ -25,6 +26,16 @@ function parseValidDate(value: string | undefined): Date | undefined {
 	return Number.isFinite(parsed.getTime()) ? parsed : undefined;
 }
 
+const CENTS_PER_DOLLAR = 100;
+
+export function principalCentsToDollars(cents: number): number {
+	return cents / CENTS_PER_DOLLAR;
+}
+
+export function principalDollarsToCents(dollars: number): number {
+	return Math.round(dollars * CENTS_PER_DOLLAR);
+}
+
 export function searchStateToFilterState(
 	search: MarketplaceListingsSearchState
 ): FilterState {
@@ -34,9 +45,9 @@ export function searchStateToFilterState(
 			search.rateMin ?? DEFAULT_FILTERS.interestRateRange[0],
 			search.rateMax ?? DEFAULT_FILTERS.interestRateRange[1],
 		],
-		loanAmountRange: [
-			search.principalMin ?? DEFAULT_FILTERS.loanAmountRange[0],
-			search.principalMax ?? DEFAULT_FILTERS.loanAmountRange[1],
+		principalRange: [
+			search.principalMin ?? DEFAULT_FILTERS.principalRange[0],
+			search.principalMax ?? DEFAULT_FILTERS.principalRange[1],
 		],
 		ltvRange: [
 			search.ltvMin ?? DEFAULT_FILTERS.ltvRange[0],
@@ -58,12 +69,12 @@ export function filterStateToSearchState(
 		mortgageTypes:
 			filters.mortgageTypes.length > 0 ? filters.mortgageTypes : undefined,
 		principalMax:
-			filters.loanAmountRange[1] !== DEFAULT_FILTERS.loanAmountRange[1]
-				? filters.loanAmountRange[1]
+			filters.principalRange[1] !== DEFAULT_FILTERS.principalRange[1]
+				? filters.principalRange[1]
 				: undefined,
 		principalMin:
-			filters.loanAmountRange[0] !== DEFAULT_FILTERS.loanAmountRange[0]
-				? filters.loanAmountRange[0]
+			filters.principalRange[0] !== DEFAULT_FILTERS.principalRange[0]
+				? filters.principalRange[0]
 				: undefined,
 		propertyTypes:
 			filters.propertyTypes.length > 0 ? filters.propertyTypes : undefined,
@@ -94,7 +105,7 @@ export function buildFilterMetricItems(
 	return page.map((listing) => ({
 		apr: listing.interestRate,
 		ltv: listing.ltvRatio,
-		principal: listing.principal,
+		principal: principalCentsToDollars(listing.principal),
 	}));
 }
 
@@ -105,6 +116,10 @@ export function buildMarketplaceListingCardItems(
 		address: listing.locationLabel,
 		apr: listing.interestRate,
 		availablePercent: Math.round(listing.availability?.availablePercent ?? 0),
+		fractionsSummary: formatDecilesCardSummary(
+			listing.availability?.availableFractions ?? 0,
+			listing.availability?.totalFractions ?? 0
+		),
 		id: listing.id,
 		imageSrc: listing.heroImageUrl ?? undefined,
 		lat: listing.approximateLatitude ?? DEFAULT_MARKETPLACE_COORDINATES.lat,
@@ -113,7 +128,7 @@ export function buildMarketplaceListingCardItems(
 		ltv: listing.ltvRatio,
 		maturityDate: new Date(listing.maturityDate),
 		mortgageType: listing.mortgageTypeLabel as MortgageType,
-		principal: listing.principal,
+		principal: principalCentsToDollars(listing.principal),
 		propertyType: listing.propertyTypeLabel as PropertyType,
 		soldPercent: Math.round(listing.availability?.soldPercent ?? 0),
 		title: listing.title,

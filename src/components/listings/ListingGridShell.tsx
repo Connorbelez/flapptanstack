@@ -181,8 +181,8 @@ export function ListingGridShell<T extends WithLatLng>({
 									>
 										<div className="h-full">
 											<ListingMap
-												className="h-full w-full rounded-lg"
-												items={filteredItems}
+												className="h-full w-full"
+												items={items}
 												onViewportChange={handleViewportChange}
 												renderPopup={renderMapPopup}
 												{...mapProps}
@@ -201,12 +201,15 @@ export function ListingGridShell<T extends WithLatLng>({
 	return (
 		<section
 			className={
-				classNames?.container ?? "grid w-full grid-cols-12 gap-x-4 pt-4"
+				classNames?.container ??
+				"grid h-full min-h-0 w-full flex-1 grid-cols-12 gap-x-4 pt-4"
 			}
 		>
-			<div className={classNames?.gridColumn ?? "col-span-8"}>
-				{toolbar ? <div className="mb-4 px-8">{toolbar}</div> : null}
-				<ScrollArea className="relative h-[calc(100vh-7rem)]">
+			<div
+				className={classNames?.gridColumn ?? "col-span-8 flex min-h-0 flex-col"}
+			>
+				{toolbar ? <div className="mb-4 shrink-0 px-8">{toolbar}</div> : null}
+				<ScrollArea className="relative h-full min-h-0 flex-1">
 					<ProgressiveBlur />
 					<div className="grid grid-cols-1 gap-3 px-4 pt-4 pb-32 min-[98rem]:grid-cols-2">
 						<AnimatePresence mode="popLayout">
@@ -232,15 +235,19 @@ export function ListingGridShell<T extends WithLatLng>({
 				</ScrollArea>
 			</div>
 
-			<div className={classNames?.mapColumn ?? "col-span-4 pr-4"}>
+			<div
+				className={
+					classNames?.mapColumn ?? "col-span-4 flex min-h-0 flex-col pr-4"
+				}
+			>
 				<div
 					className={
-						classNames?.mapWrapper ?? "sticky top-24 h-[calc(100vh-8rem)]"
+						classNames?.mapWrapper ?? "flex min-h-0 flex-1 flex-col pt-4"
 					}
 				>
 					<ListingMap
-						className="mt-4 h-[calc(100vh-9rem)]"
-						items={filteredItems}
+						className="min-h-0 flex-1"
+						items={items}
 						onViewportChange={handleViewportChange}
 						renderPopup={renderMapPopup}
 						{...mapProps}

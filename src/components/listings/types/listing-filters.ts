@@ -18,12 +18,10 @@ export interface FilterMetricItem {
 
 export interface FilterState {
 	interestRateRange: [number, number];
-	loanAmountMax: number;
-	loanAmountMin: number;
-	loanAmountRange: [number, number];
 	ltvRange: [number, number];
 	maturityDate?: Date;
 	mortgageTypes: MortgageType[];
+	principalRange: [number, number];
 	propertyTypes: PropertyType[];
 	searchQuery: string;
 }
@@ -31,17 +29,13 @@ export interface FilterState {
 export const FILTER_BOUNDS = {
 	ltvRange: [30, 80] as [number, number],
 	interestRateRange: [3, 15] as [number, number],
-	loanAmountRange: [0, 5_000_000] as [number, number],
-	loanAmountMin: 0,
-	loanAmountMax: 5_000_000,
+	principalRange: [0, 5_000_000] as [number, number],
 } as const;
 
 export const DEFAULT_FILTERS: FilterState = {
 	ltvRange: FILTER_BOUNDS.ltvRange,
 	interestRateRange: FILTER_BOUNDS.interestRateRange,
-	loanAmountRange: FILTER_BOUNDS.loanAmountRange,
-	loanAmountMin: FILTER_BOUNDS.loanAmountMin,
-	loanAmountMax: FILTER_BOUNDS.loanAmountMax,
+	principalRange: FILTER_BOUNDS.principalRange,
 	mortgageTypes: [],
 	propertyTypes: [],
 	searchQuery: "",

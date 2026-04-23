@@ -9,13 +9,15 @@ export const Route = createFileRoute("/listings")({
 
 export function ListingsLayout() {
 	return (
-		<>
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
 			<Authenticated>
-				<Outlet />
+				<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
+					<Outlet />
+				</div>
 			</Authenticated>
 			<AuthLoading>
 				<AppRoutePendingScreen />
 			</AuthLoading>
-		</>
+		</div>
 	);
 }

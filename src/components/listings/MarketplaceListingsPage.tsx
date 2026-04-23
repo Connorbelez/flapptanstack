@@ -45,7 +45,7 @@ function groupItemsForMobile(items: readonly MarketplaceListingCardItem[]) {
 
 interface MarketplaceListingsPageProps {
 	description?: string;
-	detailRoute?: "/listings/$listingId" | "/lender/listings/$listingId";
+	detailRoute?: "/listings/$listingId";
 	eyebrow?: string;
 	heading?: string;
 	search: MarketplaceListingsSearchState;
@@ -61,7 +61,7 @@ export function MarketplaceListingsPage({
 	snapshot,
 	search,
 	setSearch,
-	description = "Published listings are read-only in this release. Review pricing, collateral quality, fractions available, and the supporting map context before opening the full listing detail.",
+	description = "",
 	detailRoute = "/listings/$listingId",
 	eyebrow = "Lender Marketplace",
 	heading = "Browse fractional mortgage opportunities",
@@ -81,9 +81,6 @@ export function MarketplaceListingsPage({
 			<div className="flex flex-wrap items-center gap-2">
 				<Badge className="rounded-full px-3 py-1" variant="secondary">
 					{snapshot.page.length} opportunities
-				</Badge>
-				<Badge className="rounded-full px-3 py-1" variant="outline">
-					Read-only marketplace
 				</Badge>
 			</div>
 			<MarketplaceFilterBar
@@ -127,8 +124,8 @@ export function MarketplaceListingsPage({
 	}
 
 	return (
-		<div className="space-y-4 px-4 py-6 sm:px-6 lg:px-8">
-			<div className="space-y-3 px-4 sm:px-8">
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-4 overflow-hidden">
+			<div className="shrink-0 space-y-3 px-4 sm:px-8">
 				<p className="font-medium text-[11px] text-muted-foreground uppercase tracking-[0.24em]">
 					{eyebrow}
 				</p>
@@ -154,46 +151,49 @@ export function MarketplaceListingsPage({
 				</div>
 			</div>
 
-			<ListingGridShell
-				groupItemsForMobile={groupItemsForMobile}
-				items={items}
-				mapProps={{
-					initialCenter: { lat: 43.6532, lng: -79.3832 },
-					initialZoom: 10,
-				}}
-				renderCard={(listing) => (
-					<Link
-						className="block"
-						params={{ listingId: listing.id }}
-						to={detailRoute}
-					>
-						<Horizontal
+			<div className="min-h-0 md:h-full md:flex-1 md:overflow-hidden">
+				<ListingGridShell
+					groupItemsForMobile={groupItemsForMobile}
+					items={items}
+					mapProps={{
+						initialCenter: { lat: 43.6532, lng: -79.3832 },
+						initialZoom: 10,
+					}}
+					renderCard={(listing) => (
+						<Link
+							className="block"
+							params={{ listingId: listing.id }}
+							to={detailRoute}
+						>
+							<Horizontal
+								address={listing.address}
+								apr={listing.apr}
+								availablePercent={listing.availablePercent}
+								fractionsSummary={listing.fractionsSummary}
+								id={listing.id}
+								imageSrc={listing.imageSrc}
+								lockedPercent={listing.lockedPercent}
+								ltv={listing.ltv}
+								maturityDate={listing.maturityDate.toLocaleDateString("en-CA")}
+								principal={listing.principal}
+								propertyType={listing.propertyType}
+								soldPercent={listing.soldPercent}
+								title={listing.title}
+							/>
+						</Link>
+					)}
+					renderMapPopup={(listing) => (
+						<ListingMapPopup
 							address={listing.address}
 							apr={listing.apr}
-							availablePercent={listing.availablePercent}
-							id={listing.id}
 							imageSrc={listing.imageSrc}
-							lockedPercent={listing.lockedPercent}
-							ltv={listing.ltv}
-							maturityDate={listing.maturityDate.toLocaleDateString("en-CA")}
 							principal={listing.principal}
-							propertyType={listing.propertyType}
-							soldPercent={listing.soldPercent}
 							title={listing.title}
 						/>
-					</Link>
-				)}
-				renderMapPopup={(listing) => (
-					<ListingMapPopup
-						address={listing.address}
-						apr={listing.apr}
-						imageSrc={listing.imageSrc}
-						principal={listing.principal}
-						title={listing.title}
-					/>
-				)}
-				toolbar={toolbar}
-			/>
+					)}
+					toolbar={toolbar}
+				/>
+			</div>
 		</div>
 	);
 }

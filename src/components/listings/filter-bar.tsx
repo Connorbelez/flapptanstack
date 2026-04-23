@@ -37,8 +37,8 @@ export function MarketplaceFilterBar({
 		filters.ltvRange[1] < FILTER_BOUNDS.ltvRange[1] ||
 		filters.interestRateRange[0] > FILTER_BOUNDS.interestRateRange[0] ||
 		filters.interestRateRange[1] < FILTER_BOUNDS.interestRateRange[1] ||
-		filters.loanAmountRange[0] > FILTER_BOUNDS.loanAmountRange[0] ||
-		filters.loanAmountRange[1] < FILTER_BOUNDS.loanAmountRange[1] ||
+		filters.principalRange[0] > FILTER_BOUNDS.principalRange[0] ||
+		filters.principalRange[1] < FILTER_BOUNDS.principalRange[1] ||
 		filters.mortgageTypes.length > 0 ||
 		filters.propertyTypes.length > 0 ||
 		filters.maturityDate !== undefined ||

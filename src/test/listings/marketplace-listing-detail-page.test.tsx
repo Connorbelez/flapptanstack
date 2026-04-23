@@ -10,21 +10,26 @@ import type { MarketplaceListingDetailSnapshot } from "#/components/listings/mar
 
 vi.mock("#/components/listings/ListingDetailPage", () => ({
 	ListingDetailPage: ({
-		backHref,
 		buildSimilarListingHref,
 		listing,
+		listingsIndexTo,
 		mode,
 	}: {
-		backHref?: string;
-		buildSimilarListingHref: (listingId: string) => string;
+		buildSimilarListingHref?: (listingId: string) => string;
 		listing: { checkout?: unknown; title: string };
+		listingsIndexTo?: string;
 		mode?: string;
 	}) => (
 		<div
-			data-back-href={backHref}
 			data-has-checkout={String(listing.checkout !== undefined)}
+			data-listings-index-to={listingsIndexTo}
 			data-mode={mode}
-			data-similar-href={buildSimilarListingHref("listing_similar_1")}
+			data-similar-href={
+				buildSimilarListingHref?.("listing_similar_1") ??
+				(listingsIndexTo
+					? `${listingsIndexTo}/listing_similar_1`
+					: "/demo/listings/listing_similar_1")
+			}
 			data-testid="listing-detail-props"
 			data-title={listing.title}
 		/>
@@ -75,11 +80,11 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 			},
 		],
 		investment: {
-			availableFractions: 420,
+			availableFractions: 4200,
 			investorCount: 3,
 			lockedPercent: 12,
 			soldPercent: 28,
-			totalFractions: 1000,
+			totalFractions: 10_000,
 		},
 		listing: {
 			approximateLatitude: 43.645,
@@ -157,8 +162,10 @@ describe("marketplace listing detail adapter", () => {
 		const detail = createDetailSnapshot();
 		const model = buildMarketplaceListingDetailModel(detail);
 
-		expect(model.investment.availableFractions).toBe(420);
-		expect(model.investment.perFractionAmount).toBe(450);
+		expect(model.investment.availableFractions).toBe(4);
+		expect(model.investment.totalFractions).toBe(10);
+		expect(model.investment.perFractionAmount).toBe(45_000);
+		expect(model.investment.availabilityLabel).toBe("4.2 of 10 available");
 		expect(model.documents[0]?.url).toBe(
 			"https://example.com/appraisal-report.pdf"
 		);
@@ -183,7 +190,7 @@ describe("marketplace listing detail page", () => {
 		const rendered = screen.getByTestId("listing-detail-props");
 
 		expect(rendered.getAttribute("data-mode")).toBe("readOnly");
-		expect(rendered.getAttribute("data-back-href")).toBe("/listings");
+		expect(rendered.getAttribute("data-listings-index-to")).toBe("/listings");
 		expect(rendered.getAttribute("data-title")).toBe(
 			"King West Bridge Opportunity"
 		);

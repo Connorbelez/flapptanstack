@@ -24,7 +24,11 @@ interface RangeSliderWithHistogramProps {
 	minLabel?: string;
 	onValueChange?: (values: [number, number]) => void;
 	outOfRangeClass?: string;
-	renderTooltip?: (count: number, value: number) => React.ReactNode;
+	renderTooltip?: (
+		count: number,
+		value: number,
+		bucket: { end: number; start: number }
+	) => React.ReactNode;
 	showCard?: boolean;
 	showTitle?: boolean;
 	step?: number;
@@ -128,12 +132,15 @@ const RangeSliderWithHistogram: React.FC<RangeSliderWithHistogramProps> = ({
 									</TooltipTrigger>
 									<TooltipContent className="z-[200]">
 										{renderTooltip ? (
-											renderTooltip(count, currentBucketValue)
+											renderTooltip(count, currentBucketValue, {
+												end: bucketEnd,
+												start: bucketStart,
+											})
 										) : (
 											<p>
 												Count: {count}
 												<br />
-												{formatValue(currentBucketValue)}
+												{formatValue(bucketStart)} – {formatValue(bucketEnd)}
 											</p>
 										)}
 									</TooltipContent>

@@ -44,6 +44,7 @@ function DemoListingDetailNotFoundComponent() {
 				<Link
 					className="mt-8 inline-flex items-center gap-2 rounded-full border border-[#E7E5E4] px-4 py-2 font-medium text-sm hover:bg-[#FBFAF8]"
 					to="/demo/listings"
+					viewTransition
 				>
 					<ArrowLeft className="size-4" />
 					Back to Listings
