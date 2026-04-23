@@ -98,12 +98,6 @@ import {
 	brokerOnboardingReviewEntryTypeValidator,
 	brokerOnboardingVerificationReasonCodeValidator,
 	brokerOnboardingVerificationSnapshotValidator,
-	fsraImportRunStatusValidator,
-	fsraImportTriggerValidator,
-	fsraLicenseStatusValidator,
-	fsraLicenseTypeValidator,
-	fsraRawRecordValidator,
-	fsraSourceRecordFields,
 } from "./onboarding/brokerApplication/validators";
 import {
 	fsraImportRunStatusValidator,

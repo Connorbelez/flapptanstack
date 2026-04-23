@@ -476,7 +476,14 @@ export const upsertFsraImportRecords = convex
 		if (args.replaceSnapshot === true) {
 			const existingRecords = await ctx.db.query("fsraLicenses").collect();
 			for (const existing of existingRecords) {
-				if (!retainedKeys.has(buildNormalizedFsraKey(existing))) {
+				if (
+					!retainedKeys.has(
+						buildNormalizedFsraKey({
+							licenseNumber: existing.licenseNumber,
+							province: existing.province,
+						})
+					)
+				) {
 					await ctx.db.delete(existing._id);
 				}
 			}
@@ -539,7 +546,14 @@ export const upsertFsraSourceRows = convex
 		if (args.replaceSnapshot === true) {
 			const existingRecords = await ctx.db.query("fsraSourceRows").collect();
 			for (const existing of existingRecords) {
-				if (!retainedKeys.has(buildNormalizedFsraKey(existing))) {
+				if (
+					!retainedKeys.has(
+						buildNormalizedFsraKey({
+							licenseNumber: existing.licenseNumber,
+							province: existing.province,
+						})
+					)
+				) {
 					await ctx.db.delete(existing._id);
 				}
 			}
