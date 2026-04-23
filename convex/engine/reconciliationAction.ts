@@ -141,6 +141,11 @@ async function lookupStatus(
 	// a separate db.get call — this is unavoidable for a data-access function
 	// that must handle 14 distinct entity table types.
 	switch (entityType) {
+		case "brokerOnboardingApplication":
+			return (
+				(await ctx.db.get(entityId as Id<"brokerOnboardingApplications">))
+					?.status ?? null
+			);
 		case "onboardingRequest":
 			return (
 				(await ctx.db.get(entityId as Id<"onboardingRequests">))?.status ?? null

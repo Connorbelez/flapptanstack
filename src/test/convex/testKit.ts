@@ -1,4 +1,3 @@
-import auditLogTest from "convex-audit-log/test";
 import { convexTest } from "convex-test";
 import auditTrailSchema from "../../../convex/components/auditTrail/schema";
 import schema from "../../../convex/schema";
@@ -6,18 +5,24 @@ import { convexModules } from "../../../convex/test/moduleMaps";
 import migrationsSchema from "../../../node_modules/@convex-dev/migrations/dist/component/schema.js";
 import workflowSchema from "../../../node_modules/@convex-dev/workflow/dist/component/schema.js";
 import workpoolSchema from "../../../node_modules/@convex-dev/workpool/dist/component/schema.js";
+import { loadModulesFromRoot } from "./moduleLoader";
+import { registerAuditLogComponent } from "./registerAuditLogComponent";
 
-const auditTrailModules = import.meta.glob(
-	"../../../convex/components/auditTrail/**/*.ts"
+const auditTrailModules = loadModulesFromRoot(
+	new URL("../../../convex/components/auditTrail/", import.meta.url),
+	"/convex/components/auditTrail"
 );
-const migrationsModules = import.meta.glob(
-	"../../../node_modules/@convex-dev/migrations/dist/component/**/*.js"
+const migrationsModules = loadModulesFromRoot(
+	new URL("../../../node_modules/@convex-dev/migrations/dist/component/", import.meta.url),
+	"/node_modules/@convex-dev/migrations/dist/component"
 );
-const workflowModules = import.meta.glob(
-	"../../../node_modules/@convex-dev/workflow/dist/component/**/*.js"
+const workflowModules = loadModulesFromRoot(
+	new URL("../../../node_modules/@convex-dev/workflow/dist/component/", import.meta.url),
+	"/node_modules/@convex-dev/workflow/dist/component"
 );
-const workpoolModules = import.meta.glob(
-	"../../../node_modules/@convex-dev/workpool/dist/component/**/*.js"
+const workpoolModules = loadModulesFromRoot(
+	new URL("../../../node_modules/@convex-dev/workpool/dist/component/", import.meta.url),
+	"/node_modules/@convex-dev/workpool/dist/component"
 );
 
 export interface ConvexTestKitOptions {
@@ -26,7 +31,7 @@ export interface ConvexTestKitOptions {
 
 export function createConvexTestKit(options?: ConvexTestKitOptions) {
 	const t = convexTest(schema, convexModules);
-	auditLogTest.register(t, "auditLog");
+	registerAuditLogComponent(t, "auditLog");
 	t.registerComponent("auditTrail", auditTrailSchema, auditTrailModules);
 	t.registerComponent("migrations", migrationsSchema, migrationsModules);
 

@@ -311,6 +311,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../engine/hashChain.ts"),
 	"/convex/engine/machines/collectionAttempt.machine.ts": async () =>
 		await import("./../engine/machines/collectionAttempt.machine.ts"),
+	"/convex/engine/machines/brokerOnboardingApplication.machine.ts": async () =>
+		await import("./../engine/machines/brokerOnboardingApplication.machine.ts"),
 	"/convex/engine/machines/deal.machine.ts": async () =>
 		await import("./../engine/machines/deal.machine.ts"),
 	"/convex/engine/machines/mortgage.machine.ts": async () =>
@@ -428,6 +430,16 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../obligations/queries.ts"),
 	"/convex/onboarding/internal.ts": async () =>
 		await import("./../onboarding/internal.ts"),
+	"/convex/onboarding/brokerApplication/helpers.ts": async () =>
+		await import("./../onboarding/brokerApplication/helpers.ts"),
+	"/convex/onboarding/brokerApplication/internal.ts": async () =>
+		await import("./../onboarding/brokerApplication/internal.ts"),
+	"/convex/onboarding/brokerApplication/mutations.ts": async () =>
+		await import("./../onboarding/brokerApplication/mutations.ts"),
+	"/convex/onboarding/brokerApplication/queries.ts": async () =>
+		await import("./../onboarding/brokerApplication/queries.ts"),
+	"/convex/onboarding/brokerApplication/validators.ts": async () =>
+		await import("./../onboarding/brokerApplication/validators.ts"),
 	"/convex/onboarding/mutations.ts": async () =>
 		await import("./../onboarding/mutations.ts"),
 	"/convex/onboarding/queries.ts": async () =>

@@ -60,6 +60,9 @@ describe("getMachineVersion", () => {
 	});
 
 	it("returns consistent format for all registered machines", () => {
+		expect(getMachineVersion("brokerOnboardingApplication")).toBe(
+			"brokerOnboardingApplication@1.0.0"
+		);
 		expect(getMachineVersion("deal")).toBe("deal@1.0.0");
 		expect(getMachineVersion("onboardingRequest")).toBe(
 			"onboardingRequest@1.0.0"
