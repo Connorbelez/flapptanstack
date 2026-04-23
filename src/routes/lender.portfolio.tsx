@@ -79,16 +79,13 @@ function LenderPortfolioRouteContent() {
 		portalContext,
 		"Lender portfolio requires an active portal host."
 	);
-	const { data, isFetching } = useSuspenseQuery(
+	const { data } = useSuspenseQuery(
 		lenderPortfolioCommandCenterQueryOptions(portalId)
 	);
-	let suggestedOpportunitiesState: "ready" | "loading" | "unavailable" =
-		"ready";
-	if (data.suggestedOpportunities.availabilityState === "unavailable") {
-		suggestedOpportunitiesState = "unavailable";
-	} else if (isFetching && data.suggestedOpportunities.rows.length === 0) {
-		suggestedOpportunitiesState = "loading";
-	}
+	const suggestedOpportunitiesState: "ready" | "unavailable" =
+		data.suggestedOpportunities.availabilityState === "unavailable"
+			? "unavailable"
+			: "ready";
 
 	return (
 		<LenderPortfolioPage
