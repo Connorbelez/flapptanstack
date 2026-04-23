@@ -9,6 +9,47 @@ import {
 	unavailablePortfolioTaxExportFixture,
 } from "./fixtures";
 import { LenderPortfolioPage } from "./LenderPortfolioPage";
+import type { PortfolioCommandCenterSnapshot } from "./portfolio-types";
+
+const activeRailSnapshot: PortfolioCommandCenterSnapshot = {
+	...portfolioCommandCenterFixture,
+	actionsRequired: {
+		...portfolioCommandCenterFixture.actionsRequired,
+		items: [
+			...portfolioCommandCenterFixture.actionsRequired.items,
+			{
+				dealId: "deal_follow_up",
+				dueDate: "2026-05-10",
+				id: "action_deal_followup",
+				kind: "deal_action",
+				mortgageId: "mortgage_king",
+				prefillContext: {
+					contextType: "deal",
+					dealId: "deal_follow_up",
+					mortgageId: "mortgage_king",
+					propertyLabel: "123 King St W, Toronto",
+					subjectId: "deal_follow_up",
+					summary: "Confirm close timing for the linked deal package.",
+					title: "Confirm deal closing timeline",
+				},
+				priority: "medium",
+				status: "ready",
+				summary: "Confirm close timing for the linked deal package.",
+				title: "Confirm deal closing timeline",
+			},
+		],
+	},
+};
+
+const missingBrokerSnapshot: PortfolioCommandCenterSnapshot = {
+	...activeRailSnapshot,
+	brokerCoordination: {
+		...activeRailSnapshot.brokerCoordination,
+		assignedBroker: null,
+		availabilityState: "missing_broker",
+		fallbackContactCta: null,
+	},
+};
 
 const meta = {
 	title: "Lender/Portfolio/LenderPortfolioPage",
@@ -31,7 +72,7 @@ const meta = {
 			positionSort: "next-payment-soonest",
 		},
 		setSearch: fn(),
-		snapshot: portfolioCommandCenterFixture,
+		snapshot: activeRailSnapshot,
 	},
 	parameters: {
 		layout: "fullscreen",
@@ -44,7 +85,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
-export const Empty: Story = {
+export const AllClear: Story = {
 	args: {
 		leafStateOverrides: {
 			cockpit: {
@@ -57,7 +98,16 @@ export const Empty: Story = {
 				exportState: "forbidden",
 			},
 		},
-		snapshot: emptyPortfolioCommandCenterFixture,
+		snapshot: {
+			...emptyPortfolioCommandCenterFixture,
+			brokerCoordination: activeRailSnapshot.brokerCoordination,
+		},
+	},
+};
+
+export const MissingBroker: Story = {
+	args: {
+		snapshot: missingBrokerSnapshot,
 	},
 };
 
