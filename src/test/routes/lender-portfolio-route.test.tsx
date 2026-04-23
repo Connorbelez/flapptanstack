@@ -337,9 +337,19 @@ describe("lender portfolio route", () => {
 		);
 		vi.mocked(useNavigate).mockReturnValue(navigate);
 		vi.mocked(useIsMobile).mockReturnValue(false);
+		vi.mocked(useAuth).mockReturnValue({
+			loading: false,
+			permissions: ["portfolio:view"],
+		} as never);
 		vi.mocked(lenderPortfolioCommandCenterQueryOptions).mockReturnValue(
 			COMMAND_CENTER_QUERY_OPTIONS as never
 		);
+		vi.mocked(useQuery).mockReturnValue({
+			data: portfolioHistoricalSeriesFixture,
+			error: null,
+			isError: false,
+			isPending: false,
+		} as never);
 		vi.mocked(useSuspenseQuery).mockReturnValue({
 			data: emptyPortfolioCommandCenterFixture,
 			isFetching: true,
@@ -362,9 +372,19 @@ describe("lender portfolio route", () => {
 		);
 		vi.mocked(useNavigate).mockReturnValue(navigate);
 		vi.mocked(useIsMobile).mockReturnValue(false);
+		vi.mocked(useAuth).mockReturnValue({
+			loading: false,
+			permissions: ["portfolio:view"],
+		} as never);
 		vi.mocked(lenderPortfolioCommandCenterQueryOptions).mockReturnValue(
 			COMMAND_CENTER_QUERY_OPTIONS as never
 		);
+		vi.mocked(useQuery).mockReturnValue({
+			data: portfolioHistoricalSeriesFixture,
+			error: null,
+			isError: false,
+			isPending: false,
+		} as never);
 		vi.mocked(useSuspenseQuery).mockReturnValue({
 			data: unavailableSuggestedOpportunitiesFixture,
 			isFetching: false,
