@@ -54,5 +54,12 @@ describe("WorkOS email verification contract", () => {
 		expect(decision.normalizedEmailVerification.status).toBe(
 			"provider_unavailable"
 		);
+		expect(decision.normalizedEmailVerification.evidenceReferences).toEqual([
+			expect.objectContaining({
+				provider: "workos_authkit",
+				referenceType: "provider_snapshot",
+				label: "WorkOS email verification state unavailable",
+			}),
+		]);
 	});
 });

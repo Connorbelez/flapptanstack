@@ -32,29 +32,29 @@ export type EmailVerificationProviderMode =
 	(typeof EMAIL_VERIFICATION_PROVIDER_MODES)[number];
 
 export interface BrokerOnboardingVerificationProviderSelection {
-	emailVerification: EmailVerificationProviderMode;
-	identityVerification: IdentityVerificationProviderMode;
-	regulatorDirectory: RegulatorDirectoryProviderMode;
+	readonly emailVerification: EmailVerificationProviderMode;
+	readonly identityVerification: IdentityVerificationProviderMode;
+	readonly regulatorDirectory: RegulatorDirectoryProviderMode;
 }
 
 export interface BrokerOnboardingVerificationFailurePolicy {
-	malformedCallback: Extract<
+	readonly malformedCallback: Extract<
 		BrokerOnboardingApprovalRecommendation,
 		"provider_unavailable"
 	>;
-	missingConfig: Extract<
+	readonly missingConfig: Extract<
 		BrokerOnboardingApprovalRecommendation,
 		"provider_unavailable"
 	>;
-	staleRegulatorData: Extract<
+	readonly staleRegulatorData: Extract<
 		BrokerOnboardingApprovalRecommendation,
 		"stale_regulator_data"
 	>;
-	unavailableProvider: Extract<
+	readonly unavailableProvider: Extract<
 		BrokerOnboardingApprovalRecommendation,
 		"provider_unavailable"
 	>;
-	unsupportedProvince: Extract<
+	readonly unsupportedProvince: Extract<
 		BrokerOnboardingApprovalRecommendation,
 		"unsupported_province"
 	>;
@@ -62,9 +62,10 @@ export interface BrokerOnboardingVerificationFailurePolicy {
 
 export interface BrokerOnboardingVerificationConfig
 	extends BrokerOnboardingRecommendationPolicy {
-	failurePolicy: BrokerOnboardingVerificationFailurePolicy;
-	providers: BrokerOnboardingVerificationProviderSelection;
-	regulatorFreshnessWindowMs: number;
+	readonly failurePolicy: BrokerOnboardingVerificationFailurePolicy;
+	readonly providers: BrokerOnboardingVerificationProviderSelection;
+	readonly regulatorFreshnessWindowMs: number;
+	readonly thresholds: Readonly<BrokerOnboardingRecommendationThresholds>;
 }
 
 export interface BrokerOnboardingVerificationConfigOverrides {
@@ -75,25 +76,35 @@ export interface BrokerOnboardingVerificationConfigOverrides {
 	thresholds?: Partial<BrokerOnboardingRecommendationThresholds>;
 }
 
+const DEFAULT_ENABLED_PROVINCES = Object.freeze([
+	...BROKER_ONBOARDING_SUPPORTED_PROVINCES,
+]);
+
+const DEFAULT_THRESHOLDS = Object.freeze({
+	autoApproveMinimum: 0.92,
+	reviewMinimum: 0.78,
+} as const satisfies BrokerOnboardingRecommendationThresholds);
+
+const DEFAULT_PROVIDERS = Object.freeze({
+	regulatorDirectory: "mock",
+	identityVerification: "mock",
+	emailVerification: "workos",
+} as const satisfies BrokerOnboardingVerificationProviderSelection);
+
+const DEFAULT_FAILURE_POLICY = Object.freeze({
+	missingConfig: "provider_unavailable",
+	unavailableProvider: "provider_unavailable",
+	malformedCallback: "provider_unavailable",
+	staleRegulatorData: "stale_regulator_data",
+	unsupportedProvince: "unsupported_province",
+} as const satisfies BrokerOnboardingVerificationFailurePolicy);
+
 export const DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG = Object.freeze({
-	enabledProvinces: [...BROKER_ONBOARDING_SUPPORTED_PROVINCES],
-	thresholds: {
-		autoApproveMinimum: 0.92,
-		reviewMinimum: 0.78,
-	},
-	providers: {
-		regulatorDirectory: "mock",
-		identityVerification: "mock",
-		emailVerification: "workos",
-	},
+	enabledProvinces: DEFAULT_ENABLED_PROVINCES,
+	thresholds: DEFAULT_THRESHOLDS,
+	providers: DEFAULT_PROVIDERS,
 	regulatorFreshnessWindowMs: SEVEN_DAYS_MS,
-	failurePolicy: {
-		missingConfig: "provider_unavailable",
-		unavailableProvider: "provider_unavailable",
-		malformedCallback: "provider_unavailable",
-		staleRegulatorData: "stale_regulator_data",
-		unsupportedProvince: "unsupported_province",
-	},
+	failurePolicy: DEFAULT_FAILURE_POLICY,
 } as const satisfies BrokerOnboardingVerificationConfig);
 
 export function isBrokerOnboardingProvinceEnabled(

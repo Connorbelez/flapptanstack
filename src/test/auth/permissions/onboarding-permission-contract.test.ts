@@ -12,12 +12,17 @@ const RBAC_DOC_PATH = path.join(
 );
 
 describe("onboarding permission contract alignment", () => {
+	const reviewPermission = ONBOARDING_PERMISSION_CONTRACT.review.permission;
+	const managePermission = ONBOARDING_PERMISSION_CONTRACT.manage.permission;
+
 	it("keeps the runtime onboarding permission split explicit", () => {
-		expect(ONBOARDING_PERMISSION_CONTRACT.review.permission).toBe(
-			"onboarding:review"
+		expect(reviewPermission).toBe("onboarding:review");
+		expect(managePermission).toBe("onboarding:manage");
+		expect(ONBOARDING_PERMISSION_CONTRACT.review.responsibility).toContain(
+			"Reviewer decisions"
 		);
-		expect(ONBOARDING_PERMISSION_CONTRACT.manage.permission).toBe(
-			"onboarding:manage"
+		expect(ONBOARDING_PERMISSION_CONTRACT.manage.responsibility).toContain(
+			"Operational queue"
 		);
 		expect(ONBOARDING_PERMISSION_CONTRACT.review.runtimeConsumers).toContain(
 			"convex/onboarding/mutations.ts"
@@ -29,22 +34,24 @@ describe("onboarding permission contract alignment", () => {
 
 	it("documents review and manage as distinct onboarding permissions", async () => {
 		const source = await readFile(RBAC_DOC_PATH, "utf8");
+		const contractSection = source.slice(
+			source.indexOf("## Onboarding Permission Contract"),
+			source.indexOf("## Additional WorkOS Permissions To Provision")
+		);
+		const workosProvisioningSection = source.slice(
+			source.indexOf("## Additional WorkOS Permissions To Provision"),
+			source.indexOf("## Runtime Permissions Pending Disposition")
+		);
+		const pendingDispositionSection = source.slice(
+			source.indexOf("## Runtime Permissions Pending Disposition"),
+			source.indexOf("## Delivery Sequence")
+		);
 
 		expect(source).toContain("## Onboarding Permission Contract");
-		expect(source).toMatch(
-			/`onboarding:review`[\s\S]*reviewer-decision permission/i
-		);
-		expect(source).toMatch(
-			/`onboarding:manage`[\s\S]*operational permission/i
-		);
-		expect(source).toMatch(
-			/Additional WorkOS Permissions To Provision[\s\S]*`onboarding:review`/i
-		);
-		expect(source).toMatch(
-			/Additional WorkOS Permissions To Provision[\s\S]*`onboarding:manage`/i
-		);
-		expect(source).not.toMatch(
-			/Runtime Permissions Pending Disposition[\s\S]*`onboarding:manage`/i
-		);
+		expect(contractSection).toContain(`\`${reviewPermission}\``);
+		expect(contractSection).toContain(`\`${managePermission}\``);
+		expect(workosProvisioningSection).toContain(`\`${reviewPermission}\``);
+		expect(workosProvisioningSection).toContain(`\`${managePermission}\``);
+		expect(pendingDispositionSection).not.toContain(`\`${managePermission}\``);
 	});
 });

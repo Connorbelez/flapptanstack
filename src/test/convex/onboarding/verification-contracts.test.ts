@@ -218,6 +218,77 @@ describe("broker onboarding verification contracts", () => {
 		);
 	});
 
+	it("freezes the default config and nested defaults", () => {
+		expect(
+			Object.isFrozen(DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG)
+		).toBe(true);
+		expect(
+			Object.isFrozen(DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG.thresholds)
+		).toBe(true);
+		expect(
+			Object.isFrozen(DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG.providers)
+		).toBe(true);
+		expect(
+			Object.isFrozen(
+				DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG.failurePolicy
+			)
+		).toBe(true);
+		expect(
+			Object.isFrozen(
+				DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG.enabledProvinces
+			)
+		).toBe(true);
+	});
+
+	it("preserves evidence for unavailable fallback providers", async () => {
+		const registry = createBrokerOnboardingVerificationRegistry({
+			configOverrides: {
+				providers: {
+					regulatorDirectory: "live",
+					identityVerification: "sandbox",
+				},
+			},
+		});
+
+		const regulatorResult = await registry.regulatorDirectory.lookupLicense({
+			licenseNumber: "ON-12345",
+			province: "ON",
+			requestedAt: 1_700_000_000_000,
+			selfReportedName: { fullName: "Francois Smith" },
+		});
+
+		expect(regulatorResult.status).toBe("provider_unavailable");
+		expect(regulatorResult.evidenceReferences).toEqual([
+			expect.objectContaining({
+				provider: "live_regulator",
+				referenceType: "provider_snapshot",
+			}),
+		]);
+
+		const session = await registry.identityVerification.startVerification({
+			applicationId: "application-1",
+			email: "verified@example.com",
+			applicantName: { fullName: "Francois Smith" },
+			province: "ON",
+			requestedAt: 1_700_000_000_000,
+		});
+		const callbackResult = await registry.identityVerification.handleCallback({
+			applicationId: "application-1",
+			payload: {},
+			receivedAt: 1_700_000_000_000,
+			sessionId: session.sessionId,
+		});
+
+		expect(session.status).toBe("provider_unavailable");
+		expect(callbackResult.status).toBe("provider_unavailable");
+		expect(callbackResult.evidenceReferences).toEqual([
+			expect.objectContaining({
+				provider: "sandbox_identity",
+				referenceType: "provider_snapshot",
+			}),
+		]);
+	});
+
 	it("maps malformed callbacks into explicit fail-closed outcomes", async () => {
 		const registry = createBrokerOnboardingVerificationRegistry();
 		const callbackResult = await registry.identityVerification.handleCallback({

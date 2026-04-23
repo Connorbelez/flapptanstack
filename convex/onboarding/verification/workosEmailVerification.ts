@@ -11,21 +11,26 @@ import type {
 function buildEvidenceReferences(
 	input: EmailVerificationNormalizationInput
 ): VerificationEvidenceReference[] {
-	if (input.sourceAvailable === false) {
-		return [];
-	}
-
 	const referenceId =
 		input.evidenceReferenceId ??
-		[input.source, input.authUserId ?? input.email ?? "anonymous"].join(":");
+		[
+			input.source,
+			input.sourceAvailable === false ? "unavailable" : "state",
+			input.authUserId ?? input.email ?? "anonymous",
+		].join(":");
+	const isUnavailable = input.sourceAvailable === false;
 
 	return [
 		{
 			provider: "workos_authkit",
 			referenceId,
-			referenceType: "email_verification_event",
+			referenceType: isUnavailable
+				? "provider_snapshot"
+				: "email_verification_event",
 			capturedAt: input.checkedAt,
-			label: "WorkOS email verification state",
+			label: isUnavailable
+				? "WorkOS email verification state unavailable"
+				: "WorkOS email verification state",
 		},
 	];
 }
