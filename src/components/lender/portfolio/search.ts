@@ -1,5 +1,7 @@
 import type {
 	LenderPortfolioSearchState,
+	PortfolioBrokerContextSource,
+	PortfolioBrokerContextType,
 	PortfolioDetailType,
 	PortfolioPaymentRow,
 	PortfolioPaymentSortKey,
@@ -8,11 +10,19 @@ import type {
 } from "./portfolio-types";
 import {
 	DEFAULT_LENDER_PORTFOLIO_SEARCH,
+	PORTFOLIO_BROKER_CONTEXT_SOURCES,
+	PORTFOLIO_BROKER_CONTEXT_TYPES,
 	PORTFOLIO_DETAIL_TYPES,
 	PORTFOLIO_PAYMENT_SORT_KEYS,
 	PORTFOLIO_POSITION_SORT_KEYS,
 } from "./portfolio-types";
 
+const brokerContextSourceSet = new Set<PortfolioBrokerContextSource>(
+	PORTFOLIO_BROKER_CONTEXT_SOURCES
+);
+const brokerContextTypeSet = new Set<PortfolioBrokerContextType>(
+	PORTFOLIO_BROKER_CONTEXT_TYPES
+);
 const detailTypeSet = new Set<PortfolioDetailType>(PORTFOLIO_DETAIL_TYPES);
 const paymentSortSet = new Set<PortfolioPaymentSortKey>(
 	PORTFOLIO_PAYMENT_SORT_KEYS
@@ -33,6 +43,18 @@ function parseString(value: unknown) {
 function parseDetailType(value: unknown) {
 	return detailTypeSet.has(value as PortfolioDetailType)
 		? (value as PortfolioDetailType)
+		: undefined;
+}
+
+function parseBrokerContextType(value: unknown) {
+	return brokerContextTypeSet.has(value as PortfolioBrokerContextType)
+		? (value as PortfolioBrokerContextType)
+		: undefined;
+}
+
+function parseBrokerContextSource(value: unknown) {
+	return brokerContextSourceSet.has(value as PortfolioBrokerContextSource)
+		? (value as PortfolioBrokerContextSource)
 		: undefined;
 }
 
@@ -99,6 +121,9 @@ export function parseLenderPortfolioSearch(
 	raw: Record<string, unknown>
 ): LenderPortfolioSearchState {
 	return {
+		brokerContextSource: parseBrokerContextSource(raw.brokerContextSource),
+		brokerContextType: parseBrokerContextType(raw.brokerContextType),
+		brokerSubjectId: parseString(raw.brokerSubjectId),
 		detailId: parseString(raw.detailId),
 		detailType: parseDetailType(raw.detailType),
 		paymentDateFrom: parseString(raw.paymentDateFrom),
@@ -115,6 +140,16 @@ export function parseLenderPortfolioSearch(
 export function cleanLenderPortfolioSearch(
 	search: LenderPortfolioSearchState
 ): Partial<LenderPortfolioSearchState> {
+	const brokerState =
+		search.brokerContextSource &&
+		search.brokerContextType &&
+		search.brokerSubjectId
+			? {
+					brokerContextSource: search.brokerContextSource,
+					brokerContextType: search.brokerContextType,
+					brokerSubjectId: search.brokerSubjectId,
+				}
+			: {};
 	const detailState =
 		search.detailId && search.detailType
 			? {
@@ -126,7 +161,11 @@ export function cleanLenderPortfolioSearch(
 	return Object.fromEntries(
 		Object.entries({
 			...search,
+			...brokerState,
 			...detailState,
+			brokerContextSource: brokerState.brokerContextSource,
+			brokerContextType: brokerState.brokerContextType,
+			brokerSubjectId: brokerState.brokerSubjectId,
 			detailId: detailState.detailId,
 			detailType: detailState.detailType,
 		}).filter(([key, value]) => {
@@ -151,6 +190,22 @@ export function cleanLenderPortfolioSearch(
 			return true;
 		})
 	) as Partial<LenderPortfolioSearchState>;
+}
+
+export function buildPortfolioBrokerPrefillSearch(
+	search: LenderPortfolioSearchState,
+	args: {
+		brokerContextSource: PortfolioBrokerContextSource;
+		brokerContextType: PortfolioBrokerContextType;
+		brokerSubjectId: string;
+	}
+): LenderPortfolioSearchState {
+	return {
+		...search,
+		brokerContextSource: args.brokerContextSource,
+		brokerContextType: args.brokerContextType,
+		brokerSubjectId: args.brokerSubjectId,
+	};
 }
 
 export function clearPortfolioDetailSelection(
