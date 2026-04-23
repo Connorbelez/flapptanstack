@@ -10,6 +10,7 @@ import { authedMutation, requirePermission } from "../../fluent";
 import {
 	appendBrokerOnboardingReviewEntry,
 	assertViewerCanAccessBrokerApplication,
+	type BrokerOnboardingApplicationDoc,
 	buildBrokerOnboardingApplicationReadModel,
 	buildResumeWindowPatch,
 	getViewerUserOrThrow,
@@ -22,7 +23,6 @@ import {
 	resolveBrokerOnboardingPortalId,
 	resolveReopenedFieldsForResubmission,
 	resolveVerifiedEmailFromIdentity,
-	selectMostRecentBrokerApplication,
 	selectResumableBrokerApplication,
 } from "./helpers";
 import { brokerOnboardingDraftDataValidator } from "./validators";
@@ -42,6 +42,33 @@ async function getFreshReadModel(
 	}
 
 	return buildBrokerOnboardingApplicationReadModel(ctx, application, now);
+}
+
+async function expireStaleBrokerApplications(
+	ctx: Pick<MutationCtx, "db">,
+	applications: readonly BrokerOnboardingApplicationDoc[],
+	now: number
+) {
+	for (const application of applications) {
+		if (
+			application.expiredAt ||
+			!isBrokerOnboardingApplicationExpired(application, now)
+		) {
+			continue;
+		}
+
+		await ctx.db.patch(application._id, {
+			expiredAt: now,
+			updatedAt: now,
+		});
+		await appendBrokerOnboardingReviewEntry(ctx, {
+			applicationId: application._id,
+			body: "Resume window expired after 30 days of inactivity.",
+			createdAt: now,
+			entryType: "system_event",
+			systemEventType: "resume_window_expired",
+		});
+	}
 }
 
 export const startOrResume = brokerOnboardingMutation
@@ -88,24 +115,7 @@ export const startOrResume = brokerOnboardingMutation
 			return getFreshReadModel(ctx, resumableApplication._id, now);
 		}
 
-		const latestApplication = selectMostRecentBrokerApplication(candidates);
-		if (
-			latestApplication &&
-			isBrokerOnboardingApplicationExpired(latestApplication, now) &&
-			!latestApplication.expiredAt
-		) {
-			await ctx.db.patch(latestApplication._id, {
-				expiredAt: now,
-				updatedAt: now,
-			});
-			await appendBrokerOnboardingReviewEntry(ctx, {
-				applicationId: latestApplication._id,
-				body: "Resume window expired after 30 days of inactivity.",
-				createdAt: now,
-				entryType: "system_event",
-				systemEventType: "resume_window_expired",
-			});
-		}
+		await expireStaleBrokerApplications(ctx, candidates, now);
 
 		const portalId = await resolveBrokerOnboardingPortalId(ctx, {
 			requestedPortalId: args.portalId,

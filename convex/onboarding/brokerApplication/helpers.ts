@@ -186,30 +186,40 @@ export async function resolveBrokerOnboardingPortalId(
 		user: Doc<"users">;
 	}
 ) {
-	if (args.requestedPortalId) {
-		const requestedPortal = await ctx.db.get(args.requestedPortalId);
-		if (
-			!requestedPortal ||
-			requestedPortal.status !== "active" ||
-			!requestedPortal.isPublished
-		) {
-			throw new ConvexError("Broker onboarding portal is unavailable");
-		}
-		return requestedPortal._id;
-	}
-
 	if (args.user.homePortalId) {
 		const homePortal = await ctx.db.get(args.user.homePortalId);
-		if (
-			homePortal &&
-			homePortal.status === "active" &&
-			homePortal.isPublished
-		) {
+		if (homePortal?.status === "active" && homePortal.isPublished) {
+			if (args.requestedPortalId && args.requestedPortalId !== homePortal._id) {
+				throw new ConvexError(
+					"Broker onboarding portal must match the trusted home portal"
+				);
+			}
 			return homePortal._id;
 		}
+
+		if (args.requestedPortalId) {
+			throw new ConvexError("Broker onboarding portal is unavailable");
+		}
+	}
+
+	if (args.requestedPortalId) {
+		throw new ConvexError(
+			"Broker onboarding portal must match the trusted home portal"
+		);
 	}
 
 	return ensureFairLendPortal(ctx);
+}
+
+export function assertPortalActiveAndPublished(
+	portal: Doc<"portals"> | null,
+	message = "Broker onboarding portal is unavailable"
+) {
+	if (!portal || portal.status !== "active" || !portal.isPublished) {
+		throw new ConvexError(message);
+	}
+
+	return portal;
 }
 
 export function mergeBrokerOnboardingDraftData(

@@ -5,6 +5,7 @@ import { actorTypeValidator } from "../../engine/validators";
 import { convex } from "../../fluent";
 import {
 	appendBrokerOnboardingReviewEntry,
+	assertPortalActiveAndPublished,
 	buildBrokerOnboardingApplicationReadModel,
 	buildResumeWindowPatch,
 	isBrokerOnboardingApplicationExpired,
@@ -341,11 +342,23 @@ export const linkDownstreamOnboardingRequest = convex
 		if (!application) {
 			throw new ConvexError("Broker onboarding application not found");
 		}
+		const now = Date.now();
 		if (
-			!(application.status === "approved" || application.status === "activated")
+			application.status === "activated" ||
+			application.downstreamHandoffStatus === "activated"
 		) {
+			if (
+				application.downstreamOnboardingRequestId !== args.onboardingRequestId
+			) {
+				throw new ConvexError(
+					"Activated broker onboarding application is already linked to a different onboarding request"
+				);
+			}
+			return buildBrokerOnboardingApplicationReadModel(ctx, application, now);
+		}
+		if (application.status !== "approved") {
 			throw new ConvexError(
-				"Only approved or activated applications can link a downstream onboarding request"
+				"Only approved applications can link a downstream onboarding request"
 			);
 		}
 
@@ -388,7 +401,6 @@ export const linkDownstreamOnboardingRequest = convex
 			);
 		}
 
-		const now = Date.now();
 		await ctx.db.patch(args.onboardingRequestId, {
 			brokerOnboardingApplicationId: args.applicationId,
 			...(downstreamRequest.portalId ? {} : { portalId: application.portalId }),
@@ -441,6 +453,13 @@ export const markDownstreamRoleAssigned = convex
 		if (!application) {
 			throw new ConvexError("Broker onboarding application not found");
 		}
+		const now = Date.now();
+		if (
+			application.status === "activated" ||
+			application.downstreamHandoffStatus === "activated"
+		) {
+			return buildBrokerOnboardingApplicationReadModel(ctx, application, now);
+		}
 		if (!application.downstreamOnboardingRequestId) {
 			throw new ConvexError(
 				"Broker onboarding application does not have a linked onboarding request"
@@ -459,7 +478,6 @@ export const markDownstreamRoleAssigned = convex
 			);
 		}
 
-		const now = Date.now();
 		await ctx.db.patch(args.applicationId, {
 			downstreamHandoffStatus: "role_assigned",
 			downstreamRoleAssignedAt: now,
@@ -539,15 +557,29 @@ export const markActivated = convex
 		if (!user) {
 			throw new ConvexError("Broker onboarding user not found");
 		}
-		if (!(activatedPortal && activatedHomePortal)) {
+		const activePortal = assertPortalActiveAndPublished(
+			activatedPortal,
+			"Activated portal evidence must be active and published"
+		);
+		const activeHomePortal = assertPortalActiveAndPublished(
+			activatedHomePortal,
+			"Activated home-portal evidence must be active and published"
+		);
+		if (args.activatedPortalId !== args.activatedHomePortalId) {
 			throw new ConvexError(
-				"Activated portal and home-portal evidence are required"
+				"Activated portal must match the synchronized home portal"
 			);
 		}
 		if (user.homePortalId !== args.activatedHomePortalId) {
 			throw new ConvexError(
 				"User home portal has not been synchronized to the activated portal"
 			);
+		}
+		if (
+			activePortal._id !== args.activatedPortalId ||
+			activeHomePortal._id !== args.activatedHomePortalId
+		) {
+			throw new ConvexError("Activated portal evidence is inconsistent");
 		}
 
 		const now = Date.now();

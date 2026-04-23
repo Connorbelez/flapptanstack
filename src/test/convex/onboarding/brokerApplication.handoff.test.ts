@@ -123,6 +123,103 @@ describe("broker onboarding downstream handoff", () => {
 		).toBe(true);
 	});
 
+	it("keeps activated handoff state stable when downstream callbacks replay", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("handoff-activation-replay");
+		const startResult = await startBrokerApplication(t, identity);
+		await submitBrokerApplication(t, identity, startResult.application._id);
+		await approveBrokerApplication(t, startResult.application._id);
+
+		const user = await getUserByAuthId(t, identity.subject);
+		const activatedPortalId = await createActivePortal(
+			t,
+			"handoff-activation-replay-portal"
+		);
+		const requestId = await insertDownstreamOnboardingRequest(t, {
+			portalId: startResult.application.portalId,
+			status: "role_assigned",
+			userId: user!._id,
+		});
+
+		await linkDownstreamOnboardingRequest(t, {
+			applicationId: startResult.application._id,
+			onboardingRequestId: requestId,
+		});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(user!._id, { homePortalId: activatedPortalId });
+		});
+		await markBrokerApplicationActivated(t, {
+			activatedHomePortalId: activatedPortalId,
+			activatedPortalId,
+			applicationId: startResult.application._id,
+		});
+
+		await linkDownstreamOnboardingRequest(t, {
+			applicationId: startResult.application._id,
+			onboardingRequestId: requestId,
+		});
+		await markDownstreamRoleAssigned(t, startResult.application._id);
+
+		const application = await getApplication(t, startResult.application._id);
+		expect(application?.status).toBe("activated");
+		expect(application?.downstreamHandoffStatus).toBe("activated");
+		expect(application?.activatedPortalId).toBe(activatedPortalId);
+	});
+
+	it("rejects activation when portal evidence is not the synchronized active portal", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("handoff-activation-portal");
+		const startResult = await startBrokerApplication(t, identity);
+		await submitBrokerApplication(t, identity, startResult.application._id);
+		await approveBrokerApplication(t, startResult.application._id);
+
+		const user = await getUserByAuthId(t, identity.subject);
+		const activatedPortalId = await createActivePortal(
+			t,
+			"handoff-activation-portal"
+		);
+		const mismatchedPortalId = await createActivePortal(
+			t,
+			"handoff-activation-mismatch"
+		);
+		const requestId = await insertDownstreamOnboardingRequest(t, {
+			portalId: startResult.application.portalId,
+			status: "role_assigned",
+			userId: user!._id,
+		});
+
+		await linkDownstreamOnboardingRequest(t, {
+			applicationId: startResult.application._id,
+			onboardingRequestId: requestId,
+		});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(user!._id, { homePortalId: activatedPortalId });
+		});
+
+		await expect(
+			t.mutation(internal.onboarding.brokerApplication.internal.markActivated, {
+				activatedHomePortalId: activatedPortalId,
+				activatedPortalId: mismatchedPortalId,
+				applicationId: startResult.application._id,
+				authorAuthId: "admin_test",
+				authorType: "admin",
+			})
+		).rejects.toThrow("synchronized home portal");
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(activatedPortalId, { status: "suspended" });
+		});
+		await expect(
+			t.mutation(internal.onboarding.brokerApplication.internal.markActivated, {
+				activatedHomePortalId: activatedPortalId,
+				activatedPortalId,
+				applicationId: startResult.application._id,
+				authorAuthId: "admin_test",
+				authorType: "admin",
+			})
+		).rejects.toThrow("active and published");
+	});
+
 	it("rejects activation before the downstream onboarding request reaches role_assigned", async () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("handoff-reject-activation");

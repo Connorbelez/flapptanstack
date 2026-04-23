@@ -51,6 +51,42 @@ describe("broker onboarding application aggregate", () => {
 		expect(result.reviewEntries).toEqual([]);
 	});
 
+	it("rejects caller-supplied portal attribution that does not match the trusted home portal", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("aggregate-portal-spoof");
+		await ensureSeededIdentity(t, identity);
+		const seededUser = await getUserByAuthId(t, identity.subject);
+		const homePortalId = await createActivePortal(t, "aggregate-home-portal");
+		const otherPortalId = await createActivePortal(t, "aggregate-other-portal");
+		await t.run(async (ctx) => {
+			await ctx.db.patch(seededUser!._id, { homePortalId });
+		});
+
+		await expect(
+			t.withIdentity(identity).mutation(
+				api.onboarding.brokerApplication.mutations.startOrResume,
+				{ portalId: otherPortalId }
+			)
+		).rejects.toThrow("trusted home portal");
+
+		const noHomeIdentity = buildVerifiedMemberIdentity(
+			"aggregate-portal-spoof-no-home"
+		);
+		await ensureSeededIdentity(t, noHomeIdentity);
+		await expect(
+			t.withIdentity(noHomeIdentity).mutation(
+				api.onboarding.brokerApplication.mutations.startOrResume,
+				{ portalId: otherPortalId }
+			)
+		).rejects.toThrow("trusted home portal");
+
+		const result = await startBrokerApplication(t, identity, {
+			portalId: homePortalId,
+		});
+
+		expect(result.application.portalId).toBe(homePortalId);
+	});
+
 	it("resumes the latest unexpired application instead of creating a duplicate", async () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("aggregate-resume");
@@ -88,6 +124,53 @@ describe("broker onboarding application aggregate", () => {
 			)
 		).toBe(true);
 		expect(applications).toHaveLength(2);
+	});
+
+	it("expires stale non-terminal candidates even when a newer terminal application exists", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("aggregate-expiry-terminal");
+		const firstResult = await startBrokerApplication(t, identity);
+		const user = await getUserByAuthId(t, identity.subject);
+
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.patch(firstResult.application._id, {
+				expiresAt: now - 1,
+				lastActivityAt: now - BROKER_ONBOARDING_RESUME_WINDOW_MS,
+			});
+			await ctx.db.insert("brokerOnboardingApplications", {
+				authUserId: identity.subject,
+				createdAt: now + 1,
+				downstreamHandoffStatus: "not_started",
+				draftData: {},
+				expiresAt: now + BROKER_ONBOARDING_RESUME_WINDOW_MS,
+				lastActivityAt: now + 1,
+				lastTransitionAt: now + 1,
+				machineContext: firstResult.application.machineContext,
+				portalId: firstResult.application.portalId,
+				rejectedAt: now + 1,
+				reopenedFields: [],
+				startedAt: now + 1,
+				status: "rejected",
+				updatedAt: now + 1,
+				userId: user!._id,
+				verifiedEmail: identity.user_email,
+			});
+		});
+
+		const nextResult = await startBrokerApplication(t, identity);
+		const expiredApplication = await getApplication(t, firstResult.application._id);
+		const expiredEntries = await getReviewEntries(t, firstResult.application._id);
+		const applications = await countApplicationsForAuthUser(t, identity.subject);
+
+		expect(nextResult.application._id).not.toBe(firstResult.application._id);
+		expect(expiredApplication?.expiredAt).toBeTypeOf("number");
+		expect(
+			expiredEntries.some(
+				(entry) => entry.systemEventType === "resume_window_expired"
+			)
+		).toBe(true);
+		expect(applications).toHaveLength(3);
 	});
 
 	it("saves draft state with normalized slug and province and persists broker notes", async () => {
