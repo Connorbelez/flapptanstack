@@ -90,9 +90,16 @@ function LenderPortfolioRouteContent() {
 		portalContext,
 		"Lender portfolio requires an active portal host."
 	);
-	const { data } = useSuspenseQuery(
+	const { data, isFetching } = useSuspenseQuery(
 		lenderPortfolioCommandCenterQueryOptions(portalId)
 	);
+	let suggestedOpportunitiesState: "ready" | "loading" | "unavailable" =
+		"ready";
+	if (data.suggestedOpportunities.availabilityState === "unavailable") {
+		suggestedOpportunitiesState = "unavailable";
+	} else if (isFetching && data.suggestedOpportunities.rows.length === 0) {
+		suggestedOpportunitiesState = "loading";
+	}
 
 	return (
 		<LenderPortfolioPage
@@ -108,6 +115,7 @@ function LenderPortfolioRouteContent() {
 				})
 			}
 			snapshot={data}
+			suggestedOpportunitiesState={suggestedOpportunitiesState}
 		/>
 	);
 }
