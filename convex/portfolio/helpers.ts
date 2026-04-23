@@ -33,6 +33,7 @@ import type {
 	PortfolioPositionDetail,
 	PortfolioPositionRow,
 	PortfolioSourceOfTruth,
+	PortfolioSuggestedOpportunitiesSection,
 	PortfolioSuggestedOpportunity,
 	PortfolioSuggestionReasonTag,
 	PortfolioTimelineEvent,
@@ -77,6 +78,8 @@ const PORTFOLIO_SOURCE_OF_TRUTH: PortfolioSourceOfTruth = {
 	csvTaxExportInputs:
 		"Server-generated lender tax export query backed by year-end snapshots and explicit live fallback when a completed-period snapshot is unavailable",
 };
+const PORTFOLIO_SUGGESTIONS_UNAVAILABLE_REASON =
+	"FairLend could not load a reliable suggestion snapshot right now.";
 
 function roundCurrency(value: number) {
 	return Math.round(value * 100) / 100;
@@ -504,6 +507,78 @@ async function loadSuggestedOpportunityCandidates(
 	} while (!isDone && rows.length < SUGGESTED_OPPORTUNITY_LIMIT);
 
 	return { excludedOwnedMortgageCount, rows };
+}
+
+async function buildSuggestedOpportunitiesSection(
+	ctx: PortfolioQueryContext,
+	args: {
+		effectiveFilters: Parameters<
+			typeof listMarketplaceListingsSnapshot
+		>[1]["filters"];
+		generatedAt: number;
+		heldMortgageIds: ReadonlySet<string>;
+		heldMortgageTypes: Set<string>;
+		heldPropertyTypes: Set<string>;
+		interestRateBenchmark: number;
+	}
+): Promise<{
+	section: PortfolioSuggestedOpportunitiesSection;
+	suggestionSeedCount: number;
+}> {
+	try {
+		const pricingSelection = await loadPortalPricingSelection(ctx, {
+			atTime: args.generatedAt,
+			portalId: ctx.portal.portalId,
+		});
+		const { excludedOwnedMortgageCount, rows: suggestedOpportunityCandidates } =
+			await loadSuggestedOpportunityCandidates(ctx, {
+				filters: args.effectiveFilters,
+				heldMortgageIds: args.heldMortgageIds,
+				pricingPolicy:
+					pricingSelection.kind === "ready" ? pricingSelection.policy : null,
+			});
+		const rows: PortfolioSuggestedOpportunity[] =
+			suggestedOpportunityCandidates.map(({ listing, suggestion }) => ({
+				explanationTags: buildSuggestionReasonTags({
+					heldMortgageTypes: args.heldMortgageTypes,
+					heldPropertyTypes: args.heldPropertyTypes,
+					interestRateBenchmark: args.interestRateBenchmark,
+					listing,
+				}),
+				heroImageUrl: suggestion.heroImageUrl,
+				interestRate: suggestion.interestRate,
+				listingId: suggestion.id,
+				locationLabel: suggestion.locationLabel,
+				ltvRatio: suggestion.ltvRatio,
+				marketplaceCopy: suggestion.marketplaceCopy,
+				maturityDate: suggestion.maturityDate,
+				mortgageId: listing.mortgageId ? String(listing.mortgageId) : null,
+				mortgageTypeLabel: suggestion.mortgageTypeLabel,
+				principal: suggestion.principal,
+				propertyTypeLabel: suggestion.propertyTypeLabel,
+				title: suggestion.title,
+			}));
+
+		return {
+			section: {
+				availabilityState: "ready",
+				excludedOwnedMortgageCount,
+				rows,
+			},
+			suggestionSeedCount: suggestedOpportunityCandidates.length,
+		};
+	} catch (error) {
+		console.error("Failed to build portfolio suggested opportunities", error);
+		return {
+			section: {
+				availabilityState: "unavailable",
+				excludedOwnedMortgageCount: 0,
+				rows: [],
+				unavailableReason: PORTFOLIO_SUGGESTIONS_UNAVAILABLE_REASON,
+			},
+			suggestionSeedCount: 0,
+		};
+	}
 }
 
 function buildSuggestionReasonTags(args: {
@@ -994,20 +1069,9 @@ export async function buildPortfolioCommandCenter(
 		undefined,
 		constraint
 	);
-	const pricingSelection = await loadPortalPricingSelection(ctx, {
-		atTime: generatedAt,
-		portalId: ctx.portal.portalId,
-	});
 	const heldMortgageIds = new Set(
 		mortgageIds.map((mortgageId) => String(mortgageId))
 	);
-	const { excludedOwnedMortgageCount, rows: suggestedOpportunityCandidates } =
-		await loadSuggestedOpportunityCandidates(ctx, {
-			filters: effectiveFilters,
-			heldMortgageIds,
-			pricingPolicy:
-				pricingSelection.kind === "ready" ? pricingSelection.policy : null,
-		});
 	const heldPropertyTypes = new Set<string>(
 		positions
 			.map((position) => {
@@ -1054,28 +1118,15 @@ export async function buildPortfolioCommandCenter(
 						);
 					}, 0) / weightedRateDenominator
 				);
-
-	const suggestedRows: PortfolioSuggestedOpportunity[] =
-		suggestedOpportunityCandidates.map(({ listing, suggestion }) => ({
-			explanationTags: buildSuggestionReasonTags({
-				heldMortgageTypes,
-				heldPropertyTypes,
-				interestRateBenchmark: weightedAverageInterestRate,
-				listing,
-			}),
-			heroImageUrl: suggestion.heroImageUrl,
-			interestRate: suggestion.interestRate,
-			listingId: suggestion.id,
-			locationLabel: suggestion.locationLabel,
-			ltvRatio: suggestion.ltvRatio,
-			marketplaceCopy: suggestion.marketplaceCopy,
-			maturityDate: suggestion.maturityDate,
-			mortgageId: listing.mortgageId ? String(listing.mortgageId) : null,
-			mortgageTypeLabel: suggestion.mortgageTypeLabel,
-			principal: suggestion.principal,
-			propertyTypeLabel: suggestion.propertyTypeLabel,
-			title: suggestion.title,
-		}));
+	const { section: suggestedOpportunities, suggestionSeedCount } =
+		await buildSuggestedOpportunitiesSection(ctx, {
+			effectiveFilters,
+			generatedAt,
+			heldMortgageIds,
+			heldMortgageTypes,
+			heldPropertyTypes,
+			interestRateBenchmark: weightedAverageInterestRate,
+		});
 
 	const primaryBrokerId =
 		ctx.portal.brokerId ?? getPrimaryBrokerId(mortgageMap.values());
@@ -1167,7 +1218,7 @@ export async function buildPortfolioCommandCenter(
 			hasActions: actionItems.length > 0,
 			hasPayments: paymentRows.length > 0,
 			hasPositions: positionRows.length > 0,
-			hasSuggestions: suggestedRows.length > 0,
+			hasSuggestions: suggestedOpportunities.rows.length > 0,
 		},
 		generatedAt,
 		limitsStrip: {
@@ -1182,7 +1233,7 @@ export async function buildPortfolioCommandCenter(
 			},
 			effectiveFilters: effectiveFilters ?? null,
 			hasConstraints: constraint !== null,
-			suggestionSeedCount: suggestedOpportunityCandidates.length,
+			suggestionSeedCount,
 		},
 		paymentActivity: {
 			rows: paymentRows,
@@ -1191,10 +1242,7 @@ export async function buildPortfolioCommandCenter(
 			rows: positionRows.map((entry) => entry.row),
 		},
 		sourceOfTruth: PORTFOLIO_SOURCE_OF_TRUTH,
-		suggestedOpportunities: {
-			excludedOwnedMortgageCount,
-			rows: suggestedRows,
-		},
+		suggestedOpportunities,
 	};
 }
 

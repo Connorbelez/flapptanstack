@@ -246,9 +246,19 @@ export type PortfolioSuggestedOpportunity = Infer<
 	typeof portfolioSuggestedOpportunityValidator
 >;
 
+export const portfolioSuggestedOpportunitiesAvailabilityValidator = v.union(
+	v.literal("ready"),
+	v.literal("unavailable")
+);
+export type PortfolioSuggestedOpportunitiesAvailability = Infer<
+	typeof portfolioSuggestedOpportunitiesAvailabilityValidator
+>;
+
 export const portfolioSuggestedOpportunitiesSectionValidator = v.object({
+	availabilityState: portfolioSuggestedOpportunitiesAvailabilityValidator,
 	excludedOwnedMortgageCount: v.number(),
 	rows: v.array(portfolioSuggestedOpportunityValidator),
+	unavailableReason: v.optional(v.string()),
 });
 export type PortfolioSuggestedOpportunitiesSection = Infer<
 	typeof portfolioSuggestedOpportunitiesSectionValidator

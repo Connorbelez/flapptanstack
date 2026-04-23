@@ -220,6 +220,7 @@ export const portfolioCommandCenterFixture: PortfolioCommandCenterSnapshot = {
 		paymentActivityRows: "obligations + collection attempts",
 	},
 	suggestedOpportunities: {
+		availabilityState: "ready",
 		excludedOwnedMortgageCount: 1,
 		rows: [
 			{
@@ -274,9 +275,49 @@ export const emptyPortfolioCommandCenterFixture: PortfolioCommandCenterSnapshot 
 		paymentActivity: { rows: [] },
 		positions: { rows: [] },
 		suggestedOpportunities: {
+			availabilityState: "ready",
 			excludedOwnedMortgageCount: 0,
 			rows: [],
 		},
+	};
+
+export const noSuggestedOpportunitiesFixture: PortfolioCommandCenterSnapshot = {
+	...portfolioCommandCenterFixture,
+	emptyStates: {
+		...portfolioCommandCenterFixture.emptyStates,
+		hasSuggestions: false,
+	},
+	suggestedOpportunities: {
+		availabilityState: "ready",
+		excludedOwnedMortgageCount: 2,
+		rows: [],
+	},
+};
+
+export const unavailableSuggestedOpportunitiesFixture: PortfolioCommandCenterSnapshot =
+	{
+		...portfolioCommandCenterFixture,
+		emptyStates: {
+			...portfolioCommandCenterFixture.emptyStates,
+			hasSuggestions: false,
+		},
+		limitsStrip: {
+			...portfolioCommandCenterFixture.limitsStrip,
+			hasConstraints: false,
+		},
+		suggestedOpportunities: {
+			availabilityState: "unavailable",
+			excludedOwnedMortgageCount: 0,
+			rows: [],
+			unavailableReason:
+				"FairLend could not load a reliable suggestion snapshot right now.",
+		},
+	};
+
+export const staleSuggestedOpportunitiesFixture: PortfolioCommandCenterSnapshot =
+	{
+		...portfolioCommandCenterFixture,
+		generatedAt: Date.parse("2026-03-20T12:00:00.000Z"),
 	};
 
 export const portfolioHistoricalSeriesFixture: PortfolioHistoricalSeries = {

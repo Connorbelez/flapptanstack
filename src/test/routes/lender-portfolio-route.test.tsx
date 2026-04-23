@@ -268,6 +268,7 @@ describe("lender portfolio route", () => {
 		} as never);
 		vi.mocked(useSuspenseQuery).mockReturnValue({
 			data: portfolioCommandCenterFixture,
+			isFetching: false,
 		} as never);
 		render(<LenderPortfolioRouteComponent />);
 
@@ -322,6 +323,31 @@ describe("lender portfolio route", () => {
 				name: /download csv/i,
 			}) as HTMLButtonElement).disabled
 		).toBe(true);
+	});
+
+	it("routes live query refresh into the suggested-opportunities loading state", () => {
+		const navigate = vi.fn();
+
+		vi.spyOn(Route, "useSearch").mockReturnValue(
+			DEFAULT_LENDER_PORTFOLIO_SEARCH as never
+		);
+		vi.spyOn(RootRoute, "useRouteContext").mockReturnValue(
+			ROOT_ROUTE_CONTEXT as never
+		);
+		vi.mocked(useNavigate).mockReturnValue(navigate);
+		vi.mocked(useIsMobile).mockReturnValue(false);
+		vi.mocked(lenderPortfolioCommandCenterQueryOptions).mockReturnValue(
+			COMMAND_CENTER_QUERY_OPTIONS as never
+		);
+		vi.mocked(useSuspenseQuery).mockReturnValue({
+			data: emptyPortfolioCommandCenterFixture,
+			isFetching: true,
+		} as never);
+
+		render(<LenderPortfolioRouteComponent />);
+
+		expect(screen.getByTestId("suggested-opportunities-loading")).toBeTruthy();
+		expect(screen.queryByTestId("suggested-opportunities-empty")).toBeNull();
 	});
 });
 
