@@ -11,16 +11,21 @@ import {
 	type SuggestedOpportunitiesState,
 } from "./suggested-opportunities";
 
+const STORY_NOW_MS = Date.parse("2026-04-23T15:00:00.000Z");
+const FRESH_STORY_GENERATED_AT = Date.parse("2026-04-23T14:00:00.000Z");
+
 function buildArgs(
 	snapshot: typeof portfolioCommandCenterFixture,
-	state?: SuggestedOpportunitiesState
+	state?: SuggestedOpportunitiesState,
+	generatedAt = FRESH_STORY_GENERATED_AT
 ) {
 	return {
 		excludedOwnedMortgageCount:
 			snapshot.suggestedOpportunities.excludedOwnedMortgageCount,
-		generatedAt: snapshot.generatedAt,
+		generatedAt,
 		hasBrokerConstraints: snapshot.limitsStrip.hasConstraints,
 		hasPositions: snapshot.positions.rows.length > 0,
+		nowMs: STORY_NOW_MS,
 		rows: snapshot.suggestedOpportunities.rows,
 		state,
 		unavailableReason: snapshot.suggestedOpportunities.unavailableReason,
@@ -59,5 +64,9 @@ export const Unavailable: Story = {
 };
 
 export const Stale: Story = {
-	args: buildArgs(staleSuggestedOpportunitiesFixture),
+	args: buildArgs(
+		staleSuggestedOpportunitiesFixture,
+		undefined,
+		staleSuggestedOpportunitiesFixture.generatedAt
+	),
 };

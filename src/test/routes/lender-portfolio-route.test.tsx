@@ -16,6 +16,7 @@ import {
 	portfolioPaymentDetailFixture,
 	portfolioPositionDetailFixture,
 	portfolioTaxExportFixture,
+	unavailableSuggestedOpportunitiesFixture,
 } from "#/components/lender/portfolio/fixtures";
 import { LenderPortfolioPage } from "#/components/lender/portfolio/LenderPortfolioPage";
 import {
@@ -325,7 +326,7 @@ describe("lender portfolio route", () => {
 		).toBe(true);
 	});
 
-	it("routes live query refresh into the suggested-opportunities loading state", () => {
+	it("keeps valid empty suggestions visible during command-center refresh", () => {
 		const navigate = vi.fn();
 
 		vi.spyOn(Route, "useSearch").mockReturnValue(
@@ -346,7 +347,34 @@ describe("lender portfolio route", () => {
 
 		render(<LenderPortfolioRouteComponent />);
 
-		expect(screen.getByTestId("suggested-opportunities-loading")).toBeTruthy();
+		expect(screen.getByTestId("suggested-opportunities-empty")).toBeTruthy();
+		expect(screen.queryByTestId("suggested-opportunities-loading")).toBeNull();
+	});
+
+	it("routes backend unavailable suggestions into the unavailable state", () => {
+		const navigate = vi.fn();
+
+		vi.spyOn(Route, "useSearch").mockReturnValue(
+			DEFAULT_LENDER_PORTFOLIO_SEARCH as never
+		);
+		vi.spyOn(RootRoute, "useRouteContext").mockReturnValue(
+			ROOT_ROUTE_CONTEXT as never
+		);
+		vi.mocked(useNavigate).mockReturnValue(navigate);
+		vi.mocked(useIsMobile).mockReturnValue(false);
+		vi.mocked(lenderPortfolioCommandCenterQueryOptions).mockReturnValue(
+			COMMAND_CENTER_QUERY_OPTIONS as never
+		);
+		vi.mocked(useSuspenseQuery).mockReturnValue({
+			data: unavailableSuggestedOpportunitiesFixture,
+			isFetching: false,
+		} as never);
+
+		render(<LenderPortfolioRouteComponent />);
+
+		expect(
+			screen.getByTestId("suggested-opportunities-unavailable")
+		).toBeTruthy();
 		expect(screen.queryByTestId("suggested-opportunities-empty")).toBeNull();
 	});
 });
