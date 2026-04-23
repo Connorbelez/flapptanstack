@@ -35,3 +35,5 @@
 - [x] T-920: Resolve audit findings or record blockers, then rerun the audit if the verdict is not yet ready.
 - [x] T-930: Run final execution-artifact validation plus `gitnexus_detect_changes` and record the closeout evidence.
   Result: `gitnexus_detect_changes` reported `medium` risk limited to `LenderPortfolioPage` and three local portfolio helper processes; no unexpected modules or flows were surfaced.
+- [x] T-940: Resolve follow-up review finding: keep valid empty suggested opportunities visible during command-center background refresh instead of mapping whole-query `isFetching` to section loading.
+- [x] T-941: Resolve follow-up review finding: keep default suggested-opportunity stories from inheriting stale fixture timestamps.

@@ -17,6 +17,7 @@ interface SuggestedOpportunitiesProps {
 	generatedAt: number;
 	hasBrokerConstraints: boolean;
 	hasPositions: boolean;
+	nowMs?: number;
 	rows: readonly PortfolioSuggestedOpportunity[];
 	state?: SuggestedOpportunitiesState;
 	unavailableReason?: string;
@@ -27,13 +28,14 @@ export function SuggestedOpportunities({
 	generatedAt,
 	hasBrokerConstraints,
 	hasPositions,
+	nowMs = Date.now(),
 	rows,
 	state = "ready",
 	unavailableReason,
 }: SuggestedOpportunitiesProps) {
 	const isStale =
 		state !== "loading" &&
-		Date.now() - generatedAt >= PORTFOLIO_SUGGESTIONS_STALE_AFTER_MS;
+		nowMs - generatedAt >= PORTFOLIO_SUGGESTIONS_STALE_AFTER_MS;
 
 	return (
 		<PortfolioSlotHost
