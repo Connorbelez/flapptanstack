@@ -8,6 +8,10 @@
   },
   "files": {
     "includes": [
+      "!!.superpowers",
+      "!!specs",
+      "!!plugins",
+      "!!scripts",
       "!!**/convex/_generated",
       "!!.context/*",
       "!!**/convex/components",
