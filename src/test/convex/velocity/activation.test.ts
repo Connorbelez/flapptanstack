@@ -7,13 +7,27 @@ import type {
 	VelocityDeal,
 } from "../../../../convex/velocity/contracts";
 import { buildVelocityActivationHandoff } from "../../../../convex/velocity/activationMapper";
-import { createTestConvex, ensureSeededIdentity } from "../../auth/helpers";
+import {
+	createMockViewer,
+	createTestConvex,
+	ensureSeededIdentity,
+} from "../../auth/helpers";
 import { FAIRLEND_ADMIN } from "../../auth/identities";
 
 type ConvexTest = ReturnType<typeof createTestConvex>;
 
 const ORIGINAL_ROTESSA_API_KEY = process.env.ROTESSA_API_KEY;
 const ORIGINAL_ROTESSA_API_BASE_URL = process.env.ROTESSA_API_BASE_URL;
+const FAIRLEND_ADMIN_RETRY = createMockViewer({
+	email: "retry-admin@fairlend.ca",
+	firstName: "Retry",
+	lastName: "Admin",
+	orgId: FAIRLEND_ADMIN.org_id,
+	orgName: FAIRLEND_ADMIN.organization_name,
+	permissions: JSON.parse(FAIRLEND_ADMIN.permissions) as string[],
+	roles: JSON.parse(FAIRLEND_ADMIN.roles) as string[],
+	subject: "user_fairlend_retry_admin",
+});
 
 const activateVelocityPackageRef = makeFunctionReference<
 	"action",
@@ -107,6 +121,36 @@ function makeDeal(overrides: Partial<VelocityDeal> = {}): VelocityDeal {
 			...subjectProperty,
 			...(overrides.subjectProperty ?? {}),
 		},
+		...overrides,
+	};
+}
+
+function buildRotessaCustomerResponse(overrides: Record<string, unknown> = {}) {
+	return {
+		account_number: "123456789",
+		authorization_type: "Online",
+		bank_account_type: "Checking",
+		custom_identifier:
+			"velocity_package:LINK-1001:borrower:borrower@example.test:bank",
+		email: "borrower@example.test",
+		id: 501,
+		institution_number: "001",
+		name: "Borrower One",
+		transaction_schedules: [],
+		transit_number: "00011",
+		...overrides,
+	};
+}
+
+function buildRotessaScheduleResponse(overrides: Record<string, unknown> = {}) {
+	return {
+		amount: "1250.00",
+		comment: "velocity_package:LINK-1001",
+		frequency: "Monthly",
+		id: 701,
+		installments: 12,
+		next_process_date: "2026-06-01",
+		process_date: "2026-06-01",
 		...overrides,
 	};
 }
@@ -222,6 +266,27 @@ async function seedReadyReviewedWorkspace(t: ConvexTest) {
 		reviewedSnapshotId: confirmed.finalReview.reviewedSnapshotId,
 		workspaceId,
 	};
+}
+
+async function patchVelocityRemediation(
+	t: ConvexTest,
+	workspaceId: Id<"velocityPackageWorkspaces">,
+	activationRemediation: {
+		borrowerRoleOverrides?: Array<{
+			borrowerExternalKey: string;
+			role: "co_borrower" | "guarantor" | "primary";
+		}>;
+		lienPosition?: number;
+		loanType?: "conventional" | "high_ratio" | "insured";
+	}
+) {
+	await t.withIdentity(FAIRLEND_ADMIN).mutation(
+		api.velocity.workspaces.updateVelocityPackageFairLendFields,
+		{
+			patch: { activationRemediation },
+			workspaceId,
+		}
+	);
 }
 
 async function readActivationState(t: ConvexTest) {
@@ -483,22 +548,28 @@ describe("Velocity package activation", () => {
 			.spyOn(globalThis, "fetch")
 			.mockImplementation(async (input) => {
 				const url = new URL(String(input));
-				if (url.pathname === "/customers") {
-					return Response.json({
-						id: 501,
-						name: "Borrower One",
-						email: "borrower@example.test",
-						account_number: "123456789",
-						authorization_type: "Online",
-						bank_account_type: "Checking",
-						custom_identifier: "velocity_package:LINK-1001:borrower:borrower@example.test:bank",
-						institution_number: "001",
-						transit_number: "00011",
-					});
-				}
-				if (url.pathname === "/transaction_schedules") {
+				if (url.pathname === "/customers/show_with_custom_identifier") {
 					return Response.json(
-						{ errors: [{ detail: "Rotessa unavailable" }] },
+						{ errors: [{ error_code: "not_found", error_message: "Missing" }] },
+						{ status: 404 }
+					);
+				}
+				if (url.pathname === "/customers") {
+					return Response.json(buildRotessaCustomerResponse());
+				}
+				if (
+					url.pathname ===
+					"/transaction_schedules/create_with_custom_identifier"
+				) {
+					return Response.json(
+						{
+							errors: [
+								{
+									error_code: "service_unavailable",
+									error_message: "Rotessa unavailable",
+								},
+							],
+						},
 						{ status: 503 }
 					);
 				}
@@ -514,7 +585,14 @@ describe("Velocity package activation", () => {
 		).rejects.toThrow(/Rotessa|503|unavailable|schedule/i);
 
 		const state = await readActivationState(t);
-		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls.map(([input]) => new URL(String(input)).pathname))
+			.toEqual([
+				"/customers/show_with_custom_identifier",
+				"/customers",
+				"/customers/show_with_custom_identifier",
+				"/transaction_schedules/create_with_custom_identifier",
+				"/customers/show_with_custom_identifier",
+			]);
 		expect(state.mortgages).toHaveLength(0);
 		expect(state.externalCollectionSchedules).toHaveLength(0);
 		expect(state.attempts).toHaveLength(1);
@@ -542,41 +620,37 @@ describe("Velocity package activation", () => {
 	it("retries with provider artifact reuse before creating the canonical mortgage", async () => {
 		const t = createTestConvex();
 		const reviewed = await seedReadyReviewedWorkspace(t);
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN_RETRY);
 		let scheduleAttempts = 0;
 		const fetchMock = vi
 			.spyOn(globalThis, "fetch")
 			.mockImplementation(async (input) => {
 				const url = new URL(String(input));
-				if (url.pathname === "/customers") {
-					return Response.json({
-						id: 501,
-						name: "Borrower One",
-						email: "borrower@example.test",
-						account_number: "123456789",
-						authorization_type: "Online",
-						bank_account_type: "Checking",
-						custom_identifier: "velocity_package:LINK-1001:borrower:borrower@example.test:bank",
-						institution_number: "001",
-						transit_number: "00011",
-					});
+				if (url.pathname === "/customers/show_with_custom_identifier") {
+					return Response.json(
+						{ errors: [{ error_code: "not_found", error_message: "Missing" }] },
+						{ status: 404 }
+					);
 				}
-				if (url.pathname === "/transaction_schedules") {
+				if (url.pathname === "/customers") {
+					return Response.json(buildRotessaCustomerResponse());
+				}
+				if (url.pathname === "/transaction_schedules/create_with_custom_identifier") {
 					scheduleAttempts += 1;
 					if (scheduleAttempts === 1) {
 						return Response.json(
-							{ errors: [{ detail: "Temporary Rotessa outage" }] },
+							{
+								errors: [
+									{
+										error_code: "service_unavailable",
+										error_message: "Temporary Rotessa outage",
+									},
+								],
+							},
 							{ status: 503 }
 						);
 					}
-					return Response.json({
-						id: 701,
-						amount: "1250.00",
-						comment: "velocity_package:LINK-1001",
-						frequency: "Monthly",
-						installments: 12,
-						next_process_date: "2026-06-01",
-						process_date: "2026-06-01",
-					});
+					return Response.json(buildRotessaScheduleResponse());
 				}
 				throw new Error(`Unexpected Rotessa path: ${url.pathname}`);
 			});
@@ -589,7 +663,7 @@ describe("Velocity package activation", () => {
 			})
 		).rejects.toThrow(/Rotessa|503|Temporary/i);
 
-		const retry = await t.withIdentity(FAIRLEND_ADMIN).action(
+		const retry = await t.withIdentity(FAIRLEND_ADMIN_RETRY).action(
 			activateVelocityPackageRef,
 			{
 				reviewedSnapshotHash: reviewed.reviewedSnapshotHash,
@@ -603,7 +677,9 @@ describe("Velocity package activation", () => {
 			([input]) => new URL(String(input)).pathname === "/customers"
 		);
 		const scheduleCreates = fetchMock.mock.calls.filter(
-			([input]) => new URL(String(input)).pathname === "/transaction_schedules"
+			([input]) =>
+				new URL(String(input)).pathname ===
+				"/transaction_schedules/create_with_custom_identifier"
 		);
 		expect(customerCreates).toHaveLength(1);
 		expect(scheduleCreates).toHaveLength(2);
@@ -646,6 +722,17 @@ describe("Velocity package activation", () => {
 			},
 			state: "activated",
 		});
+		expect(state.workspace).not.toHaveProperty("exceptionKind");
+		expect(state.workspace).not.toHaveProperty("exceptionSummary");
+		expect(
+			state.exceptions.filter(
+				(exception) => exception.kind === "activation_exception"
+			)
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ status: "superseded" }),
+			])
+		);
 		expect(state.auditJournal.map((entry) => entry.eventType)).toEqual(
 			expect.arrayContaining([
 				"velocity_activation_failed",
@@ -655,6 +742,107 @@ describe("Velocity package activation", () => {
 				"VELOCITY_PACKAGE_ACTIVATED",
 			])
 		);
+		expect(
+			state.auditJournal.find(
+				(entry) => entry.eventType === "velocity_activation_succeeded"
+			)
+		).toMatchObject({
+			linkedRecordIds: expect.objectContaining({
+				externalCollectionScheduleId: String(
+					state.externalCollectionSchedules[0]?._id
+				),
+				mortgageId: String(state.mortgages[0]?._id),
+			}),
+			payload: expect.objectContaining({
+				mortgageId: String(state.mortgages[0]?._id),
+				rotessaCustomerRef: "501",
+				rotessaScheduleRef: "701",
+			}),
+		});
+		expect(
+			state.auditJournal.find(
+				(entry) => entry.eventType === "VELOCITY_PACKAGE_ACTIVATED"
+			)
+		).toMatchObject({
+			linkedRecordIds: expect.objectContaining({
+				activationAttemptId: String(state.attempts[0]?._id),
+				reviewedSnapshotId: String(reviewed.reviewedSnapshotId),
+			}),
+			payload: expect.objectContaining({
+				activationAttemptId: String(state.attempts[0]?._id),
+				reviewedSnapshotHash: reviewed.reviewedSnapshotHash,
+				rotessaScheduleRef: "701",
+				workflowSourceKey: "velocity_package:mortgage:LINK-1001",
+			}),
+		});
+
+		const duplicate = await t.withIdentity(FAIRLEND_ADMIN_RETRY).action(
+			activateVelocityPackageRef,
+			{
+				reviewedSnapshotHash: reviewed.reviewedSnapshotHash,
+				reviewedSnapshotId: reviewed.reviewedSnapshotId,
+				workspaceId: reviewed.workspaceId,
+			}
+		);
+		expect(duplicate).toMatchObject({
+			activationAttemptId: state.attempts[0]?._id,
+			mortgageId: state.mortgages[0]?._id,
+			status: "succeeded",
+		});
+	});
+
+	it("compensates an active provider schedule when canonical finalization fails", async () => {
+		const t = createTestConvex();
+		const reviewed = await seedReadyReviewedWorkspace(t);
+		await patchVelocityRemediation(t, reviewed.workspaceId, {
+			borrowerRoleOverrides: [
+				{ borrowerExternalKey: "borrower@example.test", role: "guarantor" },
+			],
+			lienPosition: 1,
+			loanType: "conventional",
+		});
+		const deletedScheduleRefs: string[] = [];
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+			const url = new URL(String(input));
+			if (url.pathname === "/customers/show_with_custom_identifier") {
+				return Response.json(
+					{ errors: [{ error_code: "not_found", error_message: "Missing" }] },
+					{ status: 404 }
+				);
+			}
+			if (url.pathname === "/customers") {
+				return Response.json(buildRotessaCustomerResponse());
+			}
+			if (url.pathname === "/transaction_schedules/create_with_custom_identifier") {
+				return Response.json(buildRotessaScheduleResponse());
+			}
+			if (url.pathname === "/transaction_schedules/701") {
+				if (init?.method === "DELETE") {
+					deletedScheduleRefs.push("701");
+					return Response.json(null);
+				}
+			}
+			throw new Error(`Unexpected Rotessa path: ${url.pathname}`);
+		});
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).action(activateVelocityPackageRef, {
+				reviewedSnapshotHash: reviewed.reviewedSnapshotHash,
+				reviewedSnapshotId: reviewed.reviewedSnapshotId,
+				workspaceId: reviewed.workspaceId,
+			})
+		).rejects.toThrow(/primary borrower/i);
+
+		const state = await readActivationState(t);
+		expect(deletedScheduleRefs).toEqual(["701"]);
+		expect(state.mortgages).toHaveLength(0);
+		expect(state.externalCollectionSchedules).toHaveLength(0);
+		expect(state.attempts[0]).toMatchObject({
+			rotessaCustomerRef: "501",
+			status: "failed",
+		});
+		expect(state.attempts[0]).not.toHaveProperty("rotessaScheduleRef");
+		expect(state.attempts[0]?.failureMessage).toMatch(/compensated/i);
 	});
 
 	it("records post-live Velocity drift without mutating the canonical mortgage", async () => {
@@ -662,29 +850,17 @@ describe("Velocity package activation", () => {
 		const reviewed = await seedReadyReviewedWorkspace(t);
 		vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
 			const url = new URL(String(input));
-			if (url.pathname === "/customers") {
-				return Response.json({
-					id: 501,
-					name: "Borrower One",
-					email: "borrower@example.test",
-					account_number: "123456789",
-					authorization_type: "Online",
-					bank_account_type: "Checking",
-					custom_identifier: "velocity_package:LINK-1001:borrower:borrower@example.test:bank",
-					institution_number: "001",
-					transit_number: "00011",
-				});
+			if (url.pathname === "/customers/show_with_custom_identifier") {
+				return Response.json(
+					{ errors: [{ error_code: "not_found", error_message: "Missing" }] },
+					{ status: 404 }
+				);
 			}
-			if (url.pathname === "/transaction_schedules") {
-				return Response.json({
-					id: 701,
-					amount: "1250.00",
-					comment: "velocity_package:LINK-1001",
-					frequency: "Monthly",
-					installments: 12,
-					next_process_date: "2026-06-01",
-					process_date: "2026-06-01",
-				});
+			if (url.pathname === "/customers") {
+				return Response.json(buildRotessaCustomerResponse());
+			}
+			if (url.pathname === "/transaction_schedules/create_with_custom_identifier") {
+				return Response.json(buildRotessaScheduleResponse());
 			}
 			throw new Error(`Unexpected Rotessa path: ${url.pathname}`);
 		});
@@ -759,6 +935,125 @@ describe("Velocity package activation", () => {
 		);
 		expect(afterDrift.auditTypes).toEqual(
 			expect.arrayContaining(["velocity_post_live_drift_detected"])
+		);
+	});
+
+	it("detects post-live drift even when the upstream hash was synced before activation", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const originalDeal = makeDeal();
+		const originalSync = await applyFullDealSync(t, originalDeal);
+		const changedDeal = makeDeal({
+			mortgageRequest: {
+				...originalDeal.mortgageRequest,
+				payment: 1260,
+			},
+		});
+		const changedSync = await applyFullDealSync(t, changedDeal);
+		if (!changedSync.workspaceId) {
+			throw new Error("Expected changed Velocity workspace");
+		}
+		const workspaceId =
+			changedSync.workspaceId as Id<"velocityPackageWorkspaces">;
+		const padAssetId = await seedPdfAsset(t);
+		await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.velocity.workspaces.updateVelocityPackageFairLendFields,
+			{
+				patch: {
+					activationRemediation: {
+						lienPosition: 1,
+						loanType: "conventional",
+					},
+					bankInput: {
+						accountHolderName: "Borrower One",
+						accountNumber: "123456789",
+						institutionNumber: "001",
+						transitNumber: "00011",
+					},
+				},
+				workspaceId,
+			}
+		);
+		await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.velocity.documents.linkVelocityPackageDocument,
+			{
+				documentAssetId: padAssetId,
+				role: "pad_evidence",
+				workspaceId,
+			}
+		);
+		const reviewed = await t.run(async (ctx) => {
+			const workspace = await ctx.db.get(workspaceId);
+			const snapshot = await ctx.db
+				.query("velocityPackageSnapshots")
+				.withIndex("by_workspace_created_at", (query) =>
+					query.eq("workspaceId", workspaceId)
+				)
+				.order("desc")
+				.first();
+			if (!workspace || !snapshot) {
+				throw new Error("Expected workspace and snapshot");
+			}
+			return { snapshot, workspace };
+		});
+		const confirmed = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.velocity.review.confirmVelocityPackageFinalReview,
+			{
+				normalizedCoreHash: reviewed.workspace.normalizedCoreHash,
+				snapshotId: reviewed.snapshot._id,
+				workspaceId,
+			}
+		);
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+			const url = new URL(String(input));
+			if (url.pathname === "/customers/show_with_custom_identifier") {
+				return Response.json(
+					{ errors: [{ error_code: "not_found", error_message: "Missing" }] },
+					{ status: 404 }
+				);
+			}
+			if (url.pathname === "/customers") {
+				return Response.json(buildRotessaCustomerResponse());
+			}
+			if (url.pathname === "/transaction_schedules/create_with_custom_identifier") {
+				return Response.json(buildRotessaScheduleResponse());
+			}
+			throw new Error(`Unexpected Rotessa path: ${url.pathname}`);
+		});
+		const activated = await t.withIdentity(FAIRLEND_ADMIN).action(
+			activateVelocityPackageRef,
+			{
+				reviewedSnapshotHash: confirmed.finalReview.reviewedSnapshotHash,
+				reviewedSnapshotId: confirmed.finalReview.reviewedSnapshotId,
+				workspaceId,
+			}
+		);
+		expect(activated.status).toBe("succeeded");
+
+		const duplicateOldSync = await applyFullDealSync(t, originalDeal);
+		const afterDuplicate = await t.run(async (ctx) => ({
+			exceptions: await ctx.db.query("velocityPackageExceptions").collect(),
+			postLiveSnapshots: (
+				await ctx.db.query("velocityPackageSnapshots").collect()
+			).filter((snapshot) => snapshot.snapshotType === "post_live_drift"),
+			workspace: await ctx.db.get(workspaceId),
+		}));
+
+		expect(originalSync.result).toBe("succeeded");
+		expect(duplicateOldSync).toMatchObject({ result: "exception" });
+		expect(afterDuplicate.workspace).toMatchObject({
+			exceptionKind: "live_drift_exception",
+			normalizedCoreHash: reviewed.workspace.normalizedCoreHash,
+			state: "activated",
+		});
+		expect(afterDuplicate.postLiveSnapshots).toHaveLength(1);
+		expect(afterDuplicate.exceptions).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "live_drift_exception",
+					status: "open",
+				}),
+			])
 		);
 	});
 });
