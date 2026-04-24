@@ -1,12 +1,12 @@
 # Execution Status: ENG-333 - Velocity package: implement reviewed activation orchestration and all-or-nothing handoff
 
 - Overall status: complete
-- Current phase: complete
-- Current chunk: chunk-03-audit-drift-validation
-- Last updated: 2026-04-24T09:42:19-04:00
+- Current phase: review findings addressed
+- Current chunk: review-remediation
+- Last updated: 2026-04-24T14:12:11-04:00
 
 ## Active focus
-- Complete; ready for human review.
+- Review findings addressed; ready for human re-review.
 
 ## Blockers
 - none
@@ -18,6 +18,7 @@
 - TDD is required for backend production code; write failing tests before activation implementation.
 - Ready-to-edit artifact validation passed.
 - Provider-safe activation suite passes with provider failure, retry reuse, success, duplicate suppression, and post-live drift coverage.
-- `bun check`, `bunx convex codegen`, `bun typecheck`, and targeted Velocity activation tests have passed.
+- Review findings addressed for successful activation idempotency, provider schedule compensation, Rotessa crash-safe lookup/reuse, audit provenance, duplicate sync drift ordering, borrower role overrides, stale exception cleanup, provider audit literals, and Rotessa API failure classification.
+- `bun check`, `bunx convex codegen`, `bun typecheck`, and targeted Velocity activation/sync/contract tests have passed.
 - `$linear-pr-spec-audit` verdict is ready with no unresolved findings.
-- Full `bun run test` was attempted and failed on unrelated existing suites: listing fixture/schema drift, auth architecture guard offenders, paginate guard, and collection attempt reconciliation auth setup.
+- Full `bun run test` was re-attempted and failed on existing unrelated suites plus one Velocity duplicate replay regression; the Velocity regression was fixed and the focused Velocity activation/sync/contract suite passed afterward.

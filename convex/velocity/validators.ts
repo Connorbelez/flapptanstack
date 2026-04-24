@@ -484,6 +484,8 @@ export const velocityPackageAuditEventTypeValidator = v.union(
 	v.literal("velocity_final_review_confirmed"),
 	v.literal("velocity_exception_resolved"),
 	v.literal("velocity_activation_attempt_started"),
+	v.literal("velocity_activation_provider_artifact_recorded"),
+	v.literal("velocity_activation_provider_artifact_reused"),
 	v.literal("velocity_activation_stage_changed"),
 	v.literal("velocity_activation_failed"),
 	v.literal("velocity_activation_succeeded"),
