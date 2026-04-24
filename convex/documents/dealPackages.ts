@@ -48,19 +48,8 @@ interface ParticipantSnapshot {
 		fullName: string;
 		userId: Id<"users">;
 	};
+	dealParticipants: DealParticipantProjection;
 	latestValuationSnapshot: Doc<"mortgageValuationSnapshots"> | null;
-	lawyerPrimary?: {
-		email: string;
-		fullName: string;
-		lawyerType: "guest_lawyer" | "platform_lawyer";
-		userId?: Id<"users">;
-	};
-	lender: {
-		email: string;
-		fullName: string;
-		lenderId: Id<"lenders">;
-		userId: Id<"users">;
-	};
 	listing?: Doc<"listings"> | null;
 	mortgage: Doc<"mortgages">;
 	property: Doc<"properties">;
@@ -128,13 +117,6 @@ interface DealPackageRuntimeState {
 		platformRole: string;
 	}>;
 	variables: Record<string, string>;
-}
-
-interface ResolvedLawyerParticipant {
-	email: string;
-	fullName: string;
-	lawyerType: "guest_lawyer" | "platform_lawyer";
-	userId?: Id<"users">;
 }
 
 type DealPackagePreparation =
@@ -218,13 +200,6 @@ function toPackageBlueprintSnapshot(
 	};
 }
 
-async function getUserByAuthId(ctx: Pick<QueryCtx, "db">, authId: string) {
-	return ctx.db
-		.query("users")
-		.withIndex("authId", (query) => query.eq("authId", authId))
-		.unique();
-}
-
 async function requireDealContext(
 	ctx: Pick<QueryCtx, "db">,
 	dealId: Id<"deals">
@@ -252,28 +227,6 @@ async function requireDealContext(
 	return { deal, listing, mortgage, property };
 }
 
-async function requireLenderParticipant(
-	ctx: Pick<QueryCtx, "db">,
-	lenderId: Id<"lenders">
-) {
-	const lender = await ctx.db.get(lenderId);
-	if (!lender) {
-		throw new ConvexError("Deal lender record not found");
-	}
-
-	const user = await ctx.db.get(lender.userId);
-	if (!user) {
-		throw new ConvexError("Deal lender user not found");
-	}
-
-	return {
-		email: normalizeText(user.email),
-		fullName: toFullName(user),
-		lenderId: lender._id,
-		userId: user._id,
-	};
-}
-
 async function requireBrokerParticipant(
 	ctx: Pick<QueryCtx, "db">,
 	brokerId: Id<"brokers">
@@ -294,42 +247,6 @@ async function requireBrokerParticipant(
 		fullName: toFullName(user),
 		userId: user._id,
 	};
-}
-
-async function resolveLawyerPrimaryParticipant(
-	ctx: Pick<QueryCtx, "db">,
-	args: {
-		lawyerType?: "guest_lawyer" | "platform_lawyer";
-		mortgageId: Id<"mortgages">;
-	}
-): Promise<ResolvedLawyerParticipant | undefined> {
-	if (!args.lawyerType) {
-		return undefined;
-	}
-
-	const assignments = await ctx.db
-		.query("closingTeamAssignments")
-		.withIndex("by_mortgage", (query) =>
-			query.eq("mortgageId", args.mortgageId)
-		)
-		.collect();
-	const primaryAssignment =
-		assignments.find((assignment) => assignment.role === "closing_lawyer") ??
-		assignments.find((assignment) => assignment.role === "reviewing_lawyer");
-
-	if (primaryAssignment) {
-		const assignedUser = await getUserByAuthId(ctx, primaryAssignment.userId);
-		if (assignedUser) {
-			return {
-				email: normalizeText(assignedUser.email),
-				fullName: toFullName(assignedUser),
-				lawyerType: args.lawyerType,
-				userId: assignedUser._id,
-			};
-		}
-	}
-
-	return undefined;
 }
 
 async function resolveLatestValuationSnapshot(
@@ -353,28 +270,18 @@ async function buildParticipantSnapshot(
 		ctx,
 		dealId
 	);
-	if (!deal.lenderId) {
-		throw new ConvexError(
-			"Deal package creation requires a canonical lenderId"
-		);
-	}
 	const [
-		lender,
+		dealParticipants,
 		brokerOfRecord,
 		assignedBroker,
-		lawyerPrimary,
 		borrowerLinks,
 		latestValuationSnapshot,
 	] = await Promise.all([
-		requireLenderParticipant(ctx, deal.lenderId),
+		buildDealParticipantProjection(ctx, deal),
 		requireBrokerParticipant(ctx, mortgage.brokerOfRecordId),
 		mortgage.assignedBrokerId
 			? requireBrokerParticipant(ctx, mortgage.assignedBrokerId)
 			: Promise.resolve(undefined),
-		resolveLawyerPrimaryParticipant(ctx, {
-			lawyerType: deal.lawyerType,
-			mortgageId: mortgage._id,
-		}),
 		ctx.db
 			.query("mortgageBorrowers")
 			.withIndex("by_mortgage", (query) => query.eq("mortgageId", mortgage._id))
@@ -415,8 +322,7 @@ async function buildParticipantSnapshot(
 		assignedBroker,
 		borrowers,
 		brokerOfRecord,
-		lawyerPrimary,
-		lender,
+		dealParticipants,
 		latestValuationSnapshot,
 		listing,
 		mortgage,
@@ -424,10 +330,27 @@ async function buildParticipantSnapshot(
 	};
 }
 
+interface PackageContact {
+	email: string;
+	fullName: string;
+}
+
+function projectionContact(participant: {
+	displayName: string | null;
+	email: string | null;
+}): PackageContact | undefined {
+	const email = normalizeText(participant.email);
+	const fullName = normalizeText(participant.displayName);
+	if (!(email && fullName)) {
+		return undefined;
+	}
+	return { email, fullName };
+}
+
 function buildDealVariableBag(snapshot: ParticipantSnapshot) {
-	const primaryBorrower =
-		snapshot.borrowers.find((borrower) => borrower.role === "primary") ??
-		snapshot.borrowers[0];
+	const lenderPrimary = projectionContact(snapshot.dealParticipants.buyer);
+	const borrowerPrimary = projectionContact(snapshot.dealParticipants.seller);
+	const lawyerPrimary = projectionContact(snapshot.dealParticipants.lawyer);
 	const coBorrowers = snapshot.borrowers.filter(
 		(borrower) => borrower.role === "co_borrower"
 	);
@@ -439,17 +362,17 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 		borrower_co_1_full_name: coBorrowers[0]?.fullName ?? "",
 		borrower_co_2_email: coBorrowers[1]?.email ?? "",
 		borrower_co_2_full_name: coBorrowers[1]?.fullName ?? "",
-		borrower_primary_email: primaryBorrower?.email ?? "",
-		borrower_primary_full_name: primaryBorrower?.fullName ?? "",
+		borrower_primary_email: borrowerPrimary?.email ?? "",
+		borrower_primary_full_name: borrowerPrimary?.fullName ?? "",
 		broker_of_record_email: snapshot.brokerOfRecord.email,
 		broker_of_record_full_name: snapshot.brokerOfRecord.fullName,
-		lawyer_primary_email: snapshot.lawyerPrimary?.email ?? "",
-		lawyer_primary_full_name: snapshot.lawyerPrimary?.fullName ?? "",
+		lawyer_primary_email: lawyerPrimary?.email ?? "",
+		lawyer_primary_full_name: lawyerPrimary?.fullName ?? "",
 		listing_description: snapshot.listing?.description ?? "",
 		listing_marketplace_copy: snapshot.listing?.marketplaceCopy ?? "",
 		listing_title: snapshot.listing?.title ?? "",
-		lender_primary_email: snapshot.lender.email,
-		lender_primary_full_name: snapshot.lender.fullName,
+		lender_primary_email: lenderPrimary?.email ?? "",
+		lender_primary_full_name: lenderPrimary?.fullName ?? "",
 		mortgage_amortization_months: String(snapshot.mortgage.amortizationMonths),
 		mortgage_amount: String(snapshot.mortgage.principal),
 		mortgage_first_payment_date: snapshot.mortgage.firstPaymentDate,
@@ -478,25 +401,29 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 }
 
 function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
-	const primaryBorrower =
-		snapshot.borrowers.find((borrower) => borrower.role === "primary") ??
-		snapshot.borrowers[0];
+	const lenderPrimary = projectionContact(snapshot.dealParticipants.buyer);
+	const borrowerPrimary = projectionContact(snapshot.dealParticipants.seller);
+	const lawyerPrimary = projectionContact(snapshot.dealParticipants.lawyer);
 	const coBorrowers = snapshot.borrowers.filter(
 		(borrower) => borrower.role === "co_borrower"
 	);
 
 	return [
-		{
-			platformRole: "lender_primary",
-			name: snapshot.lender.fullName,
-			email: snapshot.lender.email,
-		},
-		...(primaryBorrower
+		...(lenderPrimary
+			? [
+					{
+						platformRole: "lender_primary",
+						name: lenderPrimary.fullName,
+						email: lenderPrimary.email,
+					},
+				]
+			: []),
+		...(borrowerPrimary
 			? [
 					{
 						platformRole: "borrower_primary",
-						name: primaryBorrower.fullName,
-						email: primaryBorrower.email,
+						name: borrowerPrimary.fullName,
+						email: borrowerPrimary.email,
 					},
 				]
 			: []),
@@ -532,12 +459,12 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 					},
 				]
 			: []),
-		...(snapshot.lawyerPrimary
+		...(lawyerPrimary
 			? [
 					{
 						platformRole: "lawyer_primary",
-						name: snapshot.lawyerPrimary.fullName,
-						email: snapshot.lawyerPrimary.email,
+						name: lawyerPrimary.fullName,
+						email: lawyerPrimary.email,
 					},
 				]
 			: []),

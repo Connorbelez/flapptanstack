@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { ListingDetailPage } from "./ListingDetailPage";
 import { buildMarketplaceListingDetailModel } from "./marketplace-detail-adapter";
 import type { MarketplaceListingDetailSnapshot } from "./marketplace-types";
@@ -10,10 +9,7 @@ interface MarketplaceListingDetailPageProps {
 export function MarketplaceListingDetailPage({
 	snapshot,
 }: MarketplaceListingDetailPageProps) {
-	const listing = useMemo(
-		() => buildMarketplaceListingDetailModel(snapshot),
-		[snapshot]
-	);
+	const listing = buildMarketplaceListingDetailModel(snapshot);
 
 	return (
 		<ListingDetailPage

@@ -186,6 +186,7 @@ async function seedMortgageViewFixture(t: CrmTestHarness) {
 			loanType: "conventional",
 			lienPosition: 1,
 			propertyType: "condo",
+			marketplacePropertyType: "Condo",
 			city: "Toronto",
 			province: "ON",
 			latestAppraisalValueAsIs: 630_000,

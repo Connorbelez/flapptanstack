@@ -65,47 +65,35 @@ export const listCreateWindowMortgages = internalQuery({
 			businessDate,
 			LENDER_RENEWAL_CREATE_WINDOW_DAYS
 		);
-		const candidateMortgages: Array<{ mortgageId: Id<"mortgages"> }> = [];
-		let cursor: string | null = null;
+		const candidates: Array<{ mortgageId: Id<"mortgages"> }> = [];
 
-		// Scan the full maturity window in bounded pages so later mortgages are
-		// not starved by earlier rows that are already synced or not actionable.
-		while (true) {
-			const { continueCursor, isDone, page } = await ctx.db
-				.query("mortgages")
-				.withIndex("by_maturity", (query) =>
-					query
-						.gte("maturityDate", businessDate)
-						.lte("maturityDate", maxMaturityDate)
-				)
-				.paginate({
-					cursor,
-					numItems: args.limit ?? 128,
-				});
-
-			candidateMortgages.push(
-				...page
-					.filter((mortgage) => {
-						if (mortgage.status !== "active") {
-							return false;
-						}
-
-						return isLenderRenewalWindowOpen({
-							asOf,
-							maturityDate: mortgage.maturityDate,
-						});
-					})
-					.map((mortgage) => ({
-						mortgageId: mortgage._id,
-					}))
-			);
-
-			if (isDone) {
-				return candidateMortgages;
+		for await (const mortgage of ctx.db
+			.query("mortgages")
+			.withIndex("by_maturity", (query) =>
+				query
+					.gte("maturityDate", businessDate)
+					.lte("maturityDate", maxMaturityDate)
+			)) {
+			if (mortgage.status !== "active") {
+				continue;
 			}
 
-			cursor = continueCursor;
+			if (
+				!isLenderRenewalWindowOpen({
+					asOf,
+					maturityDate: mortgage.maturityDate,
+				})
+			) {
+				continue;
+			}
+
+			candidates.push({ mortgageId: mortgage._id });
+			if (args.limit !== undefined && candidates.length >= args.limit) {
+				break;
+			}
 		}
+
+		return candidates;
 	},
 });
 

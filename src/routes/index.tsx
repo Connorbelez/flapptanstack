@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Authenticated, Unauthenticated } from "convex/react";
-import { type ReactNode, useMemo } from "react";
+import type { ReactNode } from "react";
 import { Horizontal } from "#/components/listings/listing-card-horizontal";
 import { buildMarketplaceListingCardItems } from "#/components/listings/marketplace-adapters";
 import { publicPortalListingsQueryOptions } from "#/components/listings/portal-query-options";
@@ -109,13 +109,9 @@ function PortalHomeContent({
 			numItems: portalContext.portal.teaserListingLimit,
 		})
 	);
-	const teaserItems = useMemo(
-		() =>
-			teaserQuery.data
-				? buildMarketplaceListingCardItems(teaserQuery.data.page)
-				: [],
-		[teaserQuery.data]
-	);
+	const teaserItems = teaserQuery.data
+		? buildMarketplaceListingCardItems(teaserQuery.data.page)
+		: [];
 	let teaserContent: ReactNode;
 
 	if (teaserQuery.isPending) {

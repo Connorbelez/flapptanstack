@@ -596,6 +596,18 @@ describe("documents/dealPackages", () => {
 				dealId: fixture.dealId,
 			}
 		);
+		const variables = await t.query(
+			internal.documents.dealPackages.resolveDealDocumentVariablesInternal,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const signatories = await t.query(
+			internal.documents.dealPackages.resolveDealDocumentSignatoriesInternal,
+			{
+				dealId: fixture.dealId,
+			}
+		);
 		const generatedDocuments = await t.run((ctx) =>
 			ctx.db.query("generatedDocuments").collect()
 		);
@@ -610,6 +622,26 @@ describe("documents/dealPackages", () => {
 		expect(packageSurface.participants?.fractionalShareDisplayPercent).toBe(25);
 		expect(packageSurface.participants?.buyer.authId).toBe(
 			fixture.lenderIdentity.subject
+		);
+		expect(variables).toMatchObject({
+			borrower_primary_email: "seller.phase7@test.fairlend.ca",
+			borrower_primary_full_name: "Sam Seller",
+			lender_primary_email: "lender.phase7@test.fairlend.ca",
+			lender_primary_full_name: "Lena Lender",
+		});
+		expect(signatories).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					email: "lender.phase7@test.fairlend.ca",
+					name: "Lena Lender",
+					platformRole: "lender_primary",
+				}),
+				expect.objectContaining({
+					email: "seller.phase7@test.fairlend.ca",
+					name: "Sam Seller",
+					platformRole: "borrower_primary",
+				}),
+			])
 		);
 		expect(packageSurface.instances).toHaveLength(2);
 		expect(
@@ -722,6 +754,12 @@ describe("documents/dealPackages", () => {
 				.withIndex("by_deal", (query) => query.eq("dealId", fixture.dealId))
 				.collect()
 		);
+		const retrySignatories = await t.query(
+			internal.documents.dealPackages.resolveDealDocumentSignatoriesInternal,
+			{
+				dealId: fixture.dealId,
+			}
+		);
 
 		expect(retryResult.status).toBe("ready");
 		expect(packageAfterRetry.package).toMatchObject({
@@ -743,6 +781,15 @@ describe("documents/dealPackages", () => {
 					instance.archivedAt
 			)
 		).toHaveLength(1);
+		expect(retrySignatories).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					email: "lawyer.phase7@test.fairlend.ca",
+					name: "Layla Lawyer",
+					platformRole: "lawyer_primary",
+				}),
+			])
+		);
 	});
 
 	it("replays missing package members from the frozen blueprint snapshot without adopting later blueprint changes", async () => {

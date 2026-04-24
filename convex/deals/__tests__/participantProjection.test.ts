@@ -167,6 +167,98 @@ describe("deal participant projection contract", () => {
 		expect(projection.projection.fractionalShareDisplayPercent).toBe(25);
 	});
 
+	it("does not attach another lawyer active access row to the projected deal lawyer", async () => {
+		const t = convexTest(schema, modules);
+
+		const projection = await t.run(async (ctx) => {
+			const brokerUserId = await ctx.db.insert("users", {
+				authId: "broker-auth",
+				email: "broker@test.fairlend.ca",
+				firstName: "Bryn",
+				lastName: "Broker",
+			});
+			await Promise.all([
+				ctx.db.insert("users", {
+					authId: "deal-lawyer-auth",
+					email: "deal-lawyer@test.fairlend.ca",
+					firstName: "Dana",
+					lastName: "DealLawyer",
+				}),
+				ctx.db.insert("users", {
+					authId: "other-lawyer-auth",
+					email: "other-lawyer@test.fairlend.ca",
+					firstName: "Omar",
+					lastName: "OtherLawyer",
+				}),
+			]);
+			const brokerId = await ctx.db.insert("brokers", {
+				createdAt: 1,
+				status: "active",
+				userId: brokerUserId,
+			});
+			const propertyId = await ctx.db.insert("properties", {
+				city: "Toronto",
+				createdAt: 1,
+				postalCode: "M5V 1A1",
+				propertyType: "residential",
+				province: "ON",
+				streetAddress: "123 King St W",
+			});
+			const mortgageId = await ctx.db.insert("mortgages", {
+				amortizationMonths: 300,
+				brokerOfRecordId: brokerId,
+				createdAt: 1,
+				firstPaymentDate: "2026-02-01",
+				interestAdjustmentDate: "2026-01-01",
+				interestRate: 9.5,
+				lienPosition: 1,
+				loanType: "conventional",
+				maturityDate: "2031-01-01",
+				paymentAmount: 2500,
+				paymentFrequency: "monthly",
+				principal: 500_000,
+				propertyId,
+				rateType: "fixed",
+				status: "funded",
+				termMonths: 60,
+				termStartDate: "2026-01-01",
+			});
+			const dealId = await ctx.db.insert("deals", {
+				buyerId: "buyer-auth",
+				createdAt: 1,
+				createdBy: "admin-auth",
+				fractionalShare: 2500,
+				lawyerId: "deal-lawyer-auth",
+				lawyerType: "platform_lawyer",
+				mortgageId,
+				sellerId: "seller-auth",
+				status: "lawyerOnboarding.pending",
+			});
+			await ctx.db.insert("dealAccess", {
+				dealId,
+				grantedAt: 1,
+				grantedBy: "admin-auth",
+				role: "guest_lawyer",
+				status: "active",
+				userId: "other-lawyer-auth",
+			});
+
+			const deal = await ctx.db.get(dealId);
+			if (!deal) {
+				throw new Error("seeded deal missing");
+			}
+			return buildDealParticipantProjection(ctx, deal);
+		});
+
+		expect(projection.lawyer).toMatchObject({
+			authId: "deal-lawyer-auth",
+			displayName: "Dana DealLawyer",
+			email: "deal-lawyer@test.fairlend.ca",
+			hasActiveDealAccess: false,
+			lawyerType: "platform_lawyer",
+		});
+	});
+
 	it("keeps unresolved participants and missing lawyer as explicit nullable fields", async () => {
 		const t = convexTest(schema, modules);
 

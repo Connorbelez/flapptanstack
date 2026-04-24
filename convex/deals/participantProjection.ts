@@ -163,6 +163,31 @@ async function getActiveDealAccessRows(
 		.collect();
 }
 
+function isLawyerAccessRow(
+	access: Doc<"dealAccess">
+): access is Doc<"dealAccess"> & {
+	role: "guest_lawyer" | "platform_lawyer";
+} {
+	return access.role === "platform_lawyer" || access.role === "guest_lawyer";
+}
+
+async function getPrimaryClosingLawyerAuthId(
+	ctx: ProjectionReaderCtx,
+	mortgageId: Id<"mortgages">
+) {
+	const assignments = await ctx.db
+		.query("closingTeamAssignments")
+		.withIndex("by_mortgage", (query) => query.eq("mortgageId", mortgageId))
+		.collect();
+	return (
+		assignments.find((assignment) => assignment.role === "closing_lawyer")
+			?.userId ??
+		assignments.find((assignment) => assignment.role === "reviewing_lawyer")
+			?.userId ??
+		null
+	);
+}
+
 function activeSellerAccessRole(
 	accessRows: Doc<"dealAccess">[],
 	authId: string,
@@ -195,20 +220,29 @@ export async function buildDealParticipantProjection(
 		getBorrowerByUserId(ctx, sellerUser?._id ?? null),
 	]);
 
-	const activeLawyerAccess = activeAccessRows.find(
-		(access) =>
-			access.role === "platform_lawyer" || access.role === "guest_lawyer"
+	const fallbackActiveLawyerAccess = activeAccessRows.find(isLawyerAccessRow);
+	const assignedLawyerAuthId = await getPrimaryClosingLawyerAuthId(
+		ctx,
+		deal.mortgageId
 	);
-	const lawyerAuthId = deal.lawyerId ?? activeLawyerAccess?.userId ?? null;
+	const lawyerAuthId =
+		deal.lawyerId ??
+		assignedLawyerAuthId ??
+		fallbackActiveLawyerAccess?.userId ??
+		null;
+	const activeLawyerAccess = lawyerAuthId
+		? activeAccessRows.find(
+				(
+					access
+				): access is Doc<"dealAccess"> & {
+					role: "guest_lawyer" | "platform_lawyer";
+				} => access.userId === lawyerAuthId && isLawyerAccessRow(access)
+			)
+		: undefined;
 	const lawyerUser = lawyerAuthId
 		? await getUserByAuthId(ctx, lawyerAuthId)
 		: null;
-	const lawyerType =
-		deal.lawyerType ??
-		(activeLawyerAccess?.role === "platform_lawyer" ||
-		activeLawyerAccess?.role === "guest_lawyer"
-			? activeLawyerAccess.role
-			: null);
+	const lawyerType = deal.lawyerType ?? activeLawyerAccess?.role ?? null;
 	const fractionalShareStatus = projectFractionalShareUnits(
 		deal.fractionalShare
 	);
@@ -242,7 +276,9 @@ export async function buildDealParticipantProjection(
 				? displayNameForAuthParticipant(lawyerAuthId, lawyerUser)
 				: null,
 			email: normalizeText(lawyerUser?.email),
-			hasActiveDealAccess: Boolean(activeLawyerAccess),
+			hasActiveDealAccess: Boolean(
+				lawyerAuthId && activeLawyerAccess?.userId === lawyerAuthId
+			),
 			lawyerType,
 		},
 		fractionalShareDisplayPercent:
