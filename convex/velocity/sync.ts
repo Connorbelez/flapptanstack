@@ -6,7 +6,9 @@ import { adminAction, convex } from "../fluent";
 import { appendVelocityPackageAuditEntry } from "./audit";
 import {
 	fetchVelocityFullDealByLoanCode,
+	isVelocityFullDealFetchError,
 	resolveVelocityClientConfig,
+	sha256Hex,
 } from "./client";
 import {
 	buildVelocitySyncIdempotencyKey,
@@ -38,6 +40,8 @@ type VelocityWorkspace = Doc<"velocityPackageWorkspaces">;
 
 export interface ProcessVelocityFullDealSyncArgs {
 	dealHref?: string;
+	expectedLinkApplicationId?: string;
+	expectedWorkspaceId?: Id<"velocityPackageWorkspaces">;
 	loanCode: string;
 	trigger: VelocitySyncTrigger;
 	webhookAgent?: VelocityWebhookAgent;
@@ -133,7 +137,11 @@ const recordVelocitySyncFailureReference = makeFunctionReference<
 const getVelocityWorkspaceSyncLocatorReference = makeFunctionReference<
 	"query",
 	{ workspaceId: Id<"velocityPackageWorkspaces"> },
-	Promise<{ loanCode: string }>
+	Promise<{
+		linkApplicationId: string;
+		loanCode: string;
+		workspaceId: Id<"velocityPackageWorkspaces">;
+	}>
 >("velocity/sync:getVelocityWorkspaceSyncLocator");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -175,14 +183,9 @@ export function stableVelocityJsonStringify(value: unknown): string {
 		.join(",")}}`;
 }
 
-export function hashStableVelocityJson(value: unknown) {
+export async function hashStableVelocityJson(value: unknown) {
 	const input = stableVelocityJsonStringify(value);
-	let hash = 0x81_1c_9d_c5;
-	for (let index = 0; index < input.length; index += 1) {
-		hash ^= input.charCodeAt(index);
-		hash = Math.imul(hash, 0x01_00_01_93);
-	}
-	return (hash >>> 0).toString(16).padStart(8, "0");
+	return await sha256Hex(input);
 }
 
 function firstRecord(value: unknown) {
@@ -238,10 +241,14 @@ function normalizeStringArray(value: unknown) {
 		.filter((entry): entry is string => entry !== null);
 }
 
-export function buildVelocityNormalizedCore(
+export async function buildVelocityNormalizedCore(
 	deal: VelocityDeal,
 	fallbackLoanCode: string
-): { core?: VelocityNormalizedCoreV1; error?: string; fieldPath?: string } {
+): Promise<{
+	core?: VelocityNormalizedCoreV1;
+	error?: string;
+	fieldPath?: string;
+}> {
 	const linkApplicationId = stringValue(deal.linkApplicationId);
 	if (!linkApplicationId) {
 		return {
@@ -258,7 +265,7 @@ export function buildVelocityNormalizedCore(
 		};
 	}
 
-	const rawDealHash = hashStableVelocityJson(deal);
+	const rawDealHash = await hashStableVelocityJson(deal);
 	const subjectProperty = isRecord(deal.subjectProperty)
 		? deal.subjectProperty
 		: {};
@@ -362,7 +369,7 @@ export function buildVelocityNormalizedCore(
 	return {
 		core: {
 			...coreWithoutHash,
-			normalizedHash: hashStableVelocityJson(coreWithoutHash),
+			normalizedHash: await hashStableVelocityJson(coreWithoutHash),
 		},
 	};
 }
@@ -658,6 +665,33 @@ function exceptionForBlocker(readinessBlocker: VelocityReadinessBlockerV1) {
 	return null;
 }
 
+function exceptionFingerprint(
+	exceptionKind: string,
+	readinessBlocker: VelocityReadinessBlockerV1
+) {
+	return [
+		exceptionKind,
+		readinessBlocker.code,
+		readinessBlocker.fieldPath ?? "root",
+	].join(":");
+}
+
+function exceptionDetailsWithFingerprint(args: {
+	blocker: VelocityReadinessBlockerV1;
+	details: Record<string, unknown>;
+	exceptionKind: string;
+}) {
+	return {
+		...args.details,
+		blockerCode: args.blocker.code,
+		exceptionFingerprint: exceptionFingerprint(
+			args.exceptionKind,
+			args.blocker
+		),
+		fieldPath: args.blocker.fieldPath,
+	};
+}
+
 async function openOrUpdateException(
 	ctx: MutationCtx,
 	args: {
@@ -673,6 +707,12 @@ async function openOrUpdateException(
 		return null;
 	}
 
+	const details = exceptionDetailsWithFingerprint({
+		blocker: args.blocker,
+		details: args.details,
+		exceptionKind: exception.kind,
+	});
+	const fingerprint = details.exceptionFingerprint;
 	const existing = args.workspaceId
 		? (
 				await ctx.db
@@ -681,12 +721,17 @@ async function openOrUpdateException(
 						query.eq("workspaceId", args.workspaceId).eq("status", "open")
 					)
 					.collect()
-			).find((row) => row.kind === exception.kind)
+			).find(
+				(row) =>
+					row.kind === exception.kind &&
+					isRecord(row.details) &&
+					row.details.exceptionFingerprint === fingerprint
+			)
 		: null;
 
 	if (existing) {
 		await ctx.db.patch(existing._id, {
-			details: args.details,
+			details,
 			message: args.blocker.message,
 			sourceSyncAttemptId: args.sourceSyncAttemptId,
 			sourceWebhookEventId: args.sourceWebhookEventId,
@@ -695,7 +740,7 @@ async function openOrUpdateException(
 	}
 
 	return await ctx.db.insert("velocityPackageExceptions", {
-		details: args.details,
+		details,
 		kind: exception.kind,
 		message: args.blocker.message,
 		openedAt: Date.now(),
@@ -706,6 +751,39 @@ async function openOrUpdateException(
 		title: exception.title,
 		workspaceId: args.workspaceId,
 	});
+}
+
+async function supersedeStaleFingerprintExceptions(
+	ctx: MutationCtx,
+	args: {
+		activeFingerprints: Set<string>;
+		now: number;
+		sourceSyncAttemptId: Id<"velocitySyncAttempts">;
+		workspaceId: Id<"velocityPackageWorkspaces">;
+	}
+) {
+	const openExceptions = await ctx.db
+		.query("velocityPackageExceptions")
+		.withIndex("by_workspace_status", (query) =>
+			query.eq("workspaceId", args.workspaceId).eq("status", "open")
+		)
+		.collect();
+
+	for (const openException of openExceptions) {
+		const fingerprint = isRecord(openException.details)
+			? openException.details.exceptionFingerprint
+			: undefined;
+		if (
+			typeof fingerprint === "string" &&
+			!args.activeFingerprints.has(fingerprint)
+		) {
+			await ctx.db.patch(openException._id, {
+				resolvedAt: args.now,
+				sourceSyncAttemptId: args.sourceSyncAttemptId,
+				status: "superseded",
+			});
+		}
+	}
 }
 
 async function patchWebhookEvent(
@@ -757,22 +835,12 @@ async function appendSyncAuditEntries(
 		"velocity_readiness_recomputed",
 	];
 
-	if (args.webhookEventId) {
-		eventTypes.unshift(
-			"velocity_webhook_received",
-			"velocity_webhook_provenance_recorded"
-		);
-	}
-
 	for (const eventType of eventTypes) {
 		await appendVelocityPackageAuditEntry(ctx, {
 			actorId: args.webhookAgent?.email ?? "velocity_sync_system",
 			actorType: "system",
 			channel: args.webhookEventId ? "api_webhook" : "scheduler",
-			connectorCredentialContext:
-				eventType === "velocity_webhook_provenance_recorded"
-					? args.webhookCredentialContext
-					: args.connectorCredentialContext,
+			connectorCredentialContext: args.connectorCredentialContext,
 			eventType,
 			idempotencyKey: `${eventType}:${String(args.syncAttemptId)}`,
 			linkedRecordIds: {
@@ -905,6 +973,112 @@ async function getWorkspaceByLinkApplicationId(
 		.collect();
 }
 
+async function recordVelocityIdentityMismatch(
+	ctx: MutationCtx,
+	args: {
+		core: VelocityNormalizedCoreV1;
+		now: number;
+		sync: ApplyVelocityFullDealSyncArgs;
+	}
+): Promise<VelocityFullDealSyncResult> {
+	const identityMismatchBlocker = blocker({
+		code: "identity_collision",
+		fieldPath: "linkApplicationId",
+		message:
+			"Velocity manual sync returned a different linkApplicationId than the selected workspace.",
+		severity: "blocking",
+		source: "system",
+	});
+	const syncAttemptId = await ctx.db.insert("velocitySyncAttempts", {
+		completedAt: args.now,
+		connectorCredentialContext: args.sync.fetchCredentialContext,
+		dealHref: args.sync.dealHref,
+		error: identityMismatchBlocker.message,
+		idempotencyKey: `velocity:sync_identity_mismatch:${args.sync.expectedLinkApplicationId}:${args.core.rawDealHash}`,
+		loanCode: args.core.identity.loanCode,
+		normalizedCoreHash: args.core.normalizedHash,
+		rawDealHash: args.core.rawDealHash,
+		rawResponseBody: args.sync.rawResponseBody,
+		request: args.sync.request,
+		responseStatus: args.sync.responseStatus,
+		result: "exception",
+		startedAt: args.sync.startedAt,
+		trigger: args.sync.trigger,
+		workspaceId: args.sync.expectedWorkspaceId,
+	});
+	await openOrUpdateException(ctx, {
+		blocker: identityMismatchBlocker,
+		details: {
+			actualLinkApplicationId: args.core.identity.linkApplicationId,
+			expectedLinkApplicationId: args.sync.expectedLinkApplicationId,
+			fetchCredentialContext: args.sync.fetchCredentialContext,
+			loanCode: args.core.identity.loanCode,
+			normalizedCoreHash: args.core.normalizedHash,
+			rawDealHash: args.core.rawDealHash,
+		},
+		sourceSyncAttemptId: syncAttemptId,
+		sourceWebhookEventId: args.sync.webhookEventId,
+		workspaceId: args.sync.expectedWorkspaceId,
+	});
+	await appendIdentityExceptionAuditEntry(ctx, {
+		blocker: identityMismatchBlocker,
+		connectorCredentialContext: args.sync.fetchCredentialContext,
+		linkApplicationId: args.core.identity.linkApplicationId,
+		loanCode: args.core.identity.loanCode,
+		syncAttemptId,
+		webhookAgent: args.sync.webhookAgent,
+		webhookCredentialContext: args.sync.webhookCredentialContext,
+		webhookEventId: args.sync.webhookEventId,
+		workspaceId: args.sync.expectedWorkspaceId,
+	});
+	return {
+		result: "exception",
+		syncAttemptId,
+		workspaceId: args.sync.expectedWorkspaceId,
+	};
+}
+
+async function replayExistingTerminalSyncAttempt(
+	ctx: MutationCtx,
+	args: {
+		existingSync: Doc<"velocitySyncAttempts">;
+		webhookEventId?: Id<"velocityWebhookEvents">;
+	}
+): Promise<VelocityFullDealSyncResult | null> {
+	if (
+		args.existingSync.workspaceId &&
+		args.existingSync.result === "succeeded"
+	) {
+		await patchWebhookEvent(ctx, {
+			status: "processed",
+			webhookEventId: args.webhookEventId,
+			workspaceId: args.existingSync.workspaceId,
+		});
+		return {
+			result: "duplicate_noop",
+			syncAttemptId: args.existingSync._id,
+			workspaceId: args.existingSync.workspaceId,
+		};
+	}
+	if (
+		args.existingSync.result === "exception" ||
+		args.existingSync.result === "failed"
+	) {
+		await patchWebhookEvent(ctx, {
+			error: args.existingSync.error ?? args.existingSync.result,
+			status: "failed",
+			webhookEventId: args.webhookEventId,
+			workspaceId: args.existingSync.workspaceId,
+		});
+		return {
+			result: args.existingSync.result,
+			syncAttemptId: args.existingSync._id,
+			workspaceId: args.existingSync.workspaceId,
+		};
+	}
+	return null;
+}
+
 export const getVelocityWorkspaceSyncLocator = convex
 	.query()
 	.input({
@@ -916,7 +1090,11 @@ export const getVelocityWorkspaceSyncLocator = convex
 			throw new ConvexError("Velocity package workspace not found");
 		}
 
-		return { loanCode: workspace.loanCode };
+		return {
+			linkApplicationId: workspace.linkApplicationId,
+			loanCode: workspace.loanCode,
+			workspaceId: workspace._id,
+		};
 	})
 	.internal();
 
@@ -924,6 +1102,8 @@ export const processVelocityFullDealSync = convex
 	.action()
 	.input({
 		dealHref: v.optional(v.string()),
+		expectedLinkApplicationId: v.optional(v.string()),
+		expectedWorkspaceId: v.optional(v.id("velocityPackageWorkspaces")),
 		loanCode: v.string(),
 		trigger: syncTriggerValidator,
 		webhookAgent: v.optional(webhookAgentValidator),
@@ -953,15 +1133,20 @@ export const processVelocityFullDealSync = convex
 				startedAt,
 			});
 		} catch (error) {
+			const structuredError = isVelocityFullDealFetchError(error)
+				? error
+				: null;
 			return await ctx.runMutation(recordVelocitySyncFailureReference, {
 				...args,
 				error: error instanceof Error ? error.message : "Velocity sync failed",
 				fetchCredentialContext,
-				request: {
+				rawResponseBody: structuredError?.rawResponseBody,
+				request: structuredError?.request ?? {
 					dealHref: args.dealHref,
 					loanCode: args.loanCode,
 					method: "GET",
 				},
+				responseStatus: structuredError?.responseStatus,
 				startedAt,
 			});
 		}
@@ -973,6 +1158,8 @@ export const recordVelocitySyncFailure = convex
 	.input({
 		dealHref: v.optional(v.string()),
 		error: v.string(),
+		expectedLinkApplicationId: v.optional(v.string()),
+		expectedWorkspaceId: v.optional(v.id("velocityPackageWorkspaces")),
 		fetchCredentialContext: v.optional(credentialContextValidator),
 		loanCode: v.string(),
 		rawResponseBody: v.optional(v.string()),
@@ -997,6 +1184,7 @@ export const recordVelocitySyncFailure = convex
 			result: "failed",
 			startedAt: args.startedAt,
 			trigger: args.trigger,
+			workspaceId: args.expectedWorkspaceId,
 		});
 
 		await appendSyncFailureAuditEntry(ctx, {
@@ -1007,15 +1195,21 @@ export const recordVelocitySyncFailure = convex
 			webhookAgent: args.webhookAgent,
 			webhookCredentialContext: args.webhookCredentialContext,
 			webhookEventId: args.webhookEventId,
+			workspaceId: args.expectedWorkspaceId,
 		});
 
 		await patchWebhookEvent(ctx, {
 			error: args.error,
 			status: "failed",
 			webhookEventId: args.webhookEventId,
+			workspaceId: args.expectedWorkspaceId,
 		});
 
-		return { result: "failed", syncAttemptId };
+		return {
+			result: "failed",
+			syncAttemptId,
+			workspaceId: args.expectedWorkspaceId,
+		};
 	})
 	.internal();
 
@@ -1023,6 +1217,8 @@ export const applyVelocityFullDealSync = convex
 	.mutation()
 	.input({
 		dealHref: v.optional(v.string()),
+		expectedLinkApplicationId: v.optional(v.string()),
+		expectedWorkspaceId: v.optional(v.id("velocityPackageWorkspaces")),
 		fetchCredentialContext: credentialContextValidator,
 		loanCode: v.string(),
 		rawDeal: v.record(v.string(), v.any()),
@@ -1036,7 +1232,10 @@ export const applyVelocityFullDealSync = convex
 		webhookEventId: v.optional(v.id("velocityWebhookEvents")),
 	})
 	.handler(async (ctx, args): Promise<VelocityFullDealSyncResult> => {
-		const normalized = buildVelocityNormalizedCore(args.rawDeal, args.loanCode);
+		const normalized = await buildVelocityNormalizedCore(
+			args.rawDeal,
+			args.loanCode
+		);
 		const now = Date.now();
 
 		if (!normalized.core) {
@@ -1055,7 +1254,7 @@ export const applyVelocityFullDealSync = convex
 				dealHref: args.dealHref,
 				error: normalized.error,
 				loanCode: args.loanCode,
-				rawDealHash: hashStableVelocityJson(args.rawDeal),
+				rawDealHash: await hashStableVelocityJson(args.rawDeal),
 				rawResponseBody: args.rawResponseBody,
 				request: args.request,
 				responseStatus: args.responseStatus,
@@ -1081,6 +1280,7 @@ export const applyVelocityFullDealSync = convex
 				webhookAgent: args.webhookAgent,
 				webhookCredentialContext: args.webhookCredentialContext,
 				webhookEventId: args.webhookEventId,
+				workspaceId: args.expectedWorkspaceId,
 			});
 			await patchWebhookEvent(ctx, {
 				error: normalized.error,
@@ -1091,6 +1291,16 @@ export const applyVelocityFullDealSync = convex
 		}
 
 		const core = normalized.core;
+		if (
+			args.expectedLinkApplicationId &&
+			args.expectedLinkApplicationId !== core.identity.linkApplicationId
+		) {
+			return await recordVelocityIdentityMismatch(ctx, {
+				core,
+				now,
+				sync: args,
+			});
+		}
 		const syncIdempotencyKey = buildVelocitySyncIdempotencyKey({
 			linkApplicationId: core.identity.linkApplicationId,
 			rawDealHash: core.rawDealHash,
@@ -1101,17 +1311,14 @@ export const applyVelocityFullDealSync = convex
 				query.eq("idempotencyKey", syncIdempotencyKey)
 			)
 			.first();
-		if (existingSync?.workspaceId) {
-			await patchWebhookEvent(ctx, {
-				status: "processed",
+		if (existingSync) {
+			const replayedSync = await replayExistingTerminalSyncAttempt(ctx, {
+				existingSync,
 				webhookEventId: args.webhookEventId,
-				workspaceId: existingSync.workspaceId,
 			});
-			return {
-				result: "duplicate_noop",
-				syncAttemptId: existingSync._id,
-				workspaceId: existingSync.workspaceId,
-			};
+			if (replayedSync) {
+				return replayedSync;
+			}
 		}
 
 		const matches = await getWorkspaceByLinkApplicationId(
@@ -1258,6 +1465,17 @@ export const applyVelocityFullDealSync = convex
 			lastWebhookEventId: args.webhookEventId,
 		});
 
+		const activeExceptionFingerprints = new Set(
+			readiness.blockers
+				.map((readinessBlocker) => {
+					const currentException = exceptionForBlocker(readinessBlocker);
+					return currentException
+						? exceptionFingerprint(currentException.kind, readinessBlocker)
+						: null;
+				})
+				.filter((fingerprint): fingerprint is string => fingerprint !== null)
+		);
+
 		for (const readinessBlocker of readiness.blockers) {
 			await openOrUpdateException(ctx, {
 				blocker: readinessBlocker,
@@ -1275,6 +1493,12 @@ export const applyVelocityFullDealSync = convex
 				workspaceId,
 			});
 		}
+		await supersedeStaleFingerprintExceptions(ctx, {
+			activeFingerprints: activeExceptionFingerprints,
+			now,
+			sourceSyncAttemptId: syncAttemptId,
+			workspaceId,
+		});
 
 		await appendSyncAuditEntries(ctx, {
 			connectorCredentialContext: args.fetchCredentialContext,
@@ -1312,6 +1536,8 @@ export const syncVelocityPackageNow = adminAction
 		);
 
 		return await ctx.runAction(processVelocityFullDealSyncReference, {
+			expectedLinkApplicationId: locator.linkApplicationId,
+			expectedWorkspaceId: locator.workspaceId,
 			loanCode: locator.loanCode,
 			trigger: "manual_sync_now",
 		});

@@ -3,10 +3,10 @@
 - Overall status: complete
 - Current phase: validation and audit
 - Current chunk: chunk-04-tests-validation
-- Last updated: 2026-04-24T04:42:43Z
+- Last updated: 2026-04-24T13:20:37Z
 
 ## Active focus
-- Implementation and spec audit are complete. Remaining items are deployment/manual validation outside the branch diff.
+- Implementation, spec audit, and post-review remediation are complete. Remaining items are deployment/manual validation outside the branch diff.
 
 ## Blockers
 - none
@@ -22,6 +22,7 @@
 - `bunx convex codegen` passed on 2026-04-24.
 - `bun check` passed on 2026-04-24 after baselining Biome's diagnostic display cap with `--max-diagnostics=300`.
 - `bun typecheck` passed on 2026-04-24.
-- Targeted Velocity tests passed: `bun run test -- src/test/convex/velocity/sync.test.ts src/test/convex/velocity/contracts.test.ts`.
+- Targeted Velocity tests passed with 24 tests: `bun run test -- src/test/convex/velocity/sync.test.ts src/test/convex/velocity/contracts.test.ts`.
 - `$linear-pr-spec-audit` completed and was persisted to `specs/ENG-331/audit.md`.
+- Post-review remediation covered credential redaction, trusted-origin fallback hrefs, SHA-256 idempotency hashes, missing-loanCode failure handling, ingress provenance audit timing, duplicate exception replay, manual sync identity pinning, blocker-level exception dedupe, provider failure preservation, webhook credential hardening, query-token removal, and HTTP webhook route coverage.
 - Final execution-artifact validation passed.
