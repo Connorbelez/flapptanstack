@@ -1,7 +1,8 @@
 import { ConvexError, v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import { internalMutation, internalQuery } from "../_generated/server";
-import { adminQuery, authedQuery } from "../fluent";
+import { readDealDocumentPackageSurface } from "../documents/dealPackages";
+import { adminQuery, authedQuery, dealQuery } from "../fluent";
 import { assertDealAccess } from "./accessCheck";
 
 // ── Phase mapping ──────────────────────────────────────────────────────
@@ -62,6 +63,84 @@ export interface DealsByPhase {
 	fundsTransfer: DealWithPhase[];
 	initiated: DealWithPhase[];
 	lawyerOnboarding: DealWithPhase[];
+}
+
+type DealDocumentPackageSurface = Awaited<
+	ReturnType<typeof readDealDocumentPackageSurface>
+>;
+type DealDocumentPackageSurfaceInstance =
+	DealDocumentPackageSurface["instances"][number];
+
+export interface PortalDealDocumentInstance {
+	class: DealDocumentPackageSurfaceInstance["class"];
+	displayName: string;
+	instanceId: DealDocumentPackageSurfaceInstance["instanceId"];
+	kind: DealDocumentPackageSurfaceInstance["kind"];
+	packageLabel: string | null;
+	status: DealDocumentPackageSurfaceInstance["status"];
+	url: string | null;
+}
+
+export interface PortalDealDocumentPackage {
+	readyAt: number | null;
+	status: NonNullable<DealDocumentPackageSurface["package"]>["status"];
+}
+
+export interface PortalDealDetail {
+	deal: {
+		closingDate: number | null;
+		dealId: Id<"deals">;
+		fractionalShare: number;
+		lockingFeeAmount: number | null;
+		status: string;
+	};
+	documentInstances: PortalDealDocumentInstance[];
+	documentPackage: PortalDealDocumentPackage | null;
+	mortgage: {
+		interestRate: number;
+		maturityDate: string;
+		mortgageId: Id<"mortgages">;
+		paymentAmount: number;
+		paymentFrequency: string;
+		principal: number;
+		status: string;
+	};
+	parties: {
+		lender: {
+			email: string | null;
+			name: string;
+		};
+		seller: {
+			email: string | null;
+			name: string;
+		};
+	};
+	property: {
+		city: string;
+		propertyType: string;
+		province: string;
+		streetAddress: string;
+		unit: string | null;
+	} | null;
+}
+
+function projectPortalDealDocumentInstance(
+	instance: DealDocumentPackageSurfaceInstance
+): PortalDealDocumentInstance {
+	return {
+		class: instance.class,
+		displayName: instance.displayName,
+		instanceId: instance.instanceId,
+		kind: instance.kind,
+		packageLabel: instance.packageLabel,
+		status: instance.status,
+		url:
+			instance.status === "available" &&
+			(instance.class === "private_static" ||
+				instance.class === "private_templated_non_signable")
+				? instance.url
+				: null,
+	};
 }
 
 // ── Internal: used by effects ──────────────────────────────────────
@@ -195,5 +274,102 @@ export const getDealsByPhase = adminQuery
 export const closingTeamAssignments = adminQuery
 	.handler(async (ctx) => {
 		return await ctx.db.query("closingTeamAssignments").collect();
+	})
+	.public();
+
+export const getPortalDealDetail = dealQuery
+	.input({
+		dealId: v.id("deals"),
+	})
+	.handler(async (ctx, args): Promise<PortalDealDetail | null> => {
+		await assertDealAccess(ctx, ctx.viewer, args.dealId);
+
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal) {
+			return null;
+		}
+
+		const mortgage = await ctx.db.get(deal.mortgageId);
+		if (!mortgage) {
+			return null;
+		}
+
+		const [property, lenderUser, sellerUser, packageSurface] =
+			await Promise.all([
+				ctx.db.get(mortgage.propertyId),
+				ctx.db
+					.query("users")
+					.withIndex("authId", (query) => query.eq("authId", deal.buyerId))
+					.unique(),
+				ctx.db
+					.query("users")
+					.withIndex("authId", (query) => query.eq("authId", deal.sellerId))
+					.unique(),
+				readDealDocumentPackageSurface(ctx, args.dealId),
+			]);
+
+		return {
+			deal: {
+				closingDate: deal.closingDate ?? null,
+				dealId: deal._id,
+				fractionalShare: deal.fractionalShare,
+				lockingFeeAmount: deal.lockingFeeAmount ?? null,
+				status: deal.status,
+			},
+			mortgage: {
+				interestRate: mortgage.interestRate,
+				maturityDate: mortgage.maturityDate,
+				mortgageId: mortgage._id,
+				paymentAmount: mortgage.paymentAmount,
+				paymentFrequency: mortgage.paymentFrequency,
+				principal: mortgage.principal,
+				status: mortgage.status,
+			},
+			property: property
+				? {
+						city: property.city,
+						propertyType: property.propertyType,
+						province: property.province,
+						streetAddress: property.streetAddress,
+						unit: property.unit ?? null,
+					}
+				: null,
+			parties: {
+				lender: {
+					email: lenderUser?.email ?? null,
+					name:
+						[lenderUser?.firstName, lenderUser?.lastName]
+							.filter(Boolean)
+							.join(" ")
+							.trim() ||
+						lenderUser?.email ||
+						deal.buyerId,
+				},
+				seller: {
+					email: sellerUser?.email ?? null,
+					name:
+						[sellerUser?.firstName, sellerUser?.lastName]
+							.filter(Boolean)
+							.join(" ")
+							.trim() ||
+						sellerUser?.email ||
+						deal.sellerId,
+				},
+			},
+			documentInstances: packageSurface.instances
+				.filter(
+					(instance) =>
+						instance.class === "private_static" ||
+						instance.class === "private_templated_non_signable" ||
+						instance.class === "private_templated_signable"
+				)
+				.map(projectPortalDealDocumentInstance),
+			documentPackage: packageSurface.package
+				? {
+						readyAt: packageSurface.package.readyAt,
+						status: packageSurface.package.status,
+					}
+				: null,
+		};
 	})
 	.public();
