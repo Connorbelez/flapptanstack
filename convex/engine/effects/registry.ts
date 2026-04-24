@@ -1,5 +1,17 @@
-import type { FunctionReference } from "convex/server";
+import { type FunctionReference, makeFunctionReference } from "convex/server";
 import { internal } from "../../_generated/api";
+
+function makeInternalFunctionReference<Type extends "mutation" | "action">(
+	name: string
+) {
+	return makeFunctionReference<Type, Record<string, unknown>, unknown>(
+		name
+	) as unknown as FunctionReference<Type, "internal">;
+}
+
+const provisionMicAccessRef = makeInternalFunctionReference<"action">(
+	"engine/effects/micInvestorAccess:provisionMicAccess"
+);
 
 /**
  * Maps action names declared in XState machines to Convex internal function references.
@@ -10,6 +22,7 @@ export const effectRegistry: Record<
 	FunctionReference<"mutation" | "action", "internal">
 > = {
 	assignRole: internal.engine.effects.onboarding.assignRole,
+	provisionMicAccess: provisionMicAccessRef,
 	notifyApplicantApproved:
 		internal.engine.effects.onboarding.notifyApplicantApproved,
 	notifyApplicantRejected:

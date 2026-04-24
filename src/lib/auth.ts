@@ -14,6 +14,7 @@ export const ISLAND_PERMISSIONS = {
 	broker: "broker:access",
 	borrower: "borrower:access",
 	lender: "lender:access",
+	mic: "mic:access",
 	underwriter: "underwriter:access",
 	lawyer: "lawyer:access",
 	onboarding: "onboarding:access",
@@ -142,6 +143,10 @@ export const ROUTE_AUTHORIZATION_RULES = {
 	lender: {
 		kind: "permission",
 		permission: "lender:access",
+	},
+	micPortal: {
+		kind: "permission",
+		permission: "mic:access",
 	},
 	onboarding: {
 		kind: "permission",

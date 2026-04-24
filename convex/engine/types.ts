@@ -3,6 +3,7 @@
 export type EntityType =
 	| "brokerOnboardingApplication"
 	| "onboardingRequest"
+	| "micInvestorAccessRequest"
 	| "mortgage"
 	| "obligation"
 	| "collectionAttempt"
@@ -31,6 +32,7 @@ export type EntityType =
 export type GovernedEntityType =
 	| "brokerOnboardingApplication"
 	| "onboardingRequest"
+	| "micInvestorAccessRequest"
 	| "mortgage"
 	| "obligation"
 	| "collectionAttempt"
@@ -200,6 +202,7 @@ export interface AuditJournalEntry {
 export const ENTITY_TABLE_MAP = {
 	brokerOnboardingApplication: "brokerOnboardingApplications",
 	onboardingRequest: "onboardingRequests",
+	micInvestorAccessRequest: "micInvestorAccessRequests",
 	mortgage: "mortgages",
 	obligation: "obligations",
 	collectionAttempt: "collectionAttempts",

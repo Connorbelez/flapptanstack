@@ -36,6 +36,17 @@ describe("resolveAuthCompletionDecision", () => {
 		defaultPostAuthPath: "/broker/dashboard",
 	};
 
+	const fairLendMicPortal = {
+		portalId: "portal_mic",
+		slug: "fairlend-mic",
+		portalType: "mic" as const,
+		productionHost: "mic.fairlend.ca",
+		localHost: "mic.localhost:3000",
+		status: "active" as const,
+		isPublished: true,
+		defaultPostAuthPath: "/portal",
+	};
+
 	it("redirects marketing-host completions to the assigned home portal", () => {
 		expect(
 			resolveAuthCompletionDecision({
@@ -129,6 +140,38 @@ describe("resolveAuthCompletionDecision", () => {
 		).toEqual({
 			kind: "redirect",
 			href: "http://meridian.localhost:3000/listings",
+		});
+	});
+
+	it("uses /portal as the MIC home portal default after marketing-host auth", () => {
+		expect(
+			resolveAuthCompletionDecision({
+				authState: {
+					version: 1,
+					issuedAt: 1_000,
+					returnPathname: "/",
+					hasExplicitReturnPath: false,
+					hostClass: "marketing",
+					hostType: "local",
+					requestedHost: "localhost:3000",
+					canonicalHost: "localhost:3000",
+				},
+				currentPortalContext: {
+					kind: "marketing",
+					requestedHost: "localhost:3000",
+					canonicalHost: "localhost:3000",
+					cacheKey: "marketing:localhost:3000",
+				},
+				viewerAssignment: {
+					userId: "user_mic",
+					homePortalId: "portal_mic",
+					homePortal: fairLendMicPortal,
+					isFairLendAdmin: false,
+				},
+			})
+		).toEqual({
+			kind: "redirect",
+			href: "http://mic.localhost:3000/portal",
 		});
 	});
 
@@ -483,6 +526,52 @@ describe("resolveAuthCompletionDecision", () => {
 			currentHost: "meridian.localhost:3000",
 			assignedHost: "app.localhost:3000",
 			assignedPortalLabel: "FairLend",
+		});
+	});
+
+	it("uses the MIC portal default for wrong-portal continuation without an explicit redirect", () => {
+		expect(
+			resolveAuthCompletionDecision({
+				authState: {
+					version: 1,
+					issuedAt: 1_000,
+					returnPathname: "/",
+					hasExplicitReturnPath: false,
+					hostClass: "portal",
+					hostType: "local",
+					requestedHost: "meridian.localhost:3000",
+					canonicalHost: "meridian.localhost:3000",
+					portalId: "portal_meridian",
+					portalSlug: "meridian",
+				},
+				currentPortalContext: {
+					kind: "portal",
+					requestedHost: "meridian.localhost:3000",
+					canonicalHost: "meridian.localhost:3000",
+					cacheKey:
+						"portal:portal_meridian:active:local:meridian.localhost:3000",
+					availability: "active",
+					matchedHostType: "local",
+					portal: {
+						...localBrokerPortal,
+						portalId: "portal_meridian" as Id<"portals">,
+						publicTeaserEnabled: true,
+						teaserListingLimit: 12,
+					},
+				},
+				viewerAssignment: {
+					userId: "user_mic",
+					homePortalId: "portal_mic",
+					homePortal: fairLendMicPortal,
+					isFairLendAdmin: false,
+				},
+			})
+		).toEqual({
+			kind: "wrong-portal",
+			continueHref: "http://mic.localhost:3000/portal",
+			currentHost: "meridian.localhost:3000",
+			assignedHost: "mic.localhost:3000",
+			assignedPortalLabel: "Fairlend Mic",
 		});
 	});
 

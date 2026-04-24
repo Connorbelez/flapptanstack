@@ -301,6 +301,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../engine/effects/obligationWaiver.ts"),
 	"/convex/engine/effects/onboarding.ts": async () =>
 		await import("./../engine/effects/onboarding.ts"),
+	"/convex/engine/effects/micInvestorAccess.ts": async () =>
+		await import("./../engine/effects/micInvestorAccess.ts"),
 	"/convex/engine/effects/registry.ts": async () =>
 		await import("./../engine/effects/registry.ts"),
 	"/convex/engine/effects/transfer.ts": async () =>
@@ -317,6 +319,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../engine/machines/deal.machine.ts"),
 	"/convex/engine/machines/lenderRenewalIntent.machine.ts": async () =>
 		await import("./../engine/machines/lenderRenewalIntent.machine.ts"),
+	"/convex/engine/machines/micInvestorAccessRequest.machine.ts": async () =>
+		await import("./../engine/machines/micInvestorAccessRequest.machine.ts"),
 	"/convex/engine/machines/mortgage.machine.ts": async () =>
 		await import("./../engine/machines/mortgage.machine.ts"),
 	"/convex/engine/machines/obligation.machine.ts": async () =>
@@ -480,6 +484,16 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../onboarding/verification/workosEmailVerification.ts"),
 	"/convex/onboarding/validators.ts": async () =>
 		await import("./../onboarding/validators.ts"),
+	"/convex/micInvestorAccess/internal.ts": async () =>
+		await import("./../micInvestorAccess/internal.ts"),
+	"/convex/micInvestorAccess/mutations.ts": async () =>
+		await import("./../micInvestorAccess/mutations.ts"),
+	"/convex/micInvestorAccess/queries.ts": async () =>
+		await import("./../micInvestorAccess/queries.ts"),
+	"/convex/micInvestorAccess/validators.ts": async () =>
+		await import("./../micInvestorAccess/validators.ts"),
+	"/convex/micPortfolio/queries.ts": async () =>
+		await import("./../micPortfolio/queries.ts"),
 	"/convex/payments/bankAccounts/mutations.ts": async () =>
 		await import("./../payments/bankAccounts/mutations.ts"),
 	"/convex/payments/bankAccounts/queries.ts": async () =>

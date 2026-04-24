@@ -19,7 +19,13 @@ import { buildPortfolioHistoricalSeries } from "./history";
 export const getLenderPortfolioCommandCenter = portalLenderQuery()
 	.use(requirePermission("portfolio:view"))
 	.returns(portfolioCommandCenterValidator)
-	.handler(async (ctx) => await buildPortfolioCommandCenter(ctx))
+	.handler(
+		async (ctx) =>
+			await buildPortfolioCommandCenter({
+				...ctx,
+				lenderAuthId: ctx.viewer.authId,
+			})
+	)
 	.public();
 
 export const getLenderPortfolioPositionDetail = portalLenderQuery({
@@ -29,7 +35,13 @@ export const getLenderPortfolioPositionDetail = portalLenderQuery({
 	.returns(portfolioPositionDetailValidator)
 	.handler(
 		async (ctx, args) =>
-			await buildPortfolioPositionDetail(ctx, args.mortgageId)
+			await buildPortfolioPositionDetail(
+				{
+					...ctx,
+					lenderAuthId: ctx.viewer.authId,
+				},
+				args.mortgageId
+			)
 	)
 	.public();
 
@@ -40,7 +52,13 @@ export const getLenderPortfolioPaymentDetail = portalLenderQuery({
 	.returns(portfolioPaymentDetailValidator)
 	.handler(
 		async (ctx, args) =>
-			await buildPortfolioPaymentDetail(ctx, args.obligationId)
+			await buildPortfolioPaymentDetail(
+				{
+					...ctx,
+					lenderAuthId: ctx.viewer.authId,
+				},
+				args.obligationId
+			)
 	)
 	.public();
 

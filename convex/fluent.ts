@@ -29,6 +29,8 @@ import type {
 	PortalAccessContext,
 	PortalBorrowerContext,
 	PortalLenderContext,
+	PortalMicContext,
+	PortalResolvedContext,
 	PublicPortalResolvedContext,
 } from "./portals/middleware";
 import {
@@ -37,6 +39,7 @@ import {
 	withPortalAccess,
 	withPortalBorrower,
 	withPortalLender,
+	withPortalMic,
 	withPublicPortalContext,
 } from "./portals/middleware";
 
@@ -826,6 +829,27 @@ export function portalLenderMutation<TInput extends PropertyValidators>(
 		withPortalLender as PortalHandlerWrapper<
 			BuilderContextOf<typeof builder>,
 			PortalLenderContext,
+			BuilderArgsOf<typeof builder>
+		>
+	);
+}
+
+export function portalMicQuery<TInput extends PropertyValidators>(
+	input?: TInput
+) {
+	const builder = authedQuery.input(withPortalArgs(input));
+	return new PortalBuilder<
+		DataModel,
+		"query",
+		BuilderContextOf<typeof builder>,
+		BuilderArgsOf<typeof builder>,
+		undefined,
+		PortalMicContext
+	>(
+		builder,
+		withPortalMic as PortalHandlerWrapper<
+			BuilderContextOf<typeof builder>,
+			PortalMicContext,
 			BuilderArgsOf<typeof builder>
 		>
 	);

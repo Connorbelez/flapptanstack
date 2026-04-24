@@ -17,6 +17,7 @@ import { Route as HostBoundaryRouteImport } from './routes/host-boundary'
 import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as AuthCompleteRouteImport } from './routes/auth-complete'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as PortalRouteRouteImport } from './routes/portal/route'
 import { Route as OnboardRouteRouteImport } from './routes/onboard/route'
 import { Route as ListingsRouteRouteImport } from './routes/listings/route'
 import { Route as LenderRouteRouteImport } from './routes/lender/route'
@@ -25,6 +26,7 @@ import { Route as BrokerRouteRouteImport } from './routes/broker/route'
 import { Route as BorrowerRouteRouteImport } from './routes/borrower/route'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PortalIndexRouteImport } from './routes/portal/index'
 import { Route as ListingsIndexRouteImport } from './routes/listings/index'
 import { Route as BrokerIndexRouteImport } from './routes/broker/index'
 import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
@@ -64,6 +66,7 @@ import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminRotessaReconciliationRouteImport } from './routes/admin/rotessa-reconciliation'
 import { Route as AdminPaymentOperationsRouteImport } from './routes/admin/payment-operations'
 import { Route as AdminOriginationsRouteImport } from './routes/admin/originations'
+import { Route as AdminMicInvestorsRouteImport } from './routes/admin/mic-investors'
 import { Route as AdminFinancialLedgerRouteImport } from './routes/admin/financial-ledger'
 import { Route as AdminDocumentEngineRouteImport } from './routes/admin.document-engine'
 import { Route as AdminEntitytypeRouteImport } from './routes/admin/$entitytype'
@@ -93,6 +96,7 @@ import { Route as DemoBrokerWhitelabelIndexRouteImport } from './routes/demo/bro
 import { Route as DemoAuditTraceabilityIndexRouteImport } from './routes/demo/audit-traceability/index'
 import { Route as DemoAmpsIndexRouteImport } from './routes/demo/amps/index'
 import { Route as AdminDocumentEngineIndexRouteImport } from './routes/admin.document-engine.index'
+import { Route as PortalMortgagesMortgageIdRouteImport } from './routes/portal/mortgages/$mortgageId'
 import { Route as LenderDealsDealIdRouteImport } from './routes/lender.deals.$dealId'
 import { Route as DemoRbacAuthRolesRouteImport } from './routes/demo/rbac-auth/roles'
 import { Route as DemoRbacAuthOnboardingRouteImport } from './routes/demo/rbac-auth/onboarding'
@@ -189,6 +193,11 @@ const AboutRoute = AboutRouteImport.update({
   path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortalRouteRoute = PortalRouteRouteImport.update({
+  id: '/portal',
+  path: '/portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OnboardRouteRoute = OnboardRouteRouteImport.update({
   id: '/onboard',
   path: '/onboard',
@@ -228,6 +237,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const PortalIndexRoute = PortalIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PortalRouteRoute,
 } as any)
 const ListingsIndexRoute = ListingsIndexRouteImport.update({
   id: '/',
@@ -428,6 +442,11 @@ const AdminOriginationsRoute = AdminOriginationsRouteImport.update({
   path: '/originations',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminMicInvestorsRoute = AdminMicInvestorsRouteImport.update({
+  id: '/mic-investors',
+  path: '/mic-investors',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const AdminFinancialLedgerRoute = AdminFinancialLedgerRouteImport.update({
   id: '/financial-ledger',
   path: '/financial-ledger',
@@ -580,6 +599,12 @@ const AdminDocumentEngineIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => AdminDocumentEngineRoute,
+  } as any)
+const PortalMortgagesMortgageIdRoute =
+  PortalMortgagesMortgageIdRouteImport.update({
+    id: '/mortgages/$mortgageId',
+    path: '/mortgages/$mortgageId',
+    getParentRoute: () => PortalRouteRoute,
   } as any)
 const LenderDealsDealIdRoute = LenderDealsDealIdRouteImport.update({
   id: '/$dealId',
@@ -895,6 +920,7 @@ export interface FileRoutesByFullPath {
   '/lender': typeof LenderRouteRouteWithChildren
   '/listings': typeof ListingsRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
+  '/portal': typeof PortalRouteRouteWithChildren
   '/about': typeof AboutRoute
   '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
@@ -922,6 +948,7 @@ export interface FileRoutesByFullPath {
   '/admin/$entitytype': typeof AdminEntitytypeRouteWithChildren
   '/admin/document-engine': typeof AdminDocumentEngineRouteWithChildren
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
+  '/admin/mic-investors': typeof AdminMicInvestorsRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
@@ -961,6 +988,7 @@ export interface FileRoutesByFullPath {
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
   '/listings/': typeof ListingsIndexRoute
+  '/portal/': typeof PortalIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1009,6 +1037,7 @@ export interface FileRoutesByFullPath {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
+  '/portal/mortgages/$mortgageId': typeof PortalMortgagesMortgageIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
   '/demo/amps/': typeof DemoAmpsIndexRoute
   '/demo/audit-traceability/': typeof DemoAuditTraceabilityIndexRoute
@@ -1052,6 +1081,7 @@ export interface FileRoutesByTo {
   '/authenticated': typeof AuthenticatedAuthenticatedRoute
   '/admin/$entitytype': typeof AdminEntitytypeRouteWithChildren
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
+  '/admin/mic-investors': typeof AdminMicInvestorsRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
@@ -1090,6 +1120,7 @@ export interface FileRoutesByTo {
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker': typeof BrokerIndexRoute
   '/listings': typeof ListingsIndexRoute
+  '/portal': typeof PortalIndexRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
   '/demo/rbac/broker': typeof DemoRbacBrokerRouteRoute
@@ -1137,6 +1168,7 @@ export interface FileRoutesByTo {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
+  '/portal/mortgages/$mortgageId': typeof PortalMortgagesMortgageIdRoute
   '/admin/document-engine': typeof AdminDocumentEngineIndexRoute
   '/demo/amps': typeof DemoAmpsIndexRoute
   '/demo/audit-traceability': typeof DemoAuditTraceabilityIndexRoute
@@ -1165,6 +1197,7 @@ export interface FileRoutesById {
   '/lender': typeof LenderRouteRouteWithChildren
   '/listings': typeof ListingsRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
+  '/portal': typeof PortalRouteRouteWithChildren
   '/about': typeof AboutRoute
   '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
@@ -1192,6 +1225,7 @@ export interface FileRoutesById {
   '/admin/$entitytype': typeof AdminEntitytypeRouteWithChildren
   '/admin/document-engine': typeof AdminDocumentEngineRouteWithChildren
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
+  '/admin/mic-investors': typeof AdminMicInvestorsRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
@@ -1231,6 +1265,7 @@ export interface FileRoutesById {
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
   '/listings/': typeof ListingsIndexRoute
+  '/portal/': typeof PortalIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1279,6 +1314,7 @@ export interface FileRoutesById {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
+  '/portal/mortgages/$mortgageId': typeof PortalMortgagesMortgageIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
   '/demo/amps/': typeof DemoAmpsIndexRoute
   '/demo/audit-traceability/': typeof DemoAuditTraceabilityIndexRoute
@@ -1308,6 +1344,7 @@ export interface FileRouteTypes {
     | '/lender'
     | '/listings'
     | '/onboard'
+    | '/portal'
     | '/about'
     | '/auth-complete'
     | '/callback'
@@ -1335,6 +1372,7 @@ export interface FileRouteTypes {
     | '/admin/$entitytype'
     | '/admin/document-engine'
     | '/admin/financial-ledger'
+    | '/admin/mic-investors'
     | '/admin/originations'
     | '/admin/payment-operations'
     | '/admin/rotessa-reconciliation'
@@ -1374,6 +1412,7 @@ export interface FileRouteTypes {
     | '/sign-out/local'
     | '/broker/'
     | '/listings/'
+    | '/portal/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1422,6 +1461,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lender/deals/$dealId'
+    | '/portal/mortgages/$mortgageId'
     | '/admin/document-engine/'
     | '/demo/amps/'
     | '/demo/audit-traceability/'
@@ -1465,6 +1505,7 @@ export interface FileRouteTypes {
     | '/authenticated'
     | '/admin/$entitytype'
     | '/admin/financial-ledger'
+    | '/admin/mic-investors'
     | '/admin/originations'
     | '/admin/payment-operations'
     | '/admin/rotessa-reconciliation'
@@ -1503,6 +1544,7 @@ export interface FileRouteTypes {
     | '/sign-out/local'
     | '/broker'
     | '/listings'
+    | '/portal'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
     | '/demo/rbac/broker'
@@ -1550,6 +1592,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lender/deals/$dealId'
+    | '/portal/mortgages/$mortgageId'
     | '/admin/document-engine'
     | '/demo/amps'
     | '/demo/audit-traceability'
@@ -1577,6 +1620,7 @@ export interface FileRouteTypes {
     | '/lender'
     | '/listings'
     | '/onboard'
+    | '/portal'
     | '/about'
     | '/auth-complete'
     | '/callback'
@@ -1604,6 +1648,7 @@ export interface FileRouteTypes {
     | '/admin/$entitytype'
     | '/admin/document-engine'
     | '/admin/financial-ledger'
+    | '/admin/mic-investors'
     | '/admin/originations'
     | '/admin/payment-operations'
     | '/admin/rotessa-reconciliation'
@@ -1643,6 +1688,7 @@ export interface FileRouteTypes {
     | '/sign-out/local'
     | '/broker/'
     | '/listings/'
+    | '/portal/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1691,6 +1737,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lender/deals/$dealId'
+    | '/portal/mortgages/$mortgageId'
     | '/admin/document-engine/'
     | '/demo/amps/'
     | '/demo/audit-traceability/'
@@ -1719,6 +1766,7 @@ export interface RootRouteChildren {
   LenderRouteRoute: typeof LenderRouteRouteWithChildren
   ListingsRouteRoute: typeof ListingsRouteRouteWithChildren
   OnboardRouteRoute: typeof OnboardRouteRoute
+  PortalRouteRoute: typeof PortalRouteRouteWithChildren
   AboutRoute: typeof AboutRoute
   AuthCompleteRoute: typeof AuthCompleteRoute
   CallbackRoute: typeof CallbackRoute
@@ -1826,6 +1874,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/portal': {
+      id: '/portal'
+      path: '/portal'
+      fullPath: '/portal'
+      preLoaderRoute: typeof PortalRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/onboard': {
       id: '/onboard'
       path: '/onboard'
@@ -1881,6 +1936,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/portal/': {
+      id: '/portal/'
+      path: '/'
+      fullPath: '/portal/'
+      preLoaderRoute: typeof PortalIndexRouteImport
+      parentRoute: typeof PortalRouteRoute
     }
     '/listings/': {
       id: '/listings/'
@@ -2155,6 +2217,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOriginationsRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/mic-investors': {
+      id: '/admin/mic-investors'
+      path: '/mic-investors'
+      fullPath: '/admin/mic-investors'
+      preLoaderRoute: typeof AdminMicInvestorsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/financial-ledger': {
       id: '/admin/financial-ledger'
       path: '/financial-ledger'
@@ -2357,6 +2426,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/document-engine/'
       preLoaderRoute: typeof AdminDocumentEngineIndexRouteImport
       parentRoute: typeof AdminDocumentEngineRoute
+    }
+    '/portal/mortgages/$mortgageId': {
+      id: '/portal/mortgages/$mortgageId'
+      path: '/mortgages/$mortgageId'
+      fullPath: '/portal/mortgages/$mortgageId'
+      preLoaderRoute: typeof PortalMortgagesMortgageIdRouteImport
+      parentRoute: typeof PortalRouteRoute
     }
     '/lender/deals/$dealId': {
       id: '/lender/deals/$dealId'
@@ -2873,6 +2949,7 @@ interface AdminRouteRouteChildren {
   AdminEntitytypeRoute: typeof AdminEntitytypeRouteWithChildren
   AdminDocumentEngineRoute: typeof AdminDocumentEngineRouteWithChildren
   AdminFinancialLedgerRoute: typeof AdminFinancialLedgerRoute
+  AdminMicInvestorsRoute: typeof AdminMicInvestorsRoute
   AdminOriginationsRoute: typeof AdminOriginationsRouteWithChildren
   AdminPaymentOperationsRoute: typeof AdminPaymentOperationsRoute
   AdminRotessaReconciliationRoute: typeof AdminRotessaReconciliationRoute
@@ -2890,6 +2967,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminEntitytypeRoute: AdminEntitytypeRouteWithChildren,
   AdminDocumentEngineRoute: AdminDocumentEngineRouteWithChildren,
   AdminFinancialLedgerRoute: AdminFinancialLedgerRoute,
+  AdminMicInvestorsRoute: AdminMicInvestorsRoute,
   AdminOriginationsRoute: AdminOriginationsRouteWithChildren,
   AdminPaymentOperationsRoute: AdminPaymentOperationsRoute,
   AdminRotessaReconciliationRoute: AdminRotessaReconciliationRoute,
@@ -2964,6 +3042,20 @@ const ListingsRouteRouteChildren: ListingsRouteRouteChildren = {
 
 const ListingsRouteRouteWithChildren = ListingsRouteRoute._addFileChildren(
   ListingsRouteRouteChildren,
+)
+
+interface PortalRouteRouteChildren {
+  PortalIndexRoute: typeof PortalIndexRoute
+  PortalMortgagesMortgageIdRoute: typeof PortalMortgagesMortgageIdRoute
+}
+
+const PortalRouteRouteChildren: PortalRouteRouteChildren = {
+  PortalIndexRoute: PortalIndexRoute,
+  PortalMortgagesMortgageIdRoute: PortalMortgagesMortgageIdRoute,
+}
+
+const PortalRouteRouteWithChildren = PortalRouteRoute._addFileChildren(
+  PortalRouteRouteChildren,
 )
 
 interface SignOutRouteChildren {
@@ -3201,6 +3293,7 @@ const rootRouteChildren: RootRouteChildren = {
   LenderRouteRoute: LenderRouteRouteWithChildren,
   ListingsRouteRoute: ListingsRouteRouteWithChildren,
   OnboardRouteRoute: OnboardRouteRoute,
+  PortalRouteRoute: PortalRouteRouteWithChildren,
   AboutRoute: AboutRoute,
   AuthCompleteRoute: AuthCompleteRoute,
   CallbackRoute: CallbackRoute,
@@ -3253,13 +3346,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

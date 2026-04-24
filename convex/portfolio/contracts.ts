@@ -106,9 +106,14 @@ export const portfolioCockpitValidator = v.object({
 export type PortfolioCockpit = Infer<typeof portfolioCockpitValidator>;
 
 export const portfolioPositionRowValidator = v.object({
+	borrowerLabel: nullableStringValidator,
+	city: nullableStringValidator,
+	currentLtvPercent: nullableNumberValidator,
+	currentPrincipal: nullableNumberValidator,
 	estimatedPositionValue: v.number(),
 	fractionCount: v.number(),
 	lenderSharePaymentAmount: v.number(),
+	maturityDate: nullableStringValidator,
 	mortgageId: v.string(),
 	mortgageStatus: v.string(),
 	nextPaymentDate: nullableStringValidator,
@@ -116,9 +121,12 @@ export const portfolioPositionRowValidator = v.object({
 	positionPercent: v.number(),
 	positionUnits: v.number(),
 	propertyLabel: v.string(),
+	propertyType: nullableStringValidator,
+	province: nullableStringValidator,
 	renewalIntentStatus: nullableStringValidator,
 	renewalTimingLabel: v.string(),
 	thumbnailUrl: nullableStringValidator,
+	weightedRatePercent: nullableNumberValidator,
 });
 export type PortfolioPositionRow = Infer<typeof portfolioPositionRowValidator>;
 
@@ -373,6 +381,16 @@ export const portfolioPositionDetailValidator = v.object({
 });
 export type PortfolioPositionDetail = Infer<
 	typeof portfolioPositionDetailValidator
+>;
+
+export const portfolioMortgageDetailPageValidator = v.object({
+	generatedAt: v.number(),
+	paymentHistory: v.array(portfolioPaymentRowValidator),
+	positionDetail: portfolioPositionDetailValidator,
+	sourceOfTruth: portfolioSourceOfTruthValidator,
+});
+export type PortfolioMortgageDetailPage = Infer<
+	typeof portfolioMortgageDetailPageValidator
 >;
 
 export const portfolioTimelineEventValidator = v.object({

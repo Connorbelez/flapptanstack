@@ -1,0 +1,132 @@
+<h2>MIC Portal Architecture</h2>
+<p class="subtitle">
+	First-class portal, invite-only access, ledger-derived portfolio transparency
+</p>
+
+<div class="section">
+	<div class="mockup">
+		<div class="mockup-header">Public To Authenticated Flow</div>
+		<div class="mockup-body" style="display:grid;gap:16px;">
+			<div
+				style="display:grid;grid-template-columns:repeat(5, minmax(0,1fr));gap:12px;align-items:stretch;"
+			>
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fafaf9;"
+				>
+					<div class="label">Host</div>
+					<h3 style="margin:6px 0 8px;">mic.&lt;domain&gt;</h3>
+					<p style="margin:0;">
+						Public landing page with sign-in CTA and request OM/prospectus form.
+					</p>
+				</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:24px;"
+				>
+					→
+				</div>
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fafaf9;"
+				>
+					<div class="label">Mutation</div>
+					<h3 style="margin:6px 0 8px;">MIC access request</h3>
+					<p style="margin:0;">
+						Email-only public submission creates a pending MIC join/access
+						request.
+					</p>
+				</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:24px;"
+				>
+					→
+				</div>
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fafaf9;"
+				>
+					<div class="label">Admin</div>
+					<h3 style="margin:6px 0 8px;">Approve request</h3>
+					<p style="margin:0;">
+						Approval provisions MIC org membership, grants
+						<code>micinvestor</code>, and routes future auth to the MIC portal.
+					</p>
+				</div>
+			</div>
+
+			<div
+				style="display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:12px;align-items:stretch;"
+			>
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+				>
+					<div class="label">Portal Model</div>
+					<h3 style="margin:6px 0 8px;">First-class portal</h3>
+					<p style="margin:0;">
+						Registry-backed MIC portal with its own host and default post-auth
+						path of <code>/portal</code>.
+					</p>
+				</div>
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+				>
+					<div class="label">Authorization</div>
+					<h3 style="margin:6px 0 8px;">Authed but non-personalized</h3>
+					<p style="margin:0;">
+						All approved MIC investors see the same fund transparency surface in
+						v1.
+					</p>
+				</div>
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+				>
+					<div class="label">Source Of Truth</div>
+					<h3 style="margin:6px 0 8px;">Mortgage ledger</h3>
+					<p style="margin:0;">
+						MIC portfolio and derived stats come from MIC-as-lender
+						participation, not org ownership or MIC treasury cash ledger.
+					</p>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="section">
+	<div class="split">
+		<div class="mockup">
+			<div class="mockup-header">Public Surface</div>
+			<div class="mockup-body" style="display:grid;gap:10px;">
+				<div class="mock-nav">
+					MIC | Overview | Portfolio Snapshot | Request OM / Prospectus
+				</div>
+				<div class="placeholder" style="min-height:84px;">
+					Hero with fund positioning, sign-in, request-access CTA
+				</div>
+				<div class="placeholder" style="min-height:64px;">
+					Selected transparency stats that are safe to show publicly or
+					teaser-only content
+				</div>
+				<div class="mock-input">Email field</div>
+				<button class="mock-button">
+					Request offering memorandum / prospectus
+				</button>
+			</div>
+		</div>
+
+		<div class="mockup">
+			<div class="mockup-header">Authenticated Surface</div>
+			<div class="mockup-body" style="display:grid;gap:10px;">
+				<div class="mock-nav">
+					Overview | Positions | Payments / History | Detail Sidebar
+				</div>
+				<div class="placeholder" style="min-height:72px;">
+					Fund-level derived metrics from the mortgage ledger
+				</div>
+				<div class="placeholder" style="min-height:108px;">
+					Portfolio positions table with click-through detail host
+				</div>
+				<div class="placeholder" style="min-height:84px;">
+					Payment / maturity / concentration / exposure views
+				</div>
+			</div>
+		</div>
+	</div>
+</div>

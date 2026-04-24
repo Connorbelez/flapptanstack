@@ -12,6 +12,7 @@ import {
 	type PortalPricingPolicyDoc,
 	projectListingForPortal,
 	requirePortalPricingSelection,
+	resolvePublishedPortalAvailability,
 	selectEffectivePortalPricingPolicy,
 } from "../pricing";
 import {
@@ -140,6 +141,20 @@ describe("portal pricing contract", () => {
 			kind: "unavailable",
 			reason: "missing-active-policy",
 		});
+	});
+
+	it("keeps published active MIC portals available without broker pricing", () => {
+		expect(
+			resolvePublishedPortalAvailability({
+				isPublished: true,
+				portalStatus: "active",
+				portalType: "mic",
+				pricingSelection: {
+					kind: "unavailable",
+					reason: "missing-active-policy",
+				},
+			})
+		).toBe("active");
 	});
 
 	it("treats an invalid selected policy as unavailable for a published portal", () => {

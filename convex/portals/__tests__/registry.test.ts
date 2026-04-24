@@ -13,7 +13,7 @@ import {
 	FAIRLEND_STAFF_ORG_ID,
 } from "../../constants";
 import { getLatestOnboardingPortalIdForUser } from "../borrowerPortalAttribution";
-import { DEFAULT_PORTAL_POST_AUTH_PATH } from "../helpers";
+import { DEFAULT_PORTAL_POST_AUTH_PATH, micPortalFields } from "../helpers";
 import { assertPortalRegistryInvariants } from "../invariants";
 
 const migrationsModules = import.meta.glob(
@@ -302,6 +302,80 @@ describe("portal registry backfill", () => {
 		});
 
 		expect(result.resolvedPortalId).toBe(result.portalId);
+	});
+
+	it("exposes MIC portal metadata including lender mapping", async () => {
+		const t = createHarness();
+		const { micLenderId, micPortalId } = await t.run(async (ctx) => {
+			const now = Date.now();
+			const micOrgId = "org_mic_registry";
+			const brokerUserId = await ctx.db.insert("users", {
+				authId: "user_mic_registry_broker",
+				email: "mic-registry-broker@test.fairlend.ca",
+				firstName: "MIC",
+				lastName: "Broker",
+			});
+			const brokerId = await ctx.db.insert("brokers", {
+				status: "active",
+				lastTransitionAt: undefined,
+				userId: brokerUserId,
+				licenseId: undefined,
+				licenseProvince: undefined,
+				brokerageName: "MIC Registry Brokerage",
+				orgId: micOrgId,
+				onboardedAt: now,
+				createdAt: now,
+			});
+			const lenderUserId = await ctx.db.insert("users", {
+				authId: "user_mic_registry_lender",
+				email: "mic-registry-lender@test.fairlend.ca",
+				firstName: "MIC",
+				lastName: "Lender",
+			});
+			const lenderId = await ctx.db.insert("lenders", {
+				userId: lenderUserId,
+				orgId: micOrgId,
+				brokerId,
+				accreditationStatus: "accredited",
+				idvStatus: undefined,
+				kycStatus: undefined,
+				personaInquiryId: undefined,
+				onboardingEntryPath: "admin_invite",
+				onboardingId: undefined,
+				status: "active",
+				activatedAt: now,
+				createdAt: now,
+				payoutFrequency: undefined,
+				lastPayoutDate: undefined,
+				minimumPayoutCents: undefined,
+			});
+			const portalId = await ctx.db.insert(
+				"portals",
+				micPortalFields({
+					lenderId,
+					now,
+					orgId: micOrgId,
+					slug: "mic",
+				})
+			);
+
+			return {
+				micLenderId: lenderId,
+				micPortalId: portalId,
+			};
+		});
+
+		const result = await t.query(
+			internal.portals.queries.getPortalBySlugInternal,
+			{
+				slug: "mic",
+			}
+		);
+
+		expect(String(result?.portalId)).toBe(String(micPortalId));
+		expect(result?.portalType).toBe("mic");
+		expect(String(result?.lenderId)).toBe(String(micLenderId));
+		expect(result?.defaultPostAuthPath).toBe("/portal");
 	});
 
 	it("syncs a freshly created user's home portal to the FairLend app portal", async () => {

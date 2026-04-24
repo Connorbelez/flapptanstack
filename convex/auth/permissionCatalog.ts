@@ -32,6 +32,11 @@ export const PERMISSION_DISPLAY_METADATA = {
 		description: "Access lender routes",
 		domain: "access",
 	},
+	"mic:access": {
+		name: "MIC Access",
+		description: "Access the MIC investor portal",
+		domain: "access",
+	},
 	"underwriter:access": {
 		name: "Underwriter Access",
 		description: "Access underwriting admin routes",
@@ -467,6 +472,7 @@ export const ROLE_PERMISSIONS = {
 		"portfolio:signal_renewal",
 		"portfolio:export_tax",
 	],
+	micinvestor: ["mic:access", "portfolio:view"],
 	borrower: [
 		"borrower:access",
 		"onboarding:access",

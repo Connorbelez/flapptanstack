@@ -63,6 +63,10 @@ describe("route host policy", () => {
 		expect(resolveRouteHostPolicy("/")).toBe("shared");
 		expect(resolveRouteHostPolicy("/sign-out/local")).toBe("shared");
 		expect(resolveRouteHostPolicy("/about")).toBe("marketing");
+		expect(resolveRouteHostPolicy("/portal")).toBe("portal");
+		expect(resolveRouteHostPolicy("/portal/mortgages/mortgage_123")).toBe(
+			"portal"
+		);
 		expect(resolveRouteHostPolicy("/listings/abc")).toBe("portal");
 		expect(resolveRouteHostPolicy("/admin/settings")).toBe("admin");
 		expect(resolveRouteHostPolicy("/demo/listings")).toBeNull();

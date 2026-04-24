@@ -5,6 +5,7 @@ import { type ReactNode, useMemo } from "react";
 import { Horizontal } from "#/components/listings/listing-card-horizontal";
 import { buildMarketplaceListingCardItems } from "#/components/listings/marketplace-adapters";
 import { publicPortalListingsQueryOptions } from "#/components/listings/portal-query-options";
+import { MicLandingPage } from "#/components/mic/landing/MicLandingPage";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Route as RootRoute } from "./__root";
@@ -104,11 +105,14 @@ function PortalHomeContent({
 }: {
 	portalContext: ActivePortalContext;
 }) {
-	const teaserQuery = useQuery(
-		publicPortalListingsQueryOptions(String(portalContext.portal.portalId), {
+	const isMicPortal = portalContext.portal.portalType === "mic";
+
+	const teaserQuery = useQuery({
+		...publicPortalListingsQueryOptions(String(portalContext.portal.portalId), {
 			numItems: portalContext.portal.teaserListingLimit,
-		})
-	);
+		}),
+		enabled: !isMicPortal,
+	});
 	const teaserItems = useMemo(
 		() =>
 			teaserQuery.data
@@ -116,6 +120,15 @@ function PortalHomeContent({
 				: [],
 		[teaserQuery.data]
 	);
+
+	if (isMicPortal) {
+		return (
+			<MicLandingPage
+				portalSlug={portalContext.portal.slug}
+				signInHref="/sign-in?redirect=/portal"
+			/>
+		);
+	}
 	let teaserContent: ReactNode;
 
 	if (teaserQuery.isPending) {
