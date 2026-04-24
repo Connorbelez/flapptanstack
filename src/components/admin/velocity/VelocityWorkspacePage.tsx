@@ -9,6 +9,7 @@ import {
 	Lock,
 	RefreshCw,
 	Save,
+	ShieldCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -570,6 +571,16 @@ export function VelocityWorkspacePage({
 					<Button disabled={isSaving} onClick={handleSave}>
 						<Save className="mr-2 size-4" />
 						{isSaving ? "Saving..." : "Save FairLend fields"}
+					</Button>
+					<Button asChild variant="outline">
+						<Link
+							params={{ workspaceId: workspace.workspaceId }}
+							search={EMPTY_ADMIN_DETAIL_SEARCH}
+							to="/admin/velocity/$workspaceId/review"
+						>
+							<ShieldCheck className="mr-2 size-4" />
+							Final review
+						</Link>
 					</Button>
 				</div>
 			</div>

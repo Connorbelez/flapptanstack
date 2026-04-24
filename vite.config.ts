@@ -11,6 +11,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
 import { configDefaults } from "vitest/config";
 
 const require = createRequire(import.meta.url);
+const SENTRY_EXTERNAL_PATTERN = /^@sentry\//;
 
 /**
  * Prevent TanStack Start's server-fn Babel transform from parsing @pdfme/ui.
@@ -46,7 +47,10 @@ function skipPdfmeBabelTransform(): Plugin {
 	};
 }
 
-const config = defineConfig({
+const config = defineConfig(({ mode }) => ({
+	resolve: {
+		dedupe: ["react", "react-dom"],
+	},
 	server: {
 		allowedHosts: ["localhost", ".localhost"],
 	},
@@ -86,16 +90,16 @@ const config = defineConfig({
 	plugins: [
 		skipPdfmeBabelTransform(),
 		devtools(),
-		nitro({ rollupConfig: { external: [/^@sentry\//] } }),
+		nitro({ rollupConfig: { external: [SENTRY_EXTERNAL_PATTERN] } }),
 		tsconfigPaths({ projects: ["./tsconfig.json"] }),
 		tailwindcss(),
 		tanstackStart(),
 		viteReact({
 			babel: {
-				plugins: ["babel-plugin-react-compiler"],
+				plugins: mode === "test" ? [] : ["babel-plugin-react-compiler"],
 			},
 		}),
 	],
-});
+}));
 
 export default config;
