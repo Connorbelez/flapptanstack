@@ -370,6 +370,12 @@ import type * as test_originationE2e from "../test/originationE2e.js";
 import type * as test_packageSchemas from "../test/packageSchemas.js";
 import type * as todos from "../todos.js";
 import type * as users_byAuthId from "../users/byAuthId.js";
+import type * as velocity_audit from "../velocity/audit.js";
+import type * as velocity_constants from "../velocity/constants.js";
+import type * as velocity_contracts from "../velocity/contracts.js";
+import type * as velocity_index from "../velocity/index.js";
+import type * as velocity_provenance from "../velocity/provenance.js";
+import type * as velocity_validators from "../velocity/validators.js";
 
 import type {
   ApiFromModules,
@@ -740,6 +746,12 @@ declare const fullApi: ApiFromModules<{
   "test/packageSchemas": typeof test_packageSchemas;
   todos: typeof todos;
   "users/byAuthId": typeof users_byAuthId;
+  "velocity/audit": typeof velocity_audit;
+  "velocity/constants": typeof velocity_constants;
+  "velocity/contracts": typeof velocity_contracts;
+  "velocity/index": typeof velocity_index;
+  "velocity/provenance": typeof velocity_provenance;
+  "velocity/validators": typeof velocity_validators;
 }>;
 
 /**

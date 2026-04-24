@@ -12,6 +12,7 @@ export type EntityType =
 	| "auditEvidencePackage"
 	| "provisionalApplication"
 	| "applicationPackage"
+	| "velocityPackageWorkspace"
 	| "broker"
 	| "borrower"
 	| "lender"
@@ -204,6 +205,7 @@ export const ENTITY_TABLE_MAP = {
 	auditEvidencePackage: "auditEvidencePackages",
 	provisionalApplication: "provisionalApplications",
 	applicationPackage: "applicationPackages",
+	velocityPackageWorkspace: "velocityPackageWorkspaces",
 	broker: "brokers",
 	borrower: "borrowers",
 	lender: "lenders",

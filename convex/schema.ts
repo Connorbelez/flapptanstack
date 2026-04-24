@@ -119,6 +119,27 @@ import {
 	portalStatusValidator,
 	portalTypeValidator,
 } from "./portals/validators";
+import {
+	velocityActivationAttemptStatusValidator,
+	velocityConnectorCredentialContextValidator,
+	velocityFairLendEnrichmentValidator,
+	velocityFinalReviewValidator,
+	velocityNormalizedCoreValidator,
+	velocityPackageDocumentRoleValidator,
+	velocityPackageExceptionKindValidator,
+	velocityPackageExceptionSeverityValidator,
+	velocityPackageExceptionStatusValidator,
+	velocityPackageWorkspaceStateValidator,
+	velocityProviderValidator,
+	velocityReadinessValidator,
+	velocitySnapshotCreatorValidator,
+	velocitySnapshotTypeValidator,
+	velocitySyncResultValidator,
+	velocitySyncTriggerValidator,
+	velocityWebhookAgentValidator,
+	velocityWebhookEventStatusValidator,
+	velocityWorkspaceActivationSummaryValidator,
+} from "./velocity/validators";
 
 export default defineSchema({
 	// ══════════════════════════════════════════════════════════
@@ -828,6 +849,164 @@ export default defineSchema({
 		.index("by_mortgage", ["mortgageId", "createdAt"])
 		.index("by_source_blueprint", ["sourceBlueprintId", "createdAt"])
 		.index("by_package_status", ["packageId", "status", "createdAt"]),
+
+	// ══════════════════════════════════════════════════════════
+	// VELOCITY PACKAGE INTEGRATION
+	// ══════════════════════════════════════════════════════════
+
+	velocityPackageWorkspaces: defineTable({
+		linkApplicationId: v.string(),
+		loanCode: v.string(),
+		lenderReferenceNumber: v.optional(v.string()),
+		orgId: v.optional(v.string()),
+		currentVelocityStatusCode: v.optional(v.number()),
+		currentVelocityStatusLabel: v.optional(v.string()),
+		state: velocityPackageWorkspaceStateValidator,
+		exceptionKind: v.optional(velocityPackageExceptionKindValidator),
+		exceptionSummary: v.optional(v.string()),
+		normalizedCore: velocityNormalizedCoreValidator,
+		normalizedCoreHash: v.string(),
+		fairlendEnrichment: velocityFairLendEnrichmentValidator,
+		readiness: velocityReadinessValidator,
+		finalReview: v.optional(velocityFinalReviewValidator),
+		activation: v.optional(velocityWorkspaceActivationSummaryValidator),
+		lastWebhookEventId: v.optional(v.id("velocityWebhookEvents")),
+		lastSyncAttemptId: v.optional(v.id("velocitySyncAttempts")),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_link_application_id", ["linkApplicationId"])
+		.index("by_loan_code", ["loanCode"])
+		.index("by_state_updated_at", ["state", "updatedAt"])
+		.index("by_exception", ["exceptionKind", "updatedAt"])
+		.index("by_org_state_updated_at", ["orgId", "state", "updatedAt"]),
+
+	velocityPackageSnapshots: defineTable({
+		workspaceId: v.id("velocityPackageWorkspaces"),
+		linkApplicationId: v.string(),
+		loanCode: v.string(),
+		snapshotType: velocitySnapshotTypeValidator,
+		rawDealJson: v.string(),
+		rawDealHash: v.string(),
+		normalizedCore: velocityNormalizedCoreValidator,
+		normalizedCoreHash: v.string(),
+		createdBy: velocitySnapshotCreatorValidator,
+		createdByUserId: v.optional(v.id("users")),
+		createdAt: v.number(),
+	})
+		.index("by_workspace_created_at", ["workspaceId", "createdAt"])
+		.index("by_normalized_hash", ["normalizedCoreHash"])
+		.index("by_link_application_created_at", [
+			"linkApplicationId",
+			"createdAt",
+		]),
+
+	velocityWebhookEvents: defineTable({
+		provider: velocityProviderValidator,
+		providerEventId: v.string(),
+		loanCode: v.optional(v.string()),
+		dealHref: v.optional(v.string()),
+		statusCode: v.optional(v.number()),
+		eventType: v.optional(v.number()),
+		rawBody: v.string(),
+		signatureVerified: v.boolean(),
+		webhookAgent: v.optional(velocityWebhookAgentValidator),
+		connectorCredentialContext: v.optional(
+			velocityConnectorCredentialContextValidator
+		),
+		receivedAt: v.number(),
+		status: velocityWebhookEventStatusValidator,
+		processedAt: v.optional(v.number()),
+		error: v.optional(v.string()),
+		attempts: v.number(),
+		workspaceId: v.optional(v.id("velocityPackageWorkspaces")),
+	})
+		.index("by_provider_event", ["provider", "providerEventId"])
+		.index("by_status_received_at", ["status", "receivedAt"])
+		.index("by_loan_code", ["loanCode", "receivedAt"])
+		.index("by_workspace_received_at", ["workspaceId", "receivedAt"]),
+
+	velocitySyncAttempts: defineTable({
+		workspaceId: v.optional(v.id("velocityPackageWorkspaces")),
+		trigger: velocitySyncTriggerValidator,
+		loanCode: v.optional(v.string()),
+		dealHref: v.optional(v.string()),
+		idempotencyKey: v.optional(v.string()),
+		connectorCredentialContext: v.optional(
+			velocityConnectorCredentialContextValidator
+		),
+		request: v.record(v.string(), v.any()),
+		responseStatus: v.optional(v.number()),
+		rawResponseBody: v.optional(v.string()),
+		result: velocitySyncResultValidator,
+		error: v.optional(v.string()),
+		rawDealHash: v.optional(v.string()),
+		normalizedCoreHash: v.optional(v.string()),
+		startedAt: v.number(),
+		completedAt: v.optional(v.number()),
+	})
+		.index("by_workspace_started_at", ["workspaceId", "startedAt"])
+		.index("by_result_started_at", ["result", "startedAt"])
+		.index("by_idempotency_key", ["idempotencyKey"])
+		.index("by_loan_code_started_at", ["loanCode", "startedAt"]),
+
+	velocityActivationAttempts: defineTable({
+		workspaceId: v.id("velocityPackageWorkspaces"),
+		reviewedSnapshotId: v.id("velocityPackageSnapshots"),
+		reviewedSnapshotHash: v.string(),
+		status: velocityActivationAttemptStatusValidator,
+		idempotencyKey: v.string(),
+		actorUserId: v.id("users"),
+		actorAuthId: v.string(),
+		startedAt: v.number(),
+		completedAt: v.optional(v.number()),
+		failedAt: v.optional(v.number()),
+		failureCode: v.optional(v.string()),
+		failureMessage: v.optional(v.string()),
+		rotessaCustomerRef: v.optional(v.string()),
+		rotessaScheduleRef: v.optional(v.string()),
+		bankAccountId: v.optional(v.id("bankAccounts")),
+		externalCustomerProfileId: v.optional(v.id("externalCustomerProfiles")),
+		externalCollectionScheduleId: v.optional(
+			v.id("externalCollectionSchedules")
+		),
+		mortgageId: v.optional(v.id("mortgages")),
+		listingId: v.optional(v.id("listings")),
+	})
+		.index("by_workspace_started_at", ["workspaceId", "startedAt"])
+		.index("by_idempotency_key", ["idempotencyKey"])
+		.index("by_status_started_at", ["status", "startedAt"]),
+
+	velocityPackageExceptions: defineTable({
+		workspaceId: v.optional(v.id("velocityPackageWorkspaces")),
+		kind: velocityPackageExceptionKindValidator,
+		status: velocityPackageExceptionStatusValidator,
+		severity: velocityPackageExceptionSeverityValidator,
+		title: v.string(),
+		message: v.string(),
+		details: v.optional(v.record(v.string(), v.any())),
+		sourceWebhookEventId: v.optional(v.id("velocityWebhookEvents")),
+		sourceSyncAttemptId: v.optional(v.id("velocitySyncAttempts")),
+		sourceActivationAttemptId: v.optional(v.id("velocityActivationAttempts")),
+		openedAt: v.number(),
+		resolvedAt: v.optional(v.number()),
+		resolvedByUserId: v.optional(v.id("users")),
+	})
+		.index("by_workspace_status", ["workspaceId", "status", "openedAt"])
+		.index("by_kind_status", ["kind", "status", "openedAt"])
+		.index("by_severity_status", ["severity", "status", "openedAt"]),
+
+	velocityPackageDocumentLinks: defineTable({
+		workspaceId: v.id("velocityPackageWorkspaces"),
+		documentAssetId: v.id("documentAssets"),
+		role: velocityPackageDocumentRoleValidator,
+		linkedAt: v.number(),
+		linkedByUserId: v.id("users"),
+		supersededAt: v.optional(v.number()),
+	})
+		.index("by_workspace_role", ["workspaceId", "role", "linkedAt"])
+		.index("by_document_asset", ["documentAssetId"])
+		.index("by_active_workspace_role", ["workspaceId", "role", "supersededAt"]),
 
 	mortgages: defineTable({
 		/** WorkOS organization id — denormalized from broker of record. */
