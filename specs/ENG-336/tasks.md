@@ -28,8 +28,8 @@
 - [x] T-035: Render blockers, warnings, exception history, snapshot history, PAD state, and downstream final-review/activation handoff without activation actions.
 
 ## Phase 5: Tests
-- [x] T-040: Add focused admin Velocity registry coverage and document the React jsdom component-test blocker.
-  - Note: RTL component coverage was attempted, but the new jsdom harness hit an invalid-hook-call failure even when rendering the existing `AdminPageMetadataProvider`; the issue is isolated to the test harness, not the Velocity component logic. DTO/component contracts are covered by `bun typecheck`, and route/registry behavior is covered by tests.
+- [x] T-040: Add focused admin Velocity registry coverage, FairLend workspace save-payload coverage, and document the React jsdom component-test blocker.
+  - Note: RTL component coverage was attempted, but the new jsdom harness hit an invalid-hook-call failure even when rendering the existing `AdminPageMetadataProvider`; the issue is isolated to the test harness, not the Velocity component logic. DTO/component contracts are covered by `bun typecheck`, route/registry behavior is covered by tests, and retained pure form tests cover save payloads, field clearing, and invalid numeric input.
 - [x] T-041: Update route authorization tests for Velocity admin path access.
 
 ## Phase 6: Validation
