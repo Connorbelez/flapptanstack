@@ -592,7 +592,7 @@ export function computeVelocityReadiness(args: {
 	};
 }
 
-function resolveWorkspaceState(args: {
+export function resolveVelocityWorkspaceState(args: {
 	readiness: VelocityReadinessV1;
 	workspace?: VelocityWorkspace;
 }) {
@@ -1394,7 +1394,7 @@ export const applyVelocityFullDealSync = convex
 			enrichment: fairlendEnrichment,
 			workspace,
 		});
-		const state = resolveWorkspaceState({ readiness, workspace });
+		const state = resolveVelocityWorkspaceState({ readiness, workspace });
 		const exception = readiness.blockers
 			.map(exceptionForBlocker)
 			.find((candidate) => candidate !== null);
