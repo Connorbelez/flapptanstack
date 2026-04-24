@@ -86,6 +86,7 @@ import type * as crons from "../crons.js";
 import type * as dealReroutes_mutations from "../dealReroutes/mutations.js";
 import type * as dealReroutes_queries from "../dealReroutes/queries.js";
 import type * as deals_mutations from "../deals/mutations.js";
+import type * as deals_participantProjection from "../deals/participantProjection.js";
 import type * as deals_queries from "../deals/queries.js";
 import type * as demo_actionCache from "../demo/actionCache.js";
 import type * as demo_aggregate from "../demo/aggregate.js";
@@ -472,6 +473,7 @@ declare const fullApi: ApiFromModules<{
   "dealReroutes/mutations": typeof dealReroutes_mutations;
   "dealReroutes/queries": typeof dealReroutes_queries;
   "deals/mutations": typeof deals_mutations;
+  "deals/participantProjection": typeof deals_participantProjection;
   "deals/queries": typeof deals_queries;
   "demo/actionCache": typeof demo_actionCache;
   "demo/aggregate": typeof demo_aggregate;

@@ -472,6 +472,7 @@ async function seedDealPackageFixture(
 				ltvRatio: 58,
 				machineContext: undefined,
 				marketplaceCopy: "Marketplace copy",
+				marketplacePropertyType: "Condo",
 				maturityDate: "2027-04-30",
 				monthlyPayment: 2_450,
 				mortgageId,
@@ -606,6 +607,10 @@ describe("documents/dealPackages", () => {
 			retryCount: 0,
 			status: "ready",
 		});
+		expect(packageSurface.participants?.fractionalShareDisplayPercent).toBe(25);
+		expect(packageSurface.participants?.buyer.authId).toBe(
+			fixture.lenderIdentity.subject
+		);
 		expect(packageSurface.instances).toHaveLength(2);
 		expect(
 			packageSurface.instances.map((instance) => instance.displayName)
@@ -638,6 +643,14 @@ describe("documents/dealPackages", () => {
 			signingStatus: "not_applicable",
 		});
 		expect(dealDetail.documentPackage?.status).toBe("ready");
+		expect(dealDetail.deal.fractionalShareUnits).toBe(2500);
+		expect(dealDetail.deal.fractionalShareDisplayPercent).toBe(25);
+		expect(dealDetail.participants.fractionalShareStatus.isValid).toBe(true);
+		expect(dealDetail.participants.lawyer).toMatchObject({
+			authId: null,
+			hasActiveDealAccess: false,
+			lawyerType: null,
+		});
 		expect(
 			dealDetail.documentInstances.filter(
 				(instance) => instance.status === "available"

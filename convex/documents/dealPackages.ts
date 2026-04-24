@@ -4,6 +4,10 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "../_generated/server";
 import { assertDealAccess } from "../authz/resourceAccess";
 import {
+	buildDealParticipantProjection,
+	type DealParticipantProjection,
+} from "../deals/participantProjection";
+import {
 	adminAction,
 	convex,
 	dealQuery,
@@ -97,6 +101,7 @@ interface PackageSurface {
 		status: Doc<"dealDocumentPackages">["status"];
 		updatedAt: number;
 	} | null;
+	participants: DealParticipantProjection | null;
 }
 
 interface CreateDocumentPackageResult {
@@ -545,13 +550,17 @@ async function buildPackageSurface(
 	ctx: Pick<QueryCtx, "db" | "storage">,
 	dealId: Id<"deals">
 ): Promise<PackageSurface> {
+	const deal = await ctx.db.get(dealId);
+	const participants = deal
+		? await buildDealParticipantProjection(ctx, deal)
+		: null;
 	const packageRow = await ctx.db
 		.query("dealDocumentPackages")
 		.withIndex("by_deal", (query) => query.eq("dealId", dealId))
 		.unique();
 
 	if (!packageRow) {
-		return { instances: [], package: null };
+		return { instances: [], package: null, participants };
 	}
 
 	const rows = await ctx.db
@@ -624,6 +633,7 @@ async function buildPackageSurface(
 			status: packageRow.status,
 			updatedAt: packageRow.updatedAt,
 		},
+		participants,
 	};
 }
 

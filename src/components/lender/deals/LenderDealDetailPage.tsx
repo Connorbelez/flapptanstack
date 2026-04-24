@@ -51,6 +51,13 @@ function formatEnumLabel(value: string | null | undefined) {
 		.join(" ");
 }
 
+function formatPercent(value: number | null | undefined) {
+	if (typeof value !== "number") {
+		return "Invalid share";
+	}
+	return `${value}%`;
+}
+
 type PortalDealDetail = FunctionReturnType<
 	typeof api.deals.queries.getPortalDealDetail
 >;
@@ -177,7 +184,7 @@ export function LenderDealDetailPage({ dealId }: LenderDealDetailPageProps) {
 					<CardContent className="grid gap-4 sm:grid-cols-2">
 						<SnapshotItem
 							label="Fractional Share"
-							value={`${detail.deal.fractionalShare} bps`}
+							value={formatPercent(detail.deal.fractionalShareDisplayPercent)}
 						/>
 						<SnapshotItem
 							label="Payment Frequency"

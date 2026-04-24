@@ -39,7 +39,7 @@ const LAWYER_IDENTITY = {
 	organization_name: "Test Law Firm",
 	role: "lawyer",
 	roles: JSON.stringify(["lawyer"]),
-	permissions: JSON.stringify(["lawyer:access"]),
+	permissions: JSON.stringify(["lawyer:access", "deal:view"]),
 	user_email: "lawyer@test.fairlend.ca",
 	user_first_name: "Test",
 	user_last_name: "Lawyer",
@@ -519,6 +519,70 @@ describe("activeDealAccessRecords query", () => {
 				dealId: seed2.dealId,
 			})
 		).rejects.toThrow(ConvexError);
+	});
+
+	it("portal detail returns normalized projection for active scoped lawyer access", async () => {
+		const guestSeed = await seedDealWithLawyer(t, {
+			lawyerType: "guest_lawyer",
+		});
+		await seedDealAccessRecord(
+			t,
+			guestSeed.dealId,
+			LAWYER_IDENTITY.subject,
+			"guest_lawyer"
+		);
+
+		const detail = await t
+			.withIdentity(LAWYER_IDENTITY)
+			.query(api.deals.queries.getPortalDealDetail, {
+				dealId: guestSeed.dealId,
+			});
+
+		expect(detail?.participants.lawyer).toMatchObject({
+			authId: LAWYER_IDENTITY.subject,
+			hasActiveDealAccess: true,
+			lawyerType: "guest_lawyer",
+		});
+		expect(detail?.participants.fractionalShareUnits).toBe(5000);
+		expect(detail?.participants.fractionalShareDisplayPercent).toBe(50);
+	});
+
+	it("portal detail denies revoked scoped lawyer access", async () => {
+		await seedDealAccessRecord(
+			t,
+			dealId,
+			LAWYER_IDENTITY.subject,
+			"platform_lawyer",
+			"revoked"
+		);
+
+		await expect(
+			t
+				.withIdentity(LAWYER_IDENTITY)
+				.query(api.deals.queries.getPortalDealDetail, {
+					dealId,
+				})
+		).rejects.toThrow(ConvexError);
+	});
+
+	it("portal detail surfaces missing optional lawyer info without crashing", async () => {
+		const noLawyerSeed = await seedDealWithLawyer(t, {
+			lawyerId: null,
+		});
+
+		const detail = await t
+			.withIdentity(ADMIN_IDENTITY)
+			.query(api.deals.queries.getPortalDealDetail, {
+				dealId: noLawyerSeed.dealId,
+			});
+
+		expect(detail?.participants.lawyer).toEqual({
+			authId: null,
+			displayName: null,
+			email: null,
+			hasActiveDealAccess: false,
+			lawyerType: "platform_lawyer",
+		});
 	});
 });
 

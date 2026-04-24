@@ -48,6 +48,8 @@ describe("lender deal detail page", () => {
 				closingDate: new Date("2026-05-15T12:00:00.000Z").getTime(),
 				dealId: "deal_1",
 				fractionalShare: 2500,
+				fractionalShareDisplayPercent: 25,
+				fractionalShareUnits: 2500,
 				lockingFeeAmount: 7500,
 				status: "initiated",
 			},
@@ -97,6 +99,47 @@ describe("lender deal detail page", () => {
 					name: "Sam Seller",
 				},
 			},
+			participants: {
+				buyer: {
+					accessRole: "lender",
+					authId: "buyer-auth",
+					displayName: "Lena Lender",
+					email: "lender@test.fairlend.ca",
+					lenderId: "lender_1",
+					userId: "user_lender",
+				},
+				dealId: "deal_1",
+				fractionalShareDisplayPercent: 25,
+				fractionalShareStatus: {
+					fractionalShareDisplayPercent: 25,
+					fractionalShareUnits: 2500,
+					isValid: true,
+					validationError: null,
+				},
+				fractionalShareUnits: 2500,
+				lawyer: {
+					authId: null,
+					displayName: null,
+					email: null,
+					hasActiveDealAccess: false,
+					lawyerType: null,
+				},
+				personas: {
+					admin: "admin",
+					buyer: "buyer",
+					lawyer: "lawyer",
+					seller: "seller",
+				},
+				seller: {
+					accessRole: "borrower",
+					authId: "seller-auth",
+					borrowerId: null,
+					displayName: "Sam Seller",
+					email: "seller@test.fairlend.ca",
+					lenderId: null,
+					userId: "user_seller",
+				},
+			},
 			property: {
 				city: "Toronto",
 				propertyType: "residential",
@@ -109,6 +152,7 @@ describe("lender deal detail page", () => {
 		render(<LenderDealDetailPage dealId="deal_1" />);
 
 		expect(screen.getByText("Deal Package")).toBeTruthy();
+		expect(screen.getByText("25%")).toBeTruthy();
 		expect(screen.getByText("Closing Snapshot")).toBeTruthy();
 		expect(screen.getAllByText("Package Status").length).toBeGreaterThan(0);
 		expect(screen.getByText("Generated Read-only Documents")).toBeTruthy();
