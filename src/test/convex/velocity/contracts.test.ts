@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import type { MutationCtx } from "../../../../convex/_generated/server";
 import {
+	appendVelocityPackageAuditEntry,
 	VELOCITY_ACTIVATION_STATUS_CODE,
 	VELOCITY_DEAL_STATUS,
 	VELOCITY_PACKAGE_AUDIT_EVENT_TYPES,
 	VELOCITY_WORKFLOW_SOURCE_TYPE,
 	buildVelocityActivationIdempotencyKey,
+	buildVelocityBorrowerWorkflowSourceKey,
 	buildVelocityMortgageActivationSource,
 	buildVelocityMortgageWorkflowSourceKey,
 	buildVelocitySyncIdempotencyKey,
@@ -21,6 +24,7 @@ import {
 	type VelocitySyncAttemptRecordV1,
 	type VelocityWebhookEventRecordV1,
 } from "../../../../convex/velocity";
+import { createGovernedTestConvex } from "../onboarding/helpers";
 
 describe("Velocity package contracts", () => {
 	it("pins v1 Velocity status semantics", () => {
@@ -106,6 +110,20 @@ describe("Velocity package contracts", () => {
 			workflowSourceKey: "velocity_package:mortgage:link-app-123",
 			workflowSourceType: VELOCITY_WORKFLOW_SOURCE_TYPE,
 		});
+	});
+
+	it("normalizes borrower workflow source key parts", () => {
+		expect(
+			buildVelocityBorrowerWorkflowSourceKey({
+				borrowerExternalKey: "borrower:external/1",
+				linkApplicationId: "link/app:123",
+				role: "primary",
+				workspaceId:
+					"workspace:123;velocityPackageWorkspaces" as Id<"velocityPackageWorkspaces">,
+			})
+		).toBe(
+			"velocity_package:borrower:link%2Fapp%3A123:workspace%3A123%3BvelocityPackageWorkspaces:borrower%3Aexternal%2F1"
+		);
 	});
 
 	it("exports validator and audit surfaces from the single Velocity namespace", () => {
@@ -215,5 +233,77 @@ describe("Velocity package contracts", () => {
 		expect(webhookEvent.dealHref).toContain("LC-123");
 		expect(syncAttempt.idempotencyKey).toBe("velocity:sync:link-app-123:raw-hash");
 		expect(activationAttempt.listingId).toBe("listing-123");
+	});
+
+	it("writes Velocity package audit rows with canonical links and defined payload fields only", async () => {
+		const t = createGovernedTestConvex();
+
+		const journalEntryId = await t.run(async (ctx) =>
+			appendVelocityPackageAuditEntry(ctx as unknown as MutationCtx, {
+				actorId: "velocity-webhook",
+				actorType: "system",
+				channel: "api_webhook",
+				connectorCredentialContext: {
+					provider: "velocity",
+					scope: "firm:abc",
+					usedFor: "webhook_ingress",
+					username: "velocity-agent",
+				},
+				eventType: "velocity_webhook_received",
+				linkedRecordIds: {
+					entityId: "wrong-workspace",
+					otherRecordId: "related-record",
+					velocityPackageWorkspaceId: "wrong-workspace",
+				},
+				payload: {
+					loanCode: "LC-123",
+					rawDealHash: undefined,
+				},
+				readiness: {
+					blockers: [],
+					canActivate: false,
+					canFinalReview: false,
+					warnings: [],
+				},
+				timestamp: 1_776_000_000_000,
+				webhookAgent: {
+					email: "agent@example.test",
+					username: "velocity-agent",
+				},
+				workspaceId: "workspace-123",
+			})
+		);
+
+		const journalEntry = await t.run(async (ctx) => ctx.db.get(journalEntryId));
+		expect(journalEntry?.entityId).toBe("workspace-123");
+		expect(journalEntry?.entityType).toBe("velocityPackageWorkspace");
+		expect(journalEntry?.linkedRecordIds).toMatchObject({
+			entityId: "workspace-123",
+			otherRecordId: "related-record",
+			velocityPackageWorkspaceId: "workspace-123",
+		});
+		expect(journalEntry?.payload).toMatchObject({
+			connectorCredentialContext: {
+				provider: "velocity",
+				scope: "firm:abc",
+				usedFor: "webhook_ingress",
+				username: "velocity-agent",
+			},
+			loanCode: "LC-123",
+			readiness: {
+				blockers: [],
+				canActivate: false,
+				canFinalReview: false,
+				warnings: [],
+			},
+			webhookAgent: {
+				email: "agent@example.test",
+				username: "velocity-agent",
+			},
+			workspaceId: "workspace-123",
+		});
+		expect(
+			Object.hasOwn(journalEntry?.payload ?? {}, "rawDealHash")
+		).toBe(false);
 	});
 });
