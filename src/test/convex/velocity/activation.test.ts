@@ -202,8 +202,25 @@ async function seedPdfAsset(t: ConvexTest) {
 	});
 }
 
+async function seedDefaultOriginationOwner(t: ConvexTest) {
+	const brokers = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+		api.seed.seedBroker.seedBroker,
+		{}
+	);
+	const brokerId = brokers.brokerIds[0];
+	if (!brokerId) {
+		throw new Error("Expected seeded broker");
+	}
+
+	await t.withIdentity(FAIRLEND_ADMIN).mutation(
+		api.seed.seedPlatformOwnership.seedPlatformOwnership,
+		{ brokerId }
+	);
+}
+
 async function seedReadyReviewedWorkspace(t: ConvexTest) {
 	await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+	await seedDefaultOriginationOwner(t);
 	const sync = await applyFullDealSync(t, makeDeal());
 	if (!sync.workspaceId) {
 		throw new Error("Expected Velocity workspace");
@@ -941,6 +958,7 @@ describe("Velocity package activation", () => {
 	it("detects post-live drift even when the upstream hash was synced before activation", async () => {
 		const t = createTestConvex();
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		await seedDefaultOriginationOwner(t);
 		const originalDeal = makeDeal();
 		const originalSync = await applyFullDealSync(t, originalDeal);
 		const changedDeal = makeDeal({
