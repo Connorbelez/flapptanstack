@@ -344,7 +344,7 @@ export interface VelocityFairLendEnrichmentV1 {
 		description?: string;
 		displayOrder?: number;
 		featured?: boolean;
-		heroImages?: Array<{ caption?: string; storageId: string }>;
+		heroImages?: Array<{ caption?: string; storageId: Id<"_storage"> }>;
 		marketplaceCopy?: string;
 		seoSlug?: string;
 		title?: string;
@@ -605,6 +605,8 @@ export const VELOCITY_PACKAGE_AUDIT_EVENT_TYPES = [
 	"velocity_final_review_confirmed",
 	"velocity_exception_resolved",
 	"velocity_activation_attempt_started",
+	"velocity_activation_provider_artifact_recorded",
+	"velocity_activation_provider_artifact_reused",
 	"velocity_activation_stage_changed",
 	"velocity_activation_failed",
 	"velocity_activation_succeeded",

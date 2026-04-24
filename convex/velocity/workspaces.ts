@@ -49,7 +49,7 @@ const listingOverridesPatchValidator = v.object({
 		v.array(
 			v.object({
 				caption: optionalString,
-				storageId: v.string(),
+				storageId: v.id("_storage"),
 			})
 		)
 	),

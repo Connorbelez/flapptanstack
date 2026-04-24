@@ -1,19 +1,36 @@
 import type { Id } from "../_generated/dataModel";
+import type {
+	VELOCITY_CREATION_SOURCE,
+	VELOCITY_ORIGINATION_PATH,
+	VELOCITY_WORKFLOW_SOURCE_TYPE,
+} from "../velocity/constants";
 
 export const ORIGINATION_WORKFLOW_SOURCE_TYPE =
 	"admin_origination_case" as const;
 export const ADMIN_DIRECT_CREATION_SOURCE = "admin_direct" as const;
 export const ADMIN_DIRECT_ORIGINATION_PATH = "admin_direct" as const;
 
+export type MortgageActivationWorkflowSourceType =
+	| typeof ORIGINATION_WORKFLOW_SOURCE_TYPE
+	| typeof VELOCITY_WORKFLOW_SOURCE_TYPE;
+
+export type MortgageActivationCreationSource =
+	| typeof ADMIN_DIRECT_CREATION_SOURCE
+	| typeof VELOCITY_CREATION_SOURCE;
+
+export type MortgageActivationOriginationPath =
+	| typeof ADMIN_DIRECT_ORIGINATION_PATH
+	| typeof VELOCITY_ORIGINATION_PATH;
+
 export interface MortgageActivationSource {
-	creationSource: typeof ADMIN_DIRECT_CREATION_SOURCE;
+	creationSource: MortgageActivationCreationSource;
 	originatedByUserId: string;
 	originatingWorkflowId: string;
-	originatingWorkflowType: typeof ORIGINATION_WORKFLOW_SOURCE_TYPE;
-	originationPath: typeof ADMIN_DIRECT_ORIGINATION_PATH;
+	originatingWorkflowType: MortgageActivationWorkflowSourceType;
+	originationPath: MortgageActivationOriginationPath;
 	workflowSourceId: string;
 	workflowSourceKey: string;
-	workflowSourceType: typeof ORIGINATION_WORKFLOW_SOURCE_TYPE;
+	workflowSourceType: MortgageActivationWorkflowSourceType;
 }
 
 export function buildAdminDirectMortgageActivationSource(args: {
