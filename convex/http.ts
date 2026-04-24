@@ -5,6 +5,7 @@ import { rotessaWebhook } from "./payments/webhooks/rotessa";
 import { rotessaPadWebhook } from "./payments/webhooks/rotessaPad";
 import { stripeWebhook } from "./payments/webhooks/stripe";
 import { vopayWebhook } from "./payments/webhooks/vopay";
+import { velocityWebhook } from "./velocity/webhook";
 
 const http = httpRouter();
 
@@ -34,6 +35,11 @@ http.route({
 	path: "/webhooks/eft_vopay",
 	method: "POST",
 	handler: eftVopayWebhook,
+});
+http.route({
+	path: "/api/velocity/webhook",
+	method: "POST",
+	handler: velocityWebhook,
 });
 
 export default http;
