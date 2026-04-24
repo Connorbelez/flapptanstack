@@ -128,6 +128,26 @@ export function verifyVoPaySignature(
 	return timingSafeEqual(sigBuffer, expectedBuffer);
 }
 
+/**
+ * Verify Documenso's webhook secret header.
+ *
+ * Documenso sends the configured secret in `X-Documenso-Secret`; unlike the
+ * payment providers above, it is not an HMAC over the raw body.
+ */
+export function verifyDocumensoSecret(
+	providedSecret: string,
+	expectedSecret: string
+): boolean {
+	const providedBuffer = Buffer.from(providedSecret, "utf8");
+	const expectedBuffer = Buffer.from(expectedSecret, "utf8");
+
+	if (providedBuffer.length !== expectedBuffer.length) {
+		return false;
+	}
+
+	return timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
 // ── Verification result types ───────────────────────────────────────
 
 export type VerificationResult =
@@ -203,6 +223,23 @@ export const verifyVoPaySignatureAction = internalAction({
 			return { ok: false, error: "missing_secret" };
 		}
 		const valid = verifyVoPaySignature(args.body, args.signature, secret);
+		return valid ? { ok: true } : { ok: false, error: "invalid_signature" };
+	},
+});
+
+export const verifyDocumensoSecretAction = internalAction({
+	args: {
+		providedSecret: v.string(),
+	},
+	handler: async (_ctx, args): Promise<VerificationResult> => {
+		const secret = process.env.DOCUMENSO_WEBHOOK_SECRET;
+		if (!secret) {
+			console.error(
+				"[Documenso Webhook] DOCUMENSO_WEBHOOK_SECRET not configured"
+			);
+			return { ok: false, error: "missing_secret" };
+		}
+		const valid = verifyDocumensoSecret(args.providedSecret, secret);
 		return valid ? { ok: true } : { ok: false, error: "invalid_signature" };
 	},
 });

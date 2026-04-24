@@ -88,6 +88,7 @@ export interface PortalDealDocumentInstance {
 	lastError: string | null;
 	packageLabel: string | null;
 	signing: DealDocumentPackageSurfaceInstance["signing"];
+	signingState: DealDocumentPackageSurfaceInstance["signingState"];
 	status: DealDocumentPackageSurfaceInstance["status"];
 	url: string | null;
 }
@@ -155,6 +156,7 @@ function projectPortalDealDocumentInstance(
 		lastError: instance.lastError,
 		packageLabel: instance.packageLabel,
 		signing: instance.signing,
+		signingState: instance.signingState,
 		status: instance.status,
 		url:
 			instance.status === "available" ||

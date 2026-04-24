@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 import { authKit } from "./auth";
+import { documensoWebhook } from "./deals/envelopeWebhooks";
 import { brokerOnboardingIdentityWebhook } from "./onboarding/verification/idvWebhook";
 import { eftVopayWebhook } from "./payments/webhooks/eftVopay";
 import { rotessaWebhook } from "./payments/webhooks/rotessa";
@@ -48,6 +49,11 @@ http.route({
 	path: "/webhooks/eft_vopay",
 	method: "POST",
 	handler: eftVopayWebhook,
+});
+http.route({
+	path: "/webhooks/documenso",
+	method: "POST",
+	handler: documensoWebhook,
 });
 http.route({
 	path: "/api/velocity/webhook",
