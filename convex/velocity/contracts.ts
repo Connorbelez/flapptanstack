@@ -603,6 +603,7 @@ export const VELOCITY_PACKAGE_AUDIT_EVENT_TYPES = [
 	"velocity_document_linked",
 	"velocity_readiness_recomputed",
 	"velocity_final_review_confirmed",
+	"velocity_exception_resolved",
 	"velocity_activation_attempt_started",
 	"velocity_activation_stage_changed",
 	"velocity_activation_failed",

@@ -374,11 +374,15 @@ import type * as velocity_audit from "../velocity/audit.js";
 import type * as velocity_client from "../velocity/client.js";
 import type * as velocity_constants from "../velocity/constants.js";
 import type * as velocity_contracts from "../velocity/contracts.js";
+import type * as velocity_documents from "../velocity/documents.js";
+import type * as velocity_exceptions from "../velocity/exceptions.js";
 import type * as velocity_index from "../velocity/index.js";
 import type * as velocity_provenance from "../velocity/provenance.js";
+import type * as velocity_review from "../velocity/review.js";
 import type * as velocity_sync from "../velocity/sync.js";
 import type * as velocity_validators from "../velocity/validators.js";
 import type * as velocity_webhook from "../velocity/webhook.js";
+import type * as velocity_workspaces from "../velocity/workspaces.js";
 
 import type {
   ApiFromModules,
@@ -753,11 +757,15 @@ declare const fullApi: ApiFromModules<{
   "velocity/client": typeof velocity_client;
   "velocity/constants": typeof velocity_constants;
   "velocity/contracts": typeof velocity_contracts;
+  "velocity/documents": typeof velocity_documents;
+  "velocity/exceptions": typeof velocity_exceptions;
   "velocity/index": typeof velocity_index;
   "velocity/provenance": typeof velocity_provenance;
+  "velocity/review": typeof velocity_review;
   "velocity/sync": typeof velocity_sync;
   "velocity/validators": typeof velocity_validators;
   "velocity/webhook": typeof velocity_webhook;
+  "velocity/workspaces": typeof velocity_workspaces;
 }>;
 
 /**
