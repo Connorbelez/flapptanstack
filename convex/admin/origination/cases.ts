@@ -5,7 +5,13 @@ import {
 	INITIAL_ORIGINATION_STEP,
 } from "../../../src/lib/admin-origination";
 import type { Doc } from "../../_generated/dataModel";
-import { authedMutation, authedQuery, requirePermission } from "../../fluent";
+import {
+	adminMutation,
+	authedMutation,
+	authedQuery,
+	requirePermission,
+} from "../../fluent";
+import { assertOriginationCaseAccess } from "./access";
 import {
 	adminOriginationCasePatchValidator,
 	computeOriginationValidationSnapshot,
@@ -13,6 +19,7 @@ import {
 	listOriginationStepErrors,
 	mergeOriginationCaseDraftValues,
 	type OriginationCaseDraftState,
+	resolveDraftOriginationCaseStatus,
 } from "./validators";
 
 const originationQuery = authedQuery.use(
@@ -21,22 +28,17 @@ const originationQuery = authedQuery.use(
 const originationMutation = authedMutation.use(
 	requirePermission("mortgage:originate")
 );
+const originationAdminMutation = adminMutation.use(
+	requirePermission("mortgage:originate")
+);
 
-function assertCaseAccess(
-	viewer: {
-		isFairLendAdmin: boolean;
-		orgId?: string;
-	},
-	record: {
-		orgId?: string;
-	}
+function assertMutableOriginationCase(
+	record: Pick<Doc<"adminOriginationCases">, "status">
 ) {
-	if (viewer.isFairLendAdmin) {
-		return;
-	}
-
-	if (requireViewerOrgId(viewer) !== record.orgId) {
-		throw new ConvexError("Forbidden: origination case is outside your org");
+	if (record.status === "committed" || record.status === "committing") {
+		throw new ConvexError(
+			"Committed or in-flight origination cases are immutable. Open the canonical mortgage instead."
+		);
 	}
 }
 
@@ -125,7 +127,7 @@ export const createCase = originationMutation
 				.unique();
 
 			if (existing) {
-				assertCaseAccess(ctx.viewer, existing);
+				assertOriginationCaseAccess(ctx.viewer, existing);
 				return existing._id;
 			}
 		}
@@ -179,7 +181,7 @@ export const getCase = originationQuery
 			return null;
 		}
 
-		assertCaseAccess(ctx.viewer, record);
+		assertOriginationCaseAccess(ctx.viewer, record);
 
 		const recommendedStep = determineRecommendedOriginationStep({
 			currentStep: record.currentStep,
@@ -216,7 +218,8 @@ export const patchCase = originationMutation
 			throw new ConvexError("Origination case not found");
 		}
 
-		assertCaseAccess(ctx.viewer, record);
+		assertOriginationCaseAccess(ctx.viewer, record);
+		assertMutableOriginationCase(record);
 
 		const user = await ctx.db
 			.query("users")
@@ -230,16 +233,23 @@ export const patchCase = originationMutation
 			args.patch
 		);
 		const validationSnapshot = computeOriginationValidationSnapshot(merged);
+		const nextStatus = resolveDraftOriginationCaseStatus({
+			currentStatus: record.status,
+			validationSnapshot,
+		});
 		const now = Date.now();
 
 		await ctx.db.patch(args.caseId, {
+			failedAt: undefined,
 			currentStep: merged.currentStep,
+			lastCommitError: undefined,
 			participantsDraft: merged.participantsDraft,
 			propertyDraft: merged.propertyDraft,
 			valuationDraft: merged.valuationDraft,
 			mortgageDraft: merged.mortgageDraft,
 			collectionsDraft: merged.collectionsDraft,
 			listingOverrides: merged.listingOverrides,
+			status: nextStatus,
 			validationSnapshot,
 			updatedByUserId: user._id,
 			updatedAt: now,
@@ -248,6 +258,63 @@ export const patchCase = originationMutation
 		const updated = await ctx.db.get(args.caseId);
 		if (!updated) {
 			throw new ConvexError("Origination case disappeared during update");
+		}
+
+		return {
+			...updated,
+			recommendedStep: determineRecommendedOriginationStep(updated),
+			stepErrorsForCurrentStep: listOriginationStepErrors(
+				validationSnapshot,
+				(updated.currentStep ?? INITIAL_ORIGINATION_STEP) as Parameters<
+					typeof listOriginationStepErrors
+				>[1]
+			),
+		};
+	})
+	.public();
+
+export const recoverStuckCommittingCase = originationAdminMutation
+	.input({
+		caseId: v.id("adminOriginationCases"),
+	})
+	.handler(async (ctx, args) => {
+		const record = await ctx.db.get(args.caseId);
+		if (!record) {
+			throw new ConvexError("Origination case not found");
+		}
+		if (record.status !== "committing") {
+			throw new ConvexError(
+				"Only origination cases in committing status can be recovered."
+			);
+		}
+
+		const user = await ctx.db
+			.query("users")
+			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+			.unique();
+		if (!user) {
+			throw new ConvexError("User not found in database");
+		}
+
+		const validationSnapshot = computeOriginationValidationSnapshot(record);
+		const nextStatus = resolveDraftOriginationCaseStatus({
+			currentStatus: record.status,
+			validationSnapshot,
+		});
+		const now = Date.now();
+
+		await ctx.db.patch(args.caseId, {
+			failedAt: undefined,
+			lastCommitError: undefined,
+			status: nextStatus,
+			validationSnapshot,
+			updatedByUserId: user._id,
+			updatedAt: now,
+		});
+
+		const updated = await ctx.db.get(args.caseId);
+		if (!updated) {
+			throw new ConvexError("Origination case disappeared during recovery");
 		}
 
 		return {
@@ -273,7 +340,8 @@ export const deleteCase = originationMutation
 			return null;
 		}
 
-		assertCaseAccess(ctx.viewer, record);
+		assertOriginationCaseAccess(ctx.viewer, record);
+		assertMutableOriginationCase(record);
 
 		const documentDrafts = await ctx.db
 			.query("originationCaseDocumentDrafts")

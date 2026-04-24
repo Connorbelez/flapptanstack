@@ -1,13 +1,51 @@
 import { describe, expect, it } from "vitest";
 import { api } from "../../../../../convex/_generated/api";
+import { FAIRLEND_STAFF_ORG_ID } from "../../../../../convex/constants";
 import * as originationCasesModule from "../../../../../convex/admin/origination/cases";
 import {
 	createMockViewer,
 	createTestConvex,
 	ensureSeededIdentity,
 } from "../../../auth/helpers";
-import { FAIRLEND_ADMIN, MEMBER } from "../../../auth/identities";
+import {
+	EXTERNAL_ORG_ADMIN,
+	FAIRLEND_ADMIN,
+	MEMBER,
+} from "../../../auth/identities";
 import { lookupPermissions } from "../../../auth/permissions";
+
+async function seedBrokerRecord(t: ReturnType<typeof createTestConvex>) {
+	const brokerIdentity = createMockViewer({
+		email: "broker.origination@test.fairlend.ca",
+		firstName: "Case",
+		lastName: "Broker",
+		orgId: FAIRLEND_STAFF_ORG_ID,
+		orgName: "FairLend Staff",
+		roles: ["broker"],
+		subject: "user_origination_cases_broker",
+	});
+	const userId = await ensureSeededIdentity(t, brokerIdentity);
+
+	return t.run(async (ctx) => {
+		const existingBroker = await ctx.db
+			.query("brokers")
+			.withIndex("by_user", (query) => query.eq("userId", userId))
+			.unique();
+		if (existingBroker) {
+			return existingBroker._id;
+		}
+
+		const now = Date.now();
+		return ctx.db.insert("brokers", {
+			createdAt: now,
+			lastTransitionAt: now,
+			onboardedAt: now,
+			orgId: FAIRLEND_STAFF_ORG_ID,
+			status: "active",
+			userId,
+		});
+	});
+}
 
 async function countCanonicalRows(t: ReturnType<typeof createTestConvex>) {
 	return await t.run(async (ctx) => {
@@ -42,7 +80,7 @@ describe("admin origination cases", () => {
 	});
 
 	it("creates a draft case without touching canonical domain rows", async () => {
-		const t = createTestConvex();
+		const t = createTestConvex({ includeWorkflowComponents: false });
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
 		const before = await countCanonicalRows(t);
 
@@ -56,6 +94,8 @@ describe("admin origination cases", () => {
 
 		expect(created?.status).toBe("draft");
 		expect(created?.currentStep).toBe("participants");
+		expect(created?.lastCommitError).toBeUndefined();
+		expect(created?.failedAt).toBeUndefined();
 		expect(created?.validationSnapshot?.stepErrors?.participants).toContain(
 			"Primary borrower full name is required."
 		);
@@ -63,8 +103,9 @@ describe("admin origination cases", () => {
 	});
 
 	it("patches staged data additively and returns the recommended next step", async () => {
-		const t = createTestConvex();
+		const t = createTestConvex({ includeWorkflowComponents: false });
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
 
 		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
 			api.admin.origination.cases.createCase,
@@ -78,6 +119,7 @@ describe("admin origination cases", () => {
 				patch: {
 					currentStep: "review",
 					participantsDraft: {
+						brokerOfRecordId,
 						primaryBorrower: {
 							email: "ada@example.com",
 							fullName: "Ada Lovelace",
@@ -113,13 +155,82 @@ describe("admin origination cases", () => {
 			"ada@example.com"
 		);
 		expect(result.recommendedStep).toBe("mortgageTerms");
+		expect(result.status).toBe("draft");
 		expect(result.validationSnapshot.stepErrors?.participants).toBeUndefined();
 		expect(result.validationSnapshot.stepErrors?.property).toBeUndefined();
 	});
 
-	it("restores the saved step while also returning the recommended next step", async () => {
-		const t = createTestConvex();
+	it("moves a complete draft into ready_to_commit and clears failed commit metadata on edit", async () => {
+		const t = createTestConvex({ includeWorkflowComponents: false });
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
+
+		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.createCase,
+			{}
+		);
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(caseId, {
+				failedAt: Date.now(),
+				lastCommitError: "Previous commit attempt failed.",
+				status: "failed",
+			});
+		});
+
+		const updated = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.patchCase,
+			{
+				caseId,
+				patch: {
+					currentStep: "review",
+					participantsDraft: {
+						brokerOfRecordId,
+						primaryBorrower: {
+							email: "ada@example.com",
+							fullName: "Ada Lovelace",
+						},
+					},
+					propertyDraft: {
+						create: {
+							city: "Toronto",
+							postalCode: "M5H 1J9",
+							propertyType: "residential",
+							province: "ON",
+							streetAddress: "123 King St W",
+						},
+					},
+					valuationDraft: {
+						valueAsIs: 425_000,
+					},
+					mortgageDraft: {
+						amortizationMonths: 300,
+						firstPaymentDate: "2026-06-01",
+						interestAdjustmentDate: "2026-05-01",
+						interestRate: 9.5,
+						lienPosition: 1,
+						loanType: "conventional",
+						maturityDate: "2027-04-30",
+						paymentAmount: 2_450,
+						paymentFrequency: "monthly",
+						principal: 250_000,
+						rateType: "fixed",
+						termMonths: 12,
+						termStartDate: "2026-05-01",
+					},
+				},
+			}
+		);
+
+		expect(updated.status).toBe("ready_to_commit");
+		expect(updated.failedAt).toBeUndefined();
+		expect(updated.lastCommitError).toBeUndefined();
+	});
+
+	it("restores the saved step while also returning the recommended next step", async () => {
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
 
 		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
 			api.admin.origination.cases.createCase,
@@ -133,6 +244,7 @@ describe("admin origination cases", () => {
 				patch: {
 					currentStep: "review",
 					participantsDraft: {
+						brokerOfRecordId,
 						primaryBorrower: {
 							email: "ada@example.com",
 							fullName: "Ada Lovelace",
@@ -156,8 +268,9 @@ describe("admin origination cases", () => {
 	});
 
 	it("lists case summaries with the exact last saved step", async () => {
-		const t = createTestConvex();
+		const t = createTestConvex({ includeWorkflowComponents: false });
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
 
 		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
 			api.admin.origination.cases.createCase,
@@ -171,6 +284,7 @@ describe("admin origination cases", () => {
 				patch: {
 					currentStep: "review",
 					participantsDraft: {
+						brokerOfRecordId,
 						primaryBorrower: {
 							email: "ada@example.com",
 							fullName: "Ada Lovelace",
@@ -238,8 +352,52 @@ describe("admin origination cases", () => {
 		).rejects.toThrow("Forbidden: origination case access requires org context");
 	});
 
+	it("fails closed for non-admin callers when case org context is missing or mismatched", async () => {
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		await ensureSeededIdentity(t, EXTERNAL_ORG_ADMIN);
+
+		const bootstrapToken = "bootstrap-origination-access-scope";
+		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.createCase,
+			{ bootstrapToken }
+		);
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).query(
+				api.admin.origination.cases.getCase,
+				{ caseId }
+			)
+		).rejects.toThrow("Forbidden: origination case is outside your org");
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).mutation(
+				api.admin.origination.cases.createCase,
+				{ bootstrapToken }
+			)
+		).rejects.toThrow("Forbidden: origination case is outside your org");
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(caseId, { orgId: undefined });
+		});
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).query(
+				api.admin.origination.cases.getCase,
+				{ caseId }
+			)
+		).rejects.toThrow("Forbidden: origination case access requires org context");
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).mutation(
+				api.admin.origination.cases.createCase,
+				{ bootstrapToken }
+			)
+		).rejects.toThrow("Forbidden: origination case access requires org context");
+	});
+
 	it("reuses the same draft when createCase receives the same bootstrap token", async () => {
-		const t = createTestConvex();
+		const t = createTestConvex({ includeWorkflowComponents: false });
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
 
 		const [firstCaseId, secondCaseId] = await Promise.all([
@@ -268,8 +426,9 @@ describe("admin origination cases", () => {
 	});
 
 	it("preserves later-phase validation metadata when phase-1 autosave recomputes the snapshot", async () => {
-		const t = createTestConvex();
+		const t = createTestConvex({ includeWorkflowComponents: false });
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
 
 		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
 			api.admin.origination.cases.createCase,
@@ -296,6 +455,7 @@ describe("admin origination cases", () => {
 				caseId,
 				patch: {
 					participantsDraft: {
+						brokerOfRecordId,
 						primaryBorrower: {
 							email: "ada@example.com",
 							fullName: "Ada Lovelace",
@@ -315,7 +475,7 @@ describe("admin origination cases", () => {
 	});
 
 	it("deletes draft cases and their document placeholders", async () => {
-		const t = createTestConvex();
+		const t = createTestConvex({ includeWorkflowComponents: false });
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
 
 		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
@@ -349,8 +509,131 @@ describe("admin origination cases", () => {
 		expect(deleted.documentDrafts).toHaveLength(0);
 	});
 
+	it("rejects patch and delete once a case is committed", async () => {
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+
+		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.createCase,
+			{}
+		);
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(caseId, {
+				status: "committed",
+			});
+		});
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).mutation(
+				api.admin.origination.cases.patchCase,
+				{
+					caseId,
+					patch: {
+						currentStep: "review",
+					},
+				}
+			)
+		).rejects.toThrow("immutable");
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).mutation(
+				api.admin.origination.cases.deleteCase,
+				{ caseId }
+			)
+		).rejects.toThrow("immutable");
+	});
+
+	it("lets FairLend admins recover cases stuck in committing", async () => {
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		await ensureSeededIdentity(t, EXTERNAL_ORG_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
+
+		const caseId = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.createCase,
+			{}
+		);
+
+		await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.patchCase,
+			{
+				caseId,
+				patch: {
+					currentStep: "review",
+					participantsDraft: {
+						brokerOfRecordId,
+						primaryBorrower: {
+							email: "ada@example.com",
+							fullName: "Ada Lovelace",
+						},
+					},
+					propertyDraft: {
+						create: {
+							city: "Toronto",
+							postalCode: "M5H 1J9",
+							propertyType: "residential",
+							province: "ON",
+							streetAddress: "123 King St W",
+						},
+					},
+					valuationDraft: {
+						valueAsIs: 425_000,
+					},
+					mortgageDraft: {
+						amortizationMonths: 300,
+						firstPaymentDate: "2026-06-01",
+						interestAdjustmentDate: "2026-05-01",
+						interestRate: 9.5,
+						lienPosition: 1,
+						loanType: "conventional",
+						maturityDate: "2027-04-30",
+						paymentAmount: 2_450,
+						paymentFrequency: "monthly",
+						principal: 250_000,
+						rateType: "fixed",
+						termMonths: 12,
+						termStartDate: "2026-05-01",
+					},
+				},
+			}
+		);
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(caseId, { status: "committing" });
+		});
+
+		await expect(
+			t.withIdentity(EXTERNAL_ORG_ADMIN).mutation(
+				api.admin.origination.cases.recoverStuckCommittingCase,
+				{ caseId }
+			)
+		).rejects.toThrow("Forbidden: fair lend admin role required");
+
+		const recovered = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.recoverStuckCommittingCase,
+			{ caseId }
+		);
+
+		expect(recovered.status).toBe("ready_to_commit");
+		expect(recovered.failedAt).toBeUndefined();
+		expect(recovered.lastCommitError).toBeUndefined();
+
+		const patched = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.admin.origination.cases.patchCase,
+			{
+				caseId,
+				patch: {
+					currentStep: "review",
+				},
+			}
+		);
+
+		expect(patched.status).toBe("ready_to_commit");
+	});
+
 	it("rejects callers without mortgage:originate", async () => {
-		const t = createTestConvex();
+		const t = createTestConvex({ includeWorkflowComponents: false });
 		await ensureSeededIdentity(t, MEMBER);
 
 		await expect(

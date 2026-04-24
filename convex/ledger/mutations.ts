@@ -39,74 +39,109 @@ export const postEntryDirect = internalMutation({
 	},
 });
 
-export const mintMortgage = adminMutation
-	.input(mintMortgageArgsValidator)
-	.handler(async (ctx, args) => {
-		// Idempotency: check if this exact request already succeeded
-		const existingEntry = await ctx.db
-			.query("ledger_journal_entries")
-			.withIndex("by_idempotency", (q) =>
-				q.eq("idempotencyKey", args.idempotencyKey)
-			)
-			.first();
-		if (existingEntry) {
-			const treasury = await ctx.db
-				.query("ledger_accounts")
-				.withIndex("by_type_and_mortgage", (q) =>
-					q.eq("type", "TREASURY").eq("mortgageId", args.mortgageId)
-				)
-				.first();
-			if (!treasury) {
-				throw new ConvexError({
-					code: "IDEMPOTENT_REPLAY_FAILED" as const,
-					message: `Idempotent mint replay: TREASURY for ${args.mortgageId} not found`,
-				});
-			}
-			return { treasuryAccountId: treasury._id, journalEntry: existingEntry };
-		}
+export interface MintMortgageArgs {
+	effectiveDate: string;
+	idempotencyKey: string;
+	metadata?: Record<string, unknown>;
+	mortgageId: string;
+	source: EventSource;
+}
 
-		// Prevent double-mint
-		const existingTreasury = await ctx.db
+function validateMintReplayEntry(
+	existingEntry: Doc<"ledger_journal_entries">,
+	args: { mortgageId: string; replayName: string }
+) {
+	if (existingEntry.entryType !== "MORTGAGE_MINTED") {
+		throw new ConvexError({
+			code: "IDEMPOTENT_REPLAY_FAILED" as const,
+			message: `Idempotent ${args.replayName} replay: existing entry ${existingEntry._id} has entryType ${existingEntry.entryType}, expected MORTGAGE_MINTED`,
+		});
+	}
+	if (existingEntry.mortgageId !== args.mortgageId) {
+		throw new ConvexError({
+			code: "IDEMPOTENT_REPLAY_FAILED" as const,
+			message: `Idempotent ${args.replayName} replay: existing entry ${existingEntry._id} belongs to mortgage ${existingEntry.mortgageId}, expected ${args.mortgageId}`,
+		});
+	}
+}
+
+export async function mintMortgageHandler(
+	ctx: MutationCtx,
+	args: MintMortgageArgs
+) {
+	// Idempotency: check if this exact request already succeeded
+	const existingEntry = await ctx.db
+		.query("ledger_journal_entries")
+		.withIndex("by_idempotency", (q) =>
+			q.eq("idempotencyKey", args.idempotencyKey)
+		)
+		.first();
+	if (existingEntry) {
+		validateMintReplayEntry(existingEntry, {
+			mortgageId: args.mortgageId,
+			replayName: "mint",
+		});
+		const treasury = await ctx.db
 			.query("ledger_accounts")
 			.withIndex("by_type_and_mortgage", (q) =>
 				q.eq("type", "TREASURY").eq("mortgageId", args.mortgageId)
 			)
 			.first();
-		if (existingTreasury) {
+		if (!treasury) {
 			throw new ConvexError({
-				code: "ALREADY_MINTED" as const,
-				message: `Mortgage ${args.mortgageId} already minted (TREASURY exists)`,
+				code: "IDEMPOTENT_REPLAY_FAILED" as const,
+				message: `Idempotent mint replay: TREASURY for ${args.mortgageId} not found`,
 			});
 		}
+		return { treasuryAccountId: treasury._id, journalEntry: existingEntry };
+	}
 
-		const worldAccount = await initializeWorldAccount(ctx);
-
-		// Create TREASURY account
-		const treasuryId = await ctx.db.insert("ledger_accounts", {
-			type: "TREASURY",
-			mortgageId: args.mortgageId,
-			cumulativeDebits: 0n,
-			cumulativeCredits: 0n,
-			pendingDebits: 0n,
-			pendingCredits: 0n,
-			createdAt: Date.now(),
+	// Prevent double-mint
+	const existingTreasury = await ctx.db
+		.query("ledger_accounts")
+		.withIndex("by_type_and_mortgage", (q) =>
+			q.eq("type", "TREASURY").eq("mortgageId", args.mortgageId)
+		)
+		.first();
+	if (existingTreasury) {
+		throw new ConvexError({
+			code: "ALREADY_MINTED" as const,
+			message: `Mortgage ${args.mortgageId} already minted (TREASURY exists)`,
 		});
+	}
 
-		// MORTGAGE_MINTED: WORLD gives → TREASURY receives
-		const journalEntry = await postEntry(ctx, {
-			entryType: "MORTGAGE_MINTED",
-			mortgageId: args.mortgageId,
-			debitAccountId: treasuryId,
-			creditAccountId: worldAccount._id,
-			amount: Number(TOTAL_SUPPLY),
-			effectiveDate: args.effectiveDate,
-			idempotencyKey: args.idempotencyKey,
-			source: args.source,
-			metadata: args.metadata,
-		});
+	const worldAccount = await initializeWorldAccount(ctx);
 
-		return { treasuryAccountId: treasuryId, journalEntry };
-	})
+	// Create TREASURY account
+	const treasuryId = await ctx.db.insert("ledger_accounts", {
+		type: "TREASURY",
+		mortgageId: args.mortgageId,
+		cumulativeDebits: 0n,
+		cumulativeCredits: 0n,
+		pendingDebits: 0n,
+		pendingCredits: 0n,
+		createdAt: Date.now(),
+	});
+
+	// MORTGAGE_MINTED: WORLD gives → TREASURY receives
+	const journalEntry = await postEntry(ctx, {
+		entryType: "MORTGAGE_MINTED",
+		mortgageId: args.mortgageId,
+		debitAccountId: treasuryId,
+		creditAccountId: worldAccount._id,
+		amount: Number(TOTAL_SUPPLY),
+		effectiveDate: args.effectiveDate,
+		idempotencyKey: args.idempotencyKey,
+		source: args.source,
+		metadata: args.metadata,
+	});
+
+	return { treasuryAccountId: treasuryId, journalEntry };
+}
+
+export const mintMortgage = adminMutation
+	.input(mintMortgageArgsValidator)
+	.handler(async (ctx, args) => mintMortgageHandler(ctx, args))
 	.public();
 
 export const burnMortgage = adminMutation
@@ -348,6 +383,10 @@ export const mintAndIssue = ledgerMutation
 			)
 			.first();
 		if (existingEntry) {
+			validateMintReplayEntry(existingEntry, {
+				mortgageId: args.mortgageId,
+				replayName: "mintAndIssue",
+			});
 			const treasury = await ctx.db
 				.query("ledger_accounts")
 				.withIndex("by_type_and_mortgage", (q) =>

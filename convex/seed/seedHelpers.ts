@@ -135,7 +135,7 @@ export async function findUserByEmail(
 	const normalizedEmail = normalizeEmail(email);
 	return ctx.db
 		.query("users")
-		.filter((q) => q.eq(q.field("email"), normalizedEmail))
+		.withIndex("by_email", (q) => q.eq("email", normalizedEmail))
 		.first();
 }
 
