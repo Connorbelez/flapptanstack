@@ -1,7 +1,9 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { listMortgageBlueprintRows } from "../documents/mortgageBlueprints";
 import { crmQuery } from "../fluent";
+import { readListingPublicDocuments } from "../listings/publicDocuments";
 import { buildCollectionPlanEntryRow } from "../payments/collectionPlan/readModels";
 
 function toBorrowerName(args: {
@@ -12,7 +14,7 @@ function toBorrowerName(args: {
 	return name.length > 0 ? name : null;
 }
 
-type CrmDetailQueryCtx = Pick<QueryCtx, "db"> & {
+type CrmDetailQueryCtx = Pick<QueryCtx, "db" | "storage"> & {
 	viewer: {
 		orgId?: string;
 	};
@@ -63,12 +65,42 @@ async function loadListingDetailProjectionContext(
 	]);
 }
 
-function buildListingPublicDocumentContext(args: { listing: Doc<"listings"> }) {
-	return args.listing.publicDocumentIds.map((fileRef) => ({
-		assetId: null,
-		fileRef,
-		name: null,
-	}));
+async function loadDocumentAssetDetails(
+	ctx: Pick<CrmDetailQueryCtx, "db" | "storage">,
+	blueprints: Awaited<ReturnType<typeof listMortgageBlueprintRows>>
+) {
+	const assetIds = Array.from(
+		new Set(
+			blueprints.flatMap((blueprint) =>
+				blueprint.assetId ? [blueprint.assetId] : []
+			)
+		)
+	);
+	const assetEntries = await Promise.all(
+		assetIds.map(async (assetId) => {
+			const asset = await ctx.db.get(assetId);
+			return asset ? ([assetId, asset] as const) : null;
+		})
+	);
+	const assetsById = new Map(
+		assetEntries.filter(
+			(
+				entry
+			): entry is readonly [Id<"documentAssets">, Doc<"documentAssets">] =>
+				entry !== null
+		)
+	);
+	const assetUrlEntries = await Promise.all(
+		[...assetsById.values()].map(
+			async (asset) =>
+				[asset._id, await ctx.storage.getUrl(asset.fileRef)] as const
+		)
+	);
+
+	return {
+		assetUrlsById: new Map(assetUrlEntries),
+		assetsById,
+	};
 }
 
 export const getMortgageDetailContext = crmQuery
@@ -98,6 +130,7 @@ export const getMortgageDetailContext = crmQuery
 			latestValuationSnapshot,
 			latestExternalCollectionSchedule,
 			originationCase,
+			documentBlueprints,
 		] = await Promise.all([
 			ctx.db.get(mortgage.propertyId),
 			ctx.db
@@ -156,6 +189,10 @@ export const getMortgageDetailContext = crmQuery
 			mortgage.workflowSourceId
 				? ctx.db.get(mortgage.workflowSourceId as Id<"adminOriginationCases">)
 				: Promise.resolve(null),
+			listMortgageBlueprintRows(ctx, {
+				includeArchived: true,
+				mortgageId: args.mortgageId,
+			}),
 		]);
 
 		const borrowers = await Promise.all(
@@ -214,6 +251,10 @@ export const getMortgageDetailContext = crmQuery
 			[...collectionPlanEntries]
 				.sort((left, right) => left.scheduledDate - right.scheduledDate)
 				.map((entry) => buildCollectionPlanEntryRow(ctx, entry))
+		);
+		const { assetsById, assetUrlsById } = await loadDocumentAssetDetails(
+			ctx,
+			documentBlueprints
 		);
 
 		return {
@@ -298,6 +339,33 @@ export const getMortgageDetailContext = crmQuery
 					mortgage.paymentBootstrapScheduleRuleMissing ?? false,
 				transferRequestCount: transferRequests.length,
 			},
+			documents: documentBlueprints.map((blueprint) => {
+				const asset = blueprint.assetId
+					? (assetsById.get(blueprint.assetId) ?? null)
+					: null;
+
+				return {
+					archivedAt: blueprint.archivedAt ?? null,
+					asset: asset
+						? {
+								assetId: asset._id,
+								fileRef: asset.fileRef,
+								name: asset.name,
+								url: assetUrlsById.get(asset._id) ?? null,
+							}
+						: null,
+					blueprintId: blueprint._id,
+					class: blueprint.class,
+					description: blueprint.description ?? null,
+					displayName: blueprint.displayName,
+					displayOrder: blueprint.displayOrder,
+					packageLabel: blueprint.packageLabel ?? null,
+					status: blueprint.status,
+					templateId: blueprint.templateId ?? null,
+					templateName: blueprint.templateSnapshotMeta?.templateName ?? null,
+					templateVersion: blueprint.templateVersion ?? null,
+				};
+			}),
 			recentObligations,
 			obligationStats,
 			recentAuditEvents: [...auditEvents]
@@ -329,8 +397,8 @@ export const getListingDetailContext = crmQuery
 				listing,
 				mortgage,
 			});
-		const publicDocuments = buildListingPublicDocumentContext({
-			listing,
+		const publicDocuments = await readListingPublicDocuments(ctx, {
+			mortgageId: mortgage._id,
 		});
 
 		return {

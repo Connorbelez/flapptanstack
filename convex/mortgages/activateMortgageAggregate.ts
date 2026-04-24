@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { materializeMortgageBlueprintsFromCaseDrafts } from "../documents/mortgageBlueprints";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
 import { mintMortgageHandler } from "../ledger/mutations";
 import {
@@ -12,7 +13,10 @@ import {
 	ensureMortgageBorrowerLink,
 	findPropertyByAddress,
 } from "../seed/seedHelpers";
-import type { MortgageActivationSource } from "./provenance";
+import {
+	type MortgageActivationSource,
+	ORIGINATION_WORKFLOW_SOURCE_TYPE,
+} from "./provenance";
 import { createOriginationValuationSnapshot } from "./valuation";
 
 function toBusinessDate(timestamp: number) {
@@ -187,7 +191,14 @@ async function readExistingActivationResult(
 		"createdObligationIds" | "createdPlanEntryIds" | "scheduleRuleMissing"
 	>
 ): Promise<ActivateMortgageAggregateResult> {
-	const [borrowerLinks, listing, valuationSnapshot] = await Promise.all([
+	const [
+		borrowerLinks,
+		listing,
+		planEntries,
+		obligations,
+		valuationSnapshot,
+		documentBlueprints,
+	] = await Promise.all([
 		readMortgageBorrowerLinks(ctx, existingMortgage._id),
 		ctx.db
 			.query("listings")
@@ -196,13 +207,38 @@ async function readExistingActivationResult(
 			)
 			.unique(),
 		ctx.db
+			.query("collectionPlanEntries")
+			.withIndex("by_mortgage_status_scheduled", (query) =>
+				query.eq("mortgageId", existingMortgage._id)
+			)
+			.collect(),
+		ctx.db
+			.query("obligations")
+			.withIndex("by_mortgage_and_date", (query) =>
+				query.eq("mortgageId", existingMortgage._id)
+			)
+			.collect(),
+		ctx.db
 			.query("mortgageValuationSnapshots")
 			.withIndex("by_mortgage_created_at", (query) =>
 				query.eq("mortgageId", existingMortgage._id)
 			)
 			.order("desc")
 			.first(),
+		ctx.db
+			.query("mortgageDocumentBlueprints")
+			.withIndex("by_mortgage_status_class", (query) =>
+				query.eq("mortgageId", existingMortgage._id).eq("status", "active")
+			)
+			.collect(),
 	]);
+
+	const sortedPlanEntryIds = [...planEntries]
+		.sort((left, right) => left.scheduledDate - right.scheduledDate)
+		.map((entry) => entry._id);
+	const sortedObligationIds = [...obligations]
+		.sort((left, right) => left.dueDate - right.dueDate)
+		.map((obligation) => obligation._id);
 	const borrowerIds = dedupeBorrowerIds(borrowerLinks);
 	const primaryBorrowerId = requirePrimaryBorrowerId(
 		borrowerLinks,
@@ -211,15 +247,21 @@ async function readExistingActivationResult(
 
 	return {
 		borrowerIds,
-		createdObligationIds: paymentBootstrap.createdObligationIds,
-		createdPlanEntryIds: paymentBootstrap.createdPlanEntryIds,
-		dealBlueprintCount: 0,
+		createdObligationIds: sortedObligationIds,
+		createdPlanEntryIds: sortedPlanEntryIds,
+		dealBlueprintCount: documentBlueprints.filter(
+			(blueprint) => blueprint.class !== "public_static"
+		).length,
 		listingId: listing?._id ?? null,
 		mortgageId: existingMortgage._id,
 		primaryBorrowerId,
 		propertyId: existingMortgage.propertyId,
-		publicBlueprintCount: 0,
-		scheduleRuleMissing: paymentBootstrap.scheduleRuleMissing,
+		publicBlueprintCount: documentBlueprints.filter(
+			(blueprint) => blueprint.class === "public_static"
+		).length,
+		scheduleRuleMissing:
+			existingMortgage.paymentBootstrapScheduleRuleMissing ??
+			paymentBootstrap.scheduleRuleMissing,
 		valuationSnapshotId: valuationSnapshot?._id ?? null,
 		wasAlreadyCommitted: true,
 	};
@@ -468,6 +510,18 @@ export async function activateMortgageAggregate(
 		paymentBootstrapScheduleRuleMissing: paymentBootstrap.scheduleRuleMissing,
 	});
 
+	const blueprintCounts =
+		args.source.workflowSourceType === ORIGINATION_WORKFLOW_SOURCE_TYPE
+			? await materializeMortgageBlueprintsFromCaseDrafts(ctx, {
+					caseId: args.source.workflowSourceId as Id<"adminOriginationCases">,
+					mortgageId,
+					now: args.now,
+					viewerUserId: args.viewerUserId,
+				})
+			: {
+					dealBlueprintCount: 0,
+					publicBlueprintCount: 0,
+				};
 	const listingProjection = await upsertMortgageListingProjection(ctx, {
 		mortgageId,
 		now: args.now,
@@ -550,12 +604,12 @@ export async function activateMortgageAggregate(
 		borrowerIds,
 		createdObligationIds: paymentBootstrap.createdObligationIds,
 		createdPlanEntryIds: paymentBootstrap.createdPlanEntryIds,
-		dealBlueprintCount: 0,
+		dealBlueprintCount: blueprintCounts.dealBlueprintCount,
 		listingId: listingProjection.listingId,
 		mortgageId,
 		primaryBorrowerId,
 		propertyId,
-		publicBlueprintCount: 0,
+		publicBlueprintCount: blueprintCounts.publicBlueprintCount,
 		scheduleRuleMissing: paymentBootstrap.scheduleRuleMissing,
 		valuationSnapshotId: valuationSnapshot?.valuationSnapshotId ?? null,
 		wasAlreadyCommitted: false,
