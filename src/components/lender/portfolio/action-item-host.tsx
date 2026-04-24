@@ -7,11 +7,13 @@ import {
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { cn } from "#/lib/utils";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import {
 	formatPortfolioDate,
 	formatPortfolioEnumLabel,
 } from "./portfolio-formatters";
 import type { PortfolioCommandCenterSnapshot } from "./portfolio-types";
+import { RenewalActionSurface } from "./renewals/renewal-actions";
 
 type PortfolioActionItem =
 	PortfolioCommandCenterSnapshot["actionsRequired"]["items"][number];
@@ -22,6 +24,7 @@ export interface ActionItemHostProps {
 	isSelected?: boolean;
 	onOpenDetails?: (action: PortfolioActionItem) => void;
 	onPrefill: (context: PortfolioBrokerPrefillContext) => void;
+	portalId: Id<"portals">;
 }
 
 function getActionDetailLabel(action: PortfolioActionItem) {
@@ -56,6 +59,7 @@ export function ActionItemHost({
 	isSelected = false,
 	onOpenDetails,
 	onPrefill,
+	portalId,
 }: ActionItemHostProps) {
 	const detailLabel = getActionDetailLabel(action);
 
@@ -139,6 +143,16 @@ export function ActionItemHost({
 					</Button>
 				) : null}
 			</div>
+
+			{action.kind === "renewal_prompt" && action.mortgageId ? (
+				<div className="mt-4">
+					<RenewalActionSurface
+						mortgageId={action.mortgageId}
+						portalId={portalId}
+						variant="compact"
+					/>
+				</div>
+			) : null}
 		</article>
 	);
 }

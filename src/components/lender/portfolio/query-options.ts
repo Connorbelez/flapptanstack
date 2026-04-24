@@ -29,3 +29,13 @@ export function lenderPortfolioPaymentDetailQueryOptions(
 		portalId,
 	});
 }
+
+export function lenderPortfolioRenewalIntentQueryOptions(
+	portalId: Id<"portals">,
+	mortgageId: string
+) {
+	return convexQuery(api.renewals.portal.getLenderRenewalIntentByMortgage, {
+		mortgageId: mortgageId as Id<"mortgages">,
+		portalId,
+	});
+}

@@ -48,6 +48,18 @@ vi.mock("#/components/lender/portfolio/query-options", () => ({
 	lenderPortfolioPositionDetailQueryOptions: vi.fn(),
 }));
 
+vi.mock("#/components/lender/portfolio/renewals/renewal-actions", () => ({
+	RenewalActionSurface: ({
+		mortgageId,
+		variant,
+	}: {
+		mortgageId: string;
+		variant: string;
+	}) => (
+		<div data-testid={`renewal-action-surface-mock-${variant}-${mortgageId}`} />
+	),
+}));
+
 vi.mock("#/hooks/use-mobile", () => ({
 	useIsMobile: vi.fn(),
 }));
@@ -168,6 +180,9 @@ describe("lender portfolio rail", () => {
 			rail.getByText(
 				"Choose an action above or a suggested follow-up below to prefill the broker handoff."
 			)
+		).toBeTruthy();
+		expect(
+			rail.getByTestId("renewal-action-surface-mock-compact-mortgage_king")
 		).toBeTruthy();
 		expect(rail.queryByTestId("broker-prefill-textarea")).toBeNull();
 		expect(rail.getByTestId("action-item-action_renewal_king").textContent).not.toContain(

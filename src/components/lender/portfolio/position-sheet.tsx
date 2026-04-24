@@ -21,6 +21,7 @@ import {
 	formatPortfolioPercent,
 } from "./portfolio-formatters";
 import { lenderPortfolioPositionDetailQueryOptions } from "./query-options";
+import { RenewalActionSurface } from "./renewals/renewal-actions";
 
 interface PositionSheetProps {
 	mortgageId: string;
@@ -65,7 +66,7 @@ export function PositionSheet({
 	return (
 		<PortfolioDetailHost
 			dataTestId="position-detail-host"
-			description="Full-height position detail host owned by ENG-311. Renewal-specific action content can layer in later without changing the host."
+			description="Full-height position detail host with governed renewal actions available in the Renewal tab."
 			onOpenChange={onOpenChange}
 			open={open}
 			title="Position detail"
@@ -149,6 +150,7 @@ export function PositionSheet({
 							<PortfolioDetailSection title="Sheet tabs">
 								<TabsList variant="line">
 									<TabsTrigger value="overview">Overview</TabsTrigger>
+									<TabsTrigger value="renewal">Renewal</TabsTrigger>
 									<TabsTrigger value="terms">Loan terms</TabsTrigger>
 								</TabsList>
 							</PortfolioDetailSection>
@@ -187,31 +189,45 @@ export function PositionSheet({
 									</PortfolioKeyValueGrid>
 								</PortfolioDetailSection>
 								<PortfolioDetailSection
-									description="These are the contract-backed quick action hosts. Detailed renewal flows are owned by downstream work."
+									description="These are the contract-backed quick action hosts. Renewal actions live in the dedicated Renewal tab."
 									title="Quick actions"
 								>
 									<div className="grid gap-3">
-										{data.quickActions.map((action) => (
-											<div
-												className="rounded-lg border border-border/70 p-4"
-												key={action.id}
-											>
-												<div className="flex flex-wrap items-start justify-between gap-3">
-													<div className="space-y-1">
-														<p className="font-medium text-sm">
-															{action.title}
-														</p>
-														<p className="text-muted-foreground text-sm">
-															{action.summary}
-														</p>
+										{data.quickActions
+											.filter((action) => action.kind !== "renewal_prompt")
+											.map((action) => (
+												<div
+													className="rounded-lg border border-border/70 p-4"
+													key={action.id}
+												>
+													<div className="flex flex-wrap items-start justify-between gap-3">
+														<div className="space-y-1">
+															<p className="font-medium text-sm">
+																{action.title}
+															</p>
+															<p className="text-muted-foreground text-sm">
+																{action.summary}
+															</p>
+														</div>
+														<Badge variant="outline">
+															{formatPortfolioEnumLabel(action.kind)}
+														</Badge>
 													</div>
-													<Badge variant="outline">
-														{formatPortfolioEnumLabel(action.kind)}
-													</Badge>
 												</div>
-											</div>
-										))}
+											))}
 									</div>
+								</PortfolioDetailSection>
+							</TabsContent>
+							<TabsContent className="mt-0" value="renewal">
+								<PortfolioDetailSection
+									description="This sheet renders the same governed renewal state and action affordances as the Actions Required rail."
+									title="Renewal"
+								>
+									<RenewalActionSurface
+										mortgageId={mortgageId}
+										portalId={portalId}
+										variant="full"
+									/>
 								</PortfolioDetailSection>
 							</TabsContent>
 							<TabsContent className="mt-0" value="terms">
@@ -265,14 +281,6 @@ export function PositionSheet({
 
 						<PortfolioDetailSection title="Host actions">
 							<div className="flex flex-wrap gap-3">
-								<Button
-									disabled
-									size="sm"
-									title="Not available yet"
-									variant="outline"
-								>
-									Review renewal
-								</Button>
 								<Button
 									disabled
 									size="sm"
