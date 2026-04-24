@@ -4,6 +4,11 @@ import { internalMutation, internalQuery } from "../_generated/server";
 import { assertDealAccess } from "../authz/resourceAccess";
 import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { adminQuery, authedQuery, dealQuery } from "../fluent";
+import {
+	buildDealParticipantProjection,
+	type DealParticipantProjection,
+	projectFractionalShareUnits,
+} from "./participantProjection";
 
 // ── Phase mapping ──────────────────────────────────────────────────────
 
@@ -49,6 +54,8 @@ export interface DealWithPhase {
 	createdAt: number;
 	createdBy: string;
 	fractionalShare: number;
+	fractionalShareDisplayPercent: number | null;
+	fractionalShareUnits: number;
 	lawyerId?: string;
 	lawyerType?: "platform_lawyer" | "guest_lawyer";
 	mortgageId: Id<"mortgages">;
@@ -97,7 +104,10 @@ export interface PortalDealDetail {
 	deal: {
 		closingDate: number | null;
 		dealId: Id<"deals">;
+		/** @deprecated Use fractionalShareUnits or fractionalShareDisplayPercent. */
 		fractionalShare: number;
+		fractionalShareDisplayPercent: number | null;
+		fractionalShareUnits: number;
 		lockingFeeAmount: number | null;
 		status: string;
 	};
@@ -112,6 +122,7 @@ export interface PortalDealDetail {
 		principal: number;
 		status: string;
 	};
+	participants: DealParticipantProjection;
 	parties: {
 		lender: {
 			email: string | null;
@@ -263,6 +274,10 @@ export const getDealsByPhase = adminQuery
 				buyerId: deal.buyerId,
 				sellerId: deal.sellerId,
 				fractionalShare: deal.fractionalShare,
+				fractionalShareDisplayPercent: projectFractionalShareUnits(
+					deal.fractionalShare
+				).fractionalShareDisplayPercent,
+				fractionalShareUnits: deal.fractionalShare,
 				closingDate: deal.closingDate,
 				lawyerId: deal.lawyerId,
 				lawyerType: deal.lawyerType,
@@ -305,16 +320,9 @@ export const getPortalDealDetail = dealQuery
 			return null;
 		}
 
-		const [property, lenderUser, sellerUser, viewerUser] = await Promise.all([
+		const [property, participants, viewerUser] = await Promise.all([
 			ctx.db.get(mortgage.propertyId),
-			ctx.db
-				.query("users")
-				.withIndex("authId", (query) => query.eq("authId", deal.buyerId))
-				.unique(),
-			ctx.db
-				.query("users")
-				.withIndex("authId", (query) => query.eq("authId", deal.sellerId))
-				.unique(),
+			buildDealParticipantProjection(ctx, deal),
 			ctx.db
 				.query("users")
 				.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
@@ -334,6 +342,9 @@ export const getPortalDealDetail = dealQuery
 				closingDate: deal.closingDate ?? null,
 				dealId: deal._id,
 				fractionalShare: deal.fractionalShare,
+				fractionalShareDisplayPercent:
+					participants.fractionalShareDisplayPercent,
+				fractionalShareUnits: participants.fractionalShareUnits,
 				lockingFeeAmount: deal.lockingFeeAmount ?? null,
 				status: deal.status,
 			},
@@ -357,24 +368,12 @@ export const getPortalDealDetail = dealQuery
 				: null,
 			parties: {
 				lender: {
-					email: lenderUser?.email ?? null,
-					name:
-						[lenderUser?.firstName, lenderUser?.lastName]
-							.filter(Boolean)
-							.join(" ")
-							.trim() ||
-						lenderUser?.email ||
-						deal.buyerId,
+					email: participants.buyer.email,
+					name: participants.buyer.displayName,
 				},
 				seller: {
-					email: sellerUser?.email ?? null,
-					name:
-						[sellerUser?.firstName, sellerUser?.lastName]
-							.filter(Boolean)
-							.join(" ")
-							.trim() ||
-						sellerUser?.email ||
-						deal.sellerId,
+					email: participants.seller.email,
+					name: participants.seller.displayName,
 				},
 			},
 			documentInstances: packageSurfaceWithViewer.instances
@@ -385,6 +384,7 @@ export const getPortalDealDetail = dealQuery
 						instance.class === "private_templated_signable"
 				)
 				.map(projectPortalDealDocumentInstance),
+			participants,
 			documentPackage: packageSurfaceWithViewer.package
 				? {
 						archivedAt: packageSurfaceWithViewer.package.archivedAt,
