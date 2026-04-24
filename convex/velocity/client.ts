@@ -24,14 +24,17 @@ export interface VelocityFullDealFetchArgs {
 export interface VelocityFullDealFetchResult {
 	deal: VelocityDeal;
 	rawResponseBody: string;
-	request: {
-		dealHref?: string;
-		loanCode: string;
-		method: "GET";
-		url: string;
-	};
+	request: VelocityFullDealRequestMetadata;
 	responseStatus: number;
 	usedFallbackHref: boolean;
+}
+
+export interface VelocityFullDealRequestMetadata {
+	dealHref?: string;
+	loanCode: string;
+	method: "GET";
+	url: string;
+	[key: string]: unknown;
 }
 
 export interface ResolveVelocityClientConfigArgs {
@@ -50,7 +53,7 @@ function requireNonEmpty(value: string | undefined, message: string) {
 	return value.trim();
 }
 
-async function sha256Hex(value: string) {
+export async function sha256Hex(value: string) {
 	const digest = await crypto.subtle.digest(
 		"SHA-256",
 		new TextEncoder().encode(value)
@@ -69,6 +72,27 @@ function normalizeBaseUrl(baseUrl: string) {
 	return baseUrl.replace(TRAILING_SLASHES_PATTERN, "");
 }
 
+function redactedVelocityUrl(url: URL) {
+	const redactedUrl = new URL(url.toString());
+	if (redactedUrl.searchParams.has("apikey")) {
+		redactedUrl.searchParams.set("apikey", "REDACTED");
+	}
+	return redactedUrl.toString();
+}
+
+function buildRequestMetadata(args: {
+	dealHref?: string;
+	loanCode: string;
+	url: URL;
+}): VelocityFullDealRequestMetadata {
+	return {
+		dealHref: args.dealHref,
+		loanCode: args.loanCode,
+		method: "GET",
+		url: redactedVelocityUrl(args.url),
+	};
+}
+
 function buildDealsOutUrl(args: {
 	apiKey: string;
 	baseUrl: string;
@@ -85,7 +109,11 @@ function buildOpaqueDealHrefUrl(args: {
 	baseUrl: string;
 	dealHref: string;
 }) {
-	const hrefUrl = new URL(args.dealHref, `${normalizeBaseUrl(args.baseUrl)}/`);
+	const baseUrl = new URL(`${normalizeBaseUrl(args.baseUrl)}/`);
+	const hrefUrl = new URL(args.dealHref, baseUrl);
+	if (hrefUrl.origin !== baseUrl.origin) {
+		throw new Error("Velocity fallback deal href origin is not trusted");
+	}
 	if (!hrefUrl.searchParams.has("apikey")) {
 		hrefUrl.searchParams.set("apikey", args.apiKey);
 	}
@@ -158,6 +186,33 @@ async function fetchJsonDeal(args: {
 	};
 }
 
+export class VelocityFullDealFetchError extends Error {
+	rawResponseBody?: string;
+	request: VelocityFullDealRequestMetadata;
+	responseStatus?: number;
+
+	constructor(
+		message: string,
+		args: {
+			rawResponseBody?: string;
+			request: VelocityFullDealRequestMetadata;
+			responseStatus?: number;
+		}
+	) {
+		super(message);
+		this.name = "VelocityFullDealFetchError";
+		this.rawResponseBody = args.rawResponseBody;
+		this.request = args.request;
+		this.responseStatus = args.responseStatus;
+	}
+}
+
+export function isVelocityFullDealFetchError(
+	error: unknown
+): error is VelocityFullDealFetchError {
+	return error instanceof VelocityFullDealFetchError;
+}
+
 export async function resolveVelocityClientConfig(
 	args?: ResolveVelocityClientConfigArgs
 ): Promise<VelocityClientConfig> {
@@ -206,19 +261,26 @@ export async function fetchVelocityFullDealByLoanCode(
 		return {
 			deal: primary.deal,
 			rawResponseBody: primary.rawResponseBody,
-			request: {
+			request: buildRequestMetadata({
 				loanCode,
-				method: "GET",
-				url: primaryUrl.toString(),
-			},
+				url: primaryUrl,
+			}),
 			responseStatus: primary.responseStatus,
 			usedFallbackHref: false,
 		};
 	}
 
 	if (!args.dealHref) {
-		throw new Error(
-			`Velocity full deal not found for loanCode ${loanCode}; no fallback href supplied`
+		throw new VelocityFullDealFetchError(
+			`Velocity full deal not found for loanCode ${loanCode}; no fallback href supplied`,
+			{
+				rawResponseBody: primary.rawResponseBody,
+				request: buildRequestMetadata({
+					loanCode,
+					url: primaryUrl,
+				}),
+				responseStatus: primary.responseStatus,
+			}
 		);
 	}
 
@@ -233,18 +295,28 @@ export async function fetchVelocityFullDealByLoanCode(
 	});
 
 	if (!fallback.deal) {
-		throw new Error("Velocity full deal fallback did not return a deal");
+		throw new VelocityFullDealFetchError(
+			"Velocity full deal fallback did not return a deal",
+			{
+				rawResponseBody: fallback.rawResponseBody,
+				request: buildRequestMetadata({
+					dealHref: args.dealHref,
+					loanCode,
+					url: fallbackUrl,
+				}),
+				responseStatus: fallback.responseStatus,
+			}
+		);
 	}
 
 	return {
 		deal: fallback.deal,
 		rawResponseBody: fallback.rawResponseBody,
-		request: {
+		request: buildRequestMetadata({
 			dealHref: args.dealHref,
 			loanCode,
-			method: "GET",
-			url: fallbackUrl.toString(),
-		},
+			url: fallbackUrl,
+		}),
 		responseStatus: fallback.responseStatus,
 		usedFallbackHref: true,
 	};

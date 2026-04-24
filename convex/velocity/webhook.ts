@@ -1,15 +1,18 @@
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { httpAction } from "../_generated/server";
 import { convex } from "../fluent";
 import { jsonResponse } from "../payments/webhooks/utils";
+import { appendVelocityPackageAuditEntry } from "./audit";
 import {
 	buildVelocityWebhookEventIdempotencyKey,
 	VELOCITY_PROVIDER,
 } from "./constants";
 import type {
 	VelocityConnectorCredentialContext,
+	VelocityPackageAuditEventType,
 	VelocityWebhookAgent,
 	VelocityWebhookPayload,
 } from "./contracts";
@@ -22,7 +25,7 @@ interface PersistedVelocityWebhookEvent {
 	dealHref?: string;
 	eventType?: number;
 	isDuplicate: boolean;
-	loanCode: string;
+	loanCode?: string;
 	statusCode?: number;
 	webhookEventId: Id<"velocityWebhookEvents">;
 }
@@ -167,9 +170,7 @@ function authenticateVelocityWebhook(
 	const configuredToken =
 		process.env.VELOCITY_WEBHOOK_TOKEN ?? process.env.VELOCITY_WEBHOOK_SECRET;
 	const providedSecret = request.headers.get("x-velocity-webhook-secret");
-	const providedToken =
-		bearerToken(request.headers.get("authorization")) ??
-		new URL(request.url).searchParams.get("token");
+	const providedToken = bearerToken(request.headers.get("authorization"));
 	const isAuthenticated = Boolean(
 		(configuredSecret &&
 			providedSecret &&
@@ -186,15 +187,9 @@ function authenticateVelocityWebhook(
 	return {
 		ok: true,
 		credentialContext: {
-			credentialId:
-				request.headers.get("x-velocity-credential-id") ??
-				process.env.VELOCITY_WEBHOOK_CREDENTIAL_ID ??
-				undefined,
+			credentialId: process.env.VELOCITY_WEBHOOK_CREDENTIAL_ID ?? undefined,
 			provider: VELOCITY_PROVIDER,
-			scope:
-				request.headers.get("x-velocity-credential-scope") ??
-				process.env.VELOCITY_WEBHOOK_CREDENTIAL_SCOPE ??
-				"webhook_ingress",
+			scope: process.env.VELOCITY_WEBHOOK_CREDENTIAL_SCOPE ?? "webhook_ingress",
 			usedFor: "webhook_ingress",
 		},
 	};
@@ -214,6 +209,50 @@ function extractDealHref(
 		links.find((link) => link.href)?.href ??
 		undefined
 	);
+}
+
+async function appendWebhookIngressAuditEntries(
+	ctx: MutationCtx,
+	args: {
+		connectorCredentialContext: VelocityConnectorCredentialContext;
+		error?: string;
+		loanCode?: string;
+		payload: VelocityWebhookPayload;
+		providerEventId: string;
+		status: "failed" | "pending";
+		webhookEventId: Id<"velocityWebhookEvents">;
+	}
+) {
+	const eventTypes: VelocityPackageAuditEventType[] = [
+		"velocity_webhook_received",
+		"velocity_webhook_provenance_recorded",
+	];
+	const workspaceId = `velocity_webhook:${String(args.webhookEventId)}`;
+
+	for (const eventType of eventTypes) {
+		await appendVelocityPackageAuditEntry(ctx, {
+			actorId: args.payload.agent?.email ?? "velocity_webhook_system",
+			actorType: "system",
+			channel: "api_webhook",
+			connectorCredentialContext: args.connectorCredentialContext,
+			eventType,
+			idempotencyKey: `${eventType}:${args.providerEventId}`,
+			linkedRecordIds: {
+				webhookEventId: String(args.webhookEventId),
+			},
+			outcome: args.status === "failed" ? "rejected" : "transitioned",
+			payload: {
+				error: args.error,
+				loanCode: args.loanCode,
+				providerEventId: args.providerEventId,
+				status: args.status,
+				webhookEventId: String(args.webhookEventId),
+			},
+			reason: args.error,
+			webhookAgent: args.payload.agent ?? undefined,
+			workspaceId,
+		});
+	}
 }
 
 export const persistVelocityWebhookEvents = convex
@@ -282,11 +321,12 @@ export const persistVelocityWebhookEvents = convex
 		const events = args.payload.events ?? [];
 
 		for (const event of events) {
-			const loanCode = event.deal?.loanCode?.trim() || "unknown";
+			const loanCode = event.deal?.loanCode?.trim() || undefined;
+			const idempotencyLoanCode = loanCode ?? "unknown";
 			const providerEventId = buildVelocityWebhookEventIdempotencyKey({
 				eventTimestamp: event.timestamp ?? args.payload.timestamp,
 				eventType: event.eventType,
-				loanCode,
+				loanCode: idempotencyLoanCode,
 				status: event.deal?.status,
 			});
 			const existing = await ctx.db
@@ -312,6 +352,8 @@ export const persistVelocityWebhookEvents = convex
 			}
 
 			const dealHref = extractDealHref(event);
+			const status = loanCode ? "pending" : "failed";
+			const error = loanCode ? undefined : "missing_loan_code";
 			const webhookEventId = await ctx.db.insert("velocityWebhookEvents", {
 				attempts: 0,
 				connectorCredentialContext: {
@@ -324,14 +366,30 @@ export const persistVelocityWebhookEvents = convex
 				dealHref,
 				eventType: event.eventType ?? undefined,
 				loanCode,
+				error,
 				provider: VELOCITY_PROVIDER,
 				providerEventId,
 				rawBody: args.rawBody,
 				receivedAt: now,
 				signatureVerified: true,
-				status: "pending",
+				status,
 				statusCode: event.deal?.status ?? undefined,
 				webhookAgent: args.payload.agent ?? undefined,
+			});
+			await appendWebhookIngressAuditEntries(ctx, {
+				connectorCredentialContext: {
+					...args.connectorCredentialContext,
+					email: args.payload.agent?.email,
+					firmCode: args.payload.agent?.firmCode,
+					tenantId: args.payload.agent?.tenantId,
+					username: args.payload.agent?.username,
+				},
+				error,
+				loanCode,
+				payload: args.payload,
+				providerEventId,
+				status,
+				webhookEventId,
 			});
 
 			acceptedEvents.push({
@@ -370,7 +428,7 @@ export const velocityWebhook = httpAction(async (ctx, request) => {
 	);
 
 	for (const event of persisted.acceptedEvents) {
-		if (event.isDuplicate || event.loanCode === "unknown") {
+		if (event.isDuplicate || !event.loanCode) {
 			continue;
 		}
 		await ctx.runAction(processVelocityFullDealSyncReference, {
