@@ -442,6 +442,63 @@ describe("Velocity package workspace backend", () => {
 		).toHaveLength(1);
 	});
 
+	it("exposes latest activation attempt remediation state without leaking full bank details", async () => {
+		const t = createTestConvex();
+		const { workspaceId } = await seedReadyWorkspace(t);
+		const attempt = await t.run(async (ctx) => {
+			const actor = await ctx.db
+				.query("users")
+				.withIndex("authId", (query) => query.eq("authId", FAIRLEND_ADMIN.subject))
+				.unique();
+			const snapshot = await ctx.db
+				.query("velocityPackageSnapshots")
+				.withIndex("by_workspace_created_at", (query) =>
+					query.eq("workspaceId", workspaceId)
+				)
+				.first();
+			if (!actor || !snapshot) {
+				throw new Error("Expected actor and workspace snapshot");
+			}
+
+			return await ctx.db.insert("velocityActivationAttempts", {
+				actorAuthId: FAIRLEND_ADMIN.subject,
+				actorUserId: actor._id,
+				failedAt: Date.now(),
+				failureCode: "rotessa_request_failed",
+				failureMessage: "Rotessa schedule creation failed.",
+				idempotencyKey: "velocity:activation:test-remediation",
+				reviewedSnapshotHash: snapshot.normalizedCoreHash,
+				reviewedSnapshotId: snapshot._id,
+				rotessaCustomerRef: "501",
+				startedAt: Date.now(),
+				status: "failed",
+				workspaceId,
+			});
+		});
+
+		const detail = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(api.velocity.workspaces.getVelocityPackageWorkspace, {
+				workspaceId,
+			});
+
+		expect(detail?.activationAttempt).toMatchObject({
+			activationAttemptId: attempt,
+			failureCode: "rotessa_request_failed",
+			failureMessage: "Rotessa schedule creation failed.",
+			idempotencyKey: "velocity:activation:test-remediation",
+			rotessaCustomerRef: "501",
+			status: "failed",
+		});
+		expect(detail?.activationAttempt?.rotessaScheduleRef).toBeNull();
+		expect(detail?.fairlendOwned.enrichment.bankInput).toMatchObject({
+			accountLast4: "6789",
+		});
+		expect(detail?.fairlendOwned.enrichment.bankInput).not.toHaveProperty(
+			"accountNumber"
+		);
+	});
+
 	it("resolves package exceptions with audit while preserving still-active readiness blockers", async () => {
 		const t = createTestConvex();
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
