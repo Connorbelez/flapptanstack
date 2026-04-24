@@ -144,6 +144,36 @@ export async function appendBrokerNote(
 		.mutation(api.onboarding.brokerApplication.mutations.appendBrokerNote, args);
 }
 
+export async function startBrokerIdentityVerification(
+	t: GovernedTestConvex,
+	identity: MockIdentity,
+	applicationId: Id<"brokerOnboardingApplications">
+) {
+	return t
+		.withIdentity(identity)
+		.action(
+			"onboarding/verification/actions:startBrokerOnboardingIdentityVerification",
+			{
+				applicationId,
+			}
+		);
+}
+
+export async function recomputeBrokerVerification(
+	t: GovernedTestConvex,
+	identity: MockIdentity,
+	applicationId: Id<"brokerOnboardingApplications">
+) {
+	return t
+		.withIdentity(identity)
+		.action(
+			"onboarding/verification/actions:recomputeBrokerOnboardingVerification",
+			{
+				applicationId,
+			}
+		);
+}
+
 export async function approveBrokerApplication(
 	t: GovernedTestConvex,
 	applicationId: Id<"brokerOnboardingApplications">,

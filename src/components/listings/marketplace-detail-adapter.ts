@@ -387,7 +387,7 @@ function buildSimilarListings(
 			},
 			{
 				id: `${listing.id}-property-type`,
-				label: listing.propertyTypeLabel,
+				label: listing.propertyTypeLabel ?? "Other",
 				tone: "outline",
 			},
 		],

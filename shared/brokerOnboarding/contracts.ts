@@ -42,6 +42,7 @@ export type BrokerOnboardingVerificationReasonCode =
 
 export const REGULATOR_DIRECTORY_STATUSES = [
 	"active",
+	"incomplete",
 	"inactive",
 	"suspended",
 	"revoked",
@@ -362,17 +363,19 @@ export function calculateEffectiveSimilarityScore(
 		return scores.effectiveScore;
 	}
 
-	const presentScores = [
+	const requiredScores = [
 		scores.selfReportedVsRegulator,
 		scores.selfReportedVsIdentity,
 		scores.regulatorVsIdentity,
-	].filter((value): value is number => typeof value === "number");
+	];
 
-	if (presentScores.length === 0) {
+	if (
+		!requiredScores.every((value): value is number => typeof value === "number")
+	) {
 		return null;
 	}
 
-	return Math.min(...presentScores);
+	return Math.min(...requiredScores);
 }
 
 export function coalesceEvidenceReferences(
@@ -438,12 +441,17 @@ export function evaluateBrokerOnboardingRecommendation(
 
 	if (input.regulatorFreshness === "stale") {
 		return {
-			recommendation: "stale_regulator_data",
+			recommendation: "review_needed",
 			reasonCodes: ["stale_regulator_data"],
 		};
 	}
 
 	switch (input.regulatorStatus) {
+		case "incomplete":
+			return {
+				recommendation: "review_needed",
+				reasonCodes: ["verification_sources_incomplete"],
+			};
 		case "inactive":
 			return {
 				recommendation: "rejected",

@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 import { authKit } from "./auth";
+import { brokerOnboardingIdentityWebhook } from "./onboarding/verification/idvWebhook";
 import { eftVopayWebhook } from "./payments/webhooks/eftVopay";
 import { rotessaWebhook } from "./payments/webhooks/rotessa";
 import { rotessaPadWebhook } from "./payments/webhooks/rotessaPad";
@@ -10,6 +11,11 @@ const http = httpRouter();
 
 authKit.registerRoutes(http);
 
+http.route({
+	path: "/webhooks/onboarding/broker-idv",
+	method: "POST",
+	handler: brokerOnboardingIdentityWebhook,
+});
 http.route({
 	path: "/webhooks/rotessa",
 	method: "POST",

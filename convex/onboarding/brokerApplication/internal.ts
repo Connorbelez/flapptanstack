@@ -3,16 +3,40 @@ import { auditLog } from "../../auditLog";
 import { executeTransition } from "../../engine/transition";
 import { actorTypeValidator } from "../../engine/validators";
 import { convex } from "../../fluent";
+import { createImportedFsraProviderBindings } from "../verification/fsraImport";
+import { createBrokerOnboardingVerificationRegistry } from "../verification/registry";
+import {
+	buildStoredEmailVerificationInput,
+	createBrokerOnboardingVerificationRuntimeSnapshot,
+	createNotStartedIdentityVerificationCheck,
+} from "../verification/runtime";
 import {
 	appendBrokerOnboardingReviewEntry,
 	assertPortalActiveAndPublished,
+	type BrokerOnboardingApplicationDoc,
 	buildBrokerOnboardingApplicationReadModel,
 	buildResumeWindowPatch,
+	getBrokerOnboardingVerificationState,
 	isBrokerOnboardingApplicationExpired,
 	isBrokerOnboardingResumeWindowStatus,
 	isBrokerOnboardingTerminalStatus,
+	isIdentityVerificationInvalidationField,
+	isRegulatorVerificationInvalidationField,
+	mergeBrokerOnboardingVerificationState,
+	resolveVerificationInvalidationFieldPaths,
 } from "./helpers";
-import { brokerOnboardingVerificationSnapshotValidator } from "./validators";
+import {
+	brokerOnboardingVerificationSnapshotValidator,
+	brokerOnboardingVerificationStateValidator,
+} from "./validators";
+
+interface ReopenedBrokerOnboardingField {
+	fieldPath: string;
+	reason?: string;
+	requestedAt: number;
+	requestedByAuthId?: string;
+	status: "open";
+}
 
 function resolveAuthor(args: {
 	authorAuthId?: string;
@@ -24,6 +48,146 @@ function resolveAuthor(args: {
 	};
 }
 
+function buildRegulatorLookupForReverification(args: {
+	application: BrokerOnboardingApplicationDoc;
+	now: number;
+	registry: ReturnType<typeof createBrokerOnboardingVerificationRegistry>;
+	shouldInvalidateRegulator: boolean;
+}) {
+	const licenseNumber = args.application.draftData.licenseNumber;
+	const licenseProvince = args.application.draftData.licenseProvince;
+
+	if (args.shouldInvalidateRegulator || !licenseNumber || !licenseProvince) {
+		return null;
+	}
+
+	return () =>
+		args.registry.regulatorDirectory.lookupLicense({
+			expectedBrokerageName: args.application.draftData.brokerageName ?? null,
+			expectedBrokerageNumber:
+				args.application.draftData.brokerageNumber ?? null,
+			licenseNumber,
+			province: licenseProvince,
+			requestedAt: args.now,
+			selfReportedName: args.application.draftData.selfReportedName ?? {},
+		});
+}
+
+function buildIdentityVerificationForReverification(args: {
+	application: BrokerOnboardingApplicationDoc;
+	now: number;
+	registry: ReturnType<typeof createBrokerOnboardingVerificationRegistry>;
+	shouldInvalidateIdentity: boolean;
+}) {
+	const currentVerificationState = getBrokerOnboardingVerificationState(
+		args.application
+	);
+
+	if (!args.shouldInvalidateIdentity) {
+		return (
+			args.application.verificationSnapshot?.identityVerification ??
+			createNotStartedIdentityVerificationCheck({
+				checkedAt: args.now,
+				provider:
+					currentVerificationState.currentIdvProviderKey ??
+					args.registry.identityVerification.providerKey,
+			})
+		);
+	}
+
+	return createNotStartedIdentityVerificationCheck({
+		checkedAt: args.now,
+		provider:
+			currentVerificationState.currentIdvProviderKey ??
+			args.application.verificationSnapshot?.identityVerification.provider ??
+			args.registry.identityVerification.providerKey,
+	});
+}
+
+async function buildVerificationInvalidationPatch(
+	ctx: Parameters<typeof createImportedFsraProviderBindings>[0],
+	args: {
+		application: BrokerOnboardingApplicationDoc;
+		invalidatedFieldPaths: string[];
+		now: number;
+	}
+): Promise<Record<string, unknown>> {
+	const shouldInvalidateIdentity = args.invalidatedFieldPaths.some(
+		isIdentityVerificationInvalidationField
+	);
+	const shouldInvalidateRegulator = args.invalidatedFieldPaths.some(
+		isRegulatorVerificationInvalidationField
+	);
+	const verificationRegistry = createBrokerOnboardingVerificationRegistry({
+		configOverrides: {
+			providers: { regulatorDirectory: "imported_fsra" },
+		},
+		importedFsra: createImportedFsraProviderBindings(ctx, {
+			now: () => args.now,
+		}),
+	});
+	const currentVerificationState = getBrokerOnboardingVerificationState(
+		args.application
+	);
+	const invalidatedSnapshot =
+		await createBrokerOnboardingVerificationRuntimeSnapshot({
+			capturedAt: args.now,
+			emailVerification: verificationRegistry.emailVerification.normalize(
+				buildStoredEmailVerificationInput({
+					application: args.application,
+					checkedAt: args.now,
+				})
+			),
+			identityVerification: buildIdentityVerificationForReverification({
+				application: args.application,
+				now: args.now,
+				registry: verificationRegistry,
+				shouldInvalidateIdentity,
+			}),
+			licenseNumber: args.application.draftData.licenseNumber,
+			policy: verificationRegistry.config,
+			province:
+				args.application.draftData.licenseProvince ??
+				args.application.verificationSnapshot?.province,
+			regulatorLookup: buildRegulatorLookupForReverification({
+				application: args.application,
+				now: args.now,
+				registry: verificationRegistry,
+				shouldInvalidateRegulator,
+			}),
+			regulatorProviderKey:
+				args.application.verificationSnapshot?.regulator.provider ??
+				verificationRegistry.regulatorDirectory.providerKey,
+			requestedBrokerageName: args.application.draftData.brokerageName,
+			requestedBrokerageNumber: args.application.draftData.brokerageNumber,
+			selfReportedName: args.application.draftData.selfReportedName,
+		});
+
+	return {
+		verificationRecommendation: invalidatedSnapshot.recommendation,
+		verificationReasonCodes: invalidatedSnapshot.reasonCodes,
+		verificationSnapshot: invalidatedSnapshot,
+		verificationState: mergeBrokerOnboardingVerificationState(
+			currentVerificationState,
+			{
+				...(shouldInvalidateIdentity
+					? {
+							currentIdvLaunchUrl: null,
+							currentIdvProviderKey: null,
+							currentIdvSessionId: null,
+							idvCompletedAt: null,
+							idvStartedAt: null,
+						}
+					: {}),
+				lastRecomputedAt: args.now,
+				requiresReverification: true,
+				reverificationFieldPaths: args.invalidatedFieldPaths,
+				reverificationRequiredAt: args.now,
+			}
+		),
+	};
+}
+
 export const getApplicationById = convex
 	.query()
 	.input({
@@ -31,6 +195,20 @@ export const getApplicationById = convex
 	})
 	.handler(async (ctx, args) => {
 		return ctx.db.get(args.applicationId);
+	})
+	.internal();
+
+export const getApplicationByLooseId = convex
+	.query()
+	.input({
+		applicationId: v.string(),
+	})
+	.handler(async (ctx, args) => {
+		const normalizedApplicationId = ctx.db.normalizeId(
+			"brokerOnboardingApplications",
+			args.applicationId
+		);
+		return normalizedApplicationId ? ctx.db.get(normalizedApplicationId) : null;
 	})
 	.internal();
 
@@ -56,6 +234,7 @@ export const upsertVerificationSnapshot = convex
 		authorAuthId: v.optional(v.string()),
 		authorType: v.optional(actorTypeValidator),
 		snapshot: brokerOnboardingVerificationSnapshotValidator,
+		verificationState: v.optional(brokerOnboardingVerificationStateValidator),
 	})
 	.handler(async (ctx, args) => {
 		const application = await ctx.db.get(args.applicationId);
@@ -71,6 +250,9 @@ export const upsertVerificationSnapshot = convex
 		const now = Date.now();
 		await ctx.db.patch(args.applicationId, {
 			verificationSnapshot: args.snapshot,
+			...(args.verificationState
+				? { verificationState: args.verificationState }
+				: {}),
 			verificationRecommendation: args.snapshot.recommendation,
 			verificationReasonCodes: args.snapshot.reasonCodes,
 			lastActivityAt: now,
@@ -106,6 +288,46 @@ export const upsertVerificationSnapshot = convex
 		if (!freshApplication) {
 			throw new ConvexError("Broker onboarding application not found");
 		}
+		return buildBrokerOnboardingApplicationReadModel(
+			ctx,
+			freshApplication,
+			now
+		);
+	})
+	.internal();
+
+export const setVerificationState = convex
+	.mutation()
+	.input({
+		applicationId: v.id("brokerOnboardingApplications"),
+		state: brokerOnboardingVerificationStateValidator,
+	})
+	.handler(async (ctx, args) => {
+		const application = await ctx.db.get(args.applicationId);
+		if (!application) {
+			throw new ConvexError("Broker onboarding application not found");
+		}
+		if (isBrokerOnboardingTerminalStatus(application.status)) {
+			throw new ConvexError(
+				"Verification state cannot be updated for terminal applications"
+			);
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(args.applicationId, {
+			verificationState: args.state,
+			lastActivityAt: now,
+			updatedAt: now,
+			...(isBrokerOnboardingResumeWindowStatus(application.status)
+				? { expiresAt: now + 30 * 24 * 60 * 60 * 1000 }
+				: {}),
+		});
+
+		const freshApplication = await ctx.db.get(args.applicationId);
+		if (!freshApplication) {
+			throw new ConvexError("Broker onboarding application not found");
+		}
+
 		return buildBrokerOnboardingApplicationReadModel(
 			ctx,
 			freshApplication,
@@ -160,35 +382,181 @@ export const requestChanges = convex
 			);
 		}
 
-		await ctx.db.patch(args.applicationId, {
-			changesRequestedAt: now,
-			reopenedFields: args.reopenedFields.map((reopenedField) => ({
+		const reopenedFields: ReopenedBrokerOnboardingField[] =
+			args.reopenedFields.map((reopenedField) => ({
 				fieldPath: reopenedField.fieldPath,
 				reason: reopenedField.reason,
 				requestedAt: now,
 				requestedByAuthId: args.authorAuthId,
-				status: "open",
-			})),
+				status: "open" as const,
+			}));
+		const invalidatedFieldPaths =
+			resolveVerificationInvalidationFieldPaths(reopenedFields);
+		const patch: Record<string, unknown> = {
+			changesRequestedAt: now,
+			reopenedFields,
 			...buildResumeWindowPatch(now),
-		});
+		};
+
+		if (invalidatedFieldPaths.length > 0) {
+			Object.assign(
+				patch,
+				await buildVerificationInvalidationPatch(ctx, {
+					application,
+					invalidatedFieldPaths,
+					now,
+				})
+			);
+		}
+
+		await ctx.db.patch(args.applicationId, patch);
 		await appendBrokerOnboardingReviewEntry(ctx, {
 			applicationId: args.applicationId,
 			body: args.body.trim() || "Changes requested.",
 			createdAt: now,
 			entryType: "reviewer_note",
-			reopenedFields: args.reopenedFields.map((reopenedField) => ({
-				fieldPath: reopenedField.fieldPath,
-				reason: reopenedField.reason,
-				requestedAt: now,
-				requestedByAuthId: args.authorAuthId,
-				status: "open",
-			})),
+			reopenedFields,
 			...resolveAuthor(args),
 		});
 		const freshApplication = await ctx.db.get(args.applicationId);
 		if (!freshApplication) {
 			throw new ConvexError("Broker onboarding application not found");
 		}
+		return buildBrokerOnboardingApplicationReadModel(
+			ctx,
+			freshApplication,
+			now
+		);
+	})
+	.internal();
+
+export const applyVerificationRecommendation = convex
+	.mutation()
+	.input({
+		applicationId: v.id("brokerOnboardingApplications"),
+		authorAuthId: v.optional(v.string()),
+		authorType: v.optional(actorTypeValidator),
+	})
+	.handler(async (ctx, args) => {
+		const application = await ctx.db.get(args.applicationId);
+		if (!application) {
+			throw new ConvexError("Broker onboarding application not found");
+		}
+		const now = Date.now();
+		if (
+			isBrokerOnboardingTerminalStatus(application.status) ||
+			application.status === "approved" ||
+			application.status !== "submitted"
+		) {
+			return buildBrokerOnboardingApplicationReadModel(ctx, application, now);
+		}
+		if (!application.verificationSnapshot) {
+			throw new ConvexError(
+				"Verification recommendation cannot be applied without a verification snapshot"
+			);
+		}
+
+		const recommendation = application.verificationSnapshot.recommendation;
+		if (recommendation === "auto_approve_candidate") {
+			const result = await executeTransition(ctx, {
+				entityType: "brokerOnboardingApplication",
+				entityId: args.applicationId,
+				eventType: "APPROVE",
+				payload: { approvedAt: now },
+				source: {
+					actorId: args.authorAuthId,
+					actorType: args.authorType ?? "system",
+					channel: "admin_dashboard",
+				},
+			});
+			if (!result.success) {
+				throw new ConvexError(
+					result.reason ?? "Broker onboarding auto-approval transition failed"
+				);
+			}
+
+			await ctx.db.patch(args.applicationId, {
+				approvedAt: now,
+				lastActivityAt: now,
+				updatedAt: now,
+			});
+			await appendBrokerOnboardingReviewEntry(ctx, {
+				applicationId: args.applicationId,
+				body: "Application approved automatically from verification outcome.",
+				createdAt: now,
+				entryType: "system_event",
+				systemEventType: "application_approved",
+				metadata: {
+					reasonCodes: application.verificationSnapshot.reasonCodes,
+					recommendation,
+					source: "verification_runtime",
+				},
+				...resolveAuthor(args),
+			});
+			await auditLog.log(ctx, {
+				action: "onboarding.broker_application_verification_auto_approved",
+				actorId: args.authorAuthId ?? "system",
+				resourceType: "brokerOnboardingApplications",
+				resourceId: args.applicationId,
+				severity: "info",
+				metadata: {
+					reasonCodes: application.verificationSnapshot.reasonCodes,
+				},
+			});
+		} else if (recommendation === "rejected") {
+			const result = await executeTransition(ctx, {
+				entityType: "brokerOnboardingApplication",
+				entityId: args.applicationId,
+				eventType: "REJECT",
+				payload: { rejectedAt: now },
+				source: {
+					actorId: args.authorAuthId,
+					actorType: args.authorType ?? "system",
+					channel: "admin_dashboard",
+				},
+			});
+			if (!result.success) {
+				throw new ConvexError(
+					result.reason ??
+						"Broker onboarding verification rejection transition failed"
+				);
+			}
+
+			await ctx.db.patch(args.applicationId, {
+				rejectedAt: now,
+				lastActivityAt: now,
+				updatedAt: now,
+			});
+			await appendBrokerOnboardingReviewEntry(ctx, {
+				applicationId: args.applicationId,
+				body: "Application rejected automatically from verification outcome.",
+				createdAt: now,
+				entryType: "system_event",
+				systemEventType: "application_rejected",
+				metadata: {
+					reasonCodes: application.verificationSnapshot.reasonCodes,
+					recommendation,
+					source: "verification_runtime",
+				},
+				...resolveAuthor(args),
+			});
+			await auditLog.log(ctx, {
+				action: "onboarding.broker_application_verification_rejected",
+				actorId: args.authorAuthId ?? "system",
+				resourceType: "brokerOnboardingApplications",
+				resourceId: args.applicationId,
+				severity: "info",
+				metadata: {
+					reasonCodes: application.verificationSnapshot.reasonCodes,
+				},
+			});
+		}
+
+		const freshApplication = await ctx.db.get(args.applicationId);
+		if (!freshApplication) {
+			throw new ConvexError("Broker onboarding application not found");
+		}
+
 		return buildBrokerOnboardingApplicationReadModel(
 			ctx,
 			freshApplication,

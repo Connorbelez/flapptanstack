@@ -311,7 +311,7 @@ export function BrokerPortalPricingCard({
 			form.dataset.saving = "false";
 			submitButton?.removeAttribute("disabled");
 			submitButton?.removeAttribute("aria-busy");
-			if (submitButton && previousLabel !== null) {
+			if (submitButton && previousLabel != null) {
 				submitButton.textContent = previousLabel;
 			}
 		}

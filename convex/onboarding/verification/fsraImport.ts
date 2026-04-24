@@ -79,6 +79,12 @@ const finishFsraImportRunRef = makeFunctionReference<
 	Promise<Doc<"fsraImportRuns"> | null>
 >("onboarding/verification/fsraImport:finishFsraImportRun");
 
+const reconcileFsraLicensesToRetainedKeysRef = makeFunctionReference<
+	"mutation",
+	{ retainedKeys: string[] },
+	Promise<void>
+>("onboarding/verification/fsraImport:reconcileFsraLicensesToRetainedKeys");
+
 interface FsraLookupContext {
 	db: QueryCtx["db"] | MutationCtx["db"];
 }
@@ -155,6 +161,25 @@ function buildNormalizedFsraKey(args: {
 	province: string;
 }): string {
 	return `${args.province}:${args.licenseNumber}`;
+}
+
+async function deleteFsraLicensesNotInRetainedSet(
+	ctx: MutationCtx,
+	retainedKeys: Set<string>
+): Promise<void> {
+	const existingRecords = await ctx.db.query("fsraLicenses").collect();
+	for (const existing of existingRecords) {
+		if (
+			!retainedKeys.has(
+				buildNormalizedFsraKey({
+					licenseNumber: existing.licenseNumber,
+					province: existing.province,
+				})
+			)
+		) {
+			await ctx.db.delete(existing._id);
+		}
+	}
 }
 
 function wrapFsraSourceRecordError(
@@ -474,19 +499,7 @@ export const upsertFsraImportRecords = convex
 		}
 
 		if (args.replaceSnapshot === true) {
-			const existingRecords = await ctx.db.query("fsraLicenses").collect();
-			for (const existing of existingRecords) {
-				if (
-					!retainedKeys.has(
-						buildNormalizedFsraKey({
-							licenseNumber: existing.licenseNumber,
-							province: existing.province,
-						})
-					)
-				) {
-					await ctx.db.delete(existing._id);
-				}
-			}
+			await deleteFsraLicensesNotInRetainedSet(ctx, retainedKeys);
 		}
 
 		return {
@@ -495,6 +508,16 @@ export const upsertFsraImportRecords = convex
 			updatedCount,
 			failedCount,
 		};
+	})
+	.internal();
+
+export const reconcileFsraLicensesToRetainedKeys = convex
+	.mutation()
+	.input({
+		retainedKeys: v.array(v.string()),
+	})
+	.handler(async (ctx, args) => {
+		await deleteFsraLicensesNotInRetainedSet(ctx, new Set(args.retainedKeys));
 	})
 	.internal();
 
@@ -679,6 +702,7 @@ async function runStoredFsraImport(ctx: ActionCtx): Promise<FsraImportCounts> {
 	let cursor: string | null = null;
 	let counts = emptyFsraImportCounts();
 	let sawRecords = false;
+	const retainedLicenseKeys = new Set<string>();
 
 	while (true) {
 		let page: FsraSourceRecordPage;
@@ -694,13 +718,16 @@ async function runStoredFsraImport(ctx: ActionCtx): Promise<FsraImportCounts> {
 		}
 
 		if (page.page.length > 0) {
-			const replaceSnapshot = !sawRecords;
 			sawRecords = true;
 			try {
 				const result = await ctx.runMutation(upsertFsraImportRecordsRef, {
 					records: page.page,
-					replaceSnapshot,
+					replaceSnapshot: false,
 				});
+				for (const record of page.page) {
+					const normalized = normalizeFsraSourceRecord(record);
+					retainedLicenseKeys.add(buildNormalizedFsraKey(normalized));
+				}
 				counts = addFsraImportCounts(counts, {
 					createdCount: result.createdCount,
 					failedCount: result.failedCount,
@@ -730,6 +757,12 @@ async function runStoredFsraImport(ctx: ActionCtx): Promise<FsraImportCounts> {
 
 	if (!sawRecords) {
 		requireFsraImportRecords([]);
+	}
+
+	if (sawRecords) {
+		await ctx.runMutation(reconcileFsraLicensesToRetainedKeysRef, {
+			retainedKeys: Array.from(retainedLicenseKeys),
+		});
 	}
 
 	return counts;
