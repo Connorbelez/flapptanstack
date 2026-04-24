@@ -335,6 +335,14 @@ async function ensureReplaySafeListingProjection(
 }
 
 export interface ActivateMortgageAggregateInput {
+	activationProvenance?: {
+		activationAttemptId?: string;
+		reviewedSnapshotHash?: string;
+		reviewedSnapshotId?: string;
+		rotessaCustomerRef?: string;
+		rotessaScheduleRef?: string;
+		velocityPackageWorkspaceId?: string;
+	};
 	actorAuthId: string;
 	actorType: "admin" | "member";
 	assignedBrokerId?: Id<"brokers">;
@@ -577,6 +585,10 @@ export async function activateMortgageAggregate(
 			obligationIds: paymentBootstrap.createdObligationIds.map(String),
 			planEntryIds: paymentBootstrap.createdPlanEntryIds.map(String),
 			propertyId: String(propertyId),
+			activationAttemptId: args.activationProvenance?.activationAttemptId,
+			reviewedSnapshotId: args.activationProvenance?.reviewedSnapshotId,
+			velocityPackageWorkspaceId:
+				args.activationProvenance?.velocityPackageWorkspaceId,
 			valuationSnapshotId: valuationSnapshot?.valuationSnapshotId
 				? String(valuationSnapshot.valuationSnapshotId)
 				: undefined,
@@ -613,6 +625,13 @@ export async function activateMortgageAggregate(
 			workflowSourceId: args.source.workflowSourceId,
 			workflowSourceKey: args.source.workflowSourceKey,
 			workflowSourceType: args.source.workflowSourceType,
+			activationAttemptId: args.activationProvenance?.activationAttemptId,
+			reviewedSnapshotHash: args.activationProvenance?.reviewedSnapshotHash,
+			reviewedSnapshotId: args.activationProvenance?.reviewedSnapshotId,
+			rotessaCustomerRef: args.activationProvenance?.rotessaCustomerRef,
+			rotessaScheduleRef: args.activationProvenance?.rotessaScheduleRef,
+			velocityPackageWorkspaceId:
+				args.activationProvenance?.velocityPackageWorkspaceId,
 		},
 		previousState: "none",
 		timestamp: args.now,

@@ -1354,7 +1354,7 @@ export const applyVelocityFullDealSync = convex
 				query.eq("idempotencyKey", syncIdempotencyKey)
 			)
 			.first();
-		if (existingSync) {
+		if (existingSync && existingSync.result !== "succeeded") {
 			const replayedSync = await replayExistingTerminalSyncAttempt(ctx, {
 				existingSync,
 				webhookEventId: args.webhookEventId,
@@ -1541,6 +1541,16 @@ export const applyVelocityFullDealSync = convex
 				syncAttemptId,
 				workspaceId: workspace._id,
 			};
+		}
+
+		if (existingSync) {
+			const replayedSync = await replayExistingTerminalSyncAttempt(ctx, {
+				existingSync,
+				webhookEventId: args.webhookEventId,
+			});
+			if (replayedSync) {
+				return replayedSync;
+			}
 		}
 
 		const fairlendEnrichment = workspace?.fairlendEnrichment ?? {};

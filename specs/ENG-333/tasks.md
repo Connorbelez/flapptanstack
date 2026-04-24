@@ -37,3 +37,15 @@
   - Attempted; failed on unrelated existing suites covering listing fixture/schema drift, auth architecture guard offenders, paginate guard, and collection attempt reconciliation auth setup.
 - [x] T-910: Run `$linear-pr-spec-audit` against ENG-333 and the current branch diff.
 - [x] T-920: Resolve audit findings or record blockers, then rerun artifact final validation.
+
+## Phase 6: Review Finding Remediation
+- [x] T-930: Fix successful activation retry idempotency to return existing succeeded attempts before stale readiness/live checks.
+- [x] T-931: Add Rotessa customer/schedule lookup and retry-safe create/reuse handling for lost response and timeout cases.
+- [x] T-932: Compensate an active Rotessa schedule when canonical finalization fails after provider success.
+- [x] T-933: Expand package and canonical mortgage audit provenance for activation attempts, reviewed snapshots, workspace/provider refs, and canonical IDs.
+- [x] T-934: Apply borrower role overrides during canonical borrower link mapping.
+- [x] T-935: Clear/supersede stale activation exception state after successful retry.
+- [x] T-936: Preserve post-live drift detection precedence over successful duplicate sync replay while keeping failed/exception duplicate replay behavior.
+- [x] T-937: Add missing provider audit event literals to the runtime validator and cover validator parity.
+- [x] T-938: Classify Rotessa API failures with provider response details instead of generic activation failure metadata.
+- [x] T-939: Rerun focused Velocity activation/sync/contract tests and repo quality gates.

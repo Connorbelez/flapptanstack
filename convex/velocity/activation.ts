@@ -6,6 +6,7 @@ import { adminAction, convex } from "../fluent";
 import { activateMortgageAggregate } from "../mortgages/activateMortgageAggregate";
 import {
 	createRotessaClient,
+	RotessaApiError,
 	RotessaRequestError,
 } from "../payments/rotessa/client";
 import {
@@ -15,6 +16,7 @@ import {
 	upsertExternalCustomerProfile,
 	upsertExternalProviderSchedulesForCustomer,
 } from "../payments/rotessa/readModel";
+import type { RotessaCustomerDetail } from "../payments/rotessa/types";
 import { normalizeEmail } from "../seed/seedHelpers";
 import { upsertUserByAuthId } from "../users/byAuthId";
 import { buildVelocityActivationHandoff } from "./activationMapper";
@@ -71,6 +73,11 @@ interface PreparedVelocityActivation {
 	scheduleComment: string;
 	scheduleFrequency: "Every Other Week" | "Monthly" | "Weekly";
 	workspaceId: Id<"velocityPackageWorkspaces">;
+}
+
+interface RotessaFailureMetadata {
+	compensatedRotessaScheduleRef?: string;
+	failureDetails?: Record<string, unknown>;
 }
 
 const startVelocityPackageActivationRef = makeFunctionReference<
@@ -158,6 +165,8 @@ const failVelocityPackageActivationRef = makeFunctionReference<
 	"mutation",
 	{
 		activationAttemptId: Id<"velocityActivationAttempts">;
+		compensatedRotessaScheduleRef?: string;
+		failureDetails?: Record<string, unknown>;
 		failureCode: string;
 		failureMessage: string;
 	},
@@ -192,6 +201,9 @@ function splitName(fullName: string) {
 }
 
 function formatActivationError(error: unknown) {
+	if (error instanceof RotessaApiError) {
+		return `${error.message} (${error.method} ${error.path})`;
+	}
 	if (error instanceof RotessaRequestError) {
 		return `${error.message} (${error.method} ${error.path})`;
 	}
@@ -199,6 +211,29 @@ function formatActivationError(error: unknown) {
 		return error.message;
 	}
 	return "Unknown Velocity activation error";
+}
+
+function formatProviderFailureDetails(error: unknown): Record<string, unknown> {
+	if (error instanceof RotessaApiError) {
+		return {
+			errors: error.errors,
+			method: error.method,
+			path: error.path,
+			responseText: error.responseText,
+			status: error.status,
+		};
+	}
+	if (error instanceof RotessaRequestError) {
+		return {
+			method: error.method,
+			path: error.path,
+		};
+	}
+	return {};
+}
+
+function isRotessaNotFound(error: unknown) {
+	return error instanceof RotessaApiError && error.status === 404;
 }
 
 function mapMortgageFrequencyToRotessaFrequency(
@@ -223,6 +258,13 @@ function toRotessaAmount(cents: number) {
 	return Number((cents / 100).toFixed(2));
 }
 
+function rotessaAmountMatches(rawAmount: string, cents: number) {
+	return (
+		Number.parseFloat(rawAmount).toFixed(2) ===
+		toRotessaAmount(cents).toFixed(2)
+	);
+}
+
 function resolveNextActivationProviderStage(attempt: ActivationAttempt) {
 	if (attempt.rotessaScheduleRef) {
 		return "creating_canonical_mortgage" as const;
@@ -231,6 +273,34 @@ function resolveNextActivationProviderStage(attempt: ActivationAttempt) {
 		return "creating_rotessa_schedule" as const;
 	}
 	return "creating_rotessa_customer" as const;
+}
+
+function resolveVelocityBorrowerExternalKeys(args: {
+	borrower: VelocityWorkspace["normalizedCore"]["borrowers"][number];
+	index: number;
+}) {
+	return new Set(
+		[
+			args.borrower.email,
+			args.borrower.fullName,
+			`${args.index}`,
+			`borrower:${args.index}`,
+			`borrower:${args.borrower.email ?? args.index}`,
+		].filter((value): value is string => Boolean(value))
+	);
+}
+
+function resolveVelocityBorrowerRole(args: {
+	borrower: VelocityWorkspace["normalizedCore"]["borrowers"][number];
+	index: number;
+	workspace: VelocityWorkspace;
+}) {
+	const externalKeys = resolveVelocityBorrowerExternalKeys(args);
+	const override =
+		args.workspace.fairlendEnrichment.activationRemediation?.borrowerRoleOverrides?.find(
+			(candidate) => externalKeys.has(candidate.borrowerExternalKey)
+		);
+	return override?.role ?? (args.index === 0 ? "primary" : "co_borrower");
 }
 
 async function requireViewerUserId(
@@ -324,7 +394,9 @@ async function appendActivationAuditEntry(
 			| "velocity_activation_stage_changed"
 			| "velocity_activation_succeeded";
 		failureMessage?: string;
+		linkedRecordIds?: Record<string, unknown>;
 		newState?: string;
+		payloadExtras?: VelocityPackageAuditPayload;
 		previousState?: string;
 		providerArtifactRef?: string;
 		providerArtifactType?: "rotessa_customer" | "rotessa_schedule";
@@ -342,6 +414,7 @@ async function appendActivationAuditEntry(
 		providerArtifactType: args.providerArtifactType,
 		stage: args.stage,
 		workspaceId: String(args.workspace._id),
+		...(args.payloadExtras ?? {}),
 	} satisfies VelocityPackageAuditPayload & {
 		failureMessage?: string;
 		providerArtifactRef?: string;
@@ -353,6 +426,7 @@ async function appendActivationAuditEntry(
 		actorType: "admin",
 		channel: "admin_dashboard",
 		eventType: args.eventType,
+		linkedRecordIds: args.linkedRecordIds,
 		newState: args.newState ?? args.workspace.state,
 		organizationId: args.workspace.orgId,
 		outcome:
@@ -602,7 +676,11 @@ async function ensureVelocityCanonicalInputs(
 			phone: borrower.cellPhone ?? borrower.homePhone ?? undefined,
 			workspace: args.workspace,
 		});
-		const role = index === 0 ? "primary" : "co_borrower";
+		const role = resolveVelocityBorrowerRole({
+			borrower,
+			index,
+			workspace: args.workspace,
+		});
 		borrowerLinks.push({ borrowerId, role });
 		if (!primaryBorrower) {
 			primaryBorrower = {
@@ -695,6 +773,133 @@ function buildPreparedActivation(args: {
 	};
 }
 
+async function findRotessaCustomerByCustomIdentifier(
+	client: ReturnType<typeof createRotessaClient>,
+	customIdentifier: string
+) {
+	try {
+		return await client.customers.getByCustomIdentifier(customIdentifier);
+	} catch (error) {
+		if (isRotessaNotFound(error)) {
+			return null;
+		}
+		throw error;
+	}
+}
+
+function findMatchingRotessaSchedule(
+	customer: RotessaCustomerDetail | null,
+	prepared: PreparedVelocityActivation
+) {
+	return customer?.transaction_schedules.find(
+		(schedule) =>
+			schedule.comment === prepared.scheduleComment &&
+			schedule.frequency === prepared.scheduleFrequency &&
+			schedule.process_date === prepared.firstPaymentDate &&
+			rotessaAmountMatches(schedule.amount, prepared.amountCents)
+	);
+}
+
+async function resolveOrCreateRotessaCustomer(
+	client: ReturnType<typeof createRotessaClient>,
+	prepared: PreparedVelocityActivation
+) {
+	const existing = await findRotessaCustomerByCustomIdentifier(
+		client,
+		prepared.customerCustomIdentifier
+	);
+	if (existing) {
+		return existing;
+	}
+	try {
+		return await client.customers.create({
+			account_number: prepared.bankAccount.accountNumber,
+			authorization_type: "Online",
+			bank_account_type: "Checking",
+			custom_identifier: prepared.customerCustomIdentifier,
+			email: prepared.customerEmail,
+			institution_number: prepared.bankAccount.institutionNumber,
+			name: prepared.customerName,
+			phone: prepared.customerPhone,
+			transit_number: prepared.bankAccount.transitNumber,
+		});
+	} catch (error) {
+		const recovered = await findRotessaCustomerByCustomIdentifier(
+			client,
+			prepared.customerCustomIdentifier
+		);
+		if (recovered) {
+			return recovered;
+		}
+		throw error;
+	}
+}
+
+async function resolveOrCreateRotessaSchedule(
+	client: ReturnType<typeof createRotessaClient>,
+	prepared: PreparedVelocityActivation
+) {
+	const customer = await findRotessaCustomerByCustomIdentifier(
+		client,
+		prepared.customerCustomIdentifier
+	);
+	const existing = findMatchingRotessaSchedule(customer, prepared);
+	if (existing) {
+		return existing;
+	}
+	try {
+		return await client.transactionSchedules.createWithCustomIdentifier({
+			amount: toRotessaAmount(prepared.amountCents),
+			comment: prepared.scheduleComment,
+			custom_identifier: prepared.customerCustomIdentifier,
+			frequency: prepared.scheduleFrequency,
+			installments: prepared.installments,
+			process_date: prepared.firstPaymentDate,
+		});
+	} catch (error) {
+		const recoveredCustomer = await findRotessaCustomerByCustomIdentifier(
+			client,
+			prepared.customerCustomIdentifier
+		);
+		const recoveredSchedule = findMatchingRotessaSchedule(
+			recoveredCustomer,
+			prepared
+		);
+		if (recoveredSchedule) {
+			return recoveredSchedule;
+		}
+		throw error;
+	}
+}
+
+async function compensateRotessaSchedule(
+	client: ReturnType<typeof createRotessaClient>,
+	rotessaScheduleRef: string
+): Promise<RotessaFailureMetadata> {
+	const parsedId = Number.parseInt(rotessaScheduleRef, 10);
+	if (!Number.isFinite(parsedId)) {
+		return {
+			failureDetails: {
+				compensationSkipped:
+					"Rotessa schedule ref is not a numeric provider identifier.",
+				rotessaScheduleRef,
+			},
+		};
+	}
+	try {
+		await client.transactionSchedules.delete(parsedId);
+		return { compensatedRotessaScheduleRef: rotessaScheduleRef };
+	} catch (error) {
+		return {
+			failureDetails: {
+				compensationError: formatActivationError(error),
+				...formatProviderFailureDetails(error),
+				rotessaScheduleRef,
+			},
+		};
+	}
+}
+
 export const startVelocityPackageActivation = convex
 	.mutation()
 	.input({
@@ -717,14 +922,6 @@ export const startVelocityPackageActivation = convex
 			);
 		}
 
-		assertFinalReviewMatches({
-			reviewedSnapshotHash: args.reviewedSnapshotHash,
-			reviewedSnapshotId: args.reviewedSnapshotId,
-			workspace,
-		});
-		const readiness = assertActivationReadiness(workspace);
-		await assertNoLiveMortgageForWorkflowSource(ctx, workspace);
-
 		const idempotencyKey = buildVelocityActivationIdempotencyKey({
 			reviewedSnapshotHash: args.reviewedSnapshotHash,
 			workspaceId: String(workspace._id),
@@ -742,6 +939,14 @@ export const startVelocityPackageActivation = convex
 				status: existingAttempt.status,
 			};
 		}
+
+		assertFinalReviewMatches({
+			reviewedSnapshotHash: args.reviewedSnapshotHash,
+			reviewedSnapshotId: args.reviewedSnapshotId,
+			workspace,
+		});
+		const readiness = assertActivationReadiness(workspace);
+		await assertNoLiveMortgageForWorkflowSource(ctx, workspace);
 
 		const actorUserId = await requireViewerUserId(ctx, args.actorAuthId);
 		const now = Date.now();
@@ -801,11 +1006,10 @@ export const prepareVelocityPackageActivation = convex
 			ctx,
 			args.activationAttemptId
 		);
-		if (attempt.actorAuthId !== args.actorAuthId) {
-			throw new ConvexError(
-				"Velocity activation actor does not match attempt."
-			);
-		}
+		const retryActorUserId =
+			attempt.actorAuthId === args.actorAuthId
+				? attempt.actorUserId
+				: await requireViewerUserId(ctx, args.actorAuthId);
 		if (attempt.status === "succeeded") {
 			return buildPreparedActivation({
 				attempt,
@@ -831,6 +1035,8 @@ export const prepareVelocityPackageActivation = convex
 		});
 		const nextStatus = resolveNextActivationProviderStage(attempt);
 		await ctx.db.patch(attempt._id, {
+			actorAuthId: args.actorAuthId,
+			actorUserId: retryActorUserId,
 			bankAccountId: canonical.bankAccountId,
 			failedAt: undefined,
 			failureCode: undefined,
@@ -1062,6 +1268,14 @@ export const finalizeVelocityPackageActivation = convex
 		});
 
 		const aggregate = await activateMortgageAggregate(ctx as MutationCtx, {
+			activationProvenance: {
+				activationAttemptId: String(attempt._id),
+				reviewedSnapshotHash: attempt.reviewedSnapshotHash,
+				reviewedSnapshotId: String(attempt.reviewedSnapshotId),
+				rotessaCustomerRef: attempt.rotessaCustomerRef,
+				rotessaScheduleRef,
+				velocityPackageWorkspaceId: String(workspace._id),
+			},
 			...handoff,
 			now,
 			stagedCaseStatus: "committing",
@@ -1204,14 +1418,50 @@ export const finalizeVelocityPackageActivation = convex
 				listingId: aggregate.listingId ?? undefined,
 				mortgageId: aggregate.mortgageId,
 			},
+			exceptionKind: undefined,
+			exceptionSummary: undefined,
 			state: "activated",
 			updatedAt: now,
 		});
+		const openActivationExceptions = (
+			await ctx.db
+				.query("velocityPackageExceptions")
+				.withIndex("by_workspace_status", (query) =>
+					query.eq("workspaceId", workspace._id).eq("status", "open")
+				)
+				.collect()
+		).filter((exception) => exception.kind === "activation_exception");
+		await Promise.all(
+			openActivationExceptions.map((exception) =>
+				ctx.db.patch(exception._id, {
+					resolvedAt: now,
+					status: "superseded",
+				})
+			)
+		);
 		await appendActivationAuditEntry(ctx as MutationCtx, {
 			actorAuthId: attempt.actorAuthId,
 			activationAttemptId: attempt._id,
 			eventType: "velocity_activation_succeeded",
+			linkedRecordIds: {
+				externalCollectionScheduleId: String(externalCollectionScheduleId),
+				listingId: aggregate.listingId
+					? String(aggregate.listingId)
+					: undefined,
+				mortgageId: String(aggregate.mortgageId),
+				rotessaCustomerRef: attempt.rotessaCustomerRef,
+				rotessaScheduleRef,
+			},
 			newState: "activated",
+			payloadExtras: {
+				externalCollectionScheduleId: String(externalCollectionScheduleId),
+				listingId: aggregate.listingId
+					? String(aggregate.listingId)
+					: undefined,
+				mortgageId: String(aggregate.mortgageId),
+				rotessaCustomerRef: attempt.rotessaCustomerRef,
+				rotessaScheduleRef,
+			},
 			previousState: workspace.state,
 			stage: "succeeded",
 			workspace,
@@ -1229,6 +1479,8 @@ export const failVelocityPackageActivation = convex
 	.mutation()
 	.input({
 		activationAttemptId: v.id("velocityActivationAttempts"),
+		compensatedRotessaScheduleRef: v.optional(v.string()),
+		failureDetails: v.optional(v.record(v.string(), v.any())),
 		failureCode: v.string(),
 		failureMessage: v.string(),
 	})
@@ -1245,6 +1497,9 @@ export const failVelocityPackageActivation = convex
 			failedAt: now,
 			failureCode: args.failureCode,
 			failureMessage: args.failureMessage,
+			rotessaScheduleRef: args.compensatedRotessaScheduleRef
+				? undefined
+				: attempt.rotessaScheduleRef,
 			status: "failed",
 		});
 		await ctx.db.patch(workspace._id, {
@@ -1256,7 +1511,9 @@ export const failVelocityPackageActivation = convex
 		await ctx.db.insert("velocityPackageExceptions", {
 			details: {
 				activationAttemptId: String(attempt._id),
+				compensatedRotessaScheduleRef: args.compensatedRotessaScheduleRef,
 				failureCode: args.failureCode,
+				...(args.failureDetails ?? {}),
 			},
 			kind: "activation_exception",
 			message: args.failureMessage,
@@ -1304,17 +1561,10 @@ export const activateVelocityPackage = adminAction
 		try {
 			const client = createRotessaClient({ timeoutMs: 30_000 });
 			if (!prepared.rotessaCustomerRef) {
-				const createdCustomer = await client.customers.create({
-					account_number: prepared.bankAccount.accountNumber,
-					authorization_type: "Online",
-					bank_account_type: "Checking",
-					custom_identifier: prepared.customerCustomIdentifier,
-					email: prepared.customerEmail,
-					institution_number: prepared.bankAccount.institutionNumber,
-					name: prepared.customerName,
-					phone: prepared.customerPhone,
-					transit_number: prepared.bankAccount.transitNumber,
-				});
+				const createdCustomer = await resolveOrCreateRotessaCustomer(
+					client,
+					prepared
+				);
 				const recorded = await ctx.runMutation(
 					recordVelocityRotessaCustomerRefRef,
 					{
@@ -1356,20 +1606,10 @@ export const activateVelocityPackage = adminAction
 			}
 
 			if (!prepared.rotessaScheduleRef) {
-				const createdSchedule = await client.transactionSchedules.create({
-					amount: toRotessaAmount(prepared.amountCents),
-					comment: prepared.scheduleComment,
-					customer_id: Number.parseInt(
-						requireValue(
-							prepared.rotessaCustomerRef,
-							"Velocity activation requires Rotessa customer ref."
-						),
-						10
-					),
-					frequency: prepared.scheduleFrequency,
-					installments: prepared.installments,
-					process_date: prepared.firstPaymentDate,
-				});
+				const createdSchedule = await resolveOrCreateRotessaSchedule(
+					client,
+					prepared
+				);
 				const recorded = await ctx.runMutation(
 					recordVelocityRotessaScheduleRefRef,
 					{
@@ -1398,13 +1638,27 @@ export const activateVelocityPackage = adminAction
 				activationAttemptId: prepared.activationAttemptId,
 			});
 		} catch (error) {
+			const client = createRotessaClient({ timeoutMs: 30_000 });
+			const compensation = prepared.rotessaScheduleRef
+				? await compensateRotessaSchedule(client, prepared.rotessaScheduleRef)
+				: {};
+			const compensationMessage = compensation.compensatedRotessaScheduleRef
+				? ` Provider schedule ${compensation.compensatedRotessaScheduleRef} was compensated.`
+				: "";
 			await ctx.runMutation(failVelocityPackageActivationRef, {
 				activationAttemptId: prepared.activationAttemptId,
+				compensatedRotessaScheduleRef:
+					compensation.compensatedRotessaScheduleRef,
+				failureDetails: {
+					...formatProviderFailureDetails(error),
+					...(compensation.failureDetails ?? {}),
+				},
 				failureCode:
+					error instanceof RotessaApiError ||
 					error instanceof RotessaRequestError
 						? "rotessa_request_failed"
 						: "velocity_activation_failed",
-				failureMessage: formatActivationError(error),
+				failureMessage: `${formatActivationError(error)}${compensationMessage}`,
 			});
 			throw error;
 		}
