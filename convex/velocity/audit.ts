@@ -51,15 +51,30 @@ function buildVelocityAuditPayload(
 		| "workspaceId"
 	>
 ): Record<string, unknown> {
-	return {
-		...(args.payload ?? {}),
-		connectorCredentialContext:
-			args.connectorCredentialContext ??
-			args.payload?.connectorCredentialContext,
-		readiness: args.readiness ?? args.payload?.readiness,
-		webhookAgent: args.webhookAgent ?? args.payload?.webhookAgent,
-		workspaceId: String(args.workspaceId),
-	};
+	const payload: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(args.payload ?? {})) {
+		if (value !== undefined) {
+			payload[key] = value;
+		}
+	}
+
+	const connectorCredentialContext =
+		args.connectorCredentialContext ?? args.payload?.connectorCredentialContext;
+	const readiness = args.readiness ?? args.payload?.readiness;
+	const webhookAgent = args.webhookAgent ?? args.payload?.webhookAgent;
+
+	if (connectorCredentialContext !== undefined) {
+		payload.connectorCredentialContext = connectorCredentialContext;
+	}
+	if (readiness !== undefined) {
+		payload.readiness = readiness;
+	}
+	if (webhookAgent !== undefined) {
+		payload.webhookAgent = webhookAgent;
+	}
+	payload.workspaceId = String(args.workspaceId);
+
+	return payload;
 }
 
 export async function appendVelocityPackageAuditEntry(
@@ -82,9 +97,9 @@ export async function appendVelocityPackageAuditEntry(
 		idempotencyKey: args.idempotencyKey,
 		ip: args.ip,
 		linkedRecordIds: {
+			...(args.linkedRecordIds ?? {}),
 			entityId: workspaceId,
 			velocityPackageWorkspaceId: workspaceId,
-			...(args.linkedRecordIds ?? {}),
 		},
 		newState: args.newState ?? "none",
 		organizationId: args.organizationId,
