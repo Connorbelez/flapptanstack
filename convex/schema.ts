@@ -13,6 +13,12 @@ import {
 	originationValuationDraftValidator,
 } from "./admin/origination/validators";
 import {
+	checkoutLockFeeAmountValidator,
+	checkoutLockFeeCurrencyValidator,
+	checkoutStatusValidator,
+	selectedLawyerSnapshotValidator,
+} from "./checkout/validators";
+import {
 	aggregatePresetValidator,
 	aggregationEligibilityValidator,
 	capabilityValidator,
@@ -139,6 +145,7 @@ import {
 	counterpartyTypeValidator,
 	directionValidator,
 	manualSettlementValidator,
+	nonCheckoutProviderCodeValidator,
 	providerCodeValidator,
 	transferTypeValidator,
 } from "./payments/transfers/validators";
@@ -1375,7 +1382,9 @@ export default defineSchema({
 
 		// ─── Collection execution ownership ───
 		collectionExecutionMode: v.optional(collectionExecutionModeValidator),
-		collectionExecutionProviderCode: v.optional(providerCodeValidator),
+		collectionExecutionProviderCode: v.optional(
+			nonCheckoutProviderCodeValidator
+		),
 		activeExternalCollectionScheduleId: v.optional(
 			v.id("externalCollectionSchedules")
 		),
@@ -1542,6 +1551,41 @@ export default defineSchema({
 		.index("by_ltv", ["status", "ltvRatio"])
 		.index("by_principal", ["status", "principal"])
 		.index("by_published_at", ["status", "publishedAt"]),
+
+	checkoutSessions: defineTable({
+		status: checkoutStatusValidator,
+		listingId: v.id("listings"),
+		mortgageId: v.id("mortgages"),
+		portalId: v.id("portals"),
+		lenderId: v.id("lenders"),
+		lenderAuthId: v.string(),
+		sellerAccountId: v.id("ledger_accounts"),
+		buyerAccountId: v.id("ledger_accounts"),
+		reservationId: v.id("ledger_reservations"),
+		requestedFractions: v.number(),
+		lockFeeAmount: checkoutLockFeeAmountValidator,
+		lockFeeCurrency: checkoutLockFeeCurrencyValidator,
+		selectedLawyer: selectedLawyerSnapshotValidator,
+		stripeCheckoutSessionId: v.optional(v.string()),
+		stripePaymentIntentId: v.optional(v.string()),
+		lockFeeTransferRequestId: v.optional(v.id("transferRequests")),
+		dealId: v.optional(v.id("deals")),
+		startedAt: v.number(),
+		expiresAt: v.number(),
+		completedAt: v.optional(v.number()),
+		resolvedAt: v.optional(v.number()),
+		idempotencyKey: v.string(),
+		createdBy: v.string(),
+		updatedAt: v.number(),
+		lastProviderEventId: v.optional(v.string()),
+		failureReason: v.optional(v.string()),
+	})
+		.index("by_listing_status", ["listingId", "status"])
+		.index("by_lender", ["lenderId", "startedAt"])
+		.index("by_reservation", ["reservationId"])
+		.index("by_stripe_checkout_session", ["stripeCheckoutSessionId"])
+		.index("by_status_expires_at", ["status", "expiresAt"])
+		.index("by_idempotency", ["idempotencyKey"]),
 
 	obligations: defineTable({
 		/** WorkOS organization id — denormalized from mortgage. */
@@ -1866,7 +1910,7 @@ export default defineSchema({
 		lastTransitionAt: v.optional(v.number()),
 		mortgageId: v.id("mortgages"),
 		borrowerId: v.id("borrowers"),
-		providerCode: providerCodeValidator,
+		providerCode: nonCheckoutProviderCodeValidator,
 		bankAccountId: v.id("bankAccounts"),
 		externalScheduleRef: v.optional(v.string()),
 		activationIdempotencyKey: v.string(),
@@ -1898,7 +1942,7 @@ export default defineSchema({
 		.index("by_status_and_next_poll", ["status", "nextPollAt"]),
 
 	externalCustomerProfiles: defineTable({
-		providerCode: providerCodeValidator,
+		providerCode: nonCheckoutProviderCodeValidator,
 		externalCustomerRef: v.string(),
 		externalCustomerCustomIdentifier: v.optional(v.string()),
 		borrowerId: v.optional(v.id("borrowers")),
@@ -1936,7 +1980,7 @@ export default defineSchema({
 		.index("by_match_status", ["matchStatus", "updatedAt"]),
 
 	externalProviderSchedules: defineTable({
-		providerCode: providerCodeValidator,
+		providerCode: nonCheckoutProviderCodeValidator,
 		externalScheduleRef: v.string(),
 		externalCustomerProfileId: v.id("externalCustomerProfiles"),
 		borrowerId: v.optional(v.id("borrowers")),
@@ -3028,7 +3072,7 @@ export default defineSchema({
 		ownerAuthId: v.string(),
 		workspaceKey: v.string(),
 		executionMode: collectionExecutionModeValidator,
-		paymentRail: providerCodeValidator,
+		paymentRail: nonCheckoutProviderCodeValidator,
 		mortgageId: v.id("mortgages"),
 		borrowerId: v.id("borrowers"),
 		brokerId: v.id("brokers"),

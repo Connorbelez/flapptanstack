@@ -6,6 +6,8 @@ import type { CommandSource } from "../../engine/types";
 import type { ManualSettlementDetails } from "../transfers/interface";
 import type { ProviderCode } from "../transfers/types";
 
+type TransferOwnedPayoutProviderCode = Exclude<ProviderCode, "stripe">;
+
 export interface TransferOwnedPayoutFailure {
 	dispersalEntryId: string;
 	error: string;
@@ -33,7 +35,7 @@ export async function executeTransferOwnedPayout(args: {
 	confirmSettlement: boolean;
 	ctx: TransferOwnedPayoutCtx;
 	entry: Doc<"dispersalEntries">;
-	providerCode: ProviderCode;
+	providerCode: TransferOwnedPayoutProviderCode;
 	source: CommandSource;
 }): Promise<{
 	amount: number;

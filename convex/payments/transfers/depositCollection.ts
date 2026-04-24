@@ -15,7 +15,7 @@ import {
 	getCommitmentDepositValidationError,
 	resolveCommitmentDepositProviderCode,
 } from "./depositCollection.logic";
-import { providerCodeValidator } from "./validators";
+import { nonCheckoutProviderCodeValidator } from "./validators";
 
 /**
  * Internal action to orchestrate commitment deposit collection.
@@ -31,7 +31,7 @@ export const collectCommitmentDeposit = internalAction({
 		borrowerId: v.id("borrowers"),
 		mortgageId: v.id("mortgages"),
 		amount: v.number(),
-		providerCode: v.optional(providerCodeValidator),
+		providerCode: v.optional(nonCheckoutProviderCodeValidator),
 	},
 	handler: async (
 		ctx,
