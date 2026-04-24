@@ -10,6 +10,7 @@ import type {
 } from "./constants";
 import type {
 	VelocityFairLendEnrichmentV1,
+	VelocityLoanType,
 	VelocityPackageAuditPayload,
 	VelocityReadinessV1,
 } from "./contracts";
@@ -18,7 +19,7 @@ import {
 	resolveVelocityWorkspaceState,
 } from "./sync";
 import {
-	velocityActivationRemediationValidator,
+	velocityLoanTypeValidator,
 	velocityPackageExceptionKindValidator,
 	velocityPackageWorkspaceStateValidator,
 } from "./validators";
@@ -29,6 +30,7 @@ type DocumentAsset = Doc<"documentAssets">;
 const optionalString = v.optional(v.string());
 const optionalNumber = v.optional(v.number());
 const optionalBoolean = v.optional(v.boolean());
+const nullableNumber = v.union(v.number(), v.null());
 
 const bankInputPatchValidator = v.object({
 	accountHolderName: optionalString,
@@ -62,23 +64,61 @@ const valuationPatchValidator = v.object({
 	comparables: v.optional(v.array(v.record(v.string(), v.any()))),
 	relatedDocumentAssetId: v.optional(v.id("documentAssets")),
 	valuationDate: optionalString,
-	valueAsIs: optionalNumber,
+	valueAsIs: v.optional(nullableNumber),
+});
+
+const activationRemediationPatchValidator = v.object({
+	assignedBrokerId: v.optional(v.id("brokers")),
+	borrowerRoleOverrides: v.optional(
+		v.array(
+			v.object({
+				borrowerExternalKey: v.string(),
+				role: v.union(
+					v.literal("primary"),
+					v.literal("co_borrower"),
+					v.literal("guarantor")
+				),
+			})
+		)
+	),
+	brokerOfRecordId: v.optional(v.id("brokers")),
+	lienPosition: v.optional(nullableNumber),
+	loanType: v.optional(v.union(velocityLoanTypeValidator, v.null())),
+	notes: optionalString,
+	policyInputs: v.optional(v.record(v.string(), v.any())),
 });
 
 const fairlendEnrichmentPatchValidator = v.object({
-	activationRemediation: v.optional(velocityActivationRemediationValidator),
+	activationRemediation: v.optional(activationRemediationPatchValidator),
 	bankInput: v.optional(bankInputPatchValidator),
 	listingOverrides: v.optional(listingOverridesPatchValidator),
 	staffNotes: optionalString,
 	valuation: v.optional(valuationPatchValidator),
 });
 
+interface VelocityActivationRemediationPatch
+	extends Omit<
+		NonNullable<VelocityFairLendEnrichmentV1["activationRemediation"]>,
+		"lienPosition" | "loanType"
+	> {
+	lienPosition?: number | null;
+	loanType?: VelocityLoanType | null;
+}
+
+interface VelocityValuationPatch
+	extends Omit<
+		NonNullable<VelocityFairLendEnrichmentV1["valuation"]>,
+		"valueAsIs"
+	> {
+	valueAsIs?: number | null;
+}
+
 interface FairLendEnrichmentPatch {
-	activationRemediation?: VelocityFairLendEnrichmentV1["activationRemediation"];
+	activationRemediation?: VelocityActivationRemediationPatch;
 	bankInput?: Partial<NonNullable<VelocityFairLendEnrichmentV1["bankInput"]>>;
 	listingOverrides?: VelocityFairLendEnrichmentV1["listingOverrides"];
 	staffNotes?: string;
-	valuation?: VelocityFairLendEnrichmentV1["valuation"];
+	valuation?: VelocityValuationPatch;
 }
 
 function requireWorkspace(
@@ -128,6 +168,13 @@ function mergeFairLendEnrichment(
 	current: VelocityFairLendEnrichmentV1,
 	patch: FairLendEnrichmentPatch
 ): VelocityFairLendEnrichmentV1 {
+	const nextActivationRemediation = patch.activationRemediation
+		? mergeActivationRemediation(
+				current.activationRemediation,
+				patch.activationRemediation
+			)
+		: current.activationRemediation;
+
 	const nextBankInput = patch.bankInput
 		? {
 				...(current.bankInput ?? {
@@ -143,19 +190,13 @@ function mergeFairLendEnrichment(
 		nextBankInput,
 		patchBankInput: patch.bankInput,
 	});
+	const nextValuation = patch.valuation
+		? mergeValuation(current.valuation, patch.valuation)
+		: current.valuation;
 
 	return {
 		...current,
-		activationRemediation: patch.activationRemediation
-			? {
-					...(current.activationRemediation ?? {}),
-					...patch.activationRemediation,
-					policyInputs: {
-						...(current.activationRemediation?.policyInputs ?? {}),
-						...(patch.activationRemediation.policyInputs ?? {}),
-					},
-				}
-			: current.activationRemediation,
+		activationRemediation: nextActivationRemediation,
 		bankInput: nextBankInput
 			? {
 					...nextBankInput,
@@ -170,13 +211,69 @@ function mergeFairLendEnrichment(
 			: current.listingOverrides,
 		padEvidence: current.padEvidence,
 		staffNotes: patch.staffNotes ?? current.staffNotes,
-		valuation: patch.valuation
-			? {
-					...(current.valuation ?? {}),
-					...patch.valuation,
-				}
-			: current.valuation,
+		valuation: nextValuation,
 	};
+}
+
+function mergeActivationRemediation(
+	current: VelocityFairLendEnrichmentV1["activationRemediation"],
+	patch: VelocityActivationRemediationPatch
+): VelocityFairLendEnrichmentV1["activationRemediation"] {
+	const clearedCurrent = clearActivationFields(current, patch);
+	const { lienPosition, loanType, ...patchWithoutClearableFields } = patch;
+	const merged = {
+		...clearedCurrent,
+		...patchWithoutClearableFields,
+		...(lienPosition == null ? {} : { lienPosition }),
+		...(loanType == null ? {} : { loanType }),
+		policyInputs: {
+			...(current?.policyInputs ?? {}),
+			...(patch.policyInputs ?? {}),
+		},
+	};
+
+	return merged;
+}
+
+function mergeValuation(
+	current: VelocityFairLendEnrichmentV1["valuation"],
+	patch: VelocityValuationPatch
+): VelocityFairLendEnrichmentV1["valuation"] {
+	const clearedCurrent = clearValuationFields(current, patch);
+	const { valueAsIs, ...patchWithoutClearableFields } = patch;
+	const merged = {
+		...clearedCurrent,
+		...patchWithoutClearableFields,
+		...(valueAsIs == null ? {} : { valueAsIs }),
+	};
+
+	return merged;
+}
+
+function clearActivationFields(
+	current: VelocityFairLendEnrichmentV1["activationRemediation"],
+	patch: VelocityActivationRemediationPatch
+): Partial<NonNullable<VelocityFairLendEnrichmentV1["activationRemediation"]>> {
+	const currentFields = current ?? {};
+	const withoutLienPosition =
+		patch.lienPosition === null
+			? (({ lienPosition: _lienPosition, ...rest }) => rest)(currentFields)
+			: currentFields;
+
+	return patch.loanType === null
+		? (({ loanType: _loanType, ...rest }) => rest)(withoutLienPosition)
+		: withoutLienPosition;
+}
+
+function clearValuationFields(
+	current: VelocityFairLendEnrichmentV1["valuation"],
+	patch: VelocityValuationPatch
+): Partial<NonNullable<VelocityFairLendEnrichmentV1["valuation"]>> {
+	const currentFields = current ?? {};
+
+	return patch.valueAsIs === null
+		? (({ valueAsIs: _valueAsIs, ...rest }) => rest)(currentFields)
+		: currentFields;
 }
 
 async function latestOpenExceptionSummary(

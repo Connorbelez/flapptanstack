@@ -26,7 +26,7 @@
   - Justification: attempted RTL component tests were blocked by an invalid-hook-call failure in the new jsdom harness even against an existing admin provider; TypeScript DTO coverage plus registry/auth tests are the retained automated coverage for this slice.
 - [x] Route/auth tests cover Velocity admin path access.
 - [x] Interaction tests cover FairLend field edits, document upload/link affordances, sync-now triggering, and remediation-state rendering.
-  - Justification: component interaction tests hit the same jsdom harness blocker; handler wiring is typechecked against generated Convex function references.
+  - Justification: retained pure form tests cover FairLend save payloads, field clearing, and invalid numeric blocking. Component interaction tests for document upload/link, sync-now, and rendered remediation state hit the same jsdom harness blocker; handler wiring is typechecked against generated Convex function references.
 - [x] E2E tests are not expected in this slice unless the route work exposes a real browser workflow that can be seeded without ENG-335's harness.
 - [x] Storybook stories are not expected because this slice introduces composed admin pages, not reusable design-system components.
 
