@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import {
 	BROKER_ONBOARDING_APPROVAL_RECOMMENDATIONS,
 	BROKER_ONBOARDING_REASON_CODES,
+	BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS,
 	EMAIL_VERIFICATION_STATUSES,
 	IDENTITY_VERIFICATION_STATUSES,
 	REGULATOR_DIRECTORY_STATUSES,
@@ -220,7 +221,7 @@ export const brokerOnboardingReverificationFlagsValidator = v.object({
 });
 
 export const brokerOnboardingReviewReopenedFieldInputValidator = v.object({
-	fieldPath: v.string(),
+	fieldPath: literalUnion(BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS),
 	reason: v.optional(v.string()),
 });
 

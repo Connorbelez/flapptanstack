@@ -34,7 +34,13 @@ export const getCurrent = brokerOnboardingQuery
 
 const REVIEW_QUEUE_STATUSES_BY_VIEW = {
 	changes_requested: ["changes_requested"],
-	recently_updated: ["submitted", "changes_requested", "approved", "rejected"],
+	recently_updated: [
+		"submitted",
+		"changes_requested",
+		"approved",
+		"rejected",
+		"activated",
+	],
 	rejected: ["rejected"],
 	submitted: ["submitted"],
 } as const satisfies Record<
@@ -132,6 +138,41 @@ async function buildQueueItemWithThread(
 	});
 }
 
+async function listReviewQueueApplications(
+	ctx: Parameters<typeof buildBrokerOnboardingApplicationReadModel>[0],
+	args: {
+		limit: number;
+		statuses: readonly Doc<"brokerOnboardingApplications">["status"][];
+		view: keyof typeof REVIEW_QUEUE_STATUSES_BY_VIEW;
+	}
+) {
+	const applicationsByStatus = await Promise.all(
+		args.statuses.map((status) => {
+			const query =
+				args.view === "recently_updated"
+					? ctx.db
+							.query("brokerOnboardingApplications")
+							.withIndex("by_status_updated_at", (q) => q.eq("status", status))
+					: ctx.db
+							.query("brokerOnboardingApplications")
+							.withIndex("by_status_last_activity_at", (q) =>
+								q.eq("status", status)
+							);
+			return query.order("desc").take(args.limit);
+		})
+	);
+
+	return applicationsByStatus
+		.flat()
+		.sort((left, right) => {
+			if (args.view === "recently_updated") {
+				return right.updatedAt - left.updatedAt;
+			}
+			return right.lastActivityAt - left.lastActivityAt;
+		})
+		.slice(0, args.limit);
+}
+
 export const listReviewQueue = brokerOnboardingReviewQuery
 	.input({
 		limit: v.optional(v.number()),
@@ -140,24 +181,11 @@ export const listReviewQueue = brokerOnboardingReviewQuery
 	.handler(async (ctx, args) => {
 		const limit = clampQueueLimit(args.limit);
 		const statuses = REVIEW_QUEUE_STATUSES_BY_VIEW[args.view];
-		const applications = (
-			await Promise.all(
-				statuses.map((status) =>
-					ctx.db
-						.query("brokerOnboardingApplications")
-						.withIndex("by_status", (query) => query.eq("status", status))
-						.collect()
-				)
-			)
-		)
-			.flat()
-			.sort((left, right) => {
-				if (args.view === "recently_updated") {
-					return right.updatedAt - left.updatedAt;
-				}
-				return right.lastActivityAt - left.lastActivityAt;
-			})
-			.slice(0, limit);
+		const applications = await listReviewQueueApplications(ctx, {
+			limit,
+			statuses,
+			view: args.view,
+		});
 
 		return Promise.all(
 			applications.map((application) =>

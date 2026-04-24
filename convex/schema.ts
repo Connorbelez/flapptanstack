@@ -673,6 +673,8 @@ export default defineSchema({
 		.index("by_portal", ["portalId"])
 		.index("by_portal_status", ["portalId", "status"])
 		.index("by_status", ["status"])
+		.index("by_status_last_activity_at", ["status", "lastActivityAt"])
+		.index("by_status_updated_at", ["status", "updatedAt"])
 		.index("by_expires_at", ["expiresAt"])
 		.index("by_downstream_onboarding_request", [
 			"downstreamOnboardingRequestId",

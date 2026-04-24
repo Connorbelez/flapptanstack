@@ -18,6 +18,7 @@ import {
 	appendBrokerOnboardingReviewEntry,
 	assertViewerCanAccessBrokerApplication,
 	type BrokerOnboardingApplicationDoc,
+	type BrokerOnboardingApplicationReadModel,
 	buildBrokerOnboardingApplicationReadModel,
 	buildResumeWindowPatch,
 	getViewerUserOrThrow,
@@ -91,7 +92,7 @@ export const startOrResume = brokerOnboardingMutation
 		referralSource: v.optional(referralSourceValidator),
 		referralToken: v.optional(v.string()),
 	})
-	.handler(async (ctx, args): Promise<unknown> => {
+	.handler(async (ctx, args): Promise<BrokerOnboardingApplicationReadModel> => {
 		const now = Date.now();
 		const referralSource = args.referralSource ?? "self_signup";
 		if (referralSource === "broker_invite" && !args.invitedByBrokerId) {
@@ -247,7 +248,7 @@ export const saveDraft = brokerOnboardingMutation
 		currentStep: v.optional(v.string()),
 		draftData: brokerOnboardingDraftDataValidator,
 	})
-	.handler(async (ctx, args): Promise<unknown> => {
+	.handler(async (ctx, args): Promise<BrokerOnboardingApplicationReadModel> => {
 		const now = Date.now();
 		const application = await ctx.db.get(args.applicationId);
 		if (!application) {
@@ -313,7 +314,7 @@ export const appendBrokerNote = brokerOnboardingMutation
 		applicationId: v.id("brokerOnboardingApplications"),
 		body: v.string(),
 	})
-	.handler(async (ctx, args): Promise<unknown> => {
+	.handler(async (ctx, args): Promise<BrokerOnboardingApplicationReadModel> => {
 		const now = Date.now();
 		const application = await ctx.db.get(args.applicationId);
 		if (!application) {
@@ -374,7 +375,7 @@ export const submit = brokerOnboardingMutation
 	.input({
 		applicationId: v.id("brokerOnboardingApplications"),
 	})
-	.handler(async (ctx, args): Promise<unknown> => {
+	.handler(async (ctx, args): Promise<BrokerOnboardingApplicationReadModel> => {
 		const now = Date.now();
 		const application = await ctx.db.get(args.applicationId);
 		if (!application) {

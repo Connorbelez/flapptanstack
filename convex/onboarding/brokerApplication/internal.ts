@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS } from "../../../shared/brokerOnboarding/contracts";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { auditLog } from "../../auditLog";
@@ -30,9 +31,14 @@ import {
 } from "./helpers";
 import {
 	brokerOnboardingReverificationFlagsValidator,
+	brokerOnboardingReviewReopenedFieldInputValidator,
 	brokerOnboardingVerificationSnapshotValidator,
 	brokerOnboardingVerificationStateValidator,
 } from "./validators";
+
+const BROKER_ONBOARDING_REOPENABLE_FIELD_PATH_SET = new Set<string>(
+	BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS
+);
 
 interface ReopenedBrokerOnboardingField {
 	fieldPath: string;
@@ -69,6 +75,9 @@ function assertReopenedFieldsAreScoped(
 		const fieldPath = reopenedField.fieldPath.trim();
 		if (!fieldPath) {
 			throw new ConvexError("Reopened field path cannot be empty");
+		}
+		if (!BROKER_ONBOARDING_REOPENABLE_FIELD_PATH_SET.has(fieldPath)) {
+			throw new ConvexError(`Unsupported reopened field path: ${fieldPath}`);
 		}
 		normalizedPaths.add(fieldPath);
 	}
@@ -809,12 +818,7 @@ export const requestChanges = convex
 		reverificationFlags: v.optional(
 			brokerOnboardingReverificationFlagsValidator
 		),
-		reopenedFields: v.array(
-			v.object({
-				fieldPath: v.string(),
-				reason: v.optional(v.string()),
-			})
-		),
+		reopenedFields: v.array(brokerOnboardingReviewReopenedFieldInputValidator),
 	})
 	.handler(async (ctx, args) => {
 		const application = await ctx.db.get(args.applicationId);

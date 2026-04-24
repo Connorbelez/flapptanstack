@@ -64,6 +64,78 @@ describe("broker onboarding review queue", () => {
 		await drainScheduledWork(t);
 	});
 
+	it("includes activated applications in recently updated review visibility", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("review-queue-activated");
+		const startResult = await startBrokerApplication(t, identity);
+		await prepareActivationReadyBrokerApplication(t, identity, {
+			applicationId: startResult.application._id,
+			licenseNumber: "ON-REVIEW-ACTIVATED",
+			portalSlug: "review-activated",
+		});
+		await submitBrokerApplication(t, identity, startResult.application._id);
+		await drainScheduledWork(t);
+
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.patch(startResult.application._id, {
+				activatedAt: now,
+				downstreamHandoffStatus: "activated",
+				lastActivityAt: now,
+				status: "activated",
+				updatedAt: now,
+			});
+		});
+
+		const queue = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(api.onboarding.brokerApplication.queries.listReviewQueue, {
+				view: "recently_updated",
+			});
+
+		expect(
+			queue.some(
+				(item) =>
+					item.applicationId === startResult.application._id &&
+					item.status === "activated"
+				)
+		).toBe(true);
+	});
+
+	it("applies the requested queue limit after status buckets are merged", async () => {
+		const t = createGovernedTestConvex();
+		const applicationIds = new Set<string>();
+
+		for (const label of [
+			"review-queue-limit-a",
+			"review-queue-limit-b",
+			"review-queue-limit-c",
+		]) {
+			const identity = buildVerifiedMemberIdentity(label);
+			const startResult = await startBrokerApplication(t, identity);
+			await prepareActivationReadyBrokerApplication(t, identity, {
+				applicationId: startResult.application._id,
+				licenseNumber: `ON-${label.toUpperCase()}`,
+				portalSlug: label,
+			});
+			await submitBrokerApplication(t, identity, startResult.application._id);
+			applicationIds.add(String(startResult.application._id));
+		}
+
+		const queue = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(api.onboarding.brokerApplication.queries.listReviewQueue, {
+				limit: 2,
+				view: "submitted",
+			});
+
+		expect(queue).toHaveLength(2);
+		expect(
+			queue.every((item) => applicationIds.has(String(item.applicationId)))
+		).toBe(true);
+		await drainScheduledWork(t);
+	});
+
 	it("returns a dossier with normalized evidence, thread, audit history, and handoff visibility", async () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("review-dossier");

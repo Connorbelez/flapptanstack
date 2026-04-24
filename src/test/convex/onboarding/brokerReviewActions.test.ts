@@ -101,6 +101,23 @@ describe("broker onboarding review actions", () => {
 			)
 		).rejects.toThrow("at least one reopened field");
 
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).action(
+				api.onboarding.brokerApplication.mutations.requestChangesForReview,
+				{
+					applicationId,
+					reopenedFields: [
+						{ fieldPath: "draftData.businessPhone" as never },
+					],
+					reverificationFlags: {
+						identityVerification: false,
+						regulatorLookup: false,
+					},
+					reviewerNote: "Please correct the business phone.",
+				}
+			)
+		).rejects.toThrow();
+
 		await t.withIdentity(FAIRLEND_ADMIN).action(
 			api.onboarding.brokerApplication.mutations.requestChangesForReview,
 			{
@@ -130,6 +147,32 @@ describe("broker onboarding review actions", () => {
 			body: "License number needs regulator reverification.",
 			entryType: "reviewer_note",
 		});
+		await drainScheduledWork(t);
+	});
+
+	it("rejects approval for expired submitted applications", async () => {
+		const { applicationId, t } = await createSubmittedApplication(
+			"review-action-expired-approve"
+		);
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(applicationId, {
+				expiresAt: Date.now() - 1,
+			});
+		});
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).action(
+				api.onboarding.brokerApplication.mutations.approveForReview,
+				{
+					applicationId,
+					reviewerNote: "Evidence is stale and should not approve.",
+				}
+			)
+		).rejects.toThrow("Broker onboarding application has expired");
+
+		const application = await getApplication(t, applicationId);
+		expect(application?.status).toBe("submitted");
 		await drainScheduledWork(t);
 	});
 

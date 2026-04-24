@@ -2,22 +2,29 @@
 
 import { useAction, useQuery } from "convex/react";
 import {
-	BadgeCheck,
 	CheckCircle2,
 	Clock3,
 	MessageSquareText,
 	RefreshCw,
 	XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+	type FormEvent,
+	type ReactNode,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import { Checkbox } from "#/components/ui/checkbox";
-import { Tabs, TabsList, TabsTrigger } from "#/components/ui/tabs";
 import { Textarea } from "#/components/ui/textarea";
 import { cn } from "#/lib/utils";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import {
+	BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS,
+	type BrokerOnboardingReopenableFieldPath,
+} from "../../../../shared/brokerOnboarding/contracts";
 
 type QueueView =
 	| "submitted"
@@ -25,6 +32,27 @@ type QueueView =
 	| "recently_updated"
 	| "rejected";
 type ApplicationId = Id<"brokerOnboardingApplications">;
+type ReviewActionResult = Promise<unknown>;
+type ApproveReviewAction = (args: {
+	applicationId: ApplicationId;
+	reviewerNote: string;
+}) => ReviewActionResult;
+type RejectReviewAction = ApproveReviewAction;
+type RequestChangesReviewAction = (args: {
+	applicationId: ApplicationId;
+	reopenedFields: Array<{ fieldPath: BrokerOnboardingReopenableFieldPath }>;
+	reverificationFlags: {
+		identityVerification: boolean;
+		regulatorLookup: boolean;
+	};
+	reviewerNote: string;
+}) => ReviewActionResult;
+
+interface ReviewActionsApi {
+	approve: ApproveReviewAction;
+	reject: RejectReviewAction;
+	requestChanges: RequestChangesReviewAction;
+}
 
 interface ReviewQueueItem {
 	applicationId: ApplicationId;
@@ -161,14 +189,31 @@ const QUEUE_TABS: Array<{ label: string; value: QueueView }> = [
 	{ label: "Rejected", value: "rejected" },
 ];
 
-const REOPENABLE_FIELDS = [
-	{ label: "Legal name", value: "draftData.selfReportedName" },
-	{ label: "License number", value: "draftData.licenseNumber" },
-	{ label: "License province", value: "draftData.licenseProvince" },
-	{ label: "Brokerage name", value: "draftData.brokerageName" },
-	{ label: "Brokerage number", value: "draftData.brokerageNumber" },
-	{ label: "Portal slug", value: "draftData.requestedPortalSlug" },
-] as const;
+const REOPENABLE_FIELD_LABELS = {
+	"draftData.brokerageName": "Brokerage name",
+	"draftData.brokerageNumber": "Brokerage number",
+	"draftData.licenseNumber": "License number",
+	"draftData.licenseProvince": "License province",
+	"draftData.requestedPortalSlug": "Portal slug",
+	"draftData.selfReportedName": "Legal name",
+} as const satisfies Record<
+	(typeof BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS)[number],
+	string
+>;
+
+const REOPENABLE_FIELDS = BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS.map(
+	(value) => ({ label: REOPENABLE_FIELD_LABELS[value], value })
+);
+
+const REVIEWABLE_APPLICATION_STATUSES = new Set<ReviewQueueItem["status"]>([
+	"submitted",
+]);
+
+const REVIEW_MODE_LABELS = {
+	approve: "Approve",
+	reject: "Reject",
+	request_changes: "Request changes",
+} as const;
 
 function formatTimestamp(value: number | null | undefined) {
 	if (!value) {
@@ -184,13 +229,10 @@ function formatName(name: ReviewQueueItem["draftSummary"]["selfReportedName"]) {
 	if (!name) {
 		return "No name";
 	}
-	return (
-		name.fullName ??
-		[name.firstName, name.middleName, name.lastName]
-			.filter(Boolean)
-			.join(" ") ??
-		"No name"
-	);
+	const joinedName = [name.firstName, name.middleName, name.lastName]
+		.filter(Boolean)
+		.join(" ");
+	return name.fullName?.trim() || joinedName || "No name";
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -260,6 +302,22 @@ function QueueList({
 	);
 }
 
+export function resolveBrokerOnboardingReviewSelection(
+	selectedId: ApplicationId | null,
+	queueItems: readonly ReviewQueueItem[]
+) {
+	if (queueItems.length === 0) {
+		return null;
+	}
+	if (
+		selectedId &&
+		queueItems.some((item) => item.applicationId === selectedId)
+	) {
+		return selectedId;
+	}
+	return queueItems[0]?.applicationId ?? null;
+}
+
 function ReviewThread({ entries }: { entries: ReviewEntry[] }) {
 	return (
 		<section className="space-y-3">
@@ -291,7 +349,7 @@ function DossierSection({
 	children,
 	title,
 }: {
-	children: React.ReactNode;
+	children: ReactNode;
 	title: string;
 }) {
 	return (
@@ -302,7 +360,7 @@ function DossierSection({
 	);
 }
 
-function KeyValue({ label, value }: { label: string; value: React.ReactNode }) {
+function KeyValue({ label, value }: { label: string; value: ReactNode }) {
 	return (
 		<div>
 			<div className="text-muted-foreground text-xs">{label}</div>
@@ -312,158 +370,141 @@ function KeyValue({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function ReviewActions({
+	actions,
 	applicationId,
+	status,
 	onCompleted,
 }: {
+	actions: ReviewActionsApi;
 	applicationId: ApplicationId;
+	status: ReviewQueueItem["status"];
 	onCompleted: () => void;
 }) {
-	const approve = useAction(
-		api.onboarding.brokerApplication.mutations.approveForReview
-	);
-	const requestChanges = useAction(
-		api.onboarding.brokerApplication.mutations.requestChangesForReview
-	);
-	const reject = useAction(
-		api.onboarding.brokerApplication.mutations.rejectForReview
-	);
-	const [mode, setMode] = useState<"approve" | "request_changes" | "reject">(
-		"approve"
-	);
-	const [note, setNote] = useState("");
-	const [selectedFields, setSelectedFields] = useState<string[]>([]);
-	const [requiresIdentity, setRequiresIdentity] = useState(false);
-	const [requiresRegulator, setRequiresRegulator] = useState(false);
-	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [message, setMessage] = useState<string | null>(null);
+	const canReview = REVIEWABLE_APPLICATION_STATUSES.has(status);
 
-	async function submit() {
-		setMessage(null);
-		setIsSubmitting(true);
-		try {
-			if (mode === "approve") {
-				await approve({ applicationId, reviewerNote: note });
-			} else if (mode === "reject") {
-				await reject({ applicationId, reviewerNote: note });
-			} else {
-				await requestChanges({
-					applicationId,
-					reopenedFields: selectedFields.map((fieldPath) => ({ fieldPath })),
-					reverificationFlags: {
-						identityVerification: requiresIdentity,
-						regulatorLookup: requiresRegulator,
-					},
-					reviewerNote: note,
-				});
-			}
-			setNote("");
-			setSelectedFields([]);
-			setRequiresIdentity(false);
-			setRequiresRegulator(false);
-			setMessage("Review action saved.");
-			onCompleted();
-		} catch (error) {
-			setMessage(
-				error instanceof Error ? error.message : "Review action failed."
-			);
-		} finally {
-			setIsSubmitting(false);
+	if (!canReview) {
+		return (
+			<section className="space-y-2 rounded-md border p-4">
+				<h2 className="font-semibold text-base">Review Decision</h2>
+				<p className="text-muted-foreground text-sm">
+					No review actions are available for {status.replaceAll("_", " ")}{" "}
+					applications.
+				</p>
+			</section>
+		);
+	}
+
+	async function submit(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		const form = event.currentTarget;
+		const formData = new FormData(form);
+		const submitter = (event.nativeEvent as SubmitEvent).submitter;
+		const intent = submitter?.getAttribute("value");
+		const reviewerNote = String(formData.get("reviewerNote") ?? "");
+
+		if (intent === "approve") {
+			await actions.approve({ applicationId, reviewerNote });
+		} else if (intent === "reject") {
+			await actions.reject({ applicationId, reviewerNote });
+		} else if (intent === "request_changes") {
+			const reopenedFields = formData
+				.getAll("reopenedFieldPaths")
+				.filter((value): value is BrokerOnboardingReopenableFieldPath =>
+					BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS.includes(
+						value as BrokerOnboardingReopenableFieldPath
+					)
+				)
+				.map((fieldPath) => ({ fieldPath }));
+			await actions.requestChanges({
+				applicationId,
+				reopenedFields,
+				reverificationFlags: {
+					identityVerification: formData.has("requiresIdentity"),
+					regulatorLookup: formData.has("requiresRegulator"),
+				},
+				reviewerNote,
+			});
 		}
+
+		form.reset();
+		onCompleted();
 	}
 
 	return (
-		<section className="space-y-3 rounded-md border p-4">
-			<div className="flex flex-wrap gap-2">
-				<Button
-					onClick={() => setMode("approve")}
-					size="sm"
-					variant={mode === "approve" ? "default" : "outline"}
-				>
-					<CheckCircle2 /> Approve
-				</Button>
-				<Button
-					onClick={() => setMode("request_changes")}
-					size="sm"
-					variant={mode === "request_changes" ? "default" : "outline"}
-				>
-					<MessageSquareText /> Request changes
-				</Button>
-				<Button
-					onClick={() => setMode("reject")}
-					size="sm"
-					variant={mode === "reject" ? "destructive" : "outline"}
-				>
-					<XCircle /> Reject
-				</Button>
-			</div>
-			<Textarea
-				onChange={(event) => setNote(event.target.value)}
-				placeholder="Reviewer note"
-				value={note}
-			/>
-			{mode === "request_changes" ? (
-				<div className="space-y-3">
-					<div className="grid gap-2 sm:grid-cols-2">
-						{REOPENABLE_FIELDS.map((field) => (
-							<div
-								className="flex items-center gap-2 rounded-md border p-2 text-sm"
-								key={field.value}
-							>
-								<Checkbox
-									aria-label={field.label}
-									checked={selectedFields.includes(field.value)}
-									onCheckedChange={(checked) =>
-										setSelectedFields((current) =>
-											checked === true
-												? [...new Set([...current, field.value])]
-												: current.filter((value) => value !== field.value)
-										)
-									}
-								/>
-								<span>{field.label}</span>
-							</div>
-						))}
-					</div>
-					<div className="grid gap-2 sm:grid-cols-2">
-						<div className="flex items-center gap-2 rounded-md border p-2 text-sm">
-							<Checkbox
-								aria-label="Require IDV reverification"
-								checked={requiresIdentity}
-								onCheckedChange={(checked) =>
-									setRequiresIdentity(checked === true)
-								}
+		<form className="space-y-3 rounded-md border p-4" onSubmit={submit}>
+			<Textarea name="reviewerNote" placeholder="Reviewer note" />
+			<div className="space-y-3">
+				<div className="grid gap-2 sm:grid-cols-2">
+					{REOPENABLE_FIELDS.map((field) => (
+						<label
+							className="flex items-center gap-2 rounded-md border p-2 text-sm"
+							key={field.value}
+						>
+							<input
+								aria-label={field.label}
+								className="size-4 rounded border"
+								name="reopenedFieldPaths"
+								type="checkbox"
+								value={field.value}
 							/>
-							<span>Require IDV reverification</span>
-						</div>
-						<div className="flex items-center gap-2 rounded-md border p-2 text-sm">
-							<Checkbox
-								aria-label="Require regulator reverification"
-								checked={requiresRegulator}
-								onCheckedChange={(checked) =>
-									setRequiresRegulator(checked === true)
-								}
-							/>
-							<span>Require regulator reverification</span>
-						</div>
-					</div>
+							<span>{field.label}</span>
+						</label>
+					))}
 				</div>
-			) : null}
-			<div className="flex items-center gap-3">
-				<Button disabled={isSubmitting} onClick={submit}>
-					<BadgeCheck /> Save decision
-				</Button>
-				{message ? (
-					<span className="text-muted-foreground text-sm">{message}</span>
-				) : null}
+				<div className="grid gap-2 sm:grid-cols-2">
+					<label className="flex items-center gap-2 rounded-md border p-2 text-sm">
+						<input
+							aria-label="Require IDV reverification"
+							className="size-4 rounded border"
+							name="requiresIdentity"
+							type="checkbox"
+						/>
+						<span>Require IDV reverification</span>
+					</label>
+					<label className="flex items-center gap-2 rounded-md border p-2 text-sm">
+						<input
+							aria-label="Require regulator reverification"
+							className="size-4 rounded border"
+							name="requiresRegulator"
+							type="checkbox"
+						/>
+						<span>Require regulator reverification</span>
+					</label>
+				</div>
 			</div>
-		</section>
+			<div className="flex flex-wrap gap-2">
+				<Button name="intent" size="sm" type="submit" value="approve">
+					<CheckCircle2 /> {REVIEW_MODE_LABELS.approve}
+				</Button>
+				<Button
+					name="intent"
+					size="sm"
+					type="submit"
+					value="request_changes"
+					variant="outline"
+				>
+					<MessageSquareText /> {REVIEW_MODE_LABELS.request_changes}
+				</Button>
+				<Button
+					name="intent"
+					size="sm"
+					type="submit"
+					value="reject"
+					variant="destructive"
+				>
+					<XCircle /> {REVIEW_MODE_LABELS.reject}
+				</Button>
+			</div>
+		</form>
 	);
 }
 
 function Dossier({
+	actions,
 	dossier,
 	onActionCompleted,
 }: {
+	actions: ReviewActionsApi;
 	dossier: ReviewDossier | null | undefined;
 	onActionCompleted: () => void;
 }) {
@@ -484,6 +525,10 @@ function Dossier({
 
 	const application = dossier.application;
 	const snapshot = application.verificationSnapshot;
+	let fraudSignal = "Not available";
+	if (snapshot) {
+		fraudSignal = snapshot.identityVerification.fraudSignal ? "Yes" : "No";
+	}
 
 	return (
 		<div className="space-y-4">
@@ -550,10 +595,7 @@ function Dossier({
 						label="IDV status"
 						value={snapshot?.identityVerification.status ?? "Not available"}
 					/>
-					<KeyValue
-						label="Fraud signal"
-						value={snapshot?.identityVerification.fraudSignal ? "Yes" : "No"}
-					/>
+					<KeyValue label="Fraud signal" value={fraudSignal} />
 					<KeyValue
 						label="Effective score"
 						value={snapshot?.similarityScores.effectiveScore ?? "Not available"}
@@ -595,11 +637,83 @@ function Dossier({
 			</DossierSection>
 
 			<ReviewActions
+				actions={actions}
 				applicationId={application._id}
 				onCompleted={onActionCompleted}
+				status={application.status}
 			/>
 
 			<ReviewThread entries={dossier.reviewEntries} />
+		</div>
+	);
+}
+
+export function BrokerOnboardingReviewWorkspace({
+	actions,
+	dossier,
+	onSelectedIdChange,
+	onViewChange,
+	queue,
+	selectedId,
+	view,
+}: {
+	actions: ReviewActionsApi;
+	dossier: ReviewDossier | null | undefined;
+	onSelectedIdChange: (id: ApplicationId) => void;
+	onViewChange: (view: QueueView) => void;
+	queue: ReviewQueueItem[] | undefined;
+	selectedId: ApplicationId | null;
+	view: QueueView;
+}) {
+	const queueItems = queue ?? [];
+
+	return (
+		<div className="flex h-full min-h-[calc(100vh-5rem)] flex-col gap-4 p-4">
+			<header className="flex flex-wrap items-center justify-between gap-3">
+				<div>
+					<h1 className="font-semibold text-2xl">Broker Onboarding</h1>
+					<p className="text-muted-foreground text-sm">
+						Review submitted applications and downstream activation state.
+					</p>
+				</div>
+				<Badge variant="outline">
+					<Clock3 /> {queueItems.length} records
+				</Badge>
+			</header>
+
+			<div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
+				<aside className="min-h-0 space-y-3 rounded-md border p-3">
+					<div className="grid w-full grid-cols-2 gap-1 lg:grid-cols-1">
+						{QUEUE_TABS.map((tab) => (
+							<Button
+								aria-pressed={view === tab.value}
+								key={tab.value}
+								onClick={() => onViewChange(tab.value)}
+								size="sm"
+								type="button"
+								variant={view === tab.value ? "default" : "outline"}
+							>
+								{tab.label}
+							</Button>
+						))}
+					</div>
+					<Button className="w-full" disabled size="sm" variant="outline">
+						<RefreshCw /> Live queue
+					</Button>
+					<QueueList
+						items={queueItems}
+						onSelect={onSelectedIdChange}
+						selectedId={selectedId}
+					/>
+				</aside>
+				<main className="min-w-0 overflow-auto rounded-md border p-4">
+					<Dossier
+						actions={actions}
+						dossier={selectedId ? dossier : null}
+						onActionCompleted={() => undefined}
+					/>
+				</main>
+			</div>
 		</div>
 	);
 }
@@ -618,69 +732,35 @@ export function BrokerOnboardingReviewPage() {
 		selectedId ? { applicationId: selectedId } : "skip"
 	) as ReviewDossier | null | undefined;
 	const queueItems = useMemo(() => queue ?? [], [queue]);
+	const actions = {
+		approve: useAction(
+			api.onboarding.brokerApplication.mutations.approveForReview
+		),
+		reject: useAction(
+			api.onboarding.brokerApplication.mutations.rejectForReview
+		),
+		requestChanges: useAction(
+			api.onboarding.brokerApplication.mutations.requestChangesForReview
+		),
+	} satisfies ReviewActionsApi;
 
 	useEffect(() => {
-		if (!selectedId && queueItems[0]) {
-			setSelectedId(queueItems[0].applicationId);
+		if (queue !== undefined) {
+			setSelectedId((current) =>
+				resolveBrokerOnboardingReviewSelection(current, queueItems)
+			);
 		}
-		if (
-			selectedId &&
-			queueItems.length > 0 &&
-			!queueItems.some((item) => item.applicationId === selectedId)
-		) {
-			setSelectedId(queueItems[0].applicationId);
-		}
-	}, [queueItems, selectedId]);
+	}, [queue, queueItems]);
 
 	return (
-		<div className="flex h-full min-h-[calc(100vh-5rem)] flex-col gap-4 p-4">
-			<header className="flex flex-wrap items-center justify-between gap-3">
-				<div>
-					<h1 className="font-semibold text-2xl">Broker Onboarding</h1>
-					<p className="text-muted-foreground text-sm">
-						Review submitted applications and downstream activation state.
-					</p>
-				</div>
-				<Badge variant="outline">
-					<Clock3 /> {queueItems.length} records
-				</Badge>
-			</header>
-
-			<div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
-				<aside className="min-h-0 space-y-3 rounded-md border p-3">
-					<Tabs
-						onValueChange={(value) => setView(value as QueueView)}
-						value={view}
-					>
-						<TabsList
-							className="grid w-full grid-cols-2 lg:grid-cols-1"
-							variant="line"
-						>
-							{QUEUE_TABS.map((tab) => (
-								<TabsTrigger key={tab.value} value={tab.value}>
-									{tab.label}
-								</TabsTrigger>
-							))}
-						</TabsList>
-					</Tabs>
-					<Button className="w-full" disabled size="sm" variant="outline">
-						<RefreshCw /> Live queue
-					</Button>
-					<QueueList
-						items={queueItems}
-						onSelect={setSelectedId}
-						selectedId={selectedId}
-					/>
-				</aside>
-				<main className="min-w-0 overflow-auto rounded-md border p-4">
-					<Dossier
-						dossier={dossier}
-						onActionCompleted={() => {
-							setSelectedId((current) => current);
-						}}
-					/>
-				</main>
-			</div>
-		</div>
+		<BrokerOnboardingReviewWorkspace
+			actions={actions}
+			dossier={dossier}
+			onSelectedIdChange={setSelectedId}
+			onViewChange={setView}
+			queue={queue}
+			selectedId={selectedId}
+			view={view}
+		/>
 	);
 }
