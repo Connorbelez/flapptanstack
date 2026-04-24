@@ -114,6 +114,10 @@ export const ROUTE_AUTHORIZATION_RULES = {
 		kind: "operationalAdminPermission",
 		permission: "mortgage:originate",
 	},
+	adminVelocityPackages: {
+		kind: "operationalAdminPermission",
+		permission: "mortgage:originate",
+	},
 	adminRotessaReconciliation: {
 		kind: "operationalAdminPermission",
 		permission: "payment:manage",
@@ -155,7 +159,10 @@ const ADMIN_PATH_AUTHORIZATION_RULES: ReadonlyArray<{
 	matches: (pathname: string) => boolean;
 	routeKey: Extract<
 		RouteAuthorizationKey,
-		"adminOriginations" | "adminRotessaReconciliation" | "adminUnderwriting"
+		| "adminOriginations"
+		| "adminRotessaReconciliation"
+		| "adminUnderwriting"
+		| "adminVelocityPackages"
 	>;
 }> = [
 	{
@@ -169,6 +176,11 @@ const ADMIN_PATH_AUTHORIZATION_RULES: ReadonlyArray<{
 			pathname === "/admin/originations" ||
 			pathname.startsWith("/admin/originations/"),
 		routeKey: "adminOriginations",
+	},
+	{
+		matches: (pathname) =>
+			pathname === "/admin/velocity" || pathname.startsWith("/admin/velocity/"),
+		routeKey: "adminVelocityPackages",
 	},
 	{
 		matches: (pathname) =>
