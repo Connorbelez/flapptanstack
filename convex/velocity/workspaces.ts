@@ -19,7 +19,6 @@ import {
 } from "./sync";
 import {
 	velocityActivationRemediationValidator,
-	velocityPackageDocumentRoleValidator,
 	velocityPackageExceptionKindValidator,
 	velocityPackageWorkspaceStateValidator,
 } from "./validators";
@@ -109,6 +108,22 @@ function accountLast4(accountNumber?: string) {
 	return digits && digits.length >= 4 ? digits.slice(-4) : undefined;
 }
 
+function deriveAccountLast4(args: {
+	nextBankInput?: VelocityFairLendEnrichmentV1["bankInput"];
+	patchBankInput?: Partial<
+		NonNullable<VelocityFairLendEnrichmentV1["bankInput"]>
+	>;
+}) {
+	if (args.patchBankInput?.accountNumber !== undefined) {
+		return accountLast4(args.patchBankInput.accountNumber);
+	}
+	return (
+		args.patchBankInput?.accountLast4 ??
+		args.nextBankInput?.accountLast4 ??
+		accountLast4(args.nextBankInput?.accountNumber)
+	);
+}
+
 function mergeFairLendEnrichment(
 	current: VelocityFairLendEnrichmentV1,
 	patch: FairLendEnrichmentPatch
@@ -124,8 +139,10 @@ function mergeFairLendEnrichment(
 				currency: "CAD" as const,
 			}
 		: current.bankInput;
-	const derivedLast4 =
-		nextBankInput?.accountLast4 ?? accountLast4(nextBankInput?.accountNumber);
+	const derivedLast4 = deriveAccountLast4({
+		nextBankInput,
+		patchBankInput: patch.bankInput,
+	});
 
 	return {
 		...current,
@@ -178,6 +195,59 @@ async function latestOpenExceptionSummary(
 		exceptionKind: exception?.kind,
 		exceptionSummary: exception?.title ?? exception?.message,
 	};
+}
+
+async function workspaceIdsWithOpenExceptionKind(
+	ctx: Pick<QueryCtx | MutationCtx, "db">,
+	exceptionKind: VelocityPackageExceptionKind
+) {
+	const exceptions = await ctx.db
+		.query("velocityPackageExceptions")
+		.withIndex("by_kind_status", (query) =>
+			query.eq("kind", exceptionKind).eq("status", "open")
+		)
+		.collect();
+
+	return new Set(
+		exceptions
+			.map((exception) => exception.workspaceId)
+			.filter(
+				(workspaceId): workspaceId is Id<"velocityPackageWorkspaces"> =>
+					workspaceId !== undefined
+			)
+	);
+}
+
+async function loadWorkspaceRecords(args: {
+	ctx: Pick<QueryCtx | MutationCtx, "db">;
+	exceptionWorkspaceIds: Set<Id<"velocityPackageWorkspaces">> | null;
+	state?: VelocityPackageWorkspaceState;
+}) {
+	if (args.state) {
+		return await args.ctx.db
+			.query("velocityPackageWorkspaces")
+			.withIndex("by_state_updated_at", (query) =>
+				query.eq("state", args.state as VelocityPackageWorkspaceState)
+			)
+			.order("desc")
+			.collect();
+	}
+
+	if (args.exceptionWorkspaceIds) {
+		const records = await Promise.all(
+			[...args.exceptionWorkspaceIds].map((workspaceId) =>
+				args.ctx.db.get(workspaceId)
+			)
+		);
+		return records
+			.filter((workspace): workspace is VelocityWorkspace => workspace !== null)
+			.sort((left, right) => right.updatedAt - left.updatedAt);
+	}
+
+	return await args.ctx.db
+		.query("velocityPackageWorkspaces")
+		.order("desc")
+		.collect();
 }
 
 async function recomputeWorkspaceReadiness(
@@ -321,6 +391,23 @@ async function documentLinkDetail(
 	};
 }
 
+function fairlendEnrichmentDetail(
+	enrichment: VelocityFairLendEnrichmentV1
+): VelocityFairLendEnrichmentV1 {
+	if (!enrichment.bankInput) {
+		return {
+			...enrichment,
+			bankInput: undefined,
+		};
+	}
+
+	const { accountNumber: _accountNumber, ...bankInput } = enrichment.bankInput;
+	return {
+		...enrichment,
+		bankInput,
+	};
+}
+
 async function workspaceDetail(
 	ctx: Pick<QueryCtx | MutationCtx, "db">,
 	workspace: VelocityWorkspace
@@ -369,7 +456,7 @@ async function workspaceDetail(
 				title: exception.title,
 			})),
 		fairlendOwned: {
-			enrichment: workspace.fairlendEnrichment,
+			enrichment: fairlendEnrichmentDetail(workspace.fairlendEnrichment),
 			finalReview: workspace.finalReview ?? null,
 			state: workspace.state,
 		},
@@ -421,22 +508,20 @@ export const listVelocityPackageWorkspaces = adminQuery
 		state: v.optional(velocityPackageWorkspaceStateValidator),
 	})
 	.handler(async (ctx, args) => {
-		const records = args.state
-			? await ctx.db
-					.query("velocityPackageWorkspaces")
-					.withIndex("by_state_updated_at", (query) =>
-						query.eq("state", args.state as VelocityPackageWorkspaceState)
-					)
-					.order("desc")
-					.collect()
-			: await ctx.db.query("velocityPackageWorkspaces").order("desc").collect();
-
-		const filtered = args.exceptionKind
-			? records.filter(
-					(record) =>
-						record.exceptionKind ===
-						(args.exceptionKind as VelocityPackageExceptionKind)
+		const exceptionWorkspaceIds = args.exceptionKind
+			? await workspaceIdsWithOpenExceptionKind(
+					ctx,
+					args.exceptionKind as VelocityPackageExceptionKind
 				)
+			: null;
+		const records = await loadWorkspaceRecords({
+			ctx,
+			exceptionWorkspaceIds,
+			state: args.state as VelocityPackageWorkspaceState | undefined,
+		});
+
+		const filtered = exceptionWorkspaceIds
+			? records.filter((record) => exceptionWorkspaceIds.has(record._id))
 			: records;
 
 		return Promise.all(filtered.map((workspace) => boardRow(ctx, workspace)));
@@ -629,215 +714,205 @@ export async function applyVelocityPackageDocumentLink(
 	};
 }
 
-export const linkVelocityPackageDocument = adminMutation
-	.input({
-		documentAssetId: v.id("documentAssets"),
-		role: velocityPackageDocumentRoleValidator,
-		workspaceId: v.id("velocityPackageWorkspaces"),
-	})
-	.handler(async (ctx, args) =>
-		applyVelocityPackageDocumentLink(ctx as MutationCtx, args, ctx.viewer)
-	)
-	.public();
-
-export const confirmVelocityPackageFinalReview = adminMutation
-	.input({
-		normalizedCoreHash: v.string(),
-		snapshotId: v.id("velocityPackageSnapshots"),
-		workspaceId: v.id("velocityPackageWorkspaces"),
-	})
-	.handler(async (ctx, args) => {
-		const [workspace, sourceSnapshot, reviewedByUserId] = await Promise.all([
-			ctx.db.get(args.workspaceId),
-			ctx.db.get(args.snapshotId),
-			requireViewerUserId(ctx),
-		]);
-		const existingWorkspace = requireWorkspace(workspace);
-		if (
-			!sourceSnapshot ||
-			sourceSnapshot.workspaceId !== existingWorkspace._id
-		) {
-			throw new ConvexError(
-				"Velocity package snapshot not found for workspace"
-			);
-		}
-		if (sourceSnapshot.normalizedCoreHash !== args.normalizedCoreHash) {
-			throw new ConvexError(
-				"Reviewed snapshot hash does not match request hash"
-			);
-		}
-		if (existingWorkspace.normalizedCoreHash !== args.normalizedCoreHash) {
-			throw new ConvexError(
-				"Velocity-owned core data changed before final review confirmation"
-			);
-		}
-
-		const preReviewReadiness = computeVelocityReadiness({
-			core: existingWorkspace.normalizedCore,
-			enrichment: existingWorkspace.fairlendEnrichment,
-			workspace: {
-				...existingWorkspace,
-				finalReview: undefined,
-			},
-		});
-		if (!preReviewReadiness.canFinalReview) {
-			throw new ConvexError(
-				`Velocity package is not ready for final review: ${preReviewReadiness.blockers
-					.map((blocker) => blocker.code)
-					.join(", ")}`
-			);
-		}
-
-		const now = Date.now();
-		const finalReviewSnapshotId = await ctx.db.insert(
-			"velocityPackageSnapshots",
-			{
-				createdAt: now,
-				createdBy: "system",
-				createdByUserId: reviewedByUserId,
-				linkApplicationId: sourceSnapshot.linkApplicationId,
-				loanCode: sourceSnapshot.loanCode,
-				normalizedCore: sourceSnapshot.normalizedCore,
-				normalizedCoreHash: sourceSnapshot.normalizedCoreHash,
-				rawDealHash: sourceSnapshot.rawDealHash,
-				rawDealJson: sourceSnapshot.rawDealJson,
-				snapshotType: "final_review",
-				workspaceId: existingWorkspace._id,
-			}
+export async function applyVelocityPackageFinalReview(
+	ctx: MutationCtx,
+	args: {
+		normalizedCoreHash: string;
+		snapshotId: Id<"velocityPackageSnapshots">;
+		workspaceId: Id<"velocityPackageWorkspaces">;
+	},
+	viewer: {
+		authId: string;
+		orgId?: string;
+	}
+) {
+	const [workspace, sourceSnapshot, reviewedByUserId] = await Promise.all([
+		ctx.db.get(args.workspaceId),
+		ctx.db.get(args.snapshotId),
+		requireViewerUserId({ ...ctx, viewer }),
+	]);
+	const existingWorkspace = requireWorkspace(workspace);
+	if (!sourceSnapshot || sourceSnapshot.workspaceId !== existingWorkspace._id) {
+		throw new ConvexError("Velocity package snapshot not found for workspace");
+	}
+	if (sourceSnapshot.normalizedCoreHash !== args.normalizedCoreHash) {
+		throw new ConvexError("Reviewed snapshot hash does not match request hash");
+	}
+	if (existingWorkspace.normalizedCoreHash !== args.normalizedCoreHash) {
+		throw new ConvexError(
+			"Velocity-owned core data changed before final review confirmation"
 		);
-		const finalReview = {
-			reviewedAt: now,
-			reviewedByUserId,
-			reviewedSnapshotHash: args.normalizedCoreHash,
-			reviewedSnapshotId: finalReviewSnapshotId,
-		};
-		const workspaceWithReview = {
+	}
+
+	const preReviewReadiness = computeVelocityReadiness({
+		core: existingWorkspace.normalizedCore,
+		enrichment: existingWorkspace.fairlendEnrichment,
+		workspace: {
 			...existingWorkspace,
-			finalReview,
-		};
-		const readiness = computeVelocityReadiness({
-			core: existingWorkspace.normalizedCore,
-			enrichment: existingWorkspace.fairlendEnrichment,
-			workspace: workspaceWithReview,
-		});
-		const state = resolveVelocityWorkspaceState({
-			readiness,
-			workspace: workspaceWithReview,
-		});
-		const latestException = await latestOpenExceptionSummary(
-			ctx,
-			existingWorkspace._id
+			finalReview: undefined,
+		},
+	});
+	if (!preReviewReadiness.canFinalReview) {
+		throw new ConvexError(
+			`Velocity package is not ready for final review: ${preReviewReadiness.blockers
+				.map((blocker) => blocker.code)
+				.join(", ")}`
 		);
+	}
 
-		await ctx.db.patch(existingWorkspace._id, {
-			exceptionKind: latestException.exceptionKind,
-			exceptionSummary: latestException.exceptionSummary,
-			finalReview,
-			readiness,
-			state,
+	const now = Date.now();
+	const finalReviewSnapshotId = await ctx.db.insert(
+		"velocityPackageSnapshots",
+		{
+			createdAt: now,
+			createdBy: "system",
+			createdByUserId: reviewedByUserId,
+			linkApplicationId: sourceSnapshot.linkApplicationId,
+			loanCode: sourceSnapshot.loanCode,
+			normalizedCore: sourceSnapshot.normalizedCore,
+			normalizedCoreHash: sourceSnapshot.normalizedCoreHash,
+			rawDealHash: sourceSnapshot.rawDealHash,
+			rawDealJson: sourceSnapshot.rawDealJson,
+			snapshotType: "final_review",
+			workspaceId: existingWorkspace._id,
+		}
+	);
+	const finalReview = {
+		reviewedAt: now,
+		reviewedByUserId,
+		reviewedSnapshotHash: args.normalizedCoreHash,
+		reviewedSnapshotId: finalReviewSnapshotId,
+	};
+	const workspaceWithReview = {
+		...existingWorkspace,
+		finalReview,
+	};
+	const readiness = computeVelocityReadiness({
+		core: existingWorkspace.normalizedCore,
+		enrichment: existingWorkspace.fairlendEnrichment,
+		workspace: workspaceWithReview,
+	});
+	const state = resolveVelocityWorkspaceState({
+		readiness,
+		workspace: workspaceWithReview,
+	});
+	const latestException = await latestOpenExceptionSummary(
+		ctx,
+		existingWorkspace._id
+	);
+
+	await ctx.db.patch(existingWorkspace._id, {
+		exceptionKind: latestException.exceptionKind,
+		exceptionSummary: latestException.exceptionSummary,
+		finalReview,
+		readiness,
+		state,
+		updatedAt: now,
+	});
+
+	const payload = {
+		linkApplicationId: existingWorkspace.linkApplicationId,
+		loanCode: existingWorkspace.loanCode,
+		normalizedCoreHash: existingWorkspace.normalizedCoreHash,
+		reviewedSnapshotHash: args.normalizedCoreHash,
+		snapshotId: String(finalReviewSnapshotId),
+		state,
+		workspaceId: String(existingWorkspace._id),
+	} satisfies VelocityPackageAuditPayload & { state: string };
+	await appendStaffAuditEntry(ctx, viewer, {
+		eventType: "velocity_final_review_confirmed",
+		payload,
+		previousState: existingWorkspace.state,
+		readiness,
+		workspace: existingWorkspace,
+	});
+	await appendStaffAuditEntry(ctx, viewer, {
+		eventType: "velocity_readiness_recomputed",
+		payload,
+		previousState: existingWorkspace.state,
+		readiness,
+		workspace: existingWorkspace,
+	});
+
+	return {
+		finalReview,
+		readiness,
+		state,
+		workspaceId: existingWorkspace._id,
+	};
+}
+
+export async function applyVelocityPackageExceptionResolution(
+	ctx: MutationCtx,
+	args: {
+		exceptionId: Id<"velocityPackageExceptions">;
+		resolutionNote: string;
+	},
+	viewer: {
+		authId: string;
+		orgId?: string;
+	}
+) {
+	const [exception, resolvedByUserId] = await Promise.all([
+		ctx.db.get(args.exceptionId),
+		requireViewerUserId({ ...ctx, viewer }),
+	]);
+	if (!exception) {
+		throw new ConvexError("Velocity package exception not found");
+	}
+	if (exception.status === "resolved") {
+		return {
+			exceptionId: exception._id,
+			status: exception.status,
+			workspaceId: exception.workspaceId ?? null,
+		};
+	}
+
+	const now = Date.now();
+	await ctx.db.patch(exception._id, {
+		details: {
+			...(exception.details ?? {}),
+			resolutionNote: args.resolutionNote,
+		},
+		resolvedAt: now,
+		resolvedByUserId,
+		status: "resolved",
+	});
+
+	const workspace = exception.workspaceId
+		? await ctx.db.get(exception.workspaceId)
+		: null;
+	if (workspace) {
+		const recomputed = await recomputeWorkspaceReadiness(ctx, {
+			enrichment: workspace.fairlendEnrichment,
+			workspace,
+		});
+		await ctx.db.patch(workspace._id, {
+			exceptionKind: recomputed.exceptionKind,
+			exceptionSummary: recomputed.exceptionSummary,
+			readiness: recomputed.readiness,
+			state: recomputed.state,
 			updatedAt: now,
 		});
 
-		const payload = {
-			linkApplicationId: existingWorkspace.linkApplicationId,
-			loanCode: existingWorkspace.loanCode,
-			normalizedCoreHash: existingWorkspace.normalizedCoreHash,
-			reviewedSnapshotHash: args.normalizedCoreHash,
-			snapshotId: String(finalReviewSnapshotId),
-			state,
-			workspaceId: String(existingWorkspace._id),
-		} satisfies VelocityPackageAuditPayload & { state: string };
-		await appendStaffAuditEntry(ctx as MutationCtx, ctx.viewer, {
-			eventType: "velocity_final_review_confirmed",
-			payload,
-			previousState: existingWorkspace.state,
-			readiness,
-			workspace: existingWorkspace,
-		});
-		await appendStaffAuditEntry(ctx as MutationCtx, ctx.viewer, {
-			eventType: "velocity_readiness_recomputed",
-			payload,
-			previousState: existingWorkspace.state,
-			readiness,
-			workspace: existingWorkspace,
-		});
-
-		return {
-			finalReview,
-			readiness,
-			state,
-			workspaceId: existingWorkspace._id,
-		};
-	})
-	.public();
-
-export const resolveVelocityPackageException = adminMutation
-	.input({
-		exceptionId: v.id("velocityPackageExceptions"),
-		resolutionNote: v.string(),
-	})
-	.handler(async (ctx, args) => {
-		const [exception, resolvedByUserId] = await Promise.all([
-			ctx.db.get(args.exceptionId),
-			requireViewerUserId(ctx),
-		]);
-		if (!exception) {
-			throw new ConvexError("Velocity package exception not found");
-		}
-		if (exception.status === "resolved") {
-			return {
-				exceptionId: exception._id,
-				status: exception.status,
-				workspaceId: exception.workspaceId ?? null,
-			};
-		}
-
-		const now = Date.now();
-		await ctx.db.patch(exception._id, {
-			details: {
-				...(exception.details ?? {}),
-				resolutionNote: args.resolutionNote,
-			},
-			resolvedAt: now,
-			resolvedByUserId,
-			status: "resolved",
-		});
-
-		const workspace = exception.workspaceId
-			? await ctx.db.get(exception.workspaceId)
-			: null;
-		if (workspace) {
-			const recomputed = await recomputeWorkspaceReadiness(ctx, {
-				enrichment: workspace.fairlendEnrichment,
-				workspace,
-			});
-			await ctx.db.patch(workspace._id, {
-				exceptionKind: recomputed.exceptionKind,
-				exceptionSummary: recomputed.exceptionSummary,
-				readiness: recomputed.readiness,
+		await appendStaffAuditEntry(ctx, viewer, {
+			eventType: "velocity_exception_resolved",
+			payload: {
+				exceptionKind: exception.kind,
+				linkApplicationId: workspace.linkApplicationId,
+				loanCode: workspace.loanCode,
 				state: recomputed.state,
-				updatedAt: now,
-			});
+				workspaceId: String(workspace._id),
+			} satisfies VelocityPackageAuditPayload & { state: string },
+			previousState: workspace.state,
+			readiness: recomputed.readiness,
+			workspace,
+		});
+	}
 
-			await appendStaffAuditEntry(ctx as MutationCtx, ctx.viewer, {
-				eventType: "velocity_exception_resolved",
-				payload: {
-					exceptionKind: exception.kind,
-					linkApplicationId: workspace.linkApplicationId,
-					loanCode: workspace.loanCode,
-					state: recomputed.state,
-					workspaceId: String(workspace._id),
-				} satisfies VelocityPackageAuditPayload & { state: string },
-				previousState: workspace.state,
-				readiness: recomputed.readiness,
-				workspace,
-			});
-		}
-
-		return {
-			exceptionId: exception._id,
-			status: "resolved" as const,
-			workspaceId: exception.workspaceId ?? null,
-		};
-	})
-	.public();
+	return {
+		exceptionId: exception._id,
+		status: "resolved" as const,
+		workspaceId: exception.workspaceId ?? null,
+	};
+}

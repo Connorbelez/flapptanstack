@@ -269,6 +269,72 @@ describe("Velocity package workspace backend", () => {
 				"velocity_readiness_recomputed",
 			])
 		);
+
+		await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.velocity.workspaces.updateVelocityPackageFairLendFields,
+			{
+				patch: {
+					bankInput: {
+						accountNumber: "987654321",
+					},
+				},
+				workspaceId,
+			}
+		);
+		const updated = await t.run(async (ctx) => ({
+			workspace: await ctx.db.get(workspaceId),
+		}));
+		const detail = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(api.velocity.workspaces.getVelocityPackageWorkspace, {
+				workspaceId,
+			});
+
+		expect(updated.workspace?.fairlendEnrichment.bankInput).toMatchObject({
+			accountLast4: "4321",
+			accountNumber: "987654321",
+		});
+		expect(detail?.fairlendOwned.enrichment.bankInput).toMatchObject({
+			accountLast4: "4321",
+		});
+		expect(detail?.fairlendOwned.enrichment.bankInput).not.toHaveProperty(
+			"accountNumber"
+		);
+	});
+
+	it("filters board rows from open exceptions instead of stale workspace summaries", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const sync = await applyFullDealSync(t, makeDeal());
+		const workspaceId = sync.workspaceId as Id<"velocityPackageWorkspaces">;
+
+		await t.run(async (ctx) => {
+			await ctx.db.insert("velocityPackageExceptions", {
+				kind: "activation_exception",
+				message: "Activation needs staff remediation.",
+				openedAt: Date.now(),
+				severity: "blocking",
+				status: "open",
+				title: "Activation blocker",
+				workspaceId,
+			});
+		});
+
+		const boardRows = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(api.velocity.workspaces.listVelocityPackageWorkspaces, {
+				exceptionKind: "activation_exception",
+			});
+
+		expect(boardRows).toHaveLength(1);
+		expect(boardRows[0]).toMatchObject({
+			exception: {
+				hasOpenException: true,
+				kind: "activation_exception",
+				summary: "Activation blocker",
+			},
+			workspaceId,
+		});
 	});
 
 	it("links package documents by role, supersedes prior role links, and uses PAD evidence for readiness", async () => {
@@ -303,6 +369,22 @@ describe("Velocity package workspace backend", () => {
 			mimeType: "application/pdf",
 			originalFilename: "replacement-pad.pdf",
 		});
+	});
+
+	it("rejects package document links that do not reference an existing document asset", async () => {
+		const t = createTestConvex();
+		const { workspaceId } = await seedReadyWorkspace(t);
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).mutation(
+				api.velocity.documents.linkVelocityPackageDocument,
+				{
+					documentAssetId: "99999;documentAssets" as Id<"documentAssets">,
+					role: "supporting_document",
+					workspaceId,
+				}
+			)
+		).rejects.toThrow("Document asset not found");
 	});
 
 	it("persists final-review snapshots and invalidates activation readiness when Velocity core drifts", async () => {
