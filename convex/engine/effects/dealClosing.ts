@@ -35,15 +35,13 @@ export const reserveShares = internalAction({
 				internal.ledger.queries.getReservationById,
 				{ reservationId: deal.reservationId }
 			);
+
 			if (reservation) {
 				console.info(
-					`[reserveShares] Deal ${dealId} already has reservation ${deal.reservationId}; skipping duplicate reservation`
+					`[reserveShares] Deal ${dealId} already has reservation ${deal.reservationId}`
 				);
 				return;
 			}
-			console.warn(
-				`[reserveShares] Deal ${dealId} references missing reservation ${deal.reservationId}; continuing with reservation lookup`
-			);
 		}
 
 		// 2. Look up any existing reservation for this deal

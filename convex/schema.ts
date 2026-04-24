@@ -40,6 +40,13 @@ import {
 	viewTypeValidator,
 } from "./crm/validators";
 import {
+	dealLockCheckoutStatusValidator,
+	dealLockFeeCollectionProviderValidator,
+	dealLockFeeCollectionStatusValidator,
+	dealLockRefundStatusValidator,
+	dealLockSelectedLawyerTypeValidator,
+} from "./dealLocks/validators";
+import {
 	calculationDetailsValidator,
 	dispersalStatusValidator,
 } from "./dispersal/validators";
@@ -1581,57 +1588,6 @@ export default defineSchema({
 		updatedAt: v.number(),
 		lastProviderEventId: v.optional(v.string()),
 		failureReason: v.optional(v.string()),
-		lateSuccessRefund: v.optional(
-			v.union(
-				v.object({
-					status: v.literal("intent_recorded"),
-					amount: checkoutLockFeeAmountValidator,
-					currency: checkoutLockFeeCurrencyValidator,
-					idempotencyKey: v.string(),
-					providerEventId: v.string(),
-					paymentIntentId: v.string(),
-					webhookEventId: v.id("webhookEvents"),
-					attemptedAt: v.number(),
-					error: v.optional(v.string()),
-				}),
-				v.object({
-					status: v.literal("completed"),
-					amount: checkoutLockFeeAmountValidator,
-					currency: checkoutLockFeeCurrencyValidator,
-					idempotencyKey: v.string(),
-					providerEventId: v.string(),
-					paymentIntentId: v.string(),
-					webhookEventId: v.id("webhookEvents"),
-					attemptedAt: v.number(),
-					stripeRefundId: v.string(),
-					completedAt: v.number(),
-					error: v.optional(v.string()),
-				}),
-				v.object({
-					status: v.literal("failed"),
-					amount: checkoutLockFeeAmountValidator,
-					currency: checkoutLockFeeCurrencyValidator,
-					idempotencyKey: v.string(),
-					providerEventId: v.string(),
-					paymentIntentId: v.string(),
-					webhookEventId: v.id("webhookEvents"),
-					attemptedAt: v.number(),
-					error: v.string(),
-					failedAt: v.number(),
-					stripeRefundId: v.optional(v.string()),
-					completedAt: v.optional(v.number()),
-				})
-			)
-		),
-		providerExpiryAttemptedAt: v.optional(v.number()),
-		providerExpiryFailureReason: v.optional(v.string()),
-		providerExpiryStatus: v.optional(
-			v.union(
-				v.literal("not_required"),
-				v.literal("succeeded"),
-				v.literal("failed")
-			)
-		),
 	})
 		.index("by_listing_status", ["listingId", "status"])
 		.index("by_lender", ["lenderId", "startedAt"])
@@ -2289,13 +2245,16 @@ export default defineSchema({
 		fractionalShare: v.number(),
 		closingDate: v.optional(v.number()),
 		lockingFeeAmount: v.optional(v.number()),
+		lockFeeCollectionProvider: v.optional(
+			dealLockFeeCollectionProviderValidator
+		),
+		lockFeeCollectionStatus: v.optional(dealLockFeeCollectionStatusValidator),
 		lawyerId: v.optional(v.string()),
 		reservationId: v.optional(v.id("ledger_reservations")),
-		checkoutSessionId: v.optional(v.id("checkoutSessions")),
-		lockFeeTransferRequestId: v.optional(v.id("transferRequests")),
+		dealLockCheckoutSessionId: v.optional(v.id("dealLockCheckoutSessions")),
 		stripeCheckoutSessionId: v.optional(v.string()),
 		stripePaymentIntentId: v.optional(v.string()),
-		selectedLawyer: v.optional(selectedLawyerSnapshotValidator),
+		stripePaymentStatus: v.optional(v.string()),
 		lawyerType: v.optional(
 			v.union(v.literal("platform_lawyer"), v.literal("guest_lawyer"))
 		),
@@ -2311,10 +2270,46 @@ export default defineSchema({
 		.index("by_lender", ["lenderId"])
 		.index("by_buyer", ["buyerId"])
 		.index("by_seller", ["sellerId"])
-		.index("by_checkout_session", ["checkoutSessionId"])
-		.index("by_reservation", ["reservationId"])
 		.index("by_org", ["orgId"])
 		.index("by_org_status", ["orgId", "status"]),
+
+	dealLockCheckoutSessions: defineTable({
+		listingId: v.id("listings"),
+		mortgageId: v.id("mortgages"),
+		buyerAuthId: v.string(),
+		sellerAuthId: v.string(),
+		selectedLawyerAuthId: v.optional(v.string()),
+		selectedLawyerType: v.optional(dealLockSelectedLawyerTypeValidator),
+		fractionalShareUnits: v.number(),
+		lockFeeAmountCents: v.number(),
+		lockFeeCurrency: v.literal("cad"),
+		reservationId: v.optional(v.id("ledger_reservations")),
+		stripeCheckoutSessionId: v.optional(v.string()),
+		stripeCheckoutUrl: v.optional(v.string()),
+		stripePaymentIntentId: v.optional(v.string()),
+		stripePaymentStatus: v.optional(v.string()),
+		status: dealLockCheckoutStatusValidator,
+		refundStatus: v.optional(dealLockRefundStatusValidator),
+		dealId: v.optional(v.id("deals")),
+		idempotencyKey: v.string(),
+		providerEventId: v.optional(v.string()),
+		failureReason: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		expiresAt: v.number(),
+		paidAt: v.optional(v.number()),
+		expiredAt: v.optional(v.number()),
+		failedAt: v.optional(v.number()),
+		refundedAt: v.optional(v.number()),
+		dealCreatedAt: v.optional(v.number()),
+	})
+		.index("by_stripe_checkout_session", ["stripeCheckoutSessionId"])
+		.index("by_listing_buyer_status", ["listingId", "buyerAuthId", "status"])
+		.index("by_status_expires_at", ["status", "expiresAt"])
+		.index("by_deal", ["dealId"])
+		.index("by_reservation", ["reservationId"])
+		.index("by_idempotency", ["idempotencyKey"])
+		.index("by_provider_event", ["providerEventId"]),
 
 	dealAccess: defineTable({
 		userId: v.string(),

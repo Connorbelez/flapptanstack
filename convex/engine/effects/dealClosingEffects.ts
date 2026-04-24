@@ -111,6 +111,16 @@ export const collectLockingFee = internalAction({
 			return;
 		}
 
+		if (
+			deal.lockFeeCollectionProvider === "stripe_checkout" &&
+			deal.lockFeeCollectionStatus === "collected"
+		) {
+			console.info(
+				`[collectLockingFee] Locking fee already collected by Stripe for deal ${args.entityId} — skipping`
+			);
+			return;
+		}
+
 		if (deal.lockingFeeAmount === undefined || deal.lockingFeeAmount <= 0) {
 			console.info(
 				`[collectLockingFee] No locking fee configured for deal ${args.entityId} — skipping`
