@@ -47,6 +47,13 @@ import {
 	dealLockSelectedLawyerTypeValidator,
 } from "./dealLocks/validators";
 import {
+	closeEffectNameValidator,
+	closeEffectOutcomeStatusValidator,
+	closeExceptionKindValidator,
+	fundsReceiptSourceValidator,
+	signedArchiveStatusValidator,
+} from "./deals/closeEvidence";
+import {
 	calculationDetailsValidator,
 	dispersalStatusValidator,
 } from "./dispersal/validators";
@@ -2435,6 +2442,70 @@ export default defineSchema({
 		.index("by_reservation", ["reservationId"])
 		.index("by_idempotency", ["idempotencyKey"])
 		.index("by_provider_event", ["providerEventId"]),
+
+	dealFundsEvidence: defineTable({
+		dealId: v.id("deals"),
+		source: fundsReceiptSourceValidator,
+		sourceKind: v.union(
+			v.literal("transfer_pipeline"),
+			v.literal("manual_admin")
+		),
+		idempotencyKey: v.string(),
+		receivedAt: v.number(),
+		recordedAt: v.number(),
+		recordedBy: v.string(),
+		journalEntryId: v.optional(v.string()),
+		pipelineId: v.optional(v.string()),
+		leg2TransferId: v.optional(v.id("transferRequests")),
+		providerCode: v.optional(providerCodeValidator),
+		manualConfirmedBy: v.optional(v.string()),
+		manualEvidenceNote: v.optional(v.string()),
+		manualAttachmentIds: v.optional(v.array(v.id("documentAssets"))),
+	})
+		.index("by_deal", ["dealId", "recordedAt"])
+		.index("by_idempotency", ["idempotencyKey"])
+		.index("by_pipeline", ["pipelineId", "recordedAt"])
+		.index("by_leg2_transfer", ["leg2TransferId"])
+		.index("by_source_kind", ["sourceKind", "recordedAt"]),
+
+	dealSignedArchives: defineTable({
+		dealId: v.id("deals"),
+		packageId: v.optional(v.id("dealDocumentPackages")),
+		attemptId: v.optional(v.id("dealEnvelopeAttempts")),
+		dealDocumentInstanceId: v.optional(v.id("dealDocumentInstances")),
+		generatedDocumentId: v.optional(v.id("generatedDocuments")),
+		status: signedArchiveStatusValidator,
+		idempotencyKey: v.string(),
+		assetIds: v.array(v.id("documentAssets")),
+		storageIds: v.array(v.id("_storage")),
+		blockerKind: v.optional(closeExceptionKindValidator),
+		blockerMessage: v.optional(v.string()),
+		archivedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_deal", ["dealId", "createdAt"])
+		.index("by_idempotency", ["idempotencyKey"])
+		.index("by_status", ["status", "createdAt"])
+		.index("by_attempt", ["attemptId"]),
+
+	dealCloseEffectOutcomes: defineTable({
+		dealId: v.id("deals"),
+		effectName: closeEffectNameValidator,
+		status: closeEffectOutcomeStatusValidator,
+		idempotencyKey: v.string(),
+		exceptionKind: v.optional(closeExceptionKindValidator),
+		message: v.optional(v.string()),
+		error: v.optional(v.string()),
+		metadata: v.optional(v.record(v.string(), v.string())),
+		startedAt: v.number(),
+		completedAt: v.optional(v.number()),
+		updatedAt: v.number(),
+	})
+		.index("by_deal", ["dealId", "startedAt"])
+		.index("by_deal_effect", ["dealId", "effectName", "startedAt"])
+		.index("by_idempotency", ["idempotencyKey"])
+		.index("by_status", ["status", "startedAt"]),
 
 	dealAccess: defineTable({
 		userId: v.string(),

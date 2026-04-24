@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { internalAction } from "../../_generated/server";
+import { parseFundsReceiptSource } from "../../deals/closeEvidence";
 import { effectPayloadValidator } from "../validators";
 
 const dealEffectPayloadValidator = {
@@ -74,18 +75,102 @@ export const archiveSignedDocuments = internalAction({
 				dealId: args.entityId,
 			}
 		);
+
+		const result = await ctx.runMutation(
+			internal.deals.closeEvidence.recordSignedArchiveForDealInternal,
+			{
+				dealId: args.entityId,
+				journalEntryId: args.journalEntryId,
+			}
+		);
+		if (result.status !== "archived") {
+			console.error(
+				`[archiveSignedDocuments] Signed archive blocked for deal ${args.entityId}: ${result.status}`
+			);
+			return;
+		}
+		console.info(
+			`[archiveSignedDocuments] Signed archive recorded for deal ${args.entityId}`
+		);
 	},
 });
 
-/**
- * Stub: confirms receipt of funds for the deal.
- * // TODO: Phase 2 — replace with real implementation (VoPay API)
- */
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export const confirmFundsReceipt = internalAction({
 	args: dealEffectPayloadValidator,
-	handler: async (_ctx, args) => {
+	handler: async (ctx, args) => {
+		const payloadSource = parseFundsReceiptSource(
+			isRecord(args.payload) ? args.payload.fundsReceiptSource : undefined
+		);
+		const source =
+			payloadSource ??
+			(await ctx.runQuery(
+				internal.deals.closeEvidence.resolveProviderFundsSourceForDealInternal,
+				{ dealId: args.entityId }
+			));
+
+		if (!source) {
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId: args.entityId,
+					effectName: "funds_confirmation",
+					status: "blocked",
+					exceptionKind: "missing_funds_evidence",
+					message:
+						"FUNDS_RECEIVED did not include manual evidence and no completed provider leg 2 evidence was found.",
+					metadata: { journalEntryId: args.journalEntryId },
+				}
+			);
+			console.error(
+				`[confirmFundsReceipt] Missing funds evidence for deal ${args.entityId}`
+			);
+			return;
+		}
+
+		const result = await ctx
+			.runMutation(internal.deals.closeEvidence.recordFundsReceiptInternal, {
+				dealId: args.entityId,
+				source,
+				journalEntryId: args.journalEntryId,
+				recordedBy: args.source.actorId ?? "system",
+			})
+			.catch(async (error: unknown) => {
+				await ctx.runMutation(
+					internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+					{
+						dealId: args.entityId,
+						effectName: "funds_confirmation",
+						status: "failed",
+						exceptionKind: "evidence_mismatch",
+						message: "FUNDS_RECEIVED evidence failed validation.",
+						error: error instanceof Error ? error.message : String(error),
+						metadata: { journalEntryId: args.journalEntryId },
+					}
+				);
+				console.error(
+					`[confirmFundsReceipt] Funds evidence validation failed for deal ${args.entityId}:`,
+					error
+				);
+				return null;
+			});
+
+		if (!result) {
+			return;
+		}
+
+		if (result.status === "blocked") {
+			console.error(
+				`[confirmFundsReceipt] Funds evidence blocked for deal ${args.entityId}`
+			);
+			return;
+		}
+
 		console.info(
-			`[stub] confirmFundsReceipt: Would confirm funds receipt for ${args.entityType} ${args.entityId}`
+			`[confirmFundsReceipt] Funds evidence ${result.status} for deal ${args.entityId}`
 		);
 	},
 });

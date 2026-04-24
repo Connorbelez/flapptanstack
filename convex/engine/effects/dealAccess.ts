@@ -2,6 +2,10 @@ import { v } from "convex/values";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { internalMutation } from "../../_generated/server";
+import {
+	buildCloseEffectIdempotencyKey,
+	recordCloseEffectOutcomeRow,
+} from "../../deals/closeEvidence";
 import { type DealAccessRole, grantDealAccess } from "../../deals/mutations";
 import { effectPayloadValidator } from "../validators";
 
@@ -203,5 +207,24 @@ export const revokeLawyerAccess = internalMutation({
 				`[revokeLawyerAccess] Revoked ${lawyerRecords.length} lawyer record(s) for deal=${args.entityId}, retained ${activeRecords.length - lawyerRecords.length} party record(s)`
 			);
 		}
+
+		await recordCloseEffectOutcomeRow(ctx, {
+			dealId: args.entityId,
+			effectName: "lawyer_access_cleanup",
+			status: lawyerRecords.length > 0 ? "succeeded" : "skipped",
+			idempotencyKey: buildCloseEffectIdempotencyKey({
+				dealId: args.entityId,
+				effectName: "lawyer_access_cleanup",
+			}),
+			message:
+				lawyerRecords.length > 0
+					? "Lawyer deal access revoked."
+					: "No active lawyer access records to revoke.",
+			metadata: {
+				revokedCount: `${lawyerRecords.length}`,
+				retainedPartyCount: `${activeRecords.length - lawyerRecords.length}`,
+			},
+			now,
+		});
 	},
 });
