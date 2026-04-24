@@ -158,6 +158,16 @@ crons.interval(
 		.transferReconciliationCron
 );
 
+// Deal-lock checkout expiry: void abandoned listing-lock reservations shortly
+// after their five-minute checkout window closes. The mutation is bounded and
+// idempotent so regular polling is safe across cron reruns.
+crons.interval(
+	"deal lock checkout expiry",
+	{ minutes: 5 },
+	internal.dealLocks.mutations.expireStaleCheckoutSessions,
+	{}
+);
+
 // Cash ledger reconciliation: verify ledger invariants (unapplied cash,
 // negative payables, obligation drift, conservation, etc.).
 // Runs at 07:15 UTC — 15 minutes after entity reconciliation — to avoid

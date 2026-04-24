@@ -67,61 +67,11 @@ export interface ListingDocumentItem {
 	url?: string | null;
 }
 
-export type ListingCheckoutSelectedLawyer =
-	| {
-			email: string;
-			firm?: string;
-			lawyerId?: string;
-			name: string;
-			type: "platform_lawyer";
-	  }
-	| {
-			email: string;
-			firm?: string;
-			name: string;
-			type: "guest_lawyer";
-	  };
-
-export interface ListingCheckoutStartInput {
-	listingId: string;
-	portalId: string;
-	requestedFractions: number;
-	selectedLawyer: ListingCheckoutSelectedLawyer;
-}
-
-export type ListingCheckoutStartResult =
-	| {
-			checkoutSessionId: string;
-			expiresAt: number;
-			ok: true;
-			stripeCheckoutUrl: string;
-	  }
-	| {
-			code:
-				| "demo_listing_not_supported"
-				| "insufficient_fractions"
-				| "invalid_lawyer"
-				| "listing_unavailable"
-				| "provider_start_failed"
-				| "unauthorized";
-			message: string;
-			ok: false;
-	  };
-
-export type ListingCheckoutReturnState =
-	| "abandoned"
-	| "error"
-	| "expired"
-	| "provider_start_failed"
-	| "success_pending";
-
 export interface ListingLawyerOption {
 	detail: string;
-	email?: string;
-	firm?: string;
 	id: string;
 	label: string;
-	type?: "guest_lawyer" | "platform_lawyer";
+	type: "guest_lawyer" | "platform_lawyer";
 }
 
 export interface ListingSimilarCard {
@@ -150,18 +100,13 @@ export interface ListingDetailData {
 		subtitle: string;
 	};
 	checkout?: {
+		cardCtaLabel: string;
 		defaultFractions: number;
-		disabledReason?: string | null;
-		isEligible: boolean;
 		lawyers: ListingLawyerOption[];
-		lockFee: {
-			amountCents: number;
-			currency: "CAD";
-			display: string;
-		};
-		maximumFractions: number;
+		lockFee: string;
 		minimumFractions: number;
 		perFractionAmount: number;
+		poweredBy: string;
 	};
 	comparables: {
 		asIf: ListingComparable[];
