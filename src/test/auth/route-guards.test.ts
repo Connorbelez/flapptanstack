@@ -122,6 +122,24 @@ describe("route auth permission helpers", () => {
 				roles: ["member"],
 			})
 		).toBe(false);
+
+		expect(
+			canAccessAdminPath("/admin/velocity/workspace_123", {
+				orgId: "org_ops",
+				permissions: ["mortgage:originate"],
+				role: "member",
+				roles: ["member"],
+			})
+		).toBe(true);
+
+		expect(
+			canAccessAdminPath("/admin/velocity", {
+				orgId: "org_ops",
+				permissions: ["payment:manage"],
+				role: "member",
+				roles: ["member"],
+			})
+		).toBe(false);
 	});
 
 	it("returns a reusable beforeLoad guard for marketplace routes", () => {

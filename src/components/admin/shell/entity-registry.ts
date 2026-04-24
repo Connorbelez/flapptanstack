@@ -93,6 +93,18 @@ export const ADMIN_ENTITIES = [
 		supportsDetailPage: true,
 	},
 	{
+		entityType: "velocity",
+		singularLabel: "Velocity Package",
+		pluralLabel: "Velocity Packages",
+		route: "/admin/velocity",
+		iconName: "file-text",
+		domain: "payments",
+		tableName: "velocityPackageWorkspaces",
+		labelColor: "cyan",
+		supportsTableView: false,
+		supportsDetailPage: true,
+	},
+	{
 		entityType: "lenders",
 		singularLabel: "Lender",
 		pluralLabel: "Lenders",
