@@ -47,6 +47,7 @@ import type * as authz_policy from "../authz/policy.js";
 import type * as authz_resourceAccess from "../authz/resourceAccess.js";
 import type * as borrowers_resolveOrProvisionForOrigination from "../borrowers/resolveOrProvisionForOrigination.js";
 import type * as brokers_activation from "../brokers/activation.js";
+import type * as brokers_claimConvergence from "../brokers/claimConvergence.js";
 import type * as brokers_migrations from "../brokers/migrations.js";
 import type * as brokers_resolveOrProvision from "../brokers/resolveOrProvision.js";
 import type * as constants from "../constants.js";
@@ -449,6 +450,7 @@ declare const fullApi: ApiFromModules<{
   "authz/resourceAccess": typeof authz_resourceAccess;
   "borrowers/resolveOrProvisionForOrigination": typeof borrowers_resolveOrProvisionForOrigination;
   "brokers/activation": typeof brokers_activation;
+  "brokers/claimConvergence": typeof brokers_claimConvergence;
   "brokers/migrations": typeof brokers_migrations;
   "brokers/resolveOrProvision": typeof brokers_resolveOrProvision;
   constants: typeof constants;

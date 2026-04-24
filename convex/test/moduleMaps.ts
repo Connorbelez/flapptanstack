@@ -80,6 +80,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../admin/settings/queries.ts"),
 	"/convex/brokers/migrations.ts": async () =>
 		await import("./../brokers/migrations.ts"),
+	"/convex/brokers/claimConvergence.ts": async () =>
+		await import("./../brokers/claimConvergence.ts"),
 	"/convex/borrowers/resolveOrProvisionForOrigination.ts": async () =>
 		await import("./../borrowers/resolveOrProvisionForOrigination.ts"),
 	"/convex/_generated/api.js": async () =>

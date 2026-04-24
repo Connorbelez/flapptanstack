@@ -6,7 +6,7 @@ type BrokerReaderCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
 type BrokerWriterCtx = Pick<MutationCtx, "db">;
 
 export interface ResolveOrProvisionBrokerInput {
-	applicationId: Id<"brokerOnboardingApplications">;
+	applicationId?: Id<"brokerOnboardingApplications">;
 	brokerageName?: string | null;
 	invitedByBrokerId?: string;
 	licenseId?: string | null;
@@ -24,7 +24,7 @@ export interface ResolveOrProvisionBrokerResult {
 
 interface BrokerActivationPatch {
 	brokerageName?: string;
-	brokerOnboardingApplicationId: Id<"brokerOnboardingApplications">;
+	brokerOnboardingApplicationId?: Id<"brokerOnboardingApplications">;
 	invitedByBrokerId?: string;
 	lastTransitionAt: number;
 	licenseId: string;
@@ -135,7 +135,6 @@ function buildBrokerPatch(args: ResolveOrProvisionBrokerInput) {
 		);
 	}
 	const patch: BrokerActivationPatch = {
-		brokerOnboardingApplicationId: args.applicationId,
 		brokerageName: normalizeOptionalString(args.brokerageName),
 		invitedByBrokerId: args.invitedByBrokerId,
 		lastTransitionAt: args.now,
@@ -147,6 +146,9 @@ function buildBrokerPatch(args: ResolveOrProvisionBrokerInput) {
 		status: "active",
 		updatedAt: args.now,
 	};
+	if (args.applicationId) {
+		patch.brokerOnboardingApplicationId = args.applicationId;
+	}
 
 	return patch;
 }
