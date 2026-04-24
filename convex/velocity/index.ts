@@ -7,6 +7,7 @@ export * from "./constants";
 export * from "./contracts";
 export * from "./documents";
 export * from "./exceptions";
+export * from "./mock";
 export * from "./provenance";
 export * from "./review";
 export * from "./sync";

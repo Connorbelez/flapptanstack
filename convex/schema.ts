@@ -1008,6 +1008,20 @@ export default defineSchema({
 		.index("by_document_asset", ["documentAssetId"])
 		.index("by_active_workspace_role", ["workspaceId", "role", "supersededAt"]),
 
+	velocityMockDeals: defineTable({
+		loanCode: v.string(),
+		linkApplicationId: v.optional(v.string()),
+		scenarioId: v.string(),
+		scenarioName: v.optional(v.string()),
+		dealJson: v.string(),
+		webhookPayloadJson: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_loan_code", ["loanCode"])
+		.index("by_scenario_id", ["scenarioId"])
+		.index("by_link_application_id", ["linkApplicationId"]),
+
 	mortgages: defineTable({
 		/** WorkOS organization id — denormalized from broker of record. */
 		orgId: v.optional(v.string()),

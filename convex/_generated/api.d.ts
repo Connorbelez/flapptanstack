@@ -379,6 +379,7 @@ import type * as velocity_contracts from "../velocity/contracts.js";
 import type * as velocity_documents from "../velocity/documents.js";
 import type * as velocity_exceptions from "../velocity/exceptions.js";
 import type * as velocity_index from "../velocity/index.js";
+import type * as velocity_mock from "../velocity/mock.js";
 import type * as velocity_provenance from "../velocity/provenance.js";
 import type * as velocity_review from "../velocity/review.js";
 import type * as velocity_sync from "../velocity/sync.js";
@@ -764,6 +765,7 @@ declare const fullApi: ApiFromModules<{
   "velocity/documents": typeof velocity_documents;
   "velocity/exceptions": typeof velocity_exceptions;
   "velocity/index": typeof velocity_index;
+  "velocity/mock": typeof velocity_mock;
   "velocity/provenance": typeof velocity_provenance;
   "velocity/review": typeof velocity_review;
   "velocity/sync": typeof velocity_sync;
