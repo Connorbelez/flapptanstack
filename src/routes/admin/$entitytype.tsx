@@ -5,6 +5,7 @@ import {
 	useMatch,
 } from "@tanstack/react-router";
 import { AdminEntityViewPage } from "#/components/admin/shell/AdminEntityViewPage";
+import { VelocityPackagesIndexPage } from "#/components/admin/velocity/VelocityPackagesIndexPage";
 import { EMPTY_ADMIN_DETAIL_SEARCH } from "#/lib/admin-detail-search";
 import { isReservedAdminRouteSegment } from "#/lib/admin-entities";
 
@@ -35,6 +36,10 @@ function TypedEntityList({ entityType }: { entityType: string }) {
 
 	if (recordId) {
 		return <Outlet />;
+	}
+
+	if (entityType === "velocity") {
+		return <VelocityPackagesIndexPage />;
 	}
 
 	return <AdminEntityViewPage entityType={entityType} />;
