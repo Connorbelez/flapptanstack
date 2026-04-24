@@ -8,6 +8,7 @@ import {
 } from "./constants";
 import type {
 	VelocityActivationHandoffV1,
+	VelocityFairLendEnrichmentV1,
 	VelocityMortgagePropertyType,
 } from "./contracts";
 
@@ -48,6 +49,21 @@ function mapPropertyType(
 		return "multi_unit";
 	}
 	return "residential";
+}
+
+function mapListingOverrides(
+	listingOverrides: VelocityFairLendEnrichmentV1["listingOverrides"]
+): VelocityFairLendEnrichmentV1["listingOverrides"] {
+	if (!listingOverrides) {
+		return undefined;
+	}
+	return {
+		...listingOverrides,
+		heroImages: listingOverrides.heroImages?.map((image) => ({
+			...image,
+			storageId: image.storageId as Id<"_storage">,
+		})),
+	};
 }
 
 export function buildVelocityActivationHandoff(args: {
@@ -108,7 +124,9 @@ export function buildVelocityActivationHandoff(args: {
 			providerCode: "pad_rotessa",
 			selectedBankAccountId: args.bankAccountId,
 		},
-		listingOverrides: args.workspace.fairlendEnrichment.listingOverrides,
+		listingOverrides: mapListingOverrides(
+			args.workspace.fairlendEnrichment.listingOverrides
+		),
 		mortgageDraft: {
 			amortizationMonths: requireValue(
 				mortgage.amortizationMonths ?? mortgage.amortization,

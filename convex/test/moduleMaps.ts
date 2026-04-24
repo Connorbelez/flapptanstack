@@ -349,16 +349,19 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../fees/validators.ts"),
 	"/convex/fluent.ts": async () => await import("./../fluent.ts"),
 	"/convex/http.ts": async () => await import("./../http.ts"),
-	"/convex/velocity/client.ts": async () =>
-		await import("./../velocity/client.ts"),
 	"/convex/velocity/activation.ts": async () =>
 		await import("./../velocity/activation.ts"),
+	"/convex/velocity/activationMapper.ts": async () =>
+		await import("./../velocity/activationMapper.ts"),
+	"/convex/velocity/client.ts": async () =>
+		await import("./../velocity/client.ts"),
 	"/convex/velocity/documents.ts": async () =>
 		await import("./../velocity/documents.ts"),
 	"/convex/velocity/exceptions.ts": async () =>
 		await import("./../velocity/exceptions.ts"),
 	"/convex/velocity/review.ts": async () =>
 		await import("./../velocity/review.ts"),
+	"/convex/velocity/mock.ts": async () => await import("./../velocity/mock.ts"),
 	"/convex/velocity/sync.ts": async () => await import("./../velocity/sync.ts"),
 	"/convex/velocity/webhook.ts": async () =>
 		await import("./../velocity/webhook.ts"),
