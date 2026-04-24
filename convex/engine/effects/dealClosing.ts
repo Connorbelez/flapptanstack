@@ -234,6 +234,16 @@ export const commitReservation = internalAction({
 
 		if (!deal) {
 			console.error(`[commitReservation] Deal not found: ${dealId}`);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "reservation_commit",
+					status: "failed",
+					exceptionKind: "effect_failed",
+					message: "Deal not found during reservation commit.",
+				}
+			);
 			return;
 		}
 
@@ -241,6 +251,16 @@ export const commitReservation = internalAction({
 		if (!deal.reservationId) {
 			console.error(
 				`[commitReservation] No reservationId for deal ${dealId} — cannot commit`
+			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "reservation_commit",
+					status: "blocked",
+					exceptionKind: "effect_failed",
+					message: "No reservationId on deal; cannot commit reservation.",
+				}
 			);
 			return;
 		}
@@ -260,6 +280,16 @@ export const commitReservation = internalAction({
 			console.info(
 				`[commitReservation] Committed reservation ${deal.reservationId} for deal ${dealId}`
 			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "reservation_commit",
+					status: "succeeded",
+					message: "Reservation committed.",
+					metadata: { reservationId: `${deal.reservationId}` },
+				}
+			);
 		} catch (error) {
 			// RESERVATION_NOT_PENDING means already committed (idempotent retry)
 			// RESERVATION_NOT_FOUND is unexpected but non-fatal
@@ -267,6 +297,17 @@ export const commitReservation = internalAction({
 				`[commitReservation] Failed for deal ${dealId}: ${
 					error instanceof Error ? error.message : String(error)
 				}`
+			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "reservation_commit",
+					status: "failed",
+					exceptionKind: "effect_failed",
+					message: "Reservation commit failed.",
+					error: error instanceof Error ? error.message : String(error),
+				}
 			);
 		}
 	},

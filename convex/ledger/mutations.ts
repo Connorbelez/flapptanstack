@@ -557,22 +557,29 @@ export const redeemSharesInternal = internalMutation({
 	handler: async (ctx, args) => redeemSharesHandler(ctx, args),
 });
 
-export interface ReserveSharesArgs {
+export interface ReserveSharesHandlerArgs {
 	amount: number;
 	buyerLenderId: string;
 	dealId?: string;
 	effectiveDate: string;
 	idempotencyKey: string;
-	metadata?: Record<string, unknown>;
+	metadata?: unknown;
 	mortgageId: string;
 	sellerLenderId: string;
 	source: EventSource;
 }
 
+export interface ReserveSharesHandlerResult {
+	journalEntry: Doc<"ledger_journal_entries"> & {
+		reservationId?: Id<"ledger_reservations">;
+	};
+	reservationId: Id<"ledger_reservations">;
+}
+
 export async function reserveSharesHandler(
 	ctx: MutationCtx,
-	args: ReserveSharesArgs
-) {
+	args: ReserveSharesHandlerArgs
+): Promise<ReserveSharesHandlerResult> {
 	const existingEntry = await ctx.db
 		.query("ledger_journal_entries")
 		.withIndex("by_idempotency", (q) =>
@@ -619,7 +626,10 @@ export async function reserveSharesHandler(
 		effectiveDate: args.effectiveDate,
 		idempotencyKey: args.idempotencyKey,
 		source: args.source,
-		metadata: args.metadata,
+		metadata:
+			args.metadata === undefined
+				? undefined
+				: (args.metadata as Record<string, unknown>),
 	});
 
 	const amountDelta = BigInt(args.amount);
@@ -739,7 +749,7 @@ export const commitReservation = internalMutation({
 	},
 });
 
-export interface VoidReservationArgs {
+export interface VoidReservationHandlerArgs {
 	effectiveDate: string;
 	idempotencyKey: string;
 	reason: string;
@@ -749,8 +759,8 @@ export interface VoidReservationArgs {
 
 export async function voidReservationHandler(
 	ctx: MutationCtx,
-	args: VoidReservationArgs
-) {
+	args: VoidReservationHandlerArgs
+): Promise<{ journalEntry: Doc<"ledger_journal_entries"> }> {
 	// Idempotency
 	const existingEntry = await ctx.db
 		.query("ledger_journal_entries")

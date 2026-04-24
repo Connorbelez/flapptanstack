@@ -99,7 +99,10 @@ function ListingScrollReveal({
 type ListingDetailPageMode = "interactive" | "readOnly";
 
 /** Typed listings index routes supported by the detail shell back link. */
-export type ListingsIndexTo = "/listings" | "/demo/listings";
+export type ListingsIndexTo =
+	| "/listings"
+	| "/demo/listings"
+	| "/e2e/marketplace-public-documents";
 
 interface ListingDetailPageProps {
 	backHref?: string;

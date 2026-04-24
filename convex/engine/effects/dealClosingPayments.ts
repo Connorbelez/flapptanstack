@@ -31,6 +31,16 @@ export const updatePaymentSchedule = internalAction({
 
 		if (!deal) {
 			console.error(`[updatePaymentSchedule] Deal not found: ${dealId}`);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "payment_reroute",
+					status: "failed",
+					exceptionKind: "effect_failed",
+					message: "Deal not found during payment reroute.",
+				}
+			);
 			return;
 		}
 
@@ -43,11 +53,30 @@ export const updatePaymentSchedule = internalAction({
 			console.info(
 				`[updatePaymentSchedule] Reroute already exists for deal ${dealId} — skipping`
 			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "payment_reroute",
+					status: "skipped",
+					message: "Payment reroute already exists for deal.",
+				}
+			);
 			return;
 		}
 
 		if (!deal.closingDate) {
 			console.error(`[updatePaymentSchedule] No closingDate on deal ${dealId}`);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "payment_reroute",
+					status: "blocked",
+					exceptionKind: "effect_failed",
+					message: "No closingDate on deal for payment reroute.",
+				}
+			);
 			return;
 		}
 
@@ -69,11 +98,32 @@ export const updatePaymentSchedule = internalAction({
 			console.info(
 				`[updatePaymentSchedule] Created reroute for deal ${dealId}: ${deal.fractionalShare} units from ${deal.sellerId} to ${deal.buyerId} after ${effectiveAfterDate}`
 			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "payment_reroute",
+					status: "succeeded",
+					message: "Payment reroute created.",
+					metadata: { effectiveAfterDate },
+				}
+			);
 		} catch (error) {
 			console.error(
 				`[updatePaymentSchedule] Failed to create reroute for deal ${dealId}: ${
 					error instanceof Error ? error.message : String(error)
 				}`
+			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "payment_reroute",
+					status: "failed",
+					exceptionKind: "effect_failed",
+					message: "Payment reroute creation failed.",
+					error: error instanceof Error ? error.message : String(error),
+				}
 			);
 			throw error;
 		}

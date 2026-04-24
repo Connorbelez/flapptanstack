@@ -10,6 +10,7 @@ import { internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "../../_generated/server";
 import { internalAction, internalMutation } from "../../_generated/server";
+import { fundsReceiptSourceValidator } from "../../deals/closeEvidence";
 import { appendAuditJournalEntry } from "../../engine/auditJournal";
 import { buildSource } from "../../engine/commands";
 import { executeTransition } from "../../engine/transition";
@@ -713,6 +714,7 @@ export const fireDealTransitionInternal = internalMutation({
 					v.literal("wire_receipt"),
 					v.literal("manual")
 				),
+				fundsReceiptSource: v.optional(fundsReceiptSourceValidator),
 			})
 		),
 	},

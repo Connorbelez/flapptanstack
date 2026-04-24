@@ -6,6 +6,7 @@ import { buildSource, transitionCommandArgs } from "../engine/commands";
 import { executeTransition } from "../engine/transition";
 import type { CommandSource } from "../engine/types";
 import { adminMutation } from "../fluent";
+import { normalizeEvidenceNote } from "./closeEvidence";
 
 export type DealAccessRole =
 	| "platform_lawyer"
@@ -130,6 +131,63 @@ export const transitionDeal = adminMutation
 			entityId: args.entityId,
 			eventType: args.eventType,
 			payload: args.payload as Record<string, unknown> | undefined,
+			source,
+		});
+	})
+	.public();
+
+export const confirmManualFundsReceipt = adminMutation
+	.input({
+		dealId: v.id("deals"),
+		evidenceNote: v.string(),
+		receivedAt: v.number(),
+		attachmentIds: v.optional(v.array(v.id("documentAssets"))),
+	})
+	.handler(async (ctx, args) => {
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal) {
+			throw new Error("Deal not found");
+		}
+		if (deal.status !== "fundsTransfer.pending") {
+			throw new Error(
+				`Deal must be in fundsTransfer.pending to confirm funds, currently: ${deal.status}`
+			);
+		}
+
+		const evidenceNote = normalizeEvidenceNote(args.evidenceNote);
+		if (!evidenceNote) {
+			throw new Error("Manual funds confirmation requires an evidence note");
+		}
+		if (args.receivedAt <= 0) {
+			throw new Error(
+				`Manual funds confirmation requires a positive receivedAt timestamp, got ${args.receivedAt}`
+			);
+		}
+
+		for (const attachmentId of args.attachmentIds ?? []) {
+			const attachment = await ctx.db.get(attachmentId);
+			if (!attachment) {
+				throw new Error(
+					`Manual evidence attachment not found: ${attachmentId}`
+				);
+			}
+		}
+
+		const source = buildSource(ctx.viewer, "admin_dashboard");
+		return executeTransition(ctx, {
+			entityType: "deal",
+			entityId: args.dealId,
+			eventType: "FUNDS_RECEIVED",
+			payload: {
+				method: "manual",
+				fundsReceiptSource: {
+					kind: "manual_admin",
+					confirmedBy: ctx.viewer.authId,
+					evidenceNote,
+					receivedAt: args.receivedAt,
+					attachmentIds: args.attachmentIds,
+				},
+			},
 			source,
 		});
 	})

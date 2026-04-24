@@ -44,6 +44,16 @@ export const prorateAccrualBetweenOwners = internalAction({
 
 		if (!deal) {
 			console.error(`[prorateAccrual] Deal not found: ${dealId}`);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "accrual_proration",
+					status: "failed",
+					exceptionKind: "effect_failed",
+					message: "Deal not found during accrual proration.",
+				}
+			);
 			return;
 		}
 
@@ -56,6 +66,15 @@ export const prorateAccrualBetweenOwners = internalAction({
 			console.info(
 				`[prorateAccrual] Prorate entries already exist for deal ${dealId} — skipping`
 			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "accrual_proration",
+					status: "skipped",
+					message: "Prorate entries already exist for deal.",
+				}
+			);
 			return;
 		}
 
@@ -67,11 +86,31 @@ export const prorateAccrualBetweenOwners = internalAction({
 
 		if (!mortgage) {
 			console.error(`[prorateAccrual] Mortgage not found: ${deal.mortgageId}`);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "accrual_proration",
+					status: "blocked",
+					exceptionKind: "effect_failed",
+					message: "Mortgage not found for accrual proration.",
+				}
+			);
 			return;
 		}
 
 		if (!deal.closingDate) {
 			console.error(`[prorateAccrual] No closingDate on deal ${dealId}`);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "accrual_proration",
+					status: "blocked",
+					exceptionKind: "effect_failed",
+					message: "No closingDate on deal for accrual proration.",
+				}
+			);
 			return;
 		}
 
@@ -102,6 +141,16 @@ export const prorateAccrualBetweenOwners = internalAction({
 		if (!nextObligation) {
 			console.error(
 				`[prorateAccrual] No future obligations found for mortgage ${deal.mortgageId} — cannot determine next payment date`
+			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "accrual_proration",
+					status: "blocked",
+					exceptionKind: "effect_failed",
+					message: "No future obligation found for accrual proration.",
+				}
 			);
 			return;
 		}
@@ -173,6 +222,15 @@ export const prorateAccrualBetweenOwners = internalAction({
 			console.info(
 				`[prorateAccrual] Deal ${dealId}: both seller and buyer days are zero — no entries to write`
 			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "accrual_proration",
+					status: "skipped",
+					message: "No prorate entries were needed.",
+				}
+			);
 			return;
 		}
 
@@ -191,11 +249,36 @@ export const prorateAccrualBetweenOwners = internalAction({
 			console.info(
 				`[prorateAccrual] Deal ${dealId}: seller=${sellerDays}d ($${sellerAmount}), buyer=${buyerDays}d ($${buyerAmount})`
 			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "accrual_proration",
+					status: "succeeded",
+					message: "Prorate entries inserted.",
+					metadata: {
+						entryCount: `${entries.length}`,
+						sellerDays: `${sellerDays}`,
+						buyerDays: `${buyerDays}`,
+					},
+				}
+			);
 		} catch (error) {
 			console.error(
 				`[prorateAccrual] Failed to insert prorate entries for deal ${dealId}: ${
 					error instanceof Error ? error.message : String(error)
 				}`
+			);
+			await ctx.runMutation(
+				internal.deals.closeEvidence.recordCloseEffectOutcomeInternal,
+				{
+					dealId,
+					effectName: "accrual_proration",
+					status: "failed",
+					exceptionKind: "effect_failed",
+					message: "Prorate entry insert failed.",
+					error: error instanceof Error ? error.message : String(error),
+				}
 			);
 			throw error;
 		}
