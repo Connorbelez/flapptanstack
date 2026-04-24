@@ -82,5 +82,6 @@ export function buildReferralMutationArgs(
 		invitedByBrokerId: search.invitedByBrokerId,
 		portalId: portalId as never,
 		referralSource: search.referralSource ?? "self_signup",
+		referralToken: search.ref,
 	};
 }

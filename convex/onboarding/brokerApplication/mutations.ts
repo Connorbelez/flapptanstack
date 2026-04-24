@@ -77,6 +77,7 @@ export const startOrResume = brokerOnboardingMutation
 		invitedByBrokerId: v.optional(v.string()),
 		portalId: v.optional(v.id("portals")),
 		referralSource: v.optional(referralSourceValidator),
+		referralToken: v.optional(v.string()),
 	})
 	.handler(async (ctx, args) => {
 		const now = Date.now();
@@ -108,8 +109,13 @@ export const startOrResume = brokerOnboardingMutation
 			)
 				? buildResumeWindowPatch(now)
 				: { lastActivityAt: now, updatedAt: now };
+			const referralTokenPatch =
+				args.referralToken && !resumableApplication.referralToken
+					? { referralToken: args.referralToken }
+					: {};
 			await ctx.db.patch(resumableApplication._id, {
 				...patch,
+				...referralTokenPatch,
 				...(verifiedEmail &&
 				resumableApplication.verifiedEmail !== verifiedEmail
 					? { verifiedEmail }
@@ -124,6 +130,7 @@ export const startOrResume = brokerOnboardingMutation
 				metadata: {
 					status: resumableApplication.status,
 					verifiedEmailPresent: Boolean(verifiedEmail),
+					...(args.referralToken ? { referralToken: args.referralToken } : {}),
 				},
 			});
 			return getFreshReadModel(ctx, resumableApplication._id, now);
@@ -146,6 +153,7 @@ export const startOrResume = brokerOnboardingMutation
 			portalId,
 			referralSource,
 			invitedByBrokerId: args.invitedByBrokerId,
+			referralToken: args.referralToken,
 			draftData: {},
 			reopenedFields: [],
 			startedAt: createdAt,
@@ -184,6 +192,7 @@ export const startOrResume = brokerOnboardingMutation
 				...(args.invitedByBrokerId
 					? { invitedByBrokerId: args.invitedByBrokerId }
 					: {}),
+				...(args.referralToken ? { referralToken: args.referralToken } : {}),
 			},
 			previousState: "none",
 			timestamp: createdAt,
@@ -208,6 +217,7 @@ export const startOrResume = brokerOnboardingMutation
 				...(args.invitedByBrokerId
 					? { invitedByBrokerId: args.invitedByBrokerId }
 					: {}),
+				...(args.referralToken ? { referralToken: args.referralToken } : {}),
 			},
 		});
 

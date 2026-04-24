@@ -110,6 +110,7 @@ describe("onboard route", () => {
 		mockRouteContext();
 		vi.spyOn(Route, "useSearch").mockReturnValue({
 			invitedByBrokerId: "user_referrer",
+			ref: "launch-a",
 			referralSource: "broker_invite",
 		} as never);
 		vi.mocked(useAppAuth).mockReturnValue({
@@ -134,6 +135,7 @@ describe("onboard route", () => {
 			invitedByBrokerId: "user_referrer",
 			portalId: "portal_meridian",
 			referralSource: "broker_invite",
+			referralToken: "launch-a",
 		});
 	});
 

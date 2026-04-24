@@ -84,7 +84,9 @@ export function OnboardingWizard({
 		setForm((current) => ({ ...current, [field]: value }));
 	}
 
-	async function handleSave(currentStep = progress.activeKey) {
+	async function handleSave(
+		currentStep = progress.activeKey
+	): Promise<boolean> {
 		setIsSaving(true);
 		setError(null);
 		setMessage(null);
@@ -95,17 +97,22 @@ export function OnboardingWizard({
 				draftData: formToDraftData(form),
 			});
 			setMessage("Draft saved to the application record.");
+			return true;
 		} catch (caught) {
 			setError(
 				caught instanceof Error ? caught.message : "Could not save draft"
 			);
+			return false;
 		} finally {
 			setIsSaving(false);
 		}
 	}
 
 	async function handleStartIdentityVerification() {
-		await handleSave("verification");
+		const didSave = await handleSave("verification");
+		if (!didSave) {
+			return;
+		}
 		setIsStartingIdv(true);
 		setError(null);
 		setMessage(null);
@@ -146,7 +153,10 @@ export function OnboardingWizard({
 	}
 
 	async function handleSubmit() {
-		await handleSave("submit");
+		const didSave = await handleSave("submit");
+		if (!didSave) {
+			return;
+		}
 		setIsSubmitting(true);
 		setError(null);
 		setMessage(null);

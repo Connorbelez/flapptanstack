@@ -99,6 +99,9 @@ describe("onboard status surfaces", () => {
 		);
 
 		expect(screen.getByText("Your broker portal is active.")).toBeTruthy();
+		expect(screen.getByText("Active portal")).toBeTruthy();
+		expect(screen.getAllByText("Activated").length).toBeGreaterThanOrEqual(1);
+		expect(screen.queryByText(/does not claim a namespace/)).toBeNull();
 	});
 
 	it("shows shared-contract slug preview and availability feedback", () => {
