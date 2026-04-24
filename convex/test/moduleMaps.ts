@@ -189,6 +189,10 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../dealLocks/mutations.ts"),
 	"/convex/dealLocks/validators.ts": async () =>
 		await import("./../dealLocks/validators.ts"),
+	"/convex/deals/envelopeWebhooks.ts": async () =>
+		await import("./../deals/envelopeWebhooks.ts"),
+	"/convex/deals/envelopes.ts": async () =>
+		await import("./../deals/envelopes.ts"),
 	"/convex/deals/mutations.ts": async () =>
 		await import("./../deals/mutations.ts"),
 	"/convex/deals/participantProjection.ts": async () =>

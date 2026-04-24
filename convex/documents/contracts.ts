@@ -154,6 +154,106 @@ export const dealDocumentInstanceStatusValidator = v.union(
 	v.literal("archived")
 );
 
+export const dealEnvelopeProviderValidator = v.literal("documenso");
+
+export const dealEnvelopeAttemptStatusValidator = v.union(
+	v.literal("draft"),
+	v.literal("sent"),
+	v.literal("partially_signed"),
+	v.literal("completed"),
+	v.literal("declined"),
+	v.literal("voided"),
+	v.literal("expired"),
+	v.literal("configuration_error"),
+	v.literal("send_failed"),
+	v.literal("reissue_required")
+);
+
+export const dealEnvelopeRecipientDocumensoRoleValidator = v.union(
+	v.literal("SIGNER"),
+	v.literal("APPROVER"),
+	v.literal("VIEWER")
+);
+
+export const dealEnvelopeRecipientSendStatusValidator = v.union(
+	v.literal("pending"),
+	v.literal("sent"),
+	v.literal("delivery_failed"),
+	v.literal("cancelled")
+);
+
+export const dealEnvelopeRecipientReadStatusValidator = v.union(
+	v.literal("not_available"),
+	v.literal("available"),
+	v.literal("opened")
+);
+
+export const dealEnvelopeRecipientSigningStatusValidator = v.union(
+	v.literal("not_started"),
+	v.literal("in_progress"),
+	v.literal("completed"),
+	v.literal("rejected"),
+	v.literal("voided"),
+	v.literal("expired")
+);
+
+export const dealEnvelopeProviderEventStatusValidator = v.union(
+	v.literal("pending"),
+	v.literal("processed"),
+	v.literal("failed")
+);
+
+export const dealEnvelopeProviderEventTypeValidator = v.union(
+	v.literal("document_created"),
+	v.literal("document_sent"),
+	v.literal("recipient_opened"),
+	v.literal("recipient_signed"),
+	v.literal("recipient_completed"),
+	v.literal("document_completed"),
+	v.literal("document_declined"),
+	v.literal("document_voided"),
+	v.literal("document_expired"),
+	v.literal("reminder_sent"),
+	v.literal("unknown")
+);
+
+export const dealSigningExceptionKindValidator = v.union(
+	v.literal("pre_send_configuration_failure"),
+	v.literal("send_failure"),
+	v.literal("signing_stall"),
+	v.literal("recipient_rejection"),
+	v.literal("envelope_cancelled_or_voided"),
+	v.literal("reconciliation_mismatch")
+);
+
+export const dealSigningExceptionStatusValidator = v.union(
+	v.literal("open"),
+	v.literal("resolved")
+);
+
+export const dealSigningExceptionSeverityValidator = v.union(
+	v.literal("blocking"),
+	v.literal("warning")
+);
+
+export const dealEnvelopeRecipientSnapshotValidator = v.object({
+	authId: v.optional(v.string()),
+	email: v.string(),
+	name: v.string(),
+	platformRole: v.string(),
+	documensoRole: dealEnvelopeRecipientDocumensoRoleValidator,
+	signingOrder: v.number(),
+	required: v.boolean(),
+	providerRecipientId: v.optional(v.string()),
+	tokenAvailableAt: v.optional(v.number()),
+	tokenExpiresAt: v.optional(v.number()),
+	sendStatus: dealEnvelopeRecipientSendStatusValidator,
+	readStatus: dealEnvelopeRecipientReadStatusValidator,
+	signingStatus: dealEnvelopeRecipientSigningStatusValidator,
+	rejectionReason: v.optional(v.string()),
+	completedAt: v.optional(v.number()),
+});
+
 export const dealDocumentSourceBlueprintSnapshotValidator = v.object({
 	category: v.optional(v.string()),
 	class: mortgageDocumentBlueprintClassValidator,
@@ -202,6 +302,52 @@ export type DealDocumentInstanceKind = Infer<
 
 export type DealDocumentInstanceStatus = Infer<
 	typeof dealDocumentInstanceStatusValidator
+>;
+
+export type DealEnvelopeProvider = Infer<typeof dealEnvelopeProviderValidator>;
+
+export type DealEnvelopeAttemptStatus = Infer<
+	typeof dealEnvelopeAttemptStatusValidator
+>;
+
+export type DealEnvelopeRecipientDocumensoRole = Infer<
+	typeof dealEnvelopeRecipientDocumensoRoleValidator
+>;
+
+export type DealEnvelopeRecipientSendStatus = Infer<
+	typeof dealEnvelopeRecipientSendStatusValidator
+>;
+
+export type DealEnvelopeRecipientReadStatus = Infer<
+	typeof dealEnvelopeRecipientReadStatusValidator
+>;
+
+export type DealEnvelopeRecipientSigningStatus = Infer<
+	typeof dealEnvelopeRecipientSigningStatusValidator
+>;
+
+export type DealEnvelopeProviderEventStatus = Infer<
+	typeof dealEnvelopeProviderEventStatusValidator
+>;
+
+export type DealEnvelopeProviderEventType = Infer<
+	typeof dealEnvelopeProviderEventTypeValidator
+>;
+
+export type DealSigningExceptionKind = Infer<
+	typeof dealSigningExceptionKindValidator
+>;
+
+export type DealSigningExceptionStatus = Infer<
+	typeof dealSigningExceptionStatusValidator
+>;
+
+export type DealSigningExceptionSeverity = Infer<
+	typeof dealSigningExceptionSeverityValidator
+>;
+
+export type DealEnvelopeRecipientSnapshot = Infer<
+	typeof dealEnvelopeRecipientSnapshotValidator
 >;
 
 export type DealDocumentSourceBlueprintSnapshot = Infer<

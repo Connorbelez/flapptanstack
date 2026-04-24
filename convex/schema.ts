@@ -64,7 +64,19 @@ import {
 	dealDocumentInstanceStatusValidator,
 	dealDocumentPackageStatusValidator,
 	dealDocumentSourceBlueprintSnapshotValidator,
+	dealEnvelopeAttemptStatusValidator,
+	dealEnvelopeProviderEventStatusValidator,
+	dealEnvelopeProviderEventTypeValidator,
+	dealEnvelopeProviderValidator,
+	dealEnvelopeRecipientDocumensoRoleValidator,
+	dealEnvelopeRecipientReadStatusValidator,
+	dealEnvelopeRecipientSendStatusValidator,
+	dealEnvelopeRecipientSigningStatusValidator,
+	dealEnvelopeRecipientSnapshotValidator,
 	dealPackageBlueprintSnapshotValidator,
+	dealSigningExceptionKindValidator,
+	dealSigningExceptionSeverityValidator,
+	dealSigningExceptionStatusValidator,
 	generatedDocumentSigningStatusValidator,
 	mortgageDocumentBlueprintClassValidator,
 	mortgageDocumentBlueprintStatusValidator,
@@ -1180,6 +1192,119 @@ export default defineSchema({
 			"providerRecipientId",
 		])
 		.index("by_user_status", ["userId", "status"]),
+
+	dealEnvelopeAttempts: defineTable({
+		dealId: v.id("deals"),
+		packageId: v.id("dealDocumentPackages"),
+		dealDocumentInstanceId: v.id("dealDocumentInstances"),
+		generatedDocumentId: v.optional(v.id("generatedDocuments")),
+		provider: dealEnvelopeProviderValidator,
+		providerDocumentId: v.optional(v.string()),
+		providerEnvelopeId: v.optional(v.string()),
+		attemptNumber: v.number(),
+		status: dealEnvelopeAttemptStatusValidator,
+		recipientRoster: v.array(dealEnvelopeRecipientSnapshotValidator),
+		active: v.boolean(),
+		idempotencyKey: v.string(),
+		supersedesAttemptId: v.optional(v.id("dealEnvelopeAttempts")),
+		supersededByAttemptId: v.optional(v.id("dealEnvelopeAttempts")),
+		terminalReason: v.optional(v.string()),
+		terminalAt: v.optional(v.number()),
+		completionTransitionRequestedAt: v.optional(v.number()),
+		completionTransitionEmittedAt: v.optional(v.number()),
+		completionJournalEntryId: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_deal", ["dealId", "createdAt"])
+		.index("by_package", ["packageId", "createdAt"])
+		.index("by_instance", ["dealDocumentInstanceId", "attemptNumber"])
+		.index("by_instance_active", ["dealDocumentInstanceId", "active"])
+		.index("by_provider_document", ["provider", "providerDocumentId"])
+		.index("by_provider_envelope", ["provider", "providerEnvelopeId"])
+		.index("by_idempotency", ["idempotencyKey"]),
+
+	dealEnvelopeRecipients: defineTable({
+		attemptId: v.id("dealEnvelopeAttempts"),
+		dealId: v.id("deals"),
+		packageId: v.id("dealDocumentPackages"),
+		dealDocumentInstanceId: v.id("dealDocumentInstances"),
+		authId: v.optional(v.string()),
+		email: v.string(),
+		name: v.string(),
+		platformRole: v.string(),
+		documensoRole: dealEnvelopeRecipientDocumensoRoleValidator,
+		signingOrder: v.number(),
+		required: v.boolean(),
+		providerRecipientId: v.optional(v.string()),
+		embeddedSigningToken: v.optional(v.string()),
+		tokenAvailableAt: v.optional(v.number()),
+		tokenExpiresAt: v.optional(v.number()),
+		sendStatus: dealEnvelopeRecipientSendStatusValidator,
+		readStatus: dealEnvelopeRecipientReadStatusValidator,
+		signingStatus: dealEnvelopeRecipientSigningStatusValidator,
+		rejectionReason: v.optional(v.string()),
+		sentAt: v.optional(v.number()),
+		openedAt: v.optional(v.number()),
+		completedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_attempt", ["attemptId", "signingOrder"])
+		.index("by_deal", ["dealId", "createdAt"])
+		.index("by_deal_auth", ["dealId", "authId"])
+		.index("by_attempt_provider_recipient", [
+			"attemptId",
+			"providerRecipientId",
+		])
+		.index("by_provider_recipient", ["providerRecipientId"]),
+
+	dealEnvelopeProviderEvents: defineTable({
+		provider: dealEnvelopeProviderValidator,
+		providerEventId: v.string(),
+		providerDocumentId: v.optional(v.string()),
+		providerEnvelopeId: v.optional(v.string()),
+		providerRecipientId: v.optional(v.string()),
+		rawBody: v.string(),
+		rawEventType: v.string(),
+		normalizedEventType: dealEnvelopeProviderEventTypeValidator,
+		status: dealEnvelopeProviderEventStatusValidator,
+		signatureVerified: v.boolean(),
+		dealId: v.optional(v.id("deals")),
+		attemptId: v.optional(v.id("dealEnvelopeAttempts")),
+		recipientId: v.optional(v.id("dealEnvelopeRecipients")),
+		error: v.optional(v.string()),
+		attempts: v.number(),
+		receivedAt: v.number(),
+		processedAt: v.optional(v.number()),
+	})
+		.index("by_provider_event", ["provider", "providerEventId"])
+		.index("by_status", ["status", "receivedAt"])
+		.index("by_attempt", ["attemptId", "receivedAt"])
+		.index("by_deal", ["dealId", "receivedAt"])
+		.index("by_provider_document", ["provider", "providerDocumentId"]),
+
+	dealSigningExceptions: defineTable({
+		dealId: v.id("deals"),
+		packageId: v.optional(v.id("dealDocumentPackages")),
+		dealDocumentInstanceId: v.optional(v.id("dealDocumentInstances")),
+		attemptId: v.optional(v.id("dealEnvelopeAttempts")),
+		recipientId: v.optional(v.id("dealEnvelopeRecipients")),
+		providerEventId: v.optional(v.id("dealEnvelopeProviderEvents")),
+		kind: dealSigningExceptionKindValidator,
+		status: dealSigningExceptionStatusValidator,
+		severity: dealSigningExceptionSeverityValidator,
+		message: v.string(),
+		details: v.optional(v.record(v.string(), v.string())),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		resolvedAt: v.optional(v.number()),
+		resolvedBy: v.optional(v.string()),
+	})
+		.index("by_deal", ["dealId", "status", "createdAt"])
+		.index("by_attempt", ["attemptId", "status", "createdAt"])
+		.index("by_package", ["packageId", "status", "createdAt"])
+		.index("by_kind", ["kind", "status", "createdAt"]),
 
 	// ══════════════════════════════════════════════════════════
 	// VELOCITY PACKAGE INTEGRATION
