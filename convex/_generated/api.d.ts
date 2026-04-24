@@ -403,11 +403,14 @@ import type * as test_packageSchemas from "../test/packageSchemas.js";
 import type * as todos from "../todos.js";
 import type * as users_byAuthId from "../users/byAuthId.js";
 import type * as velocity_audit from "../velocity/audit.js";
+import type * as velocity_client from "../velocity/client.js";
 import type * as velocity_constants from "../velocity/constants.js";
 import type * as velocity_contracts from "../velocity/contracts.js";
 import type * as velocity_index from "../velocity/index.js";
 import type * as velocity_provenance from "../velocity/provenance.js";
+import type * as velocity_sync from "../velocity/sync.js";
 import type * as velocity_validators from "../velocity/validators.js";
+import type * as velocity_webhook from "../velocity/webhook.js";
 
 import type {
   ApiFromModules,
@@ -811,11 +814,14 @@ declare const fullApi: ApiFromModules<{
   todos: typeof todos;
   "users/byAuthId": typeof users_byAuthId;
   "velocity/audit": typeof velocity_audit;
+  "velocity/client": typeof velocity_client;
   "velocity/constants": typeof velocity_constants;
   "velocity/contracts": typeof velocity_contracts;
   "velocity/index": typeof velocity_index;
   "velocity/provenance": typeof velocity_provenance;
+  "velocity/sync": typeof velocity_sync;
   "velocity/validators": typeof velocity_validators;
+  "velocity/webhook": typeof velocity_webhook;
 }>;
 
 /**
