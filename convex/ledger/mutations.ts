@@ -557,84 +557,101 @@ export const redeemSharesInternal = internalMutation({
 	handler: async (ctx, args) => redeemSharesHandler(ctx, args),
 });
 
+export interface ReserveSharesArgs {
+	amount: number;
+	buyerLenderId: string;
+	dealId?: string;
+	effectiveDate: string;
+	idempotencyKey: string;
+	metadata?: Record<string, unknown>;
+	mortgageId: string;
+	sellerLenderId: string;
+	source: EventSource;
+}
+
+export async function reserveSharesHandler(
+	ctx: MutationCtx,
+	args: ReserveSharesArgs
+) {
+	const existingEntry = await ctx.db
+		.query("ledger_journal_entries")
+		.withIndex("by_idempotency", (q) =>
+			q.eq("idempotencyKey", args.idempotencyKey)
+		)
+		.first();
+	if (existingEntry) {
+		if (!existingEntry.reservationId) {
+			throw new ConvexError({
+				code: "IDEMPOTENT_REPLAY_FAILED" as const,
+				message: `Idempotent reserveShares replay: existing entry ${existingEntry._id} lacks reservation linkage`,
+			});
+		}
+		const reservation = await ctx.db.get(existingEntry.reservationId);
+		if (!reservation) {
+			throw new ConvexError({
+				code: "IDEMPOTENT_REPLAY_FAILED" as const,
+				message: `Idempotent reserveShares replay: reservation ${existingEntry.reservationId} missing`,
+			});
+		}
+		return {
+			reservationId: reservation._id,
+			journalEntry: existingEntry,
+		};
+	}
+
+	const sellerPosition = await getPositionAccount(
+		ctx,
+		args.mortgageId,
+		args.sellerLenderId
+	);
+	const buyerPosition = await getOrCreatePositionAccount(
+		ctx,
+		args.mortgageId,
+		args.buyerLenderId
+	);
+
+	const journalEntry = await postEntry(ctx, {
+		entryType: "SHARES_RESERVED",
+		mortgageId: args.mortgageId,
+		debitAccountId: buyerPosition._id,
+		creditAccountId: sellerPosition._id,
+		amount: args.amount,
+		effectiveDate: args.effectiveDate,
+		idempotencyKey: args.idempotencyKey,
+		source: args.source,
+		metadata: args.metadata,
+	});
+
+	const amountDelta = BigInt(args.amount);
+	await ctx.db.patch(sellerPosition._id, {
+		pendingCredits: (sellerPosition.pendingCredits ?? 0n) + amountDelta,
+	});
+	await ctx.db.patch(buyerPosition._id, {
+		pendingDebits: (buyerPosition.pendingDebits ?? 0n) + amountDelta,
+	});
+
+	const reservationId = await ctx.db.insert("ledger_reservations", {
+		mortgageId: args.mortgageId,
+		sellerAccountId: sellerPosition._id,
+		buyerAccountId: buyerPosition._id,
+		amount: args.amount,
+		status: "pending",
+		dealId: args.dealId,
+		reserveJournalEntryId: journalEntry._id,
+		createdAt: Date.now(),
+	});
+
+	await ctx.db.patch(journalEntry._id, { reservationId });
+
+	return {
+		reservationId,
+		journalEntry: { ...journalEntry, reservationId },
+	};
+}
+
 export const reserveShares = internalMutation({
 	args: reserveSharesArgsValidator,
-	handler: async (ctx, args) => {
-		const existingEntry = await ctx.db
-			.query("ledger_journal_entries")
-			.withIndex("by_idempotency", (q) =>
-				q.eq("idempotencyKey", args.idempotencyKey)
-			)
-			.first();
-		if (existingEntry) {
-			if (!existingEntry.reservationId) {
-				throw new ConvexError({
-					code: "IDEMPOTENT_REPLAY_FAILED" as const,
-					message: `Idempotent reserveShares replay: existing entry ${existingEntry._id} lacks reservation linkage`,
-				});
-			}
-			const reservation = await ctx.db.get(existingEntry.reservationId);
-			if (!reservation) {
-				throw new ConvexError({
-					code: "IDEMPOTENT_REPLAY_FAILED" as const,
-					message: `Idempotent reserveShares replay: reservation ${existingEntry.reservationId} missing`,
-				});
-			}
-			return {
-				reservationId: reservation._id,
-				journalEntry: existingEntry,
-			};
-		}
-
-		const sellerPosition = await getPositionAccount(
-			ctx,
-			args.mortgageId,
-			args.sellerLenderId
-		);
-		const buyerPosition = await getOrCreatePositionAccount(
-			ctx,
-			args.mortgageId,
-			args.buyerLenderId
-		);
-
-		const journalEntry = await postEntry(ctx, {
-			entryType: "SHARES_RESERVED",
-			mortgageId: args.mortgageId,
-			debitAccountId: buyerPosition._id,
-			creditAccountId: sellerPosition._id,
-			amount: args.amount,
-			effectiveDate: args.effectiveDate,
-			idempotencyKey: args.idempotencyKey,
-			source: args.source,
-			metadata: args.metadata,
-		});
-
-		const amountDelta = BigInt(args.amount);
-		await ctx.db.patch(sellerPosition._id, {
-			pendingCredits: (sellerPosition.pendingCredits ?? 0n) + amountDelta,
-		});
-		await ctx.db.patch(buyerPosition._id, {
-			pendingDebits: (buyerPosition.pendingDebits ?? 0n) + amountDelta,
-		});
-
-		const reservationId = await ctx.db.insert("ledger_reservations", {
-			mortgageId: args.mortgageId,
-			sellerAccountId: sellerPosition._id,
-			buyerAccountId: buyerPosition._id,
-			amount: args.amount,
-			status: "pending",
-			dealId: args.dealId,
-			reserveJournalEntryId: journalEntry._id,
-			createdAt: Date.now(),
-		});
-
-		await ctx.db.patch(journalEntry._id, { reservationId });
-
-		return {
-			reservationId,
-			journalEntry: { ...journalEntry, reservationId },
-		};
-	},
+	handler: async (ctx, args) => reserveSharesHandler(ctx, args),
 });
 
 export const commitReservation = internalMutation({
@@ -722,85 +739,94 @@ export const commitReservation = internalMutation({
 	},
 });
 
+export interface VoidReservationArgs {
+	effectiveDate: string;
+	idempotencyKey: string;
+	reason: string;
+	reservationId: Doc<"ledger_reservations">["_id"];
+	source: EventSource;
+}
+
+export async function voidReservationHandler(
+	ctx: MutationCtx,
+	args: VoidReservationArgs
+) {
+	const existingEntry = await ctx.db
+		.query("ledger_journal_entries")
+		.withIndex("by_idempotency", (q) =>
+			q.eq("idempotencyKey", args.idempotencyKey)
+		)
+		.first();
+	if (existingEntry) {
+		if (existingEntry.entryType !== "SHARES_VOIDED") {
+			throw new ConvexError({
+				code: "IDEMPOTENT_REPLAY_FAILED" as const,
+				message: `Idempotent voidReservation replay: existing entry ${existingEntry._id} has entryType ${existingEntry.entryType}, expected SHARES_VOIDED`,
+			});
+		}
+		if (existingEntry.reservationId !== args.reservationId) {
+			throw new ConvexError({
+				code: "IDEMPOTENT_REPLAY_FAILED" as const,
+				message: `Idempotent voidReservation replay: existing entry ${existingEntry._id} has reservationId ${existingEntry.reservationId}, expected ${args.reservationId}`,
+			});
+		}
+		return { journalEntry: existingEntry };
+	}
+
+	const reservation = await ctx.db.get(args.reservationId);
+	if (!reservation) {
+		throw new ConvexError({
+			code: "RESERVATION_NOT_FOUND" as const,
+			message: `Reservation ${args.reservationId} does not exist`,
+		});
+	}
+	if (reservation.status !== "pending") {
+		throw new ConvexError({
+			code: "RESERVATION_NOT_PENDING" as const,
+			message: `Reservation ${args.reservationId} is ${reservation.status}, expected pending`,
+		});
+	}
+
+	const sellerAccount = await ctx.db.get(reservation.sellerAccountId);
+	const buyerAccount = await ctx.db.get(reservation.buyerAccountId);
+	if (!(sellerAccount && buyerAccount)) {
+		throw new ConvexError({
+			code: "ACCOUNT_NOT_FOUND" as const,
+			message: "Seller or buyer account from reservation not found",
+		});
+	}
+
+	const amountDelta = BigInt(reservation.amount);
+	await ctx.db.patch(reservation.sellerAccountId, {
+		pendingCredits: (sellerAccount.pendingCredits ?? 0n) - amountDelta,
+	});
+	await ctx.db.patch(reservation.buyerAccountId, {
+		pendingDebits: (buyerAccount.pendingDebits ?? 0n) - amountDelta,
+	});
+
+	const journalEntry = await postEntry(ctx, {
+		entryType: "SHARES_VOIDED",
+		mortgageId: reservation.mortgageId,
+		debitAccountId: reservation.sellerAccountId,
+		creditAccountId: reservation.buyerAccountId,
+		amount: reservation.amount,
+		effectiveDate: args.effectiveDate,
+		idempotencyKey: args.idempotencyKey,
+		source: args.source,
+		reason: args.reason,
+		reservationId: reservation._id,
+	});
+
+	await ctx.db.patch(reservation._id, {
+		status: "voided",
+		voidJournalEntryId: journalEntry._id,
+		resolvedAt: Date.now(),
+	});
+
+	return { journalEntry };
+}
+
 export const voidReservation = internalMutation({
 	args: voidReservationArgsValidator,
-	handler: async (ctx, args) => {
-		// Idempotency
-		const existingEntry = await ctx.db
-			.query("ledger_journal_entries")
-			.withIndex("by_idempotency", (q) =>
-				q.eq("idempotencyKey", args.idempotencyKey)
-			)
-			.first();
-		if (existingEntry) {
-			if (existingEntry.entryType !== "SHARES_VOIDED") {
-				throw new ConvexError({
-					code: "IDEMPOTENT_REPLAY_FAILED" as const,
-					message: `Idempotent voidReservation replay: existing entry ${existingEntry._id} has entryType ${existingEntry.entryType}, expected SHARES_VOIDED`,
-				});
-			}
-			if (existingEntry.reservationId !== args.reservationId) {
-				throw new ConvexError({
-					code: "IDEMPOTENT_REPLAY_FAILED" as const,
-					message: `Idempotent voidReservation replay: existing entry ${existingEntry._id} has reservationId ${existingEntry.reservationId}, expected ${args.reservationId}`,
-				});
-			}
-			return { journalEntry: existingEntry };
-		}
-
-		const reservation = await ctx.db.get(args.reservationId);
-		if (!reservation) {
-			throw new ConvexError({
-				code: "RESERVATION_NOT_FOUND" as const,
-				message: `Reservation ${args.reservationId} does not exist`,
-			});
-		}
-		if (reservation.status !== "pending") {
-			throw new ConvexError({
-				code: "RESERVATION_NOT_PENDING" as const,
-				message: `Reservation ${args.reservationId} is ${reservation.status}, expected pending`,
-			});
-		}
-
-		const sellerAccount = await ctx.db.get(reservation.sellerAccountId);
-		const buyerAccount = await ctx.db.get(reservation.buyerAccountId);
-		if (!(sellerAccount && buyerAccount)) {
-			throw new ConvexError({
-				code: "ACCOUNT_NOT_FOUND" as const,
-				message: "Seller or buyer account from reservation not found",
-			});
-		}
-
-		// Release pending fields before posting audit entry
-		const amountDelta = BigInt(reservation.amount);
-		await ctx.db.patch(reservation.sellerAccountId, {
-			pendingCredits: (sellerAccount.pendingCredits ?? 0n) - amountDelta,
-		});
-		await ctx.db.patch(reservation.buyerAccountId, {
-			pendingDebits: (buyerAccount.pendingDebits ?? 0n) - amountDelta,
-		});
-
-		// Post SHARES_VOIDED: reverse direction (seller receives ← buyer gives)
-		const journalEntry = await postEntry(ctx, {
-			entryType: "SHARES_VOIDED",
-			mortgageId: reservation.mortgageId,
-			debitAccountId: reservation.sellerAccountId,
-			creditAccountId: reservation.buyerAccountId,
-			amount: reservation.amount,
-			effectiveDate: args.effectiveDate,
-			idempotencyKey: args.idempotencyKey,
-			source: args.source,
-			reason: args.reason,
-			reservationId: reservation._id,
-		});
-
-		// Finalize reservation
-		await ctx.db.patch(reservation._id, {
-			status: "voided",
-			voidJournalEntryId: journalEntry._id,
-			resolvedAt: Date.now(),
-		});
-
-		return { journalEntry };
-	},
+	handler: async (ctx, args) => voidReservationHandler(ctx, args),
 });
