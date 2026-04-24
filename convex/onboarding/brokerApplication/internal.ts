@@ -74,14 +74,29 @@ async function findDownstreamRequestForApplication(
 		.unique();
 }
 
-async function assertDownstreamRequestCompatible(
+function assertDownstreamRequestCanContinueHandoff(
+	downstreamRequest: Doc<"onboardingRequests">
+) {
+	if (
+		downstreamRequest.status !== "pending_review" &&
+		downstreamRequest.status !== "approved" &&
+		downstreamRequest.status !== "role_assigned"
+	) {
+		throw new ConvexError(
+			`Cannot hand off broker application to downstream onboarding request in status "${downstreamRequest.status}"`
+		);
+	}
+}
+
+function assertDownstreamRequestCompatible(
 	application: BrokerOnboardingApplicationDoc,
 	downstreamRequestId: Id<"onboardingRequests">,
 	downstreamRequest: Doc<"onboardingRequests"> | null
-) {
+): asserts downstreamRequest is Doc<"onboardingRequests"> {
 	if (!downstreamRequest) {
 		throw new ConvexError("Downstream onboarding request not found");
 	}
+	assertDownstreamRequestCanContinueHandoff(downstreamRequest);
 	if (downstreamRequest.requestedRole !== "broker") {
 		throw new ConvexError(
 			"Broker onboarding applications must link to broker onboarding requests"
@@ -211,23 +226,12 @@ async function approveDownstreamRequest(
 	}
 ) {
 	const downstreamRequest = await ctx.db.get(args.onboardingRequestId);
-	await assertDownstreamRequestCompatible(
+	assertDownstreamRequestCompatible(
 		args.application,
 		args.onboardingRequestId,
 		downstreamRequest
 	);
-	if (!downstreamRequest) {
-		throw new ConvexError("Downstream onboarding request not found");
-	}
 	if (downstreamRequest.status !== "pending_review") {
-		if (
-			downstreamRequest.status !== "approved" &&
-			downstreamRequest.status !== "role_assigned"
-		) {
-			throw new ConvexError(
-				`Cannot hand off broker application to downstream onboarding request in status "${downstreamRequest.status}"`
-			);
-		}
 		return downstreamRequest;
 	}
 
@@ -297,7 +301,7 @@ async function ensureApprovedApplicationDownstreamHandoff(
 		onboardingRequestId = downstreamRequest._id;
 	}
 	if (onboardingRequestId) {
-		await assertDownstreamRequestCompatible(
+		assertDownstreamRequestCompatible(
 			application,
 			onboardingRequestId,
 			downstreamRequest
@@ -1140,35 +1144,11 @@ export const linkDownstreamOnboardingRequest = convex
 		}
 
 		const downstreamRequest = await ctx.db.get(args.onboardingRequestId);
-		if (!downstreamRequest) {
-			throw new ConvexError("Downstream onboarding request not found");
-		}
-		if (downstreamRequest.requestedRole !== "broker") {
-			throw new ConvexError(
-				"Broker onboarding applications must link to broker onboarding requests"
-			);
-		}
-		if (downstreamRequest.userId !== application.userId) {
-			throw new ConvexError(
-				"Downstream onboarding request does not belong to the same user"
-			);
-		}
-		if (
-			downstreamRequest.brokerOnboardingApplicationId &&
-			downstreamRequest.brokerOnboardingApplicationId !== args.applicationId
-		) {
-			throw new ConvexError(
-				"Downstream onboarding request is already linked to a different broker application"
-			);
-		}
-		if (
-			application.downstreamOnboardingRequestId &&
-			application.downstreamOnboardingRequestId !== args.onboardingRequestId
-		) {
-			throw new ConvexError(
-				"Broker onboarding application is already linked to a different onboarding request"
-			);
-		}
+		assertDownstreamRequestCompatible(
+			application,
+			args.onboardingRequestId,
+			downstreamRequest
+		);
 		const targetHandoffStatus =
 			downstreamRequest.status === "role_assigned" ? "role_assigned" : "linked";
 		if (
@@ -1178,14 +1158,6 @@ export const linkDownstreamOnboardingRequest = convex
 			downstreamRequest.portalId === application.portalId
 		) {
 			return buildBrokerOnboardingApplicationReadModel(ctx, application, now);
-		}
-		if (
-			downstreamRequest.portalId &&
-			downstreamRequest.portalId !== application.portalId
-		) {
-			throw new ConvexError(
-				"Downstream onboarding request portal attribution does not match the broker application"
-			);
 		}
 
 		await ctx.db.patch(args.onboardingRequestId, {
