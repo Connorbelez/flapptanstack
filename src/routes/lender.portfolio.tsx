@@ -11,14 +11,14 @@ import {
 	cleanLenderPortfolioSearch,
 	parseLenderPortfolioSearch,
 } from "#/components/lender/portfolio/search";
-import { guardPermission } from "#/lib/auth";
+import { guardRouteAccess } from "#/lib/auth";
 import { assertActivePortalId } from "#/lib/portal/active-portal";
 import { Route as RootRoute } from "./__root";
 
 const LENDER_PORTFOLIO_ROUTE_PATH = "/lender/portfolio" as const;
 
 export const Route = createFileRoute(LENDER_PORTFOLIO_ROUTE_PATH)({
-	beforeLoad: guardPermission("portfolio:view"),
+	beforeLoad: guardRouteAccess("lenderPortfolio"),
 	component: LenderPortfolioRouteComponent,
 	errorComponent: ({ error }) => {
 		return <LenderPortfolioRouteError error={error} />;

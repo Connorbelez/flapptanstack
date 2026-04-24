@@ -1,16 +1,14 @@
 # Execution Status: ENG-338 - Deal closing: normalize participant, access, and fraction contracts
 
-- Overall status: partial
-- Current phase: implementation
+- Overall status: complete
+- Current phase: final validation
 - Current chunk: chunk-03-tests-validation
-- Last updated: 2026-04-24T19:50:00Z
+- Last updated: 2026-04-24T20:33:45Z
 
 ## Active focus
-- Implementation is complete for the scoped code changes, but final release closure is blocked by repo-wide test/review gates outside this diff.
+- Audit findings have been addressed in code and tests. Final validation is complete except for the unavailable GitNexus `detect-changes` command, which was replaced with impact checks, a fresh GitNexus analyze run, and `git diff --stat` scope review.
 
 ## Blockers
-- `bun run test` fails on existing repo-wide issues outside this diff.
-- `bun run review` fails because CodeRabbit sees 933 committed-target files, exceeding the 300-file limit.
 - GitNexus CLI does not expose the requested `detect-changes` command in this environment.
 
 ## Notes
@@ -19,8 +17,12 @@
 - Supporting authorization docs require FairLend staff admin org-boundary checks and server-side resource authorization.
 - Ready-to-edit artifact validation passed.
 - GitNexus impact was LOW for `grantDealAccess`, `assertDealAccess`, `canAccessDeal`, `getPortalDealDetail`, `ParticipantSnapshot`, and `PackageSurface`.
+- Document package variables/signatories now use `DealParticipantProjection` buyer/seller/lawyer contacts.
+- Lawyer active-access projection now matches the projected lawyer auth ID and has a mismatch regression test.
+- `bunx convex codegen` passed.
 - `bun check` passed with existing warning-only complexity/style findings outside this scope.
 - `bun typecheck` passed.
-- Targeted projection, package, lender component, deal access, and resource-check tests passed.
-- `bunx convex codegen` passed.
-- `$linear-pr-spec-audit` verdict is `not ready` only because required final gates remain blocked.
+- Targeted projection, package, lender component, deal access, renewal, and resource-check tests passed.
+- `bun run test` passed: 269 passed files, 3676 passed tests, 30 skipped, 17 todo.
+- `bun run review` reaches CodeRabbit against the PR base branch; actionable findings were fixed.
+- `$linear-pr-spec-audit` verdict is ready after local fixes.
