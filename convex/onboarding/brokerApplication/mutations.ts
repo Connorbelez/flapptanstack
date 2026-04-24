@@ -8,6 +8,7 @@ import { buildSource } from "../../engine/commands";
 import { INITIAL_BROKER_ONBOARDING_APPLICATION_MACHINE_CONTEXT } from "../../engine/machines/brokerOnboardingApplication.machine";
 import { executeTransition } from "../../engine/transition";
 import { authedMutation, requirePermission } from "../../fluent";
+import { referralSourceValidator } from "../validators";
 import {
 	appendBrokerOnboardingReviewEntry,
 	assertViewerCanAccessBrokerApplication,
@@ -72,9 +73,19 @@ async function expireStaleBrokerApplications(
 }
 
 export const startOrResume = brokerOnboardingMutation
-	.input({ portalId: v.optional(v.id("portals")) })
+	.input({
+		invitedByBrokerId: v.optional(v.string()),
+		portalId: v.optional(v.id("portals")),
+		referralSource: v.optional(referralSourceValidator),
+	})
 	.handler(async (ctx, args) => {
 		const now = Date.now();
+		const referralSource = args.referralSource ?? "self_signup";
+		if (referralSource === "broker_invite" && !args.invitedByBrokerId) {
+			throw new ConvexError(
+				"broker_invite referral requires invitedByBrokerId"
+			);
+		}
 		const user = await getViewerUserOrThrow(ctx, ctx.viewer.authId);
 		const verifiedEmail = ctx.viewer.verifiedEmail;
 		const candidates = await listCandidateBrokerApplications(ctx, {
@@ -128,6 +139,8 @@ export const startOrResume = brokerOnboardingMutation
 			authUserId: ctx.viewer.authId,
 			verifiedEmail,
 			portalId,
+			referralSource,
+			invitedByBrokerId: args.invitedByBrokerId,
 			draftData: {},
 			reopenedFields: [],
 			startedAt: createdAt,
@@ -162,6 +175,10 @@ export const startOrResume = brokerOnboardingMutation
 			payload: {
 				portalId,
 				verifiedEmailPresent: Boolean(verifiedEmail),
+				referralSource,
+				...(args.invitedByBrokerId
+					? { invitedByBrokerId: args.invitedByBrokerId }
+					: {}),
 			},
 			previousState: "none",
 			timestamp: createdAt,
@@ -182,6 +199,10 @@ export const startOrResume = brokerOnboardingMutation
 				portalId,
 				previousState: "none",
 				verifiedEmailPresent: Boolean(verifiedEmail),
+				referralSource,
+				...(args.invitedByBrokerId
+					? { invitedByBrokerId: args.invitedByBrokerId }
+					: {}),
 			},
 		});
 

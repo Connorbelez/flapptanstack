@@ -1,5 +1,9 @@
 import { ConvexError, v } from "convex/values";
+import type { Doc, Id } from "../../_generated/dataModel";
+import type { MutationCtx } from "../../_generated/server";
 import { auditLog } from "../../auditLog";
+import { activateBrokerForApprovedApplication } from "../../brokers/activation";
+import { appendAuditJournalEntry } from "../../engine/auditJournal";
 import { executeTransition } from "../../engine/transition";
 import { actorTypeValidator } from "../../engine/validators";
 import { convex } from "../../fluent";
@@ -12,7 +16,6 @@ import {
 } from "../verification/runtime";
 import {
 	appendBrokerOnboardingReviewEntry,
-	assertPortalActiveAndPublished,
 	type BrokerOnboardingApplicationDoc,
 	buildBrokerOnboardingApplicationReadModel,
 	buildResumeWindowPatch,
@@ -46,6 +49,396 @@ function resolveAuthor(args: {
 		authorAuthId: args.authorAuthId,
 		authorType: args.authorType ?? "system",
 	};
+}
+
+function resolveActorSource(args: {
+	authorAuthId?: string;
+	authorType?: "borrower" | "broker" | "member" | "admin" | "system";
+}) {
+	return {
+		actorId: args.authorAuthId,
+		actorType: args.authorType ?? "system",
+		channel: args.authorType === "admin" ? "admin_dashboard" : "scheduler",
+	} as const;
+}
+
+async function findDownstreamRequestForApplication(
+	ctx: Pick<MutationCtx, "db">,
+	applicationId: Id<"brokerOnboardingApplications">
+) {
+	return ctx.db
+		.query("onboardingRequests")
+		.withIndex("by_broker_onboarding_application", (query) =>
+			query.eq("brokerOnboardingApplicationId", applicationId)
+		)
+		.unique();
+}
+
+async function assertDownstreamRequestCompatible(
+	application: BrokerOnboardingApplicationDoc,
+	downstreamRequestId: Id<"onboardingRequests">,
+	downstreamRequest: Doc<"onboardingRequests"> | null
+) {
+	if (!downstreamRequest) {
+		throw new ConvexError("Downstream onboarding request not found");
+	}
+	if (downstreamRequest.requestedRole !== "broker") {
+		throw new ConvexError(
+			"Broker onboarding applications must link to broker onboarding requests"
+		);
+	}
+	if (downstreamRequest.userId !== application.userId) {
+		throw new ConvexError(
+			"Downstream onboarding request does not belong to the same user"
+		);
+	}
+	if (
+		downstreamRequest.brokerOnboardingApplicationId &&
+		downstreamRequest.brokerOnboardingApplicationId !== application._id
+	) {
+		throw new ConvexError(
+			"Downstream onboarding request is already linked to a different broker application"
+		);
+	}
+	if (
+		application.downstreamOnboardingRequestId &&
+		application.downstreamOnboardingRequestId !== downstreamRequestId
+	) {
+		throw new ConvexError(
+			"Broker onboarding application is already linked to a different onboarding request"
+		);
+	}
+	if (
+		downstreamRequest.portalId &&
+		downstreamRequest.portalId !== application.portalId
+	) {
+		throw new ConvexError(
+			"Downstream onboarding request portal attribution does not match the broker application"
+		);
+	}
+}
+
+async function createDownstreamOnboardingRequest(
+	ctx: MutationCtx,
+	args: {
+		application: BrokerOnboardingApplicationDoc;
+		authorAuthId?: string;
+		authorType?: "borrower" | "broker" | "member" | "admin" | "system";
+		now: number;
+	}
+) {
+	const requestId = await ctx.db.insert("onboardingRequests", {
+		userId: args.application.userId,
+		requestedRole: "broker",
+		status: "pending_review",
+		machineContext: undefined,
+		lastTransitionAt: args.now,
+		referralSource: args.application.referralSource ?? "self_signup",
+		invitedByBrokerId: args.application.invitedByBrokerId,
+		brokerOnboardingApplicationId: args.application._id,
+		targetOrganizationId: undefined,
+		portalId: args.application.portalId,
+		createdAt: args.now,
+	});
+	const journalEntryId = await appendAuditJournalEntry(ctx, {
+		actorId: args.authorAuthId ?? "system",
+		actorType: args.authorType ?? "system",
+		channel: args.authorType === "admin" ? "admin_dashboard" : "scheduler",
+		entityId: requestId,
+		entityType: "onboardingRequest",
+		eventType: "CREATED",
+		payload: {
+			brokerOnboardingApplicationId: args.application._id,
+			portalId: args.application.portalId,
+			referralSource: args.application.referralSource ?? "self_signup",
+		},
+		previousState: "none",
+		newState: "pending_review",
+		outcome: "transitioned",
+		timestamp: args.now,
+	});
+	await auditLog.log(ctx, {
+		action: "transition.onboardingRequest.created_from_broker_application",
+		actorId: args.authorAuthId ?? "system",
+		resourceType: "onboardingRequests",
+		resourceId: requestId,
+		severity: "info",
+		metadata: {
+			brokerOnboardingApplicationId: args.application._id,
+			journalEntryId,
+			portalId: args.application.portalId,
+		},
+	});
+
+	return requestId;
+}
+
+async function patchApplicationDownstreamLink(
+	ctx: Pick<MutationCtx, "db">,
+	args: {
+		application: BrokerOnboardingApplicationDoc;
+		downstreamRequestId: Id<"onboardingRequests">;
+		downstreamStatus: string;
+		now: number;
+	}
+) {
+	const downstreamHandoffStatus =
+		args.downstreamStatus === "role_assigned" ? "role_assigned" : "linked";
+
+	await ctx.db.patch(args.downstreamRequestId, {
+		brokerOnboardingApplicationId: args.application._id,
+		portalId: args.application.portalId,
+	});
+	await ctx.db.patch(args.application._id, {
+		downstreamOnboardingRequestId: args.downstreamRequestId,
+		downstreamHandoffStatus,
+		downstreamLinkedAt: args.application.downstreamLinkedAt ?? args.now,
+		...(args.downstreamStatus === "role_assigned"
+			? { downstreamRoleAssignedAt: args.now }
+			: {}),
+		lastActivityAt: args.now,
+		updatedAt: args.now,
+	});
+}
+
+async function approveDownstreamRequest(
+	ctx: MutationCtx,
+	args: {
+		application: BrokerOnboardingApplicationDoc;
+		authorAuthId?: string;
+		authorType?: "borrower" | "broker" | "member" | "admin" | "system";
+		onboardingRequestId: Id<"onboardingRequests">;
+	}
+) {
+	const downstreamRequest = await ctx.db.get(args.onboardingRequestId);
+	await assertDownstreamRequestCompatible(
+		args.application,
+		args.onboardingRequestId,
+		downstreamRequest
+	);
+	if (!downstreamRequest) {
+		throw new ConvexError("Downstream onboarding request not found");
+	}
+	if (downstreamRequest.status !== "pending_review") {
+		if (
+			downstreamRequest.status !== "approved" &&
+			downstreamRequest.status !== "role_assigned"
+		) {
+			throw new ConvexError(
+				`Cannot hand off broker application to downstream onboarding request in status "${downstreamRequest.status}"`
+			);
+		}
+		return downstreamRequest;
+	}
+
+	const result = await executeTransition(ctx, {
+		entityType: "onboardingRequest",
+		entityId: args.onboardingRequestId,
+		eventType: "APPROVE",
+		payload: {
+			brokerOnboardingApplicationId: args.application._id,
+		},
+		source: resolveActorSource(args),
+	});
+	if (!result.success) {
+		throw new ConvexError(
+			result.reason ?? "Downstream onboarding request approval failed"
+		);
+	}
+	const now = Date.now();
+	await ctx.db.patch(args.onboardingRequestId, {
+		reviewedBy: args.authorAuthId ?? "system",
+		reviewedAt: now,
+	});
+	await auditLog.log(ctx, {
+		action: "onboarding.broker_application_downstream_request_approved",
+		actorId: args.authorAuthId ?? "system",
+		resourceType: "onboardingRequests",
+		resourceId: args.onboardingRequestId,
+		severity: "info",
+		metadata: {
+			brokerOnboardingApplicationId: args.application._id,
+			previousState: result.previousState,
+			newState: result.newState,
+		},
+	});
+
+	const approvedRequest = await ctx.db.get(args.onboardingRequestId);
+	if (!approvedRequest) {
+		throw new ConvexError("Downstream onboarding request not found");
+	}
+	return approvedRequest;
+}
+
+async function ensureApprovedApplicationDownstreamHandoff(
+	ctx: MutationCtx,
+	args: {
+		applicationId: Id<"brokerOnboardingApplications">;
+		authorAuthId?: string;
+		authorType?: "borrower" | "broker" | "member" | "admin" | "system";
+	}
+) {
+	const application = await ctx.db.get(args.applicationId);
+	if (!application) {
+		throw new ConvexError("Broker onboarding application not found");
+	}
+	if (application.status !== "approved" && application.status !== "activated") {
+		throw new ConvexError(
+			"Only approved broker onboarding applications can hand off downstream"
+		);
+	}
+
+	const now = Date.now();
+	let onboardingRequestId = application.downstreamOnboardingRequestId;
+	let downstreamRequest = onboardingRequestId
+		? await ctx.db.get(onboardingRequestId)
+		: await findDownstreamRequestForApplication(ctx, args.applicationId);
+	if (downstreamRequest && !onboardingRequestId) {
+		onboardingRequestId = downstreamRequest._id;
+	}
+	if (onboardingRequestId) {
+		await assertDownstreamRequestCompatible(
+			application,
+			onboardingRequestId,
+			downstreamRequest
+		);
+	} else {
+		onboardingRequestId = await createDownstreamOnboardingRequest(ctx, {
+			application,
+			authorAuthId: args.authorAuthId,
+			authorType: args.authorType,
+			now,
+		});
+		downstreamRequest = await ctx.db.get(onboardingRequestId);
+	}
+	if (!downstreamRequest && onboardingRequestId) {
+		downstreamRequest = await ctx.db.get(onboardingRequestId);
+	}
+	if (!(downstreamRequest && onboardingRequestId)) {
+		throw new ConvexError("Downstream onboarding request could not be linked");
+	}
+
+	await patchApplicationDownstreamLink(ctx, {
+		application,
+		downstreamRequestId: onboardingRequestId,
+		downstreamStatus: downstreamRequest.status,
+		now,
+	});
+	await appendBrokerOnboardingReviewEntry(ctx, {
+		applicationId: args.applicationId,
+		body: "Created or linked downstream onboarding request for broker provisioning.",
+		createdAt: now,
+		entryType: "system_event",
+		systemEventType: "downstream_onboarding_request_linked",
+		metadata: {
+			onboardingRequestId,
+			status: downstreamRequest.status,
+		},
+		...resolveAuthor(args),
+	});
+
+	return approveDownstreamRequest(ctx, {
+		application,
+		authorAuthId: args.authorAuthId,
+		authorType: args.authorType,
+		onboardingRequestId,
+	});
+}
+
+async function completeActivationForApplication(
+	ctx: MutationCtx,
+	args: {
+		applicationId: Id<"brokerOnboardingApplications">;
+		authorAuthId?: string;
+		authorType?: "borrower" | "broker" | "member" | "admin" | "system";
+	}
+) {
+	const application = await ctx.db.get(args.applicationId);
+	if (!application) {
+		throw new ConvexError("Broker onboarding application not found");
+	}
+	const now = Date.now();
+	if (application.status === "activated") {
+		return buildBrokerOnboardingApplicationReadModel(ctx, application, now);
+	}
+	if (application.status !== "approved") {
+		throw new ConvexError(
+			"Only approved broker onboarding applications can be activated"
+		);
+	}
+	if (!application.downstreamOnboardingRequestId) {
+		throw new ConvexError(
+			"Broker onboarding application does not have a linked onboarding request"
+		);
+	}
+
+	const downstreamRequest = await ctx.db.get(
+		application.downstreamOnboardingRequestId
+	);
+	if (!downstreamRequest) {
+		throw new ConvexError("Downstream onboarding request not found");
+	}
+	if (downstreamRequest.status !== "role_assigned") {
+		throw new ConvexError(
+			"Broker onboarding application cannot activate before the downstream onboarding request reaches role_assigned"
+		);
+	}
+
+	const activationOutcome = await activateBrokerForApprovedApplication(ctx, {
+		application,
+		downstreamRequest,
+		now,
+	});
+	const result = await executeTransition(ctx, {
+		entityType: "brokerOnboardingApplication",
+		entityId: args.applicationId,
+		eventType: "MARK_ACTIVATED",
+		payload: {
+			...activationOutcome,
+		},
+		source: resolveActorSource(args),
+	});
+	if (!result.success) {
+		throw new ConvexError(
+			result.reason ?? "Broker onboarding activation transition failed"
+		);
+	}
+
+	await ctx.db.patch(args.applicationId, {
+		activatedAt: now,
+		activatedBrokerId: activationOutcome.brokerId,
+		activatedPortalId: activationOutcome.portalId,
+		activatedHomePortalId: activationOutcome.homePortalId,
+		activationOutcome,
+		downstreamActivatedAt: now,
+		downstreamHandoffStatus: "activated",
+		downstreamRoleAssignedAt: application.downstreamRoleAssignedAt ?? now,
+		lastActivityAt: now,
+		updatedAt: now,
+	});
+	await appendBrokerOnboardingReviewEntry(ctx, {
+		applicationId: args.applicationId,
+		body: "Application activated after downstream provisioning completed.",
+		createdAt: now,
+		entryType: "system_event",
+		systemEventType: "application_activated",
+		metadata: activationOutcome,
+		...resolveAuthor(args),
+	});
+	await auditLog.log(ctx, {
+		action: "onboarding.broker_application_activated",
+		actorId: args.authorAuthId ?? "system",
+		resourceType: "brokerOnboardingApplications",
+		resourceId: args.applicationId,
+		severity: "info",
+		metadata: activationOutcome,
+	});
+
+	const freshApplication = await ctx.db.get(args.applicationId);
+	if (!freshApplication) {
+		throw new ConvexError("Broker onboarding application not found");
+	}
+	return buildBrokerOnboardingApplicationReadModel(ctx, freshApplication, now);
 }
 
 function buildRegulatorLookupForReverification(args: {
@@ -503,6 +896,11 @@ export const applyVerificationRecommendation = convex
 					reasonCodes: application.verificationSnapshot.reasonCodes,
 				},
 			});
+			await ensureApprovedApplicationDownstreamHandoff(ctx, {
+				applicationId: args.applicationId,
+				authorAuthId: args.authorAuthId,
+				authorType: args.authorType,
+			});
 		} else if (recommendation === "rejected") {
 			const result = await executeTransition(ctx, {
 				entityType: "brokerOnboardingApplication",
@@ -616,6 +1014,11 @@ export const approveApplication = convex
 			entryType: "system_event",
 			systemEventType: "application_approved",
 			...resolveAuthor(args),
+		});
+		await ensureApprovedApplicationDownstreamHandoff(ctx, {
+			applicationId: args.applicationId,
+			authorAuthId: args.authorAuthId,
+			authorType: args.authorType,
 		});
 		const freshApplication = await ctx.db.get(args.applicationId);
 		if (!freshApplication) {
@@ -882,15 +1285,32 @@ export const markDownstreamRoleAssigned = convex
 			},
 			...resolveAuthor(args),
 		});
-		const freshApplication = await ctx.db.get(args.applicationId);
-		if (!freshApplication) {
-			throw new ConvexError("Broker onboarding application not found");
+		return completeActivationForApplication(ctx, args);
+	})
+	.internal();
+
+export const completeActivationForDownstreamRequest = convex
+	.mutation()
+	.input({
+		authorAuthId: v.optional(v.string()),
+		authorType: v.optional(actorTypeValidator),
+		onboardingRequestId: v.id("onboardingRequests"),
+	})
+	.handler(async (ctx, args) => {
+		const application = await ctx.db
+			.query("brokerOnboardingApplications")
+			.withIndex("by_downstream_onboarding_request", (query) =>
+				query.eq("downstreamOnboardingRequestId", args.onboardingRequestId)
+			)
+			.unique();
+		if (!application) {
+			return null;
 		}
-		return buildBrokerOnboardingApplicationReadModel(
-			ctx,
-			freshApplication,
-			now
-		);
+		return completeActivationForApplication(ctx, {
+			applicationId: application._id,
+			authorAuthId: args.authorAuthId,
+			authorType: args.authorType,
+		});
 	})
 	.internal();
 
@@ -904,120 +1324,16 @@ export const markActivated = convex
 		authorType: v.optional(actorTypeValidator),
 	})
 	.handler(async (ctx, args) => {
-		const application = await ctx.db.get(args.applicationId);
-		if (!application) {
-			throw new ConvexError("Broker onboarding application not found");
-		}
-		if (application.status === "activated") {
-			return buildBrokerOnboardingApplicationReadModel(
-				ctx,
-				application,
-				Date.now()
-			);
-		}
-		if (application.status !== "approved") {
-			throw new ConvexError(
-				"Only approved broker onboarding applications can be activated"
-			);
-		}
-		if (!application.downstreamOnboardingRequestId) {
-			throw new ConvexError(
-				"Broker onboarding application does not have a linked onboarding request"
-			);
-		}
-
-		const [downstreamRequest, user, activatedPortal, activatedHomePortal] =
-			await Promise.all([
-				ctx.db.get(application.downstreamOnboardingRequestId),
-				ctx.db.get(application.userId),
-				ctx.db.get(args.activatedPortalId),
-				ctx.db.get(args.activatedHomePortalId),
-			]);
-		if (!downstreamRequest) {
-			throw new ConvexError("Downstream onboarding request not found");
-		}
-		if (downstreamRequest.status !== "role_assigned") {
-			throw new ConvexError(
-				"Broker onboarding application cannot activate before the downstream onboarding request reaches role_assigned"
-			);
-		}
-		if (!user) {
-			throw new ConvexError("Broker onboarding user not found");
-		}
-		const activePortal = assertPortalActiveAndPublished(
-			activatedPortal,
-			"Activated portal evidence must be active and published"
-		);
-		const activeHomePortal = assertPortalActiveAndPublished(
-			activatedHomePortal,
-			"Activated home-portal evidence must be active and published"
-		);
-		if (args.activatedPortalId !== args.activatedHomePortalId) {
-			throw new ConvexError(
-				"Activated portal must match the synchronized home portal"
-			);
-		}
-		if (user.homePortalId !== args.activatedHomePortalId) {
-			throw new ConvexError(
-				"User home portal has not been synchronized to the activated portal"
-			);
-		}
+		const readModel = await completeActivationForApplication(ctx, args);
+		const activatedApplication = readModel.application;
 		if (
-			activePortal._id !== args.activatedPortalId ||
-			activeHomePortal._id !== args.activatedHomePortalId
+			activatedApplication.activatedPortalId !== args.activatedPortalId ||
+			activatedApplication.activatedHomePortalId !== args.activatedHomePortalId
 		) {
-			throw new ConvexError("Activated portal evidence is inconsistent");
-		}
-
-		const now = Date.now();
-		const result = await executeTransition(ctx, {
-			entityType: "brokerOnboardingApplication",
-			entityId: args.applicationId,
-			eventType: "MARK_ACTIVATED",
-			payload: { activatedAt: now },
-			source: {
-				actorId: args.authorAuthId,
-				actorType: args.authorType ?? "system",
-				channel: "admin_dashboard",
-			},
-		});
-		if (!result.success) {
 			throw new ConvexError(
-				result.reason ?? "Broker onboarding activation transition failed"
+				"Activated portal evidence does not match the canonical activation outcome"
 			);
 		}
-
-		await ctx.db.patch(args.applicationId, {
-			activatedAt: now,
-			activatedPortalId: args.activatedPortalId,
-			activatedHomePortalId: args.activatedHomePortalId,
-			downstreamActivatedAt: now,
-			downstreamHandoffStatus: "activated",
-			downstreamRoleAssignedAt: application.downstreamRoleAssignedAt ?? now,
-			lastActivityAt: now,
-			updatedAt: now,
-		});
-		await appendBrokerOnboardingReviewEntry(ctx, {
-			applicationId: args.applicationId,
-			body: "Application activated after downstream provisioning completed.",
-			createdAt: now,
-			entryType: "system_event",
-			systemEventType: "application_activated",
-			metadata: {
-				activatedHomePortalId: args.activatedHomePortalId,
-				activatedPortalId: args.activatedPortalId,
-				onboardingRequestId: application.downstreamOnboardingRequestId,
-			},
-			...resolveAuthor(args),
-		});
-		const freshApplication = await ctx.db.get(args.applicationId);
-		if (!freshApplication) {
-			throw new ConvexError("Broker onboarding application not found");
-		}
-		return buildBrokerOnboardingApplicationReadModel(
-			ctx,
-			freshApplication,
-			now
-		);
+		return readModel;
 	})
 	.internal();

@@ -1,10 +1,12 @@
 import { api, internal } from "../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
+import { DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG } from "../../../../convex/onboarding/verification/config";
 import {
 	DEFAULT_PORTAL_POST_AUTH_PATH,
 	DEFAULT_PORTAL_TEASER_LIMIT,
 	buildPortalHosts,
 } from "../../../../convex/portals/helpers";
+import { createBrokerOnboardingVerificationSnapshot } from "../../../../shared/brokerOnboarding/contracts";
 import type { MockIdentity } from "../../auth/helpers";
 import {
 	createMockIdentity,
@@ -117,6 +119,91 @@ export async function saveBrokerApplicationDraft(
 	return t
 		.withIdentity(identity)
 		.mutation(api.onboarding.brokerApplication.mutations.saveDraft, args);
+}
+
+export async function prepareActivationReadyBrokerApplication(
+	t: GovernedTestConvex,
+	identity: MockIdentity,
+	args: {
+		applicationId: Id<"brokerOnboardingApplications">;
+		brokerageName?: string;
+		brokerageNumber?: string;
+		licenseNumber?: string;
+		portalSlug?: string;
+	}
+) {
+	const brokerageName = args.brokerageName ?? "FairLend Test Brokerage";
+	const licenseNumber = args.licenseNumber ?? `ON-${args.portalSlug ?? "broker"}`;
+	const portalSlug = args.portalSlug ?? `broker-${String(args.applicationId).slice(-8)}`;
+	const capturedAt = Date.now();
+	const selfReportedName = { fullName: "Francois Smith" };
+
+	await saveBrokerApplicationDraft(t, identity, {
+		applicationId: args.applicationId,
+		currentStep: "review",
+		draftData: {
+			brokerageName,
+			brokerageNumber: args.brokerageNumber ?? "BR-001",
+			licenseNumber,
+			licenseProvince: "ON",
+			requestedPortalSlug: portalSlug,
+			selfReportedName,
+		},
+	});
+
+	const snapshot = createBrokerOnboardingVerificationSnapshot({
+		capturedAt,
+		policy: DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG,
+		province: "ON",
+		selfReportedName,
+		regulator: {
+			provider: "mock_regulator",
+			status: "active",
+			freshness: "fresh",
+			licenseNumber,
+			licenseProvince: "ON",
+			legalName: selfReportedName,
+			brokerageName,
+			brokerageNumber: args.brokerageNumber ?? "BR-001",
+			checkedAt: capturedAt,
+			dataAsOf: capturedAt,
+			evidenceReferences: [],
+		},
+		identityVerification: {
+			provider: "mock_identity",
+			status: "verified",
+			legalName: selfReportedName,
+			checkedAt: capturedAt,
+			completedAt: capturedAt,
+			fraudSignal: false,
+			evidenceReferences: [],
+		},
+		emailVerification: {
+			provider: "workos_authkit",
+			status: "verified",
+			email: identity.user_email,
+			checkedAt: capturedAt,
+			verifiedAt: capturedAt,
+			evidenceReferences: [],
+		},
+		similarityScores: {
+			regulatorVsIdentity: 1,
+			selfReportedVsIdentity: 1,
+			selfReportedVsRegulator: 1,
+		},
+	});
+	await upsertBrokerVerificationSnapshot(t, {
+		applicationId: args.applicationId,
+		authorAuthId: "verification_test",
+		authorType: "system",
+		snapshot,
+	});
+
+	return {
+		licenseNumber,
+		portalSlug,
+		snapshot,
+	};
 }
 
 export async function submitBrokerApplication(

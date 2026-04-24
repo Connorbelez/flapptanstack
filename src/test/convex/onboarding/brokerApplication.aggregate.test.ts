@@ -186,6 +186,7 @@ describe("broker onboarding application aggregate", () => {
 				lastTransitionAt: now + 1,
 				machineContext: firstResult.application.machineContext,
 				portalId: firstResult.application.portalId,
+				referralSource: "self_signup",
 				rejectedAt: now + 1,
 				reopenedFields: [],
 				startedAt: now + 1,

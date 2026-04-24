@@ -290,9 +290,20 @@ export default defineSchema({
 		/** WorkOS organization id for the broker's brokerage (canonical org scope). */
 		orgId: v.optional(v.string()),
 
+		// ─── Broker onboarding activation provenance ───
+		brokerOnboardingApplicationId: v.optional(
+			v.id("brokerOnboardingApplications")
+		),
+		activatedPortalId: v.optional(v.id("portals")),
+		referralSource: v.optional(
+			v.union(v.literal("self_signup"), v.literal("broker_invite"))
+		),
+		invitedByBrokerId: v.optional(v.string()),
+
 		// ─── Lifecycle ───
 		onboardedAt: v.optional(v.number()),
 		createdAt: v.number(),
+		updatedAt: v.optional(v.number()),
 	})
 		.index("by_user", ["userId"])
 		.index("by_license", ["licenseId"])
@@ -594,6 +605,11 @@ export default defineSchema({
 		authUserId: v.string(),
 		verifiedEmail: v.optional(v.string()),
 		portalId: v.id("portals"),
+		referralSource: v.union(
+			v.literal("self_signup"),
+			v.literal("broker_invite")
+		),
+		invitedByBrokerId: v.optional(v.string()),
 
 		// ─── Draft and verification state ───
 		draftData: brokerOnboardingDraftDataValidator,
@@ -630,6 +646,20 @@ export default defineSchema({
 		downstreamActivatedAt: v.optional(v.number()),
 		activatedPortalId: v.optional(v.id("portals")),
 		activatedHomePortalId: v.optional(v.id("portals")),
+		activatedBrokerId: v.optional(v.id("brokers")),
+		activationOutcome: v.optional(
+			v.object({
+				activatedAt: v.number(),
+				brokerId: v.id("brokers"),
+				brokerWasCreated: v.boolean(),
+				homePortalId: v.id("portals"),
+				onboardingRequestId: v.id("onboardingRequests"),
+				portalId: v.id("portals"),
+				portalWasCreated: v.boolean(),
+				targetOrganizationId: v.string(),
+				userId: v.id("users"),
+			})
+		),
 
 		createdAt: v.number(),
 		updatedAt: v.number(),
