@@ -370,6 +370,8 @@ import type * as test_originationE2e from "../test/originationE2e.js";
 import type * as test_packageSchemas from "../test/packageSchemas.js";
 import type * as todos from "../todos.js";
 import type * as users_byAuthId from "../users/byAuthId.js";
+import type * as velocity_activation from "../velocity/activation.js";
+import type * as velocity_activationMapper from "../velocity/activationMapper.js";
 import type * as velocity_audit from "../velocity/audit.js";
 import type * as velocity_client from "../velocity/client.js";
 import type * as velocity_constants from "../velocity/constants.js";
@@ -753,6 +755,8 @@ declare const fullApi: ApiFromModules<{
   "test/packageSchemas": typeof test_packageSchemas;
   todos: typeof todos;
   "users/byAuthId": typeof users_byAuthId;
+  "velocity/activation": typeof velocity_activation;
+  "velocity/activationMapper": typeof velocity_activationMapper;
   "velocity/audit": typeof velocity_audit;
   "velocity/client": typeof velocity_client;
   "velocity/constants": typeof velocity_constants;

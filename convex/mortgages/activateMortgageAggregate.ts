@@ -530,8 +530,14 @@ export async function activateMortgageAggregate(
 		channel: "admin_dashboard",
 		entityId: String(mortgageId),
 		entityType: "mortgage",
-		eventCategory: "origination_commit",
-		eventType: "ORIGINATION_COMMITTED",
+		eventCategory:
+			args.source.workflowSourceType === ORIGINATION_WORKFLOW_SOURCE_TYPE
+				? "origination_commit"
+				: "velocity_activation",
+		eventType:
+			args.source.workflowSourceType === ORIGINATION_WORKFLOW_SOURCE_TYPE
+				? "ORIGINATION_COMMITTED"
+				: "VELOCITY_PACKAGE_ACTIVATED",
 		idempotencyKey: args.source.workflowSourceKey,
 		linkedRecordIds: {
 			appraisalId: valuationSnapshot?.appraisalId
@@ -551,6 +557,10 @@ export async function activateMortgageAggregate(
 		},
 		newState: "active",
 		organizationId: args.orgId,
+		originSystem:
+			args.source.workflowSourceType === ORIGINATION_WORKFLOW_SOURCE_TYPE
+				? "convex"
+				: "velocity_package",
 		outcome: "transitioned",
 		payload: {
 			appraisalId: valuationSnapshot?.appraisalId
@@ -573,6 +583,9 @@ export async function activateMortgageAggregate(
 			valuationSnapshotId: valuationSnapshot?.valuationSnapshotId
 				? String(valuationSnapshot.valuationSnapshotId)
 				: null,
+			workflowSourceId: args.source.workflowSourceId,
+			workflowSourceKey: args.source.workflowSourceKey,
+			workflowSourceType: args.source.workflowSourceType,
 		},
 		previousState: "none",
 		timestamp: args.now,

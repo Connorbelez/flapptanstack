@@ -341,6 +341,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 	"/convex/http.ts": async () => await import("./../http.ts"),
 	"/convex/velocity/client.ts": async () =>
 		await import("./../velocity/client.ts"),
+	"/convex/velocity/activation.ts": async () =>
+		await import("./../velocity/activation.ts"),
 	"/convex/velocity/documents.ts": async () =>
 		await import("./../velocity/documents.ts"),
 	"/convex/velocity/exceptions.ts": async () =>

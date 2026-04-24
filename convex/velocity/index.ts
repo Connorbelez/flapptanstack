@@ -1,4 +1,6 @@
-// biome-ignore lint/performance/noBarrelFile: Velocity package contract exposes a stable downstream namespace.
+// biome-ignore-all lint/performance/noBarrelFile: Velocity package contract exposes a stable downstream namespace.
+export * from "./activation";
+export * from "./activationMapper";
 export * from "./audit";
 export * from "./client";
 export * from "./constants";
