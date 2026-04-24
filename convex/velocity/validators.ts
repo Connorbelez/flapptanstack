@@ -384,7 +384,7 @@ export const velocityFairLendEnrichmentValidator = v.object({
 				v.array(
 					v.object({
 						caption: v.optional(v.string()),
-						storageId: v.string(),
+						storageId: v.id("_storage"),
 					})
 				)
 			),
