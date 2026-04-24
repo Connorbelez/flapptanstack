@@ -83,6 +83,7 @@ import { Route as AdminObligationsRouteRouteImport } from './routes/admin/obliga
 import { Route as AdminMortgagesRouteRouteImport } from './routes/admin/mortgages/route'
 import { Route as AdminListingsRouteRouteImport } from './routes/admin/listings/route'
 import { Route as AdminDealsRouteRouteImport } from './routes/admin/deals/route'
+import { Route as AdminBrokerOnboardingRouteRouteImport } from './routes/admin/broker-onboarding/route'
 import { Route as AdminBorrowersRouteRouteImport } from './routes/admin/borrowers/route'
 import { Route as DemoRbacIndexRouteImport } from './routes/demo/rbac/index'
 import { Route as DemoRbacAuthIndexRouteImport } from './routes/demo/rbac-auth/index'
@@ -528,6 +529,12 @@ const AdminDealsRouteRoute = AdminDealsRouteRouteImport.update({
   path: '/deals',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminBrokerOnboardingRouteRoute =
+  AdminBrokerOnboardingRouteRouteImport.update({
+    id: '/broker-onboarding',
+    path: '/broker-onboarding',
+    getParentRoute: () => AdminRouteRoute,
+  } as any)
 const AdminBorrowersRouteRoute = AdminBorrowersRouteRouteImport.update({
   id: '/borrowers',
   path: '/borrowers',
@@ -910,6 +917,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
+  '/admin/broker-onboarding': typeof AdminBrokerOnboardingRouteRoute
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
   '/admin/listings': typeof AdminListingsRouteRouteWithChildren
   '/admin/mortgages': typeof AdminMortgagesRouteRouteWithChildren
@@ -1049,6 +1057,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
+  '/admin/broker-onboarding': typeof AdminBrokerOnboardingRouteRoute
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
   '/admin/listings': typeof AdminListingsRouteRouteWithChildren
   '/admin/mortgages': typeof AdminMortgagesRouteRouteWithChildren
@@ -1181,6 +1190,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
+  '/admin/broker-onboarding': typeof AdminBrokerOnboardingRouteRoute
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
   '/admin/listings': typeof AdminListingsRouteRouteWithChildren
   '/admin/mortgages': typeof AdminMortgagesRouteRouteWithChildren
@@ -1325,6 +1335,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/unauthorized'
     | '/admin/borrowers'
+    | '/admin/broker-onboarding'
     | '/admin/deals'
     | '/admin/listings'
     | '/admin/mortgages'
@@ -1464,6 +1475,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/unauthorized'
     | '/admin/borrowers'
+    | '/admin/broker-onboarding'
     | '/admin/deals'
     | '/admin/listings'
     | '/admin/mortgages'
@@ -1595,6 +1607,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/unauthorized'
     | '/admin/borrowers'
+    | '/admin/broker-onboarding'
     | '/admin/deals'
     | '/admin/listings'
     | '/admin/mortgages'
@@ -2298,6 +2311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDealsRouteRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/broker-onboarding': {
+      id: '/admin/broker-onboarding'
+      path: '/broker-onboarding'
+      fullPath: '/admin/broker-onboarding'
+      preLoaderRoute: typeof AdminBrokerOnboardingRouteRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/borrowers': {
       id: '/admin/borrowers'
       path: '/borrowers'
@@ -2881,6 +2901,7 @@ const AdminOriginationsRouteWithChildren =
 
 interface AdminRouteRouteChildren {
   AdminBorrowersRouteRoute: typeof AdminBorrowersRouteRouteWithChildren
+  AdminBrokerOnboardingRouteRoute: typeof AdminBrokerOnboardingRouteRoute
   AdminDealsRouteRoute: typeof AdminDealsRouteRouteWithChildren
   AdminListingsRouteRoute: typeof AdminListingsRouteRouteWithChildren
   AdminMortgagesRouteRoute: typeof AdminMortgagesRouteRouteWithChildren
@@ -2898,6 +2919,7 @@ interface AdminRouteRouteChildren {
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminBorrowersRouteRoute: AdminBorrowersRouteRouteWithChildren,
+  AdminBrokerOnboardingRouteRoute: AdminBrokerOnboardingRouteRoute,
   AdminDealsRouteRoute: AdminDealsRouteRouteWithChildren,
   AdminListingsRouteRoute: AdminListingsRouteRouteWithChildren,
   AdminMortgagesRouteRoute: AdminMortgagesRouteRouteWithChildren,

@@ -37,6 +37,13 @@ export const brokerOnboardingReviewEntryTypeValidator = v.union(
 	v.literal("system_event")
 );
 
+export const brokerOnboardingReviewQueueViewValidator = v.union(
+	v.literal("submitted"),
+	v.literal("changes_requested"),
+	v.literal("recently_updated"),
+	v.literal("rejected")
+);
+
 export const brokerOnboardingDownstreamHandoffStatusValidator = v.union(
 	v.literal("not_started"),
 	v.literal("linked"),
@@ -205,6 +212,16 @@ export const brokerOnboardingReopenedFieldValidator = v.object({
 	resolvedAt: v.optional(v.number()),
 	resolvedByAuthId: v.optional(v.string()),
 	status: brokerOnboardingReopenedFieldStatusValidator,
+});
+
+export const brokerOnboardingReverificationFlagsValidator = v.object({
+	identityVerification: v.boolean(),
+	regulatorLookup: v.boolean(),
+});
+
+export const brokerOnboardingReviewReopenedFieldInputValidator = v.object({
+	fieldPath: v.string(),
+	reason: v.optional(v.string()),
 });
 
 export const brokerOnboardingDraftDataValidator = v.object({

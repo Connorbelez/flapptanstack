@@ -29,6 +29,7 @@ import {
 	resolveVerificationInvalidationFieldPaths,
 } from "./helpers";
 import {
+	brokerOnboardingReverificationFlagsValidator,
 	brokerOnboardingVerificationSnapshotValidator,
 	brokerOnboardingVerificationStateValidator,
 } from "./validators";
@@ -39,6 +40,58 @@ interface ReopenedBrokerOnboardingField {
 	requestedAt: number;
 	requestedByAuthId?: string;
 	status: "open";
+}
+
+interface BrokerOnboardingReverificationFlags {
+	identityVerification: boolean;
+	regulatorLookup: boolean;
+}
+
+function normalizeRequiredReviewerNote(body: string, label: string) {
+	const trimmedBody = body.trim();
+	if (!trimmedBody) {
+		throw new ConvexError(`${label} note cannot be empty`);
+	}
+	return trimmedBody;
+}
+
+function assertReopenedFieldsAreScoped(
+	reopenedFields: readonly { fieldPath: string }[]
+) {
+	if (reopenedFields.length === 0) {
+		throw new ConvexError(
+			"Request changes requires at least one reopened field or section"
+		);
+	}
+
+	const normalizedPaths = new Set<string>();
+	for (const reopenedField of reopenedFields) {
+		const fieldPath = reopenedField.fieldPath.trim();
+		if (!fieldPath) {
+			throw new ConvexError("Reopened field path cannot be empty");
+		}
+		normalizedPaths.add(fieldPath);
+	}
+
+	if (normalizedPaths.size !== reopenedFields.length) {
+		throw new ConvexError("Reopened field paths must be unique");
+	}
+}
+
+function resolveReverificationFlags(args: {
+	explicitFlags?: BrokerOnboardingReverificationFlags;
+	invalidatedFieldPaths: readonly string[];
+}): BrokerOnboardingReverificationFlags {
+	return (
+		args.explicitFlags ?? {
+			identityVerification: args.invalidatedFieldPaths.some(
+				isIdentityVerificationInvalidationField
+			),
+			regulatorLookup: args.invalidatedFieldPaths.some(
+				isRegulatorVerificationInvalidationField
+			),
+		}
+	);
 }
 
 function resolveAuthor(args: {
@@ -519,14 +572,15 @@ async function buildVerificationInvalidationPatch(
 		application: BrokerOnboardingApplicationDoc;
 		invalidatedFieldPaths: string[];
 		now: number;
+		reverificationFlags: BrokerOnboardingReverificationFlags;
 	}
 ): Promise<Record<string, unknown>> {
-	const shouldInvalidateIdentity = args.invalidatedFieldPaths.some(
-		isIdentityVerificationInvalidationField
-	);
-	const shouldInvalidateRegulator = args.invalidatedFieldPaths.some(
-		isRegulatorVerificationInvalidationField
-	);
+	const shouldInvalidateIdentity =
+		args.invalidatedFieldPaths.some(isIdentityVerificationInvalidationField) ||
+		args.reverificationFlags.identityVerification;
+	const shouldInvalidateRegulator =
+		args.invalidatedFieldPaths.some(isRegulatorVerificationInvalidationField) ||
+		args.reverificationFlags.regulatorLookup;
 	const verificationRegistry = createBrokerOnboardingVerificationRegistry({
 		configOverrides: {
 			providers: { regulatorDirectory: "imported_fsra" },
@@ -752,6 +806,9 @@ export const requestChanges = convex
 		authorAuthId: v.optional(v.string()),
 		authorType: v.optional(actorTypeValidator),
 		body: v.string(),
+		reverificationFlags: v.optional(
+			brokerOnboardingReverificationFlagsValidator
+		),
 		reopenedFields: v.array(
 			v.object({
 				fieldPath: v.string(),
@@ -772,6 +829,8 @@ export const requestChanges = convex
 		if (isBrokerOnboardingApplicationExpired(application, Date.now())) {
 			throw new ConvexError("Broker onboarding application has expired");
 		}
+		const body = normalizeRequiredReviewerNote(args.body, "Request changes");
+		assertReopenedFieldsAreScoped(args.reopenedFields);
 
 		const now = Date.now();
 		const result = await executeTransition(ctx, {
@@ -793,7 +852,7 @@ export const requestChanges = convex
 
 		const reopenedFields: ReopenedBrokerOnboardingField[] =
 			args.reopenedFields.map((reopenedField) => ({
-				fieldPath: reopenedField.fieldPath,
+				fieldPath: reopenedField.fieldPath.trim(),
 				reason: reopenedField.reason,
 				requestedAt: now,
 				requestedByAuthId: args.authorAuthId,
@@ -801,19 +860,32 @@ export const requestChanges = convex
 			}));
 		const invalidatedFieldPaths =
 			resolveVerificationInvalidationFieldPaths(reopenedFields);
+		const reverificationFlags = resolveReverificationFlags({
+			explicitFlags: args.reverificationFlags,
+			invalidatedFieldPaths,
+		});
+		const reverificationFieldPaths =
+			invalidatedFieldPaths.length > 0
+				? invalidatedFieldPaths
+				: reopenedFields.map((reopenedField) => reopenedField.fieldPath);
 		const patch: Record<string, unknown> = {
 			changesRequestedAt: now,
 			reopenedFields,
 			...buildResumeWindowPatch(now),
 		};
 
-		if (invalidatedFieldPaths.length > 0) {
+		if (
+			invalidatedFieldPaths.length > 0 ||
+			reverificationFlags.identityVerification ||
+			reverificationFlags.regulatorLookup
+		) {
 			Object.assign(
 				patch,
 				await buildVerificationInvalidationPatch(ctx, {
 					application,
-					invalidatedFieldPaths,
+					invalidatedFieldPaths: reverificationFieldPaths,
 					now,
+					reverificationFlags,
 				})
 			);
 		}
@@ -821,9 +893,12 @@ export const requestChanges = convex
 		await ctx.db.patch(args.applicationId, patch);
 		await appendBrokerOnboardingReviewEntry(ctx, {
 			applicationId: args.applicationId,
-			body: args.body.trim() || "Changes requested.",
+			body,
 			createdAt: now,
 			entryType: "reviewer_note",
+			metadata: {
+				reverificationFlags,
+			},
 			reopenedFields,
 			...resolveAuthor(args),
 		});
@@ -985,6 +1060,7 @@ export const approveApplication = convex
 		applicationId: v.id("brokerOnboardingApplications"),
 		authorAuthId: v.optional(v.string()),
 		authorType: v.optional(actorTypeValidator),
+		body: v.optional(v.string()),
 	})
 	.handler(async (ctx, args) => {
 		const application = await ctx.db.get(args.applicationId);
@@ -999,6 +1075,10 @@ export const approveApplication = convex
 		if (isBrokerOnboardingApplicationExpired(application, Date.now())) {
 			throw new ConvexError("Broker onboarding application has expired");
 		}
+		const body =
+			args.body !== undefined
+				? normalizeRequiredReviewerNote(args.body, "Approval")
+				: null;
 
 		const now = Date.now();
 		const result = await executeTransition(ctx, {
@@ -1025,12 +1105,22 @@ export const approveApplication = convex
 		});
 		await appendBrokerOnboardingReviewEntry(ctx, {
 			applicationId: args.applicationId,
-			body: "Application approved for downstream provisioning handoff.",
+			body: body ?? "Application approved for downstream provisioning handoff.",
 			createdAt: now,
-			entryType: "system_event",
-			systemEventType: "application_approved",
+			entryType: body ? "reviewer_note" : "system_event",
+			...(body ? {} : { systemEventType: "application_approved" }),
 			...resolveAuthor(args),
 		});
+		if (body) {
+			await appendBrokerOnboardingReviewEntry(ctx, {
+				applicationId: args.applicationId,
+				body: "Application approved for downstream provisioning handoff.",
+				createdAt: now,
+				entryType: "system_event",
+				systemEventType: "application_approved",
+				...resolveAuthor(args),
+			});
+		}
 		await ensureApprovedApplicationDownstreamHandoff(ctx, {
 			applicationId: args.applicationId,
 			authorAuthId: args.authorAuthId,
