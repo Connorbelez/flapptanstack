@@ -15,7 +15,10 @@ import {
 	buildPrincipalReturnIdempotencyKey,
 	computeProrationAdjustedAmount,
 } from "./principalReturn.logic";
-import { legNumberValidator, providerCodeValidator } from "./validators";
+import {
+	legNumberValidator,
+	nonCheckoutProviderCodeValidator,
+} from "./validators";
 
 /**
  * Source stamp for admin-triggered principal return transfers.
@@ -42,7 +45,7 @@ export const createPrincipalReturn = internalAction({
 		mortgageId: v.id("mortgages"),
 		principalAmount: v.number(),
 		prorationAdjustment: v.number(),
-		providerCode: providerCodeValidator,
+		providerCode: nonCheckoutProviderCodeValidator,
 		bankAccountRef: v.optional(v.string()),
 		pipelineId: v.optional(v.string()),
 		legNumber: v.optional(legNumberValidator),

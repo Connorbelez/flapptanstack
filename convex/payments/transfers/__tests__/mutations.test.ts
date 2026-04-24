@@ -27,6 +27,7 @@ import {
 	InvalidDomainEntityIdError,
 	isInboundTransferType,
 	isOutboundTransferType,
+	NON_CHECKOUT_TRANSFER_PROVIDER_CODES,
 	OUTBOUND_TRANSFER_TYPES,
 	PROVIDER_CODES,
 	TRANSFER_STATUSES,
@@ -195,8 +196,13 @@ describe("provider codes", () => {
 		expect(PROVIDER_CODES).toContain("mock_eft");
 	});
 
-	it("has 10 provider codes", () => {
-		expect(PROVIDER_CODES).toHaveLength(10);
+	it("includes Stripe for hosted checkout lock fee collection", () => {
+		expect(PROVIDER_CODES).toContain("stripe");
+		expect(NON_CHECKOUT_TRANSFER_PROVIDER_CODES).not.toContain("stripe");
+	});
+
+	it("has 11 provider codes", () => {
+		expect(PROVIDER_CODES).toHaveLength(11);
 	});
 });
 

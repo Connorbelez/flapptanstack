@@ -14,7 +14,7 @@ import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { internalAction } from "../../_generated/server";
 import type { DealClosingLeg1Metadata } from "./pipeline.types";
-import { providerCodeValidator } from "./validators";
+import { nonCheckoutProviderCodeValidator } from "./validators";
 
 /**
  * Builds a deterministic idempotency key for a pipeline leg.
@@ -46,7 +46,7 @@ export const createDealClosingPipeline = internalAction({
 		mortgageId: v.id("mortgages"),
 		leg1Amount: v.number(),
 		leg2Amount: v.number(),
-		providerCode: providerCodeValidator,
+		providerCode: nonCheckoutProviderCodeValidator,
 	},
 	handler: async (
 		ctx,
@@ -144,7 +144,7 @@ export const createAndInitiateLeg2 = internalAction({
 		lenderId: v.optional(v.id("lenders")),
 		mortgageId: v.id("mortgages"),
 		leg2Amount: v.number(),
-		providerCode: providerCodeValidator,
+		providerCode: nonCheckoutProviderCodeValidator,
 	},
 	handler: async (
 		ctx,

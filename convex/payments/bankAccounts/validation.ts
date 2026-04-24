@@ -13,7 +13,7 @@ import { internalQuery } from "../../_generated/server";
 import type { ProviderCode } from "../transfers/types";
 import {
 	counterpartyTypeValidator,
-	providerCodeValidator,
+	nonCheckoutProviderCodeValidator,
 } from "../transfers/validators";
 import {
 	type BankAccountValidationResult,
@@ -99,7 +99,7 @@ export const validateBankAccountForTransfer = internalQuery({
 	args: {
 		counterpartyType: counterpartyTypeValidator,
 		counterpartyId: v.string(),
-		providerCode: providerCodeValidator,
+		providerCode: nonCheckoutProviderCodeValidator,
 	},
 	handler: async (ctx, args): Promise<BankAccountValidationResult> => {
 		// Step 1: skip providers that don't need bank validation

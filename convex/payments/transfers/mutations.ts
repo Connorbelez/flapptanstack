@@ -37,6 +37,8 @@ import { buildPrincipalReturnIdempotencyKey } from "./principalReturn.logic";
 import { getTransferProvider } from "./providers/registry";
 import {
 	InvalidDomainEntityIdError,
+	isCheckoutLockFeeProviderCode,
+	isCheckoutLockFeeProviderUse,
 	type ProviderCode,
 	type TransferDirection,
 	toDomainEntityId,
@@ -46,6 +48,7 @@ import {
 	directionValidator,
 	legNumberValidator,
 	manualSettlementValidator,
+	nonCheckoutProviderCodeValidator,
 	providerCodeValidator,
 	transferTypeValidator,
 } from "./validators";
@@ -61,10 +64,13 @@ export function buildRetryIdempotencyKey(transferId: string) {
  */
 function validateTransferCreationInput(args: {
 	amount: number;
-	pipelineId?: string;
-	legNumber?: number;
-	providerCode: string;
+	direction: TransferDirection;
 	counterpartyId: string;
+	legNumber?: number;
+	metadata?: Record<string, unknown>;
+	pipelineId?: string;
+	providerCode: ProviderCode;
+	transferType: TransferRequestInput["transferType"];
 }): string {
 	if (!Number.isInteger(args.amount) || args.amount <= 0) {
 		throw new ConvexError("Amount must be a positive integer (cents)");
@@ -73,6 +79,20 @@ function validateTransferCreationInput(args: {
 	const pipelineError = validatePipelineFields(args.pipelineId, args.legNumber);
 	if (pipelineError) {
 		throw new ConvexError(pipelineError);
+	}
+
+	if (
+		args.providerCode === "stripe" &&
+		!isCheckoutLockFeeProviderUse({
+			direction: args.direction,
+			metadata: args.metadata,
+			providerCode: args.providerCode,
+			transferType: args.transferType,
+		})
+	) {
+		throw new ConvexError(
+			'Provider "stripe" is only supported for checkout locking_fee_collection transfers with checkout metadata'
+		);
 	}
 
 	try {
@@ -459,6 +479,12 @@ async function runTransferInitiation(args: {
 		);
 	}
 
+	if (isCheckoutLockFeeProviderCode(transfer.providerCode)) {
+		throw new ConvexError(
+			'Provider "stripe" checkout lock-fee transfers are initiated by the hosted checkout flow, not the generic transfer provider registry'
+		);
+	}
+
 	const input = buildTransferInitiationInput(transfer, args.source);
 	const provider = getTransferProvider(transfer.providerCode);
 
@@ -717,7 +743,7 @@ export const startDealClosingPipeline = paymentAction
 		dealId: v.id("deals"),
 		leg1Amount: v.number(),
 		leg2Amount: v.optional(v.number()),
-		providerCode: v.optional(providerCodeValidator),
+		providerCode: v.optional(nonCheckoutProviderCodeValidator),
 	})
 	.handler(
 		async (
@@ -1005,7 +1031,7 @@ export const collectCommitmentDepositAdmin = paymentAction
 		borrowerId: v.id("borrowers"),
 		mortgageId: v.id("mortgages"),
 		amount: v.number(),
-		providerCode: v.optional(providerCodeValidator),
+		providerCode: v.optional(nonCheckoutProviderCodeValidator),
 	})
 	.handler(
 		async (
@@ -1124,7 +1150,7 @@ export const returnInvestorPrincipal = paymentAction
 		mortgageId: v.id("mortgages"),
 		principalAmount: v.number(),
 		prorationAdjustment: v.optional(v.number()),
-		providerCode: v.optional(providerCodeValidator),
+		providerCode: v.optional(nonCheckoutProviderCodeValidator),
 		bankAccountRef: v.optional(v.string()),
 	})
 	.handler(

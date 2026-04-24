@@ -5,12 +5,17 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { ObligationType, TransferType } from "../types";
+import type { ObligationType, ProviderCode, TransferType } from "../types";
 import {
 	ALL_TRANSFER_TYPES,
+	CHECKOUT_LOCK_FEE_PROVIDER_CODES,
 	DEFAULT_OBLIGATION_TRANSFER_TYPE,
+	INBOUND_TRANSFER_TYPES,
+	isCheckoutLockFeeProviderUse,
+	NON_CHECKOUT_TRANSFER_PROVIDER_CODES,
 	OBLIGATION_TYPE_TO_TRANSFER_TYPE,
 	obligationTypeToTransferType,
+	PROVIDER_CODES,
 	TRANSFER_TYPE_TO_OBLIGATION_TYPE,
 } from "../types";
 
@@ -134,5 +139,69 @@ describe("obligationTypeToTransferType", () => {
 		expect(obligationTypeToTransferType("servicing")).toBe(
 			DEFAULT_OBLIGATION_TRANSFER_TYPE
 		);
+	});
+});
+
+describe("locking fee Stripe provider contract", () => {
+	it("keeps locking_fee_collection as an inbound transfer type", () => {
+		expect(INBOUND_TRANSFER_TYPES).toContain("locking_fee_collection");
+		expect(TRANSFER_TYPE_TO_OBLIGATION_TYPE.locking_fee_collection).toBeNull();
+	});
+
+	it("includes stripe as a typed provider code", () => {
+		const providerCode = "stripe" satisfies ProviderCode;
+
+		expect(PROVIDER_CODES).toContain(providerCode);
+	});
+
+	it("scopes stripe to checkout locking fee provider capability", () => {
+		expect(CHECKOUT_LOCK_FEE_PROVIDER_CODES).toEqual(["stripe"]);
+		expect(NON_CHECKOUT_TRANSFER_PROVIDER_CODES).not.toContain("stripe");
+		expect(
+			isCheckoutLockFeeProviderUse({
+				direction: "inbound",
+				transferType: "locking_fee_collection",
+				providerCode: "stripe",
+				metadata: {
+					checkoutSessionId: "checkout_123",
+					reservationId: "reservation_123",
+					idempotencyKey: "checkout:idempotency",
+				},
+			})
+		).toBe(true);
+	});
+
+	it("rejects stripe for non-checkout transfer capabilities", () => {
+		for (const transferType of [
+			"commitment_deposit_collection",
+			"deal_principal_transfer",
+			"deal_seller_payout",
+			"lender_principal_return",
+		] as const satisfies readonly TransferType[]) {
+			expect(
+				isCheckoutLockFeeProviderUse({
+					direction:
+						transferType === "deal_seller_payout" ||
+						transferType === "lender_principal_return"
+							? "outbound"
+							: "inbound",
+					transferType,
+					providerCode: "stripe",
+					metadata: {
+						checkoutSessionId: "checkout_123",
+						reservationId: "reservation_123",
+						idempotencyKey: "checkout:idempotency",
+					},
+				})
+			).toBe(false);
+		}
+
+		expect(
+			isCheckoutLockFeeProviderUse({
+				direction: "inbound",
+				transferType: "locking_fee_collection",
+				providerCode: "stripe",
+			})
+		).toBe(false);
 	});
 });

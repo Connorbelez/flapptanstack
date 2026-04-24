@@ -171,6 +171,16 @@ describe("commitment deposit provider code default", () => {
 	it("preserves an explicit provider code", () => {
 		expect(resolveCommitmentDepositProviderCode("wire")).toBe("wire");
 	});
+
+	it("keeps Stripe out of commitment deposit provider capabilities", () => {
+		type CommitmentDepositProvider = Parameters<
+			typeof resolveCommitmentDepositProviderCode
+		>[0];
+
+		// @ts-expect-error Stripe is checkout-lock-fee-only.
+		const unsupportedProvider: CommitmentDepositProvider = "stripe";
+		expect(unsupportedProvider).toBe("stripe");
+	});
 });
 
 describe("commitment deposit metadata shape", () => {

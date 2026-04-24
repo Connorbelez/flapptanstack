@@ -20,8 +20,8 @@ import { appendAuditJournalEntry } from "../../engine/auditJournal";
 import { convex } from "../../fluent";
 import { createTransferRequestRecord } from "../transfers/mutations";
 import {
+	NON_CHECKOUT_TRANSFER_PROVIDER_CODES,
 	obligationTypeToTransferType,
-	PROVIDER_CODES,
 	type ProviderCode,
 } from "../transfers/types";
 import {
@@ -50,7 +50,9 @@ import {
 } from "./executionGuards";
 
 function mapMethodToProviderCode(method: string): ProviderCode {
-	if ((PROVIDER_CODES as readonly string[]).includes(method)) {
+	if (
+		(NON_CHECKOUT_TRANSFER_PROVIDER_CODES as readonly string[]).includes(method)
+	) {
 		return method as ProviderCode;
 	}
 
