@@ -38,6 +38,8 @@ interface DealWithPhase {
 	createdAt: number;
 	createdBy: string;
 	fractionalShare: number;
+	fractionalShareDisplayPercent?: number | null;
+	fractionalShareUnits?: number;
 	lawyerId?: string;
 	lawyerType?: "platform_lawyer" | "guest_lawyer";
 	mortgageId: Id<"mortgages">;
@@ -129,6 +131,13 @@ function getCompletedPhases(status: string): DealPhase[] {
 		return [];
 	}
 	return phaseOrder.slice(0, currentIndex);
+}
+
+function formatDealSharePercent(deal: DealWithPhase) {
+	if (typeof deal.fractionalShareDisplayPercent === "number") {
+		return `${deal.fractionalShareDisplayPercent}%`;
+	}
+	return "Invalid share";
 }
 
 interface DealCardProps {
@@ -273,7 +282,7 @@ export function DealCard({ deal }: DealCardProps) {
 					</div>
 					<div className="flex items-center gap-2 text-muted-foreground">
 						<Percent className="h-3.5 w-3.5" />
-						<span>Share: {deal.fractionalShare}%</span>
+						<span>Share: {formatDealSharePercent(deal)}</span>
 					</div>
 					<div className="flex items-center gap-2 text-muted-foreground">
 						<Calendar className="h-3.5 w-3.5" />
