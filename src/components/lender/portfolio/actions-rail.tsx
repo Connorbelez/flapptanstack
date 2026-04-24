@@ -1,5 +1,6 @@
 import { CheckCircle2, ListTodo } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { ActionItemHost } from "./action-item-host";
 import type { PortfolioCommandCenterSnapshot } from "./portfolio-types";
 
@@ -13,6 +14,7 @@ export interface ActionsRailProps {
 	actionsRequired: PortfolioActionsSection;
 	onOpenDetails?: (action: PortfolioActionItem) => void;
 	onPrefill: (context: PortfolioBrokerPrefillContext) => void;
+	portalId: Id<"portals">;
 	selectedPrefillContext?: PortfolioBrokerPrefillContext | null;
 }
 
@@ -30,6 +32,7 @@ export function ActionsRail({
 	actionsRequired,
 	onOpenDetails,
 	onPrefill,
+	portalId,
 	selectedPrefillContext,
 }: ActionsRailProps) {
 	const hasItems =
@@ -71,6 +74,7 @@ export function ActionsRail({
 								key={action.id}
 								onOpenDetails={onOpenDetails}
 								onPrefill={onPrefill}
+								portalId={portalId}
 							/>
 						))}
 					</div>

@@ -70,6 +70,18 @@ vi.mock("#/components/lender/portfolio/query-options", () => ({
 	lenderPortfolioPositionDetailQueryOptions: vi.fn(),
 }));
 
+vi.mock("#/components/lender/portfolio/renewals/renewal-actions", () => ({
+	RenewalActionSurface: ({
+		mortgageId,
+		variant,
+	}: {
+		mortgageId: string;
+		variant: string;
+	}) => (
+		<div data-testid={`renewal-action-surface-mock-${variant}-${mortgageId}`} />
+	),
+}));
+
 vi.mock("#/hooks/use-mobile", () => ({
 	useIsMobile: vi.fn(),
 }));
@@ -459,7 +471,7 @@ describe("lender portfolio page", () => {
 		expect(screen.getByTestId("payment-row-obligation_upcoming")).toBeTruthy();
 	});
 
-	it("opens the position detail host on desktop row click", () => {
+	it("opens the position detail host on desktop row click", async () => {
 		vi.mocked(useIsMobile).mockReturnValue(false);
 		vi.mocked(lenderPortfolioPositionDetailQueryOptions).mockReturnValue(
 			POSITION_DETAIL_QUERY_OPTIONS as never
@@ -490,6 +502,17 @@ describe("lender portfolio page", () => {
 				"123 King St W, Toronto"
 			).length
 		).toBeGreaterThan(0);
+		fireEvent.mouseDown(
+			within(screen.getByTestId("position-detail-host")).getByRole("tab", {
+				name: "Renewal",
+			}),
+			{ button: 0 }
+		);
+		expect(
+			await screen.findByTestId(
+				"renewal-action-surface-mock-full-mortgage_king"
+			)
+		).toBeTruthy();
 		expect(
 			screen.getByLabelText("Close Position detail")
 		).toBeTruthy();

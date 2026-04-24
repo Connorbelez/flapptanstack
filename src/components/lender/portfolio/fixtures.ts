@@ -1,6 +1,7 @@
 import type {
 	PortfolioCommandCenterSnapshot,
 	PortfolioHistoricalSeries,
+	PortfolioLenderRenewalIntentRecord,
 	PortfolioPaymentDetail,
 	PortfolioPositionDetail,
 	PortfolioTaxExport,
@@ -412,6 +413,72 @@ export const unavailablePortfolioTaxExportFixture: PortfolioTaxExport = {
 	unavailableReason:
 		"No lender interest income is available for 2026 year-to-date.",
 };
+
+export const portfolioRenewalIntentFixture: PortfolioLenderRenewalIntentRecord =
+	{
+		actionBlockedReason: null,
+		actionRequired: true,
+		availableChoices: ["renew", "exit", "partial_exit"],
+		canChangeIntent: false,
+		currentHeldFractions: 600,
+		fractionCount: 600,
+		id: "renewal_intent_king",
+		intent: null,
+		maturityDate: "2027-01-01",
+		mortgageId: "mortgage_king",
+		notes: null,
+		partialExitAvailable: true,
+		partialExitFractions: null,
+		partialExitMinimumFractions: 100,
+		positionAccountId: "position_account_king",
+		recordedAt: 1_710_000_500_000,
+		signalDeadline: "2026-05-15",
+		signalledAt: null,
+		status: "pending_signal",
+	};
+
+export const renewedPortfolioRenewalIntentFixture: PortfolioLenderRenewalIntentRecord =
+	{
+		...portfolioRenewalIntentFixture,
+		actionRequired: false,
+		availableChoices: ["exit", "partial_exit"],
+		canChangeIntent: true,
+		intent: "renew",
+		signalledAt: 1_710_000_860_000,
+		status: "renewed",
+	};
+
+export const partialExitPortfolioRenewalIntentFixture: PortfolioLenderRenewalIntentRecord =
+	{
+		...portfolioRenewalIntentFixture,
+		actionRequired: false,
+		availableChoices: ["renew", "exit"],
+		canChangeIntent: true,
+		intent: "partial_exit",
+		partialExitFractions: 150,
+		signalledAt: 1_710_000_860_000,
+		status: "exiting",
+	};
+
+export const expiredPortfolioRenewalIntentFixture: PortfolioLenderRenewalIntentRecord =
+	{
+		...portfolioRenewalIntentFixture,
+		actionBlockedReason: "expired",
+		actionRequired: false,
+		availableChoices: [],
+		canChangeIntent: false,
+		status: "expired",
+	};
+
+export const soldOutPortfolioRenewalIntentFixture: PortfolioLenderRenewalIntentRecord =
+	{
+		...renewedPortfolioRenewalIntentFixture,
+		actionBlockedReason: "position_sold",
+		availableChoices: [],
+		canChangeIntent: false,
+		currentHeldFractions: 0,
+		fractionCount: 0,
+	};
 
 export const portfolioPositionDetailFixture: PortfolioPositionDetail = {
 	generatedAt: 1_710_000_500_000,

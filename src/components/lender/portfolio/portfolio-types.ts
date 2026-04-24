@@ -75,6 +75,13 @@ export type PortfolioPositionDetail = FunctionReturnType<
 export type PortfolioPaymentDetail = FunctionReturnType<
 	typeof api.portfolio.queries.getLenderPortfolioPaymentDetail
 >;
+export type PortfolioLenderRenewalIntent = FunctionReturnType<
+	typeof api.renewals.portal.getLenderRenewalIntentByMortgage
+>;
+export type PortfolioLenderRenewalIntentRecord =
+	NonNullable<PortfolioLenderRenewalIntent>;
+export type PortfolioLenderRenewalIntentChoice =
+	PortfolioLenderRenewalIntentRecord["availableChoices"][number];
 
 export type PortfolioHistoricalSeries = FunctionReturnType<
 	typeof api.portfolio.queries.getLenderPortfolioHistoricalSeries

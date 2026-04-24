@@ -20,6 +20,18 @@ vi.mock("#/components/admin/financial-ledger/csv", () => ({
 	downloadCsv: vi.fn(),
 }));
 
+vi.mock("#/components/lender/portfolio/renewals/renewal-actions", () => ({
+	RenewalActionSurface: ({
+		mortgageId,
+		variant,
+	}: {
+		mortgageId: string;
+		variant: string;
+	}) => (
+		<div data-testid={`renewal-action-surface-mock-${variant}-${mortgageId}`} />
+	),
+}));
+
 const TEST_CHART_RECT = {
 	bottom: 320,
 	height: 320,
