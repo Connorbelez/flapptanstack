@@ -2,7 +2,11 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { convex } from "../fluent";
-import { syncUserHomePortalAssignmentByUserId } from "../portals/homePortalAssignment";
+import {
+	getPortalByBrokerId,
+	getPortalByOrgId,
+	syncUserHomePortalAssignmentByUserId,
+} from "../portals/homePortalAssignment";
 import { ensureBrokerPortalForActivation } from "./activation";
 import { resolveOrProvisionBrokerForActivation } from "./resolveOrProvision";
 
@@ -141,10 +145,13 @@ async function collectBrokersByLicense(
 }
 
 async function collectUsersByEmail(ctx: BrokerClaimReaderCtx, email: string) {
-	return ctx.db
-		.query("users")
-		.withIndex("by_email", (query) => query.eq("email", email))
-		.collect();
+	const normalizedEmail = normalizeEmail(email);
+	if (!normalizedEmail) {
+		return [];
+	}
+	return (await ctx.db.query("users").collect()).filter(
+		(user) => normalizeEmail(user.email) === normalizedEmail
+	);
 }
 
 function addCandidate(
@@ -320,7 +327,27 @@ async function patchSafeClaimBrokerFields(
 	if (!patchedBroker) {
 		throw new ConvexError("Broker record disappeared during claim convergence");
 	}
-	return patchedBroker;
+	return {
+		broker: patchedBroker,
+		wasPatched: Object.keys(patch).some((field) => field !== "updatedAt"),
+	};
+}
+
+async function getExistingClaimPortalSlug(
+	ctx: BrokerClaimReaderCtx,
+	args: {
+		brokerId: Id<"brokers">;
+		orgId: string;
+	}
+) {
+	const byBroker = await getPortalByBrokerId(ctx, args.brokerId);
+	const byOrg = await getPortalByOrgId(ctx, args.orgId);
+	if (byBroker && byOrg && byBroker._id !== byOrg._id) {
+		throw new ConvexError(
+			"Claim convergence found conflicting broker and organization portals"
+		);
+	}
+	return (byBroker ?? byOrg)?.slug;
 }
 
 export async function convergeBrokerClaimToCanonicalBroker(
@@ -329,8 +356,14 @@ export async function convergeBrokerClaimToCanonicalBroker(
 ): Promise<BrokerClaimConvergenceOutcome> {
 	const verifiedEmail = normalizeEmail(args.verifiedEmail);
 	const verifiedLicenseId = normalizeLicenseId(args.verifiedLicenseId);
+	const targetOrganizationId = normalizeOptionalString(
+		args.targetOrganizationId
+	);
 	if (!(verifiedEmail && verifiedLicenseId)) {
 		return continueSelfServe("missing_verified_identifiers");
+	}
+	if (!targetOrganizationId) {
+		throw new ConvexError("Claim convergence requires a target organization");
 	}
 
 	const user = await ctx.db.get(args.userId);
@@ -352,7 +385,7 @@ export async function convergeBrokerClaimToCanonicalBroker(
 
 	const candidate = validateSingleSafeCandidate({
 		candidates: candidateResult.candidates,
-		targetOrganizationId: args.targetOrganizationId,
+		targetOrganizationId,
 		userId: user._id,
 		verifiedLicenseId,
 	});
@@ -362,17 +395,18 @@ export async function convergeBrokerClaimToCanonicalBroker(
 
 	const requestedPortalSlug = normalizeOptionalString(args.requestedPortalSlug);
 	if (!requestedPortalSlug) {
-		const patchedBroker = await patchSafeClaimBrokerFields(
+		const patchResult = await patchSafeClaimBrokerFields(
 			ctx,
 			candidate.broker,
 			{
 				...args,
+				targetOrganizationId,
 				verifiedLicenseId,
 			}
 		);
 		return {
-			brokerId: patchedBroker._id,
-			brokerWasPatched: true,
+			brokerId: patchResult.broker._id,
+			brokerWasPatched: patchResult.wasPatched,
 			kind: "reused_existing_broker",
 			matchedBy: [...candidate.sources],
 			nextStep: "continue_self_serve_onboarding",
@@ -380,15 +414,22 @@ export async function convergeBrokerClaimToCanonicalBroker(
 		};
 	}
 
+	const activationPortalSlug =
+		(await getExistingClaimPortalSlug(ctx, {
+			brokerId: candidate.broker._id,
+			orgId: targetOrganizationId,
+		})) ?? requestedPortalSlug;
 	const brokerResult = await resolveOrProvisionBrokerForActivation(ctx, {
-		applicationId: args.applicationId,
-		brokerageName: args.brokerageName,
-		invitedByBrokerId: args.invitedByBrokerId,
+		applicationId:
+			candidate.broker.brokerOnboardingApplicationId ?? args.applicationId,
+		brokerageName: candidate.broker.brokerageName ?? args.brokerageName,
+		invitedByBrokerId:
+			candidate.broker.invitedByBrokerId ?? args.invitedByBrokerId,
 		licenseId: verifiedLicenseId,
-		licenseProvince: args.licenseProvince,
+		licenseProvince: candidate.broker.licenseProvince ?? args.licenseProvince,
 		now: args.now,
-		referralSource: args.referralSource,
-		targetOrganizationId: args.targetOrganizationId,
+		referralSource: candidate.broker.referralSource ?? args.referralSource,
+		targetOrganizationId,
 		userId: user._id,
 	});
 	if (brokerResult.wasCreated) {
@@ -400,8 +441,8 @@ export async function convergeBrokerClaimToCanonicalBroker(
 	const portalResult = await ensureBrokerPortalForActivation(ctx, {
 		broker: brokerResult.broker,
 		now: args.now,
-		orgId: args.targetOrganizationId,
-		requestedSlug: requestedPortalSlug,
+		orgId: targetOrganizationId,
+		requestedSlug: activationPortalSlug,
 	});
 	await ctx.db.patch(brokerResult.broker._id, {
 		activatedPortalId: portalResult.portal._id,

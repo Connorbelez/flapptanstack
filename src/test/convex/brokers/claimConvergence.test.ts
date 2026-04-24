@@ -15,8 +15,12 @@ async function insertBroker(
 	t: ReturnType<typeof createGovernedTestConvex>,
 	args: {
 		brokerageName?: string;
+		invitedByBrokerId?: string;
 		licenseId?: string;
+		licenseProvince?: string;
+		onboardedAt?: number;
 		orgId?: string;
+		referralSource?: "broker_invite" | "self_signup";
 		status?: string;
 		userId: Id<"users">;
 	}
@@ -28,9 +32,12 @@ async function insertBroker(
 			lastTransitionAt: now,
 			userId: args.userId,
 			licenseId: args.licenseId,
-			licenseProvince: args.licenseId ? "ON" : undefined,
+			licenseProvince: args.licenseProvince ?? (args.licenseId ? "ON" : undefined),
 			brokerageName: args.brokerageName,
 			orgId: args.orgId,
+			referralSource: args.referralSource,
+			invitedByBrokerId: args.invitedByBrokerId,
+			onboardedAt: args.onboardedAt,
 			createdAt: now,
 			updatedAt: now,
 		});
@@ -152,6 +159,59 @@ describe("broker claim convergence", () => {
 		});
 	});
 
+	it("fails closed when verified email matching is ambiguous by normalized casing", async () => {
+		const t = createGovernedTestConvex();
+		const claimant = buildVerifiedMemberIdentity("claim-email-ambiguous");
+		const claimantUserId = await ensureSeededIdentity(t, claimant);
+		await t.run(async (ctx) => {
+			await ctx.db.insert("users", {
+				authId: "user_claim_email_ambiguous_duplicate",
+				email: claimant.user_email.toUpperCase(),
+				firstName: "Duplicate",
+				lastName: "Email",
+			});
+		});
+
+		const outcome = await convergeClaim(t, {
+			userId: claimantUserId,
+			verifiedEmail: claimant.user_email,
+			verifiedLicenseId: "ON-EMAIL-AMBIGUOUS",
+		});
+
+		expect(outcome).toEqual({
+			kind: "manual_review_required",
+			nextStep: "manual_review",
+			reason: "ambiguous_verified_email",
+		});
+	});
+
+	it("fails closed when a user has duplicate auth-linked broker rows", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("claim-duplicate-brokers");
+		const userId = await ensureSeededIdentity(t, identity);
+		const firstBrokerId = await insertBroker(t, {
+			licenseId: "ON-DUPLICATE-A",
+			userId,
+		});
+		const secondBrokerId = await insertBroker(t, {
+			licenseId: "ON-DUPLICATE-B",
+			userId,
+		});
+
+		const outcome = await convergeClaim(t, {
+			userId,
+			verifiedEmail: identity.user_email,
+			verifiedLicenseId: "ON-DUPLICATE-A",
+		});
+
+		expect(outcome).toEqual({
+			kind: "manual_review_required",
+			nextStep: "manual_review",
+			reason: "duplicate_auth_linked_brokers",
+			conflictingBrokerIds: [firstBrokerId, secondBrokerId],
+		});
+	});
+
 	it("routes unmatched verified claims to self-serve without silently provisioning a broker", async () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("claim-no-match");
@@ -217,6 +277,91 @@ describe("broker claim convergence", () => {
 		expect(user?.homePortalId).toBeUndefined();
 	});
 
+	it("preserves existing broker profile fields during portal-ready activation", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("claim-preserve-broker-fields");
+		const userId = await ensureSeededIdentity(t, identity);
+		const brokerId = await insertBroker(t, {
+			brokerageName: "Existing Brokerage",
+			invitedByBrokerId: "broker_existing_inviter",
+			licenseId: "ON-PRESERVE-FIELDS",
+			licenseProvince: "BC",
+			orgId: "org_claim_target",
+			referralSource: "broker_invite",
+			status: "provisional",
+			userId,
+		});
+
+		const outcome = await convergeClaim(t, {
+			brokerageName: "Conflicting Claim Brokerage",
+			licenseProvince: "ON",
+			requestedPortalSlug: "claim-preserve-broker-fields",
+			targetOrganizationId: "org_claim_target",
+			userId,
+			verifiedEmail: identity.user_email,
+			verifiedLicenseId: "ON-PRESERVE-FIELDS",
+		});
+		const broker = await t.run(async (ctx) => ctx.db.get(brokerId));
+
+		expect(outcome).toMatchObject({
+			kind: "reused_existing_broker",
+			brokerId,
+			nextStep: "broker_portal_ready",
+			reason: "safe_match",
+		});
+		expect(broker).toMatchObject({
+			_id: brokerId,
+			brokerageName: "Existing Brokerage",
+			invitedByBrokerId: "broker_existing_inviter",
+			licenseProvince: "BC",
+			orgId: "org_claim_target",
+			referralSource: "broker_invite",
+			status: "active",
+			userId,
+		});
+	});
+
+	it("preserves an existing broker portal slug when claim requests a different slug", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("claim-preserve-portal");
+		const userId = await ensureSeededIdentity(t, identity);
+		const brokerId = await insertBroker(t, {
+			licenseId: "ON-PRESERVE-PORTAL",
+			orgId: "org_claim_target",
+			userId,
+		});
+		const portalId = await createActivePortal(t, "existing-claim-portal");
+		await t.run(async (ctx) => {
+			await ctx.db.patch(portalId, {
+				brokerId,
+				orgId: "org_claim_target",
+			});
+		});
+
+		const outcome = await convergeClaim(t, {
+			requestedPortalSlug: "different-claim-portal",
+			targetOrganizationId: "org_claim_target",
+			userId,
+			verifiedEmail: identity.user_email,
+			verifiedLicenseId: "ON-PRESERVE-PORTAL",
+		});
+		const portal = await t.run(async (ctx) => ctx.db.get(portalId));
+
+		expect(outcome).toMatchObject({
+			kind: "reused_existing_broker",
+			portalId,
+			portalWasCreated: false,
+			nextStep: "broker_portal_ready",
+			reason: "safe_match",
+		});
+		expect(portal).toMatchObject({
+			_id: portalId,
+			brokerId,
+			orgId: "org_claim_target",
+			slug: "existing-claim-portal",
+		});
+	});
+
 	it("requires verified identifiers before claim convergence can reuse a broker", async () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("claim-missing-identifiers");
@@ -259,6 +404,31 @@ describe("broker claim convergence", () => {
 			kind: "manual_review_required",
 			nextStep: "manual_review",
 			reason: "cross_user_match",
+			conflictingBrokerIds: [brokerId],
+		});
+	});
+
+	it("routes cross-org safe-looking matches to manual review", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("claim-cross-org");
+		const userId = await ensureSeededIdentity(t, identity);
+		const brokerId = await insertBroker(t, {
+			licenseId: "ON-CROSS-ORG",
+			orgId: "org_existing_broker",
+			userId,
+		});
+
+		const outcome = await convergeClaim(t, {
+			targetOrganizationId: "org_claim_target",
+			userId,
+			verifiedEmail: identity.user_email,
+			verifiedLicenseId: "ON-CROSS-ORG",
+		});
+
+		expect(outcome).toEqual({
+			kind: "manual_review_required",
+			nextStep: "manual_review",
+			reason: "cross_org_match",
 			conflictingBrokerIds: [brokerId],
 		});
 	});
