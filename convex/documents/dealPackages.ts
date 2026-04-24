@@ -73,6 +73,7 @@ interface PackageSurface {
 		packageKey: string | null;
 		packageLabel: string | null;
 		sourceBlueprintId: Id<"mortgageDocumentBlueprints"> | null;
+		signingState: PackageSigningState | null;
 		status: Doc<"dealDocumentInstances">["status"];
 		templateId: Id<"documentTemplates"> | null;
 		templateVersion: number | null;
@@ -91,6 +92,18 @@ interface PackageSurface {
 		updatedAt: number;
 	} | null;
 	participants: DealParticipantProjection | null;
+}
+
+interface PackageSigningState {
+	activeAttemptId: Id<"dealEnvelopeAttempts"> | null;
+	attemptNumber: number | null;
+	completedRequiredCount: number;
+	exceptionCount: number;
+	providerDocumentId: string | null;
+	providerEnvelopeId: string | null;
+	recipientCount: number;
+	requiredCount: number;
+	status: Doc<"dealEnvelopeAttempts">["status"] | null;
 }
 
 interface CreateDocumentPackageResult {
@@ -494,6 +507,20 @@ async function buildPackageSurface(
 		.query("dealDocumentInstances")
 		.withIndex("by_package", (query) => query.eq("packageId", packageRow._id))
 		.collect();
+	const [attempts, recipients, exceptions] = await Promise.all([
+		ctx.db
+			.query("dealEnvelopeAttempts")
+			.withIndex("by_package", (query) => query.eq("packageId", packageRow._id))
+			.collect(),
+		ctx.db
+			.query("dealEnvelopeRecipients")
+			.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+			.collect(),
+		ctx.db
+			.query("dealSigningExceptions")
+			.withIndex("by_package", (query) => query.eq("packageId", packageRow._id))
+			.collect(),
+	]);
 
 	const instances = await Promise.all(
 		rows
@@ -538,6 +565,12 @@ async function buildPackageSurface(
 					packageKey: row.sourceBlueprintSnapshot.packageKey ?? null,
 					packageLabel: row.sourceBlueprintSnapshot.packageLabel ?? null,
 					sourceBlueprintId: row.sourceBlueprintId ?? null,
+					signingState: buildSigningStateForInstance({
+						attempts,
+						exceptions,
+						instanceId: row._id,
+						recipients,
+					}),
 					status: row.status,
 					templateId: row.sourceBlueprintSnapshot.templateId ?? null,
 					templateVersion: row.sourceBlueprintSnapshot.templateVersion ?? null,
@@ -561,6 +594,46 @@ async function buildPackageSurface(
 			updatedAt: packageRow.updatedAt,
 		},
 		participants,
+	};
+}
+
+function buildSigningStateForInstance(args: {
+	attempts: Doc<"dealEnvelopeAttempts">[];
+	exceptions: Doc<"dealSigningExceptions">[];
+	instanceId: Id<"dealDocumentInstances">;
+	recipients: Doc<"dealEnvelopeRecipients">[];
+}): PackageSigningState | null {
+	const instanceAttempts = args.attempts
+		.filter((attempt) => attempt.dealDocumentInstanceId === args.instanceId)
+		.sort((left, right) => right.attemptNumber - left.attemptNumber);
+	const activeAttempt =
+		instanceAttempts.find((attempt) => attempt.active) ??
+		instanceAttempts[0] ??
+		null;
+	if (!activeAttempt) {
+		return null;
+	}
+	const attemptRecipients = args.recipients.filter(
+		(recipient) => recipient.attemptId === activeAttempt._id
+	);
+	const requiredRecipients = attemptRecipients.filter(
+		(recipient) => recipient.required
+	);
+	return {
+		activeAttemptId: activeAttempt.active ? activeAttempt._id : null,
+		attemptNumber: activeAttempt.attemptNumber,
+		completedRequiredCount: requiredRecipients.filter(
+			(recipient) => recipient.signingStatus === "completed"
+		).length,
+		exceptionCount: args.exceptions.filter(
+			(exception) =>
+				exception.attemptId === activeAttempt._id && exception.status === "open"
+		).length,
+		providerDocumentId: activeAttempt.providerDocumentId ?? null,
+		providerEnvelopeId: activeAttempt.providerEnvelopeId ?? null,
+		recipientCount: attemptRecipients.length,
+		requiredCount: requiredRecipients.length,
+		status: activeAttempt.status,
 	};
 }
 

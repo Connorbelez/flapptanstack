@@ -128,6 +128,29 @@ export function verifyVoPaySignature(
 	return timingSafeEqual(sigBuffer, expectedBuffer);
 }
 
+/**
+ * Verify a Documenso webhook signature (HMAC-SHA256).
+ *
+ * The implementation accepts a hex-encoded HMAC-SHA256 digest of the raw
+ * request body. The HTTP handler owns header-name compatibility so this helper
+ * stays focused on constant-time signature comparison.
+ */
+export function verifyDocumensoSignature(
+	body: string,
+	signature: string,
+	secret: string
+): boolean {
+	const expected = createHmac("sha256", secret).update(body).digest("hex");
+	const sigBuffer = Buffer.from(signature, "hex");
+	const expectedBuffer = Buffer.from(expected, "hex");
+
+	if (sigBuffer.length !== expectedBuffer.length) {
+		return false;
+	}
+
+	return timingSafeEqual(sigBuffer, expectedBuffer);
+}
+
 // ── Verification result types ───────────────────────────────────────
 
 export type VerificationResult =
@@ -203,6 +226,24 @@ export const verifyVoPaySignatureAction = internalAction({
 			return { ok: false, error: "missing_secret" };
 		}
 		const valid = verifyVoPaySignature(args.body, args.signature, secret);
+		return valid ? { ok: true } : { ok: false, error: "invalid_signature" };
+	},
+});
+
+export const verifyDocumensoSignatureAction = internalAction({
+	args: {
+		body: v.string(),
+		signature: v.string(),
+	},
+	handler: async (_ctx, args): Promise<VerificationResult> => {
+		const secret = process.env.DOCUMENSO_WEBHOOK_SECRET;
+		if (!secret) {
+			console.error(
+				"[Documenso Webhook] DOCUMENSO_WEBHOOK_SECRET not configured"
+			);
+			return { ok: false, error: "missing_secret" };
+		}
+		const valid = verifyDocumensoSignature(args.body, args.signature, secret);
 		return valid ? { ok: true } : { ok: false, error: "invalid_signature" };
 	},
 });
