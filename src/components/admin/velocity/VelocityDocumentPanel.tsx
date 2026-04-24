@@ -29,6 +29,14 @@ const DOCUMENT_ROLE_LABELS = {
 	valuation: "Valuation",
 } as const satisfies Record<VelocityPackageDocumentRole, string>;
 
+const PDF_DOCUMENT_ROLE_LABELS = {
+	pad_evidence: "PAD evidence",
+	supporting_document: "Supporting document",
+	valuation: "Valuation",
+} as const satisfies Partial<Record<VelocityPackageDocumentRole, string>>;
+
+type PdfDocumentRole = keyof typeof PDF_DOCUMENT_ROLE_LABELS;
+
 function formatDateTime(value: number) {
 	return new Intl.DateTimeFormat("en-CA", {
 		dateStyle: "medium",
@@ -50,7 +58,8 @@ export function VelocityDocumentPanel({
 	workspaceId,
 }: VelocityDocumentPanelProps) {
 	const [file, setFile] = useState<File | null>(null);
-	const [role, setRole] = useState<VelocityPackageDocumentRole>("pad_evidence");
+	const [fileInputKey, setFileInputKey] = useState(0);
+	const [role, setRole] = useState<PdfDocumentRole>("pad_evidence");
 	const [isUploading, setIsUploading] = useState(false);
 	const generateUploadUrl = useMutation(api.documents.assets.generateUploadUrl);
 	const extractPdfMetadata = useAction(api.documents.assets.extractPdfMetadata);
@@ -81,6 +90,7 @@ export function VelocityDocumentPanel({
 				workspaceId,
 			});
 			setFile(null);
+			setFileInputKey((current) => current + 1);
 			toast.success(
 				createdAsset.duplicate
 					? "Existing PDF linked to package."
@@ -113,20 +123,20 @@ export function VelocityDocumentPanel({
 							Role
 						</label>
 						<Select
-							onValueChange={(value) =>
-								setRole(value as VelocityPackageDocumentRole)
-							}
+							onValueChange={(value) => setRole(value as PdfDocumentRole)}
 							value={role}
 						>
 							<SelectTrigger className="w-full" id="velocity-doc-role">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
-								{Object.entries(DOCUMENT_ROLE_LABELS).map(([value, label]) => (
-									<SelectItem key={value} value={value}>
-										{label}
-									</SelectItem>
-								))}
+								{Object.entries(PDF_DOCUMENT_ROLE_LABELS).map(
+									([value, label]) => (
+										<SelectItem key={value} value={value}>
+											{label}
+										</SelectItem>
+									)
+								)}
 							</SelectContent>
 						</Select>
 					</div>
@@ -137,6 +147,7 @@ export function VelocityDocumentPanel({
 						<Input
 							accept="application/pdf,.pdf"
 							id="velocity-doc-file"
+							key={fileInputKey}
 							onChange={(event) => setFile(event.target.files?.[0] ?? null)}
 							type="file"
 						/>

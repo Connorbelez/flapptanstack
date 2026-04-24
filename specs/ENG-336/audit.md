@@ -2,12 +2,13 @@
 
 - Audit skill: `$linear-pr-spec-audit`
 - Review target: current branch diff against repository base
-- Last run: 2026-04-24T13:40:00Z
+- Last run: 2026-04-24T14:09:00Z
 - Verdict: needs manual validation
 
 ## Findings
 - No material implementation gaps found against the ENG-336 Linear requirements and linked Notion plan.
-- Residual validation gap: component-level interaction tests for board/workspace rendering, FairLend field saves, upload/link, and sync-now were attempted but blocked by a local jsdom invalid-hook-call failure that reproduced even against the existing `AdminPageMetadataProvider` before Velocity component logic ran. Registry/auth tests and `bun typecheck` cover the retained automated evidence; a browser/manual pass should verify the composed admin pages.
+- Follow-up review findings were addressed: optional FairLend fields now have explicit clear semantics, invalid numeric input is blocked before save, workspace refreshes preserve dirty local edits, and the document upload file input is reset after a successful link.
+- Residual validation gap: component-level interaction tests for board/workspace rendering, upload/link, and sync-now were attempted but blocked by a local jsdom invalid-hook-call failure that reproduced even against the existing `AdminPageMetadataProvider` before Velocity component logic ran. Registry/auth tests, retained FairLend form-payload tests, and `bun typecheck` cover the automated evidence; a browser/manual pass should verify the composed admin pages.
 
 ## Unresolved items
 - Manual browser validation of the composed admin board/workspace remains recommended because component interaction tests could not be retained.
@@ -32,7 +33,7 @@
 | SATISFIED | board | Board remains passive and backend-driven | `src/components/admin/velocity/VelocityPackagesIndexPage.tsx` | React renders DTO-provided readiness and exception fields without recomputing rules. |
 | SATISFIED | workspace | Workspace loads backend detail DTO | `src/components/admin/velocity/VelocityWorkspacePage.tsx` | Uses `getVelocityPackageWorkspace` with typed workspace id. |
 | SATISFIED | workspace | Velocity-owned facts are immutable and visible | `src/components/admin/velocity/VelocityWorkspacePage.tsx` | Includes identity, borrower, property, mortgage, conditions, lender conditions, notes, source/provenance, referral/solicitor, and snapshots. |
-| SATISFIED | remediation | FairLend-owned fields are editable and saved through backend mutation | `src/components/admin/velocity/VelocityWorkspacePage.tsx` | Wires bank input, activation remediation, staff notes, valuation, and listing support fields to `updateVelocityPackageFairLendFields`. |
+| SATISFIED | remediation | FairLend-owned fields are editable and saved through backend mutation | `src/components/admin/velocity/VelocityWorkspacePage.tsx`, `src/components/admin/velocity/VelocityWorkspaceForm.ts`, `src/test/admin/velocity/workspace-form.test.ts` | Wires bank input, activation remediation, staff notes, valuation, and listing support fields to `updateVelocityPackageFairLendFields`; retained tests cover valid payloads, explicit clears, and invalid numeric blocking. |
 | SATISFIED | documents | PDF upload/link uses shared document asset path | `src/components/admin/velocity/VelocityDocumentPanel.tsx` | Uses `uploadDocumentAsset`, document asset functions, and `linkVelocityPackageDocument`. |
 | SATISFIED | sync | `Sync now` calls backend sync surface | `src/components/admin/velocity/VelocityWorkspacePage.tsx` | Uses `syncVelocityPackageNow` action with loading/error/success states. |
 | SATISFIED | downstream boundary | Final review/activation are not implemented in this slice | `src/components/admin/velocity/VelocityWorkspacePage.tsx` | Renders handoff copy only; no activation action wiring. |

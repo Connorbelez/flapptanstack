@@ -10,7 +10,7 @@ import {
 	RefreshCw,
 	Save,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAdminBreadcrumbLabel } from "#/components/admin/shell/AdminPageMetadataContext";
 import {
@@ -35,30 +35,15 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { VelocityWorkspaceDetail } from "./types";
 import { VelocityDocumentPanel } from "./VelocityDocumentPanel";
-
-type LoanType = "conventional" | "high_ratio" | "insured";
-type LoanTypeSelectValue = LoanType | "none";
+import {
+	buildFairLendFieldsPatch,
+	buildInitialForm,
+	type FairLendFormState,
+	type LoanTypeSelectValue,
+} from "./VelocityWorkspaceForm";
 
 interface VelocityWorkspacePageProps {
 	readonly workspaceId: string;
-}
-
-interface FairLendFormState {
-	accountHolderName: string;
-	accountNumber: string;
-	institutionNumber: string;
-	lienPosition: string;
-	listingAdminNotes: string;
-	listingDescription: string;
-	listingMarketplaceCopy: string;
-	listingSeoSlug: string;
-	listingTitle: string;
-	loanType: LoanTypeSelectValue;
-	remediationNotes: string;
-	staffNotes: string;
-	transitNumber: string;
-	valuationDate: string;
-	valueAsIs: string;
 }
 
 function formatCurrency(value: number | null | undefined) {
@@ -91,43 +76,6 @@ function display(value: string | number | boolean | null | undefined) {
 		return "Not supplied";
 	}
 	return String(value);
-}
-
-function parseOptionalNumber(value: string) {
-	const trimmed = value.trim();
-	if (!trimmed) {
-		return undefined;
-	}
-	const parsed = Number(trimmed);
-	return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function buildInitialForm(
-	workspace: VelocityWorkspaceDetail | undefined | null
-): FairLendFormState {
-	const enrichment = workspace?.fairlendOwned.enrichment;
-	const remediation = enrichment?.activationRemediation;
-	return {
-		accountHolderName: enrichment?.bankInput?.accountHolderName ?? "",
-		accountNumber: enrichment?.bankInput?.accountNumber ?? "",
-		institutionNumber: enrichment?.bankInput?.institutionNumber ?? "",
-		lienPosition:
-			remediation?.lienPosition == null ? "" : String(remediation.lienPosition),
-		listingAdminNotes: enrichment?.listingOverrides?.adminNotes ?? "",
-		listingDescription: enrichment?.listingOverrides?.description ?? "",
-		listingMarketplaceCopy: enrichment?.listingOverrides?.marketplaceCopy ?? "",
-		listingSeoSlug: enrichment?.listingOverrides?.seoSlug ?? "",
-		listingTitle: enrichment?.listingOverrides?.title ?? "",
-		loanType: remediation?.loanType ?? "none",
-		remediationNotes: remediation?.notes ?? "",
-		staffNotes: enrichment?.staffNotes ?? "",
-		transitNumber: enrichment?.bankInput?.transitNumber ?? "",
-		valuationDate: enrichment?.valuation?.valuationDate ?? "",
-		valueAsIs:
-			enrichment?.valuation?.valueAsIs == null
-				? ""
-				: String(enrichment.valuation.valueAsIs),
-	};
 }
 
 function DetailField({
@@ -470,19 +418,44 @@ export function VelocityWorkspacePage({
 	const [form, setForm] = useState<FairLendFormState>(() =>
 		buildInitialForm(undefined)
 	);
+	const [isDirty, setIsDirty] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
 	const [isSyncing, setIsSyncing] = useState(false);
 	const [lastSavedState, setLastSavedState] = useState<string | null>(null);
+	const hydratedWorkspaceIdRef = useRef<string | null>(null);
+	const skipNextCleanHydrationRef = useRef(false);
+	const updateForm = useCallback(
+		(updater: (current: FairLendFormState) => FairLendFormState) => {
+			setIsDirty(true);
+			setForm(updater);
+		},
+		[]
+	);
 
 	useAdminBreadcrumbLabel(
 		workspace?.velocityOwned.identity.loanCode ?? "Velocity package"
 	);
 
 	useEffect(() => {
-		if (workspace) {
-			setForm(buildInitialForm(workspace));
+		if (!workspace) {
+			return;
 		}
-	}, [workspace]);
+
+		if (
+			hydratedWorkspaceIdRef.current === workspaceId &&
+			!isDirty &&
+			skipNextCleanHydrationRef.current
+		) {
+			skipNextCleanHydrationRef.current = false;
+			return;
+		}
+
+		if (hydratedWorkspaceIdRef.current !== workspaceId || !isDirty) {
+			setForm(buildInitialForm(workspace));
+			setIsDirty(false);
+			hydratedWorkspaceIdRef.current = workspaceId;
+		}
+	}, [isDirty, workspace, workspaceId]);
 
 	const headerBadges = useMemo(() => {
 		if (!workspace) {
@@ -496,40 +469,20 @@ export function VelocityWorkspacePage({
 	}, [workspace]);
 
 	async function handleSave() {
-		const lienPosition = parseOptionalNumber(form.lienPosition);
-		const valueAsIs = parseOptionalNumber(form.valueAsIs);
+		const patchResult = buildFairLendFieldsPatch(form);
+		if (!patchResult.ok) {
+			toast.error(patchResult.message);
+			return;
+		}
+
 		setIsSaving(true);
 		try {
 			const result = await updateFairLendFields({
-				patch: {
-					activationRemediation: {
-						...(lienPosition == null ? {} : { lienPosition }),
-						...(form.loanType === "none" ? {} : { loanType: form.loanType }),
-						notes: form.remediationNotes,
-					},
-					bankInput: {
-						accountHolderName: form.accountHolderName,
-						accountNumber: form.accountNumber,
-						country: "CA",
-						currency: "CAD",
-						institutionNumber: form.institutionNumber,
-						transitNumber: form.transitNumber,
-					},
-					listingOverrides: {
-						adminNotes: form.listingAdminNotes,
-						description: form.listingDescription,
-						marketplaceCopy: form.listingMarketplaceCopy,
-						seoSlug: form.listingSeoSlug,
-						title: form.listingTitle,
-					},
-					staffNotes: form.staffNotes,
-					valuation: {
-						...(valueAsIs == null ? {} : { valueAsIs }),
-						valuationDate: form.valuationDate,
-					},
-				},
+				patch: patchResult.patch,
 				workspaceId: typedWorkspaceId,
 			});
+			skipNextCleanHydrationRef.current = true;
+			setIsDirty(false);
 			setLastSavedState(result.state);
 			toast.success("FairLend-owned package fields saved.");
 		} catch (error) {
@@ -648,7 +601,7 @@ export function VelocityWorkspacePage({
 							<Input
 								id="velocity-account-holder"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										accountHolderName: event.target.value,
 									}))
@@ -666,7 +619,7 @@ export function VelocityWorkspacePage({
 							<Input
 								id="velocity-institution"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										institutionNumber: event.target.value,
 									}))
@@ -681,7 +634,7 @@ export function VelocityWorkspacePage({
 							<Input
 								id="velocity-transit"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										transitNumber: event.target.value,
 									}))
@@ -696,7 +649,7 @@ export function VelocityWorkspacePage({
 							<Input
 								id="velocity-account"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										accountNumber: event.target.value,
 									}))
@@ -716,7 +669,7 @@ export function VelocityWorkspacePage({
 							</label>
 							<Select
 								onValueChange={(value) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										loanType: value as LoanTypeSelectValue,
 									}))
@@ -745,7 +698,7 @@ export function VelocityWorkspacePage({
 								id="velocity-lien-position"
 								inputMode="numeric"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										lienPosition: event.target.value,
 									}))
@@ -764,7 +717,7 @@ export function VelocityWorkspacePage({
 								id="velocity-value-as-is"
 								inputMode="decimal"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										valueAsIs: event.target.value,
 									}))
@@ -782,7 +735,7 @@ export function VelocityWorkspacePage({
 							<Input
 								id="velocity-valuation-date"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										valuationDate: event.target.value,
 									}))
@@ -804,7 +757,7 @@ export function VelocityWorkspacePage({
 							<Textarea
 								id="velocity-staff-notes"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										staffNotes: event.target.value,
 									}))
@@ -822,7 +775,7 @@ export function VelocityWorkspacePage({
 							<Textarea
 								id="velocity-remediation-notes"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										remediationNotes: event.target.value,
 									}))
@@ -843,7 +796,7 @@ export function VelocityWorkspacePage({
 							<Input
 								id="velocity-listing-title"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										listingTitle: event.target.value,
 									}))
@@ -861,7 +814,7 @@ export function VelocityWorkspacePage({
 							<Input
 								id="velocity-listing-slug"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										listingSeoSlug: event.target.value,
 									}))
@@ -879,7 +832,7 @@ export function VelocityWorkspacePage({
 							<Input
 								id="velocity-marketplace-copy"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										listingMarketplaceCopy: event.target.value,
 									}))
@@ -899,7 +852,7 @@ export function VelocityWorkspacePage({
 							<Textarea
 								id="velocity-listing-description"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										listingDescription: event.target.value,
 									}))
@@ -917,7 +870,7 @@ export function VelocityWorkspacePage({
 							<Textarea
 								id="velocity-listing-admin-notes"
 								onChange={(event) =>
-									setForm((current) => ({
+									updateForm((current) => ({
 										...current,
 										listingAdminNotes: event.target.value,
 									}))

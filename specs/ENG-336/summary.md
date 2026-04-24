@@ -11,6 +11,8 @@
 - Render board rows from `api.velocity.workspaces.listVelocityPackageWorkspaces` with separate Velocity stage, FairLend action state, readiness, and exception visibility.
 - Render a workspace from `api.velocity.workspaces.getVelocityPackageWorkspace` with immutable Velocity-owned facts separated from editable FairLend-owned enrichment.
 - Wire FairLend-owned field edits through `api.velocity.workspaces.updateVelocityPackageFairLendFields`.
+- Preserve operator edits during realtime workspace refreshes until a save succeeds or the workspace id changes.
+- Support explicit clearing for optional FairLend-owned lien position, loan type, and value-as-is fields while blocking invalid numeric input.
 - Wire PAD/supporting document upload through `uploadDocumentAsset`, `api.documents.assets.*`, and `api.velocity.documents.linkVelocityPackageDocument`.
 - Wire `Sync now` through `api.velocity.sync.syncVelocityPackageNow`.
 - Surface blockers, warnings, exceptions, snapshots, and downstream activation handoff without adding activation actions.
