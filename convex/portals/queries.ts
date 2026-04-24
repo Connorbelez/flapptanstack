@@ -3,10 +3,13 @@ import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { adminQuery, authedQuery, convex } from "../fluent";
 import {
+	buildPortalHosts,
 	FAIRLEND_PORTAL_LOCAL_HOST,
 	FAIRLEND_PORTAL_PRODUCTION_HOST,
 	FAIRLEND_PORTAL_SLUG,
+	isReservedPortalSlug,
 	normalizePortalHost,
+	normalizePortalSlug,
 } from "./helpers";
 import {
 	loadPortalPricingSelection,
@@ -185,6 +188,47 @@ export const getFairLendPortalHosts = convex
 		return {
 			productionHost: FAIRLEND_PORTAL_PRODUCTION_HOST,
 			localHost: FAIRLEND_PORTAL_LOCAL_HOST,
+		};
+	})
+	.public();
+
+export const previewPortalSlugCandidate = convex
+	.query()
+	.input({ slug: v.string() })
+	.handler(async (ctx, args) => {
+		const normalizedSlug = normalizePortalSlug(args.slug);
+		if (!normalizedSlug) {
+			return {
+				available: false,
+				conflictReason: "empty" as const,
+				hosts: null,
+				isReserved: false,
+				normalizedSlug,
+			};
+		}
+
+		const hosts = buildPortalHosts(normalizedSlug);
+		const isReserved = isReservedPortalSlug(normalizedSlug);
+		const slugPortal = await getPortalBySlug(ctx, normalizedSlug);
+		const productionHostPortal = await getPortalByProductionHost(
+			ctx,
+			hosts.productionHost
+		);
+		const localHostPortal = await getPortalByLocalHost(ctx, hosts.localHost);
+		const hasConflict = Boolean(
+			slugPortal || productionHostPortal || localHostPortal
+		);
+
+		return {
+			available: !(isReserved || hasConflict),
+			conflictReason: isReserved
+				? ("reserved" as const)
+				: hasConflict
+					? ("taken" as const)
+					: null,
+			hosts,
+			isReserved,
+			normalizedSlug,
 		};
 	})
 	.public();
