@@ -455,7 +455,9 @@ export function resolveVelocityStatusSemantics(args: {
 	};
 }
 
-function normalizeIdempotencyPart(value: number | string | null | undefined) {
+export function normalizeVelocityKeyPart(
+	value: number | string | null | undefined
+) {
 	if (value == null || value === "") {
 		return "unknown";
 	}
@@ -466,7 +468,7 @@ function normalizeIdempotencyPart(value: number | string | null | undefined) {
 export function buildVelocityMortgageWorkflowSourceKey(
 	linkApplicationId: string
 ) {
-	return `${VELOCITY_WORKFLOW_SOURCE_TYPE}:mortgage:${normalizeIdempotencyPart(
+	return `${VELOCITY_WORKFLOW_SOURCE_TYPE}:mortgage:${normalizeVelocityKeyPart(
 		linkApplicationId
 	)}` as const;
 }
@@ -477,27 +479,27 @@ export function buildVelocityWebhookEventIdempotencyKey(args: {
 	loanCode: string;
 	status?: number | string | null;
 }) {
-	return `velocity:webhook:${normalizeIdempotencyPart(
+	return `velocity:webhook:${normalizeVelocityKeyPart(
 		args.loanCode
-	)}:${normalizeIdempotencyPart(args.eventTimestamp)}:${normalizeIdempotencyPart(
+	)}:${normalizeVelocityKeyPart(args.eventTimestamp)}:${normalizeVelocityKeyPart(
 		args.eventType
-	)}:${normalizeIdempotencyPart(args.status)}` as const;
+	)}:${normalizeVelocityKeyPart(args.status)}` as const;
 }
 
 export function buildVelocitySyncIdempotencyKey(args: {
 	linkApplicationId: string;
 	rawDealHash: string;
 }) {
-	return `velocity:sync:${normalizeIdempotencyPart(
+	return `velocity:sync:${normalizeVelocityKeyPart(
 		args.linkApplicationId
-	)}:${normalizeIdempotencyPart(args.rawDealHash)}` as const;
+	)}:${normalizeVelocityKeyPart(args.rawDealHash)}` as const;
 }
 
 export function buildVelocityActivationIdempotencyKey(args: {
 	reviewedSnapshotHash: string;
 	workspaceId: string;
 }) {
-	return `velocity:activation:${normalizeIdempotencyPart(
+	return `velocity:activation:${normalizeVelocityKeyPart(
 		args.workspaceId
-	)}:${normalizeIdempotencyPart(args.reviewedSnapshotHash)}` as const;
+	)}:${normalizeVelocityKeyPart(args.reviewedSnapshotHash)}` as const;
 }
