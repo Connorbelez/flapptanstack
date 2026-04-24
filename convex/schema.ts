@@ -272,6 +272,7 @@ export default defineSchema({
 		slug: v.string(),
 		portalType: portalTypeValidator,
 		brokerId: v.optional(v.id("brokers")),
+		lenderId: v.optional(v.id("lenders")),
 		orgId: v.string(),
 		productionHost: v.string(),
 		localHost: v.string(),

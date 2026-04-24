@@ -400,6 +400,7 @@ import type * as test_dealPackageE2e from "../test/dealPackageE2e.js";
 import type * as test_moduleMaps from "../test/moduleMaps.js";
 import type * as test_originationE2e from "../test/originationE2e.js";
 import type * as test_packageSchemas from "../test/packageSchemas.js";
+import type * as test_velocityE2e from "../test/velocityE2e.js";
 import type * as todos from "../todos.js";
 import type * as users_byAuthId from "../users/byAuthId.js";
 import type * as velocity_activation from "../velocity/activation.js";
@@ -818,6 +819,7 @@ declare const fullApi: ApiFromModules<{
   "test/moduleMaps": typeof test_moduleMaps;
   "test/originationE2e": typeof test_originationE2e;
   "test/packageSchemas": typeof test_packageSchemas;
+  "test/velocityE2e": typeof test_velocityE2e;
   todos: typeof todos;
   "users/byAuthId": typeof users_byAuthId;
   "velocity/activation": typeof velocity_activation;

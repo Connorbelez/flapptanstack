@@ -9,6 +9,8 @@ import {
 	getAppLocalHost,
 } from "./helpers/host-aware-auth";
 
+setup.setTimeout(60_000);
+
 setup("authenticate as user", async ({ page }) => {
 	await createAuthStorageState({
 		page,
@@ -18,6 +20,7 @@ setup("authenticate as user", async ({ page }) => {
 
 setup("authenticate as admin", async ({ page }) => {
 	await createAuthStorageState({
+		entryHref: buildHostAwareSignInHref(getAppLocalHost()),
 		orgId: TEST_ADMIN_ORG_ID,
 		page,
 		path: ".auth/admin.json",
@@ -26,6 +29,7 @@ setup("authenticate as admin", async ({ page }) => {
 
 setup("authenticate as member", async ({ page }) => {
 	await createAuthStorageState({
+		entryHref: buildHostAwareSignInHref(getAppLocalHost()),
 		orgId: TEST_MEMBER_ORG_ID,
 		page,
 		path: ".auth/member.json",
