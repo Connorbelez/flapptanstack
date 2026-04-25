@@ -42,12 +42,17 @@ export interface RefundPaymentIntentResult {
 	readonly stripeRefundId: string;
 }
 
+export interface ExpireHostedCheckoutSessionRequest {
+	readonly idempotencyKey: string;
+	readonly stripeCheckoutSessionId: string;
+}
+
 export interface CheckoutProvider {
 	createHostedCheckoutSession(
 		request: CreateHostedCheckoutSessionRequest
 	): Promise<HostedCheckoutSession>;
 	expireHostedCheckoutSession(
-		stripeCheckoutSessionId: string
+		request: ExpireHostedCheckoutSessionRequest
 	): Promise<
 		{ readonly ok: true } | { readonly ok: false; readonly error: string }
 	>;
@@ -166,6 +171,10 @@ async function parseStripeResponse(response: Response): Promise<unknown> {
 	return body.length > 0 ? JSON.parse(body) : {};
 }
 
+function checkoutSessionAlreadyExpired(body: string): boolean {
+	return body.toLowerCase().includes("already expired");
+}
+
 export function createStripeCheckoutProvider(
 	config: StripeCheckoutProviderConfig
 ): CheckoutProvider {
@@ -190,15 +199,20 @@ export function createStripeCheckoutProvider(
 			)) as StripeCheckoutSessionResponse;
 			return readStripeCheckoutSessionResponse(parsed);
 		},
-		async expireHostedCheckoutSession(stripeCheckoutSessionId) {
-			assertNonEmptyString(stripeCheckoutSessionId, "stripeCheckoutSessionId");
-			const encoded = encodeURIComponent(stripeCheckoutSessionId);
+		async expireHostedCheckoutSession(request) {
+			assertNonEmptyString(
+				request.stripeCheckoutSessionId,
+				"stripeCheckoutSessionId"
+			);
+			assertNonEmptyString(request.idempotencyKey, "idempotencyKey");
+			const encoded = encodeURIComponent(request.stripeCheckoutSessionId);
 			const response = await fetchImpl(
 				`${apiBaseUrl}/v1/checkout/sessions/${encoded}/expire`,
 				{
 					method: "POST",
 					headers: {
 						Authorization: `Bearer ${config.secretKey}`,
+						"Idempotency-Key": request.idempotencyKey,
 						"Stripe-Version": STRIPE_API_VERSION,
 					},
 				}
@@ -206,9 +220,13 @@ export function createStripeCheckoutProvider(
 			if (response.ok) {
 				return { ok: true };
 			}
+			const body = await response.text();
+			if (checkoutSessionAlreadyExpired(body)) {
+				return { ok: true };
+			}
 			return {
 				ok: false,
-				error: `Stripe Checkout expire failed with ${response.status}: ${await response.text()}`,
+				error: `Stripe Checkout expire failed with ${response.status}: ${body}`,
 			};
 		},
 		async refundPaymentIntent(request) {
