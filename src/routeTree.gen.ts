@@ -33,6 +33,7 @@ import { Route as LenderPortfolioRouteImport } from './routes/lender.portfolio'
 import { Route as LenderDealsRouteImport } from './routes/lender.deals'
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
 import { Route as E2eSessionRouteImport } from './routes/e2e/session'
+import { Route as E2eMarketplacePublicDocumentsRouteImport } from './routes/e2e/marketplace-public-documents'
 import { Route as DemoWorkosRouteImport } from './routes/demo/workos'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoTableRouteImport } from './routes/demo/table'
@@ -269,6 +270,12 @@ const E2eSessionRoute = E2eSessionRouteImport.update({
   path: '/e2e/session',
   getParentRoute: () => rootRouteImport,
 } as any)
+const E2eMarketplacePublicDocumentsRoute =
+  E2eMarketplacePublicDocumentsRouteImport.update({
+    id: '/e2e/marketplace-public-documents',
+    path: '/e2e/marketplace-public-documents',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const DemoWorkosRoute = DemoWorkosRouteImport.update({
   id: '/demo/workos',
   path: '/demo/workos',
@@ -953,6 +960,7 @@ export interface FileRoutesByFullPath {
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
@@ -1082,6 +1090,7 @@ export interface FileRoutesByTo {
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
@@ -1223,6 +1232,7 @@ export interface FileRoutesById {
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
@@ -1366,6 +1376,7 @@ export interface FileRouteTypes {
     | '/demo/table'
     | '/demo/tanstack-query'
     | '/demo/workos'
+    | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
@@ -1495,6 +1506,7 @@ export interface FileRouteTypes {
     | '/demo/table'
     | '/demo/tanstack-query'
     | '/demo/workos'
+    | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
@@ -1635,6 +1647,7 @@ export interface FileRouteTypes {
     | '/demo/table'
     | '/demo/tanstack-query'
     | '/demo/workos'
+    | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
@@ -1763,6 +1776,7 @@ export interface RootRouteChildren {
   DemoTableRoute: typeof DemoTableRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   DemoWorkosRoute: typeof DemoWorkosRoute
+  E2eMarketplacePublicDocumentsRoute: typeof E2eMarketplacePublicDocumentsRoute
   E2eSessionRoute: typeof E2eSessionRoute
   E2eSwitchOrgRoute: typeof E2eSwitchOrgRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
@@ -1937,6 +1951,13 @@ declare module '@tanstack/react-router' {
       path: '/e2e/session'
       fullPath: '/e2e/session'
       preLoaderRoute: typeof E2eSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/e2e/marketplace-public-documents': {
+      id: '/e2e/marketplace-public-documents'
+      path: '/e2e/marketplace-public-documents'
+      fullPath: '/e2e/marketplace-public-documents'
+      preLoaderRoute: typeof E2eMarketplacePublicDocumentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/workos': {
@@ -3236,6 +3257,7 @@ const rootRouteChildren: RootRouteChildren = {
   DemoTableRoute: DemoTableRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   DemoWorkosRoute: DemoWorkosRoute,
+  E2eMarketplacePublicDocumentsRoute: E2eMarketplacePublicDocumentsRoute,
   E2eSessionRoute: E2eSessionRoute,
   E2eSwitchOrgRoute: E2eSwitchOrgRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,
