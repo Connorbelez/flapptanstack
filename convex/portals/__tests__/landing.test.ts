@@ -8,6 +8,9 @@ import { api, components } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import { deriveMarketplacePropertyType } from "../../listings/marketplaceShared";
 
+const FEATURED_LISTING_HANDOFF_HREF_PATTERN =
+	/^\/start-lending\?source=featured-listing&listingId=/;
+
 function createHarness() {
 	return createTestConvex();
 }
@@ -209,6 +212,10 @@ describe("public portal landing contract", () => {
 		expect(landing?.navigation.brandLabel).toBe("Meridian Capital");
 		expect(landing?.broker.license?.label).toBe("FSRA Licensed #12847");
 		expect(landing?.switchboard.lender.label).toBe("Lender");
+		expect(landing?.switchboard.lender.primaryAction).toEqual({
+			href: "/start-lending?source=switchboard",
+			label: "Browse current listings",
+		});
 		expect(landing?.switchboard.borrower.label).toBe(
 			"Borrower / Mortgage Applicant"
 		);
@@ -283,6 +290,41 @@ describe("public portal landing contract", () => {
 			primaryHoverColor: "#1e40af",
 			surfaceColor: "#ffffff",
 			textColor: "#111827",
+		});
+	});
+
+	it("keeps lender-owned landing actions on the canonical handoff even when content has stale hrefs", async () => {
+		const t = createHarness();
+		const brokerId = await insertBroker(t);
+		const portalId = await insertPortal(t, { brokerId });
+		await insertLandingContent(t, portalId, {
+			featuredListings: {
+				viewAllAction: { href: "/stale-listings", label: "See all deals" },
+			},
+			switchboard: {
+				lender: {
+					primaryAction: {
+						href: "/stale-lender-path",
+						label: "Review opportunities",
+					},
+				},
+			},
+		});
+
+		const landing = await t.query(
+			api.portals.queries.getPublicPortalLandingPage,
+			{
+				portalId,
+			}
+		);
+
+		expect(landing?.switchboard.lender.primaryAction).toEqual({
+			href: "/start-lending?source=switchboard",
+			label: "Review opportunities",
+		});
+		expect(landing?.featuredListings.viewAllAction).toEqual({
+			href: "/start-lending?source=view-all",
+			label: "See all deals",
 		});
 	});
 
@@ -624,6 +666,10 @@ describe("public portal landing contract", () => {
 		expect(landing?.featuredListings.enabled).toBe(true);
 		expect(landing?.featuredListings.items).toHaveLength(3);
 		expect(landing?.featuredListings.items[0]).toMatchObject({
+			action: {
+				href: expect.stringMatching(FEATURED_LISTING_HANDOFF_HREF_PATTERN),
+				label: "Continue with Listing 1",
+			},
 			amountLabel: "$450,000",
 			ltvLabel: "65% LTV",
 			mortgagePositionLabel: "1st",
@@ -634,6 +680,10 @@ describe("public portal landing contract", () => {
 		expect(landing?.featuredListings.items[1]?.mortgagePositionLabel).toBe(
 			"2nd"
 		);
+		expect(landing?.featuredListings.viewAllAction).toEqual({
+			href: "/start-lending?source=view-all",
+			label: "View All",
+		});
 		expect(landing?.featuredListings.hasBlurredContinuation).toBe(true);
 	});
 });

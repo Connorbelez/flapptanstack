@@ -240,6 +240,7 @@ import type * as onboarding_brokerApplication_mutations from "../onboarding/brok
 import type * as onboarding_brokerApplication_queries from "../onboarding/brokerApplication/queries.js";
 import type * as onboarding_brokerApplication_validators from "../onboarding/brokerApplication/validators.js";
 import type * as onboarding_internal from "../onboarding/internal.js";
+import type * as onboarding_lenderLanding from "../onboarding/lenderLanding.js";
 import type * as onboarding_mutations from "../onboarding/mutations.js";
 import type * as onboarding_queries from "../onboarding/queries.js";
 import type * as onboarding_validators from "../onboarding/validators.js";
@@ -671,6 +672,7 @@ declare const fullApi: ApiFromModules<{
   "onboarding/brokerApplication/queries": typeof onboarding_brokerApplication_queries;
   "onboarding/brokerApplication/validators": typeof onboarding_brokerApplication_validators;
   "onboarding/internal": typeof onboarding_internal;
+  "onboarding/lenderLanding": typeof onboarding_lenderLanding;
   "onboarding/mutations": typeof onboarding_mutations;
   "onboarding/queries": typeof onboarding_queries;
   "onboarding/validators": typeof onboarding_validators;
