@@ -1,16 +1,34 @@
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import workflowSchema from "../../../node_modules/@convex-dev/workflow/dist/component/schema.js";
+import workpoolSchema from "../../../node_modules/@convex-dev/workpool/dist/component/schema.js";
+import { registerAuditLogComponent } from "../../../src/test/convex/registerAuditLogComponent";
 import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
+import auditTrailSchema from "../../components/auditTrail/schema";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
 import schema from "../../schema";
-import { convexModules } from "../../test/moduleMaps";
+import {
+	auditTrailModules,
+	convexModules,
+	workflowModules,
+	workpoolModules,
+} from "../../test/moduleMaps";
 import {
 	projectFundsSourceForAdmin,
 	projectFundsSourceForParticipant,
 } from "../closeEvidence";
 
 const modules = convexModules;
+
+function createTransitionHarness() {
+	const t = convexTest(schema, modules);
+	registerAuditLogComponent(t, "auditLog");
+	t.registerComponent("auditTrail", auditTrailSchema, auditTrailModules);
+	t.registerComponent("workflow", workflowSchema, workflowModules);
+	t.registerComponent("workflow/workpool", workpoolSchema, workpoolModules);
+	return t;
+}
 
 const ADMIN_IDENTITY = {
 	subject: "admin-auth",
@@ -469,6 +487,49 @@ describe("close evidence helpers", () => {
 		expect(evidenceRows).toHaveLength(0);
 	});
 
+	it("keeps funds confirmation succeeded after scheduled confirmation replay", async () => {
+		vi.useFakeTimers();
+		const t = createTransitionHarness();
+		const { dealId } = await seedDeal(t);
+
+		const result = await t
+			.withIdentity(ADMIN_IDENTITY)
+			.mutation(api.deals.mutations.transitionDeal, {
+				entityId: dealId,
+				eventType: "FUNDS_RECEIVED",
+				payload: {
+					method: "manual",
+					fundsReceiptSource: {
+						kind: "manual_admin",
+						confirmedBy: "admin-auth",
+						evidenceNote: "trust account statement",
+						receivedAt: 10,
+					},
+				},
+			});
+		expect(result.success).toBe(true);
+
+		await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+		const outcome = await t.run((ctx) =>
+			ctx.db
+				.query("dealCloseEffectOutcomes")
+				.withIndex("by_deal_effect", (query) =>
+					query.eq("dealId", dealId).eq("effectName", "funds_confirmation")
+				)
+				.unique()
+		);
+		const evidenceRows = await t.run((ctx) =>
+			ctx.db
+				.query("dealFundsEvidence")
+				.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+				.collect()
+		);
+		expect(outcome?.status).toBe("succeeded");
+		expect(evidenceRows).toHaveLength(1);
+		vi.useRealTimers();
+	});
+
 	it("blocks incompatible duplicate funds evidence", async () => {
 		const t = convexTest(schema, modules);
 		const { dealId } = await seedDeal(t);
@@ -492,7 +553,7 @@ describe("close evidence helpers", () => {
 					kind: "manual_admin",
 					confirmedBy: "admin-auth",
 					evidenceNote: "different note",
-					receivedAt: 11,
+					receivedAt: 10,
 				},
 				recordedBy: "admin-auth",
 			}
