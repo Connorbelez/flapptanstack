@@ -39,7 +39,12 @@ const ACTIVE_STATUS_SET: ReadonlySet<CheckoutStatus> = new Set(
 );
 
 export const CHECKOUT_ALLOWED_TRANSITIONS = {
-	preparing_provider_session: ["hosted_checkout_open", "provider_start_failed"],
+	preparing_provider_session: [
+		"hosted_checkout_open",
+		"provider_start_failed",
+		"expired",
+		"abandoned",
+	],
 	hosted_checkout_open: [
 		"payment_failed_retryable",
 		"completed",

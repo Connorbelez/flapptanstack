@@ -4,12 +4,13 @@ import { registerAuditLogComponent } from "../../../src/test/convex/registerAudi
 import { api, internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
+import { buildMarketplaceAvailabilitySummary } from "../../listings/marketplaceShared";
 import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
 import { buildCheckoutStripeMetadata } from "../metadata";
 
 const BUYER_AUTH_ID = "checkout-buyer-auth";
-const SELLER_LEDGER_LENDER_ID = "seller-domain-lender";
+const SELLER_LEDGER_LENDER_ID = "checkout-mic-lender";
 
 function createHarness() {
 	const t = convexTest(schema, convexModules);
@@ -44,6 +45,21 @@ function asCheckoutBuyer(t: ReturnType<typeof createHarness>) {
 		user_email: "buyer@fairlend.ca",
 		user_first_name: "Buyer",
 		user_last_name: "Lender",
+	});
+}
+
+function asOtherCheckoutBuyer(t: ReturnType<typeof createHarness>) {
+	return t.withIdentity({
+		subject: "other-checkout-buyer-auth",
+		issuer: "https://api.workos.com",
+		org_id: "org_checkout",
+		organization_name: "Checkout Broker",
+		role: "lender",
+		roles: JSON.stringify(["lender"]),
+		permissions: JSON.stringify(["listing:invest", "listing:view"]),
+		user_email: "other-buyer@fairlend.ca",
+		user_first_name: "Other",
+		user_last_name: "Buyer",
 	});
 }
 
@@ -271,6 +287,17 @@ async function prepare(
 			viewerIsFairLendAdmin: false,
 		}
 	);
+}
+
+async function attachProviderSession(
+	t: ReturnType<typeof createHarness>,
+	checkoutSessionId: Id<"checkoutSessions">
+) {
+	return await t.mutation(internal.checkout.mutations.attachProviderSession, {
+		checkoutSessionId,
+		stripeCheckoutSessionId: `cs_test_${String(checkoutSessionId)}`,
+		stripePaymentIntentId: `pi_test_${String(checkoutSessionId)}`,
+	});
 }
 
 async function insertAdditionalPortalLender(
@@ -632,6 +659,414 @@ describe("checkout start internal mutations", () => {
 			failureReason: "STRIPE_SECRET_KEY is not configured",
 		});
 		expect(snapshot.reservation).toMatchObject({ status: "voided" });
+	});
+
+	it("expires an open checkout and releases the reservation idempotently", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+
+		const first = await t.mutation(
+			internal.checkout.mutations.expireCheckoutSession,
+			{
+				checkoutSessionId: prepared.checkoutSessionId,
+				now: prepared.expiresAt + 1,
+			}
+		);
+		const second = await t.mutation(
+			internal.checkout.mutations.expireCheckoutSession,
+			{
+				checkoutSessionId: prepared.checkoutSessionId,
+				now: prepared.expiresAt + 2,
+			}
+		);
+
+		expect(first).toMatchObject({ status: "expired" });
+		expect(second).toMatchObject({ status: "expired" });
+		const snapshot = await t.run(async (ctx) => {
+			const checkoutSession = await ctx.db.get(prepared.checkoutSessionId);
+			const reservation = await ctx.db.get(prepared.reservationId);
+			const sellerAccount = reservation
+				? await ctx.db.get(reservation.sellerAccountId)
+				: null;
+			const availability = await buildMarketplaceAvailabilitySummary(
+				ctx,
+				fixture.mortgageId
+			);
+			const voidEntries = await ctx.db
+				.query("ledger_journal_entries")
+				.withIndex("by_entry_type", (q) => q.eq("entryType", "SHARES_VOIDED"))
+				.collect();
+			return {
+				availability,
+				checkoutSession,
+				reservation,
+				sellerAccount,
+				voidEntries,
+			};
+		});
+		expect(snapshot.checkoutSession).toMatchObject({
+			status: "expired",
+			failureReason: "checkout_expired",
+			resolvedAt: prepared.expiresAt + 1,
+		});
+		expect(snapshot.reservation).toMatchObject({ status: "voided" });
+		expect(snapshot.sellerAccount?.pendingCredits).toBe(0n);
+		expect(snapshot.availability).toMatchObject({
+			availableFractions: 5000,
+			lockedFractions: 0,
+		});
+		expect(snapshot.voidEntries).toHaveLength(1);
+	});
+
+	it("repairs an expired checkout that still has a pending reservation", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await t.run(async (ctx) => {
+			await ctx.db.patch(prepared.checkoutSessionId, {
+				failureReason: "checkout_expired",
+				resolvedAt: prepared.expiresAt + 1,
+				status: "expired",
+				updatedAt: prepared.expiresAt + 1,
+			});
+		});
+
+		const result = await t.mutation(
+			internal.checkout.mutations.expireCheckoutSession,
+			{
+				checkoutSessionId: prepared.checkoutSessionId,
+				now: prepared.expiresAt + 2,
+			}
+		);
+
+		expect(result).toMatchObject({ status: "expired" });
+		const reservation = await t.run(async (ctx) =>
+			ctx.db.get(prepared.reservationId)
+		);
+		expect(reservation).toMatchObject({ status: "voided" });
+	});
+
+	it("expires retryable sessions after the original TTL without extending expiry", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		await t.run(async (ctx) => {
+			await ctx.db.patch(prepared.checkoutSessionId, {
+				status: "payment_failed_retryable",
+				updatedAt: prepared.expiresAt - 10,
+			});
+		});
+
+		await t.mutation(internal.checkout.mutations.expireCheckoutSession, {
+			checkoutSessionId: prepared.checkoutSessionId,
+			now: prepared.expiresAt + 1,
+		});
+
+		const checkoutSession = await t.run(async (ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			status: "expired",
+			expiresAt: prepared.expiresAt,
+		});
+	});
+
+	it("expires a session without provider id and marks provider cleanup not required", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+
+		const result = await t.mutation(
+			internal.checkout.mutations.expireCheckoutSession,
+			{
+				checkoutSessionId: prepared.checkoutSessionId,
+				now: prepared.expiresAt + 1,
+			}
+		);
+
+		expect(result).toMatchObject({
+			providerExpiryStatus: "not_required",
+			status: "expired",
+		});
+		const checkoutSession = await t.run(async (ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			providerExpiryStatus: "not_required",
+			status: "expired",
+		});
+	});
+
+	it("records provider expiry failure during the sweep without blocking release", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		process.env.STRIPE_SECRET_KEY = "sk_test_checkout";
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			writable: true,
+			value: async () => new Response("provider unavailable", { status: 500 }),
+		});
+
+		const result = await t.action(
+			internal.checkout.actions.sweepExpiredCheckoutSessions,
+			{ limit: 10, now: prepared.expiresAt + 1 }
+		);
+
+		expect(result).toMatchObject({
+			processed: 1,
+			results: [
+				{
+					checkoutSessionId: prepared.checkoutSessionId,
+					providerExpiryStatus: "failed",
+					status: "expired",
+				},
+			],
+		});
+		const snapshot = await t.run(async (ctx) => {
+			const checkoutSession = await ctx.db.get(prepared.checkoutSessionId);
+			const reservation = await ctx.db.get(prepared.reservationId);
+			return { checkoutSession, reservation };
+		});
+		expect(snapshot.checkoutSession).toMatchObject({
+			status: "expired",
+			providerExpiryStatus: "failed",
+		});
+		expect(snapshot.checkoutSession?.providerExpiryFailureReason).toContain(
+			"provider unavailable"
+		);
+		expect(snapshot.reservation).toMatchObject({ status: "voided" });
+	});
+
+	it("abandons an owned checkout and records provider expiry success", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		process.env.STRIPE_SECRET_KEY = "sk_test_checkout";
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			writable: true,
+			value: async () => new Response("{}", { status: 200 }),
+		});
+
+		const result = await asCheckoutBuyer(t).action(
+			api.checkout.actions.abandonMarketplaceCheckout,
+			{ checkoutSessionId: prepared.checkoutSessionId }
+		);
+
+		expect(result).toMatchObject({
+			ok: true,
+			checkoutSessionId: prepared.checkoutSessionId,
+			providerExpiryStatus: "succeeded",
+			status: "abandoned",
+		});
+		const snapshot = await t.run(async (ctx) => {
+			const checkoutSession = await ctx.db.get(prepared.checkoutSessionId);
+			const reservation = await ctx.db.get(prepared.reservationId);
+			return { checkoutSession, reservation };
+		});
+		expect(snapshot.checkoutSession).toMatchObject({
+			status: "abandoned",
+			providerExpiryStatus: "succeeded",
+		});
+		expect(snapshot.reservation).toMatchObject({ status: "voided" });
+	});
+
+	it("does not retry provider expiry after successful abandon replay", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		process.env.STRIPE_SECRET_KEY = "sk_test_checkout";
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		let providerCalls = 0;
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			writable: true,
+			value: async () => {
+				providerCalls += 1;
+				return new Response("{}", { status: 200 });
+			},
+		});
+
+		const first = await asCheckoutBuyer(t).action(
+			api.checkout.actions.abandonMarketplaceCheckout,
+			{ checkoutSessionId: prepared.checkoutSessionId }
+		);
+		const second = await asCheckoutBuyer(t).action(
+			api.checkout.actions.abandonMarketplaceCheckout,
+			{ checkoutSessionId: prepared.checkoutSessionId }
+		);
+
+		expect(first).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "abandoned",
+		});
+		expect(second).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "abandoned",
+		});
+		expect(providerCalls).toBe(1);
+		const checkoutSession = await t.run(async (ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			status: "abandoned",
+			providerExpiryStatus: "succeeded",
+		});
+	});
+
+	it("clears provider expiry failure reason after successful abandon retry", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		process.env.STRIPE_SECRET_KEY = "sk_test_checkout";
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		let providerCalls = 0;
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			writable: true,
+			value: async () => {
+				providerCalls += 1;
+				return providerCalls === 1
+					? new Response("temporary provider failure", { status: 500 })
+					: new Response("{}", { status: 200 });
+			},
+		});
+
+		const first = await asCheckoutBuyer(t).action(
+			api.checkout.actions.abandonMarketplaceCheckout,
+			{ checkoutSessionId: prepared.checkoutSessionId }
+		);
+		const second = await asCheckoutBuyer(t).action(
+			api.checkout.actions.abandonMarketplaceCheckout,
+			{ checkoutSessionId: prepared.checkoutSessionId }
+		);
+
+		expect(first).toMatchObject({
+			providerExpiryStatus: "failed",
+			status: "abandoned",
+		});
+		expect(second).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "abandoned",
+		});
+		expect(providerCalls).toBe(2);
+		const checkoutSession = await t.run(async (ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			status: "abandoned",
+			providerExpiryStatus: "succeeded",
+		});
+		expect(checkoutSession?.providerExpiryFailureReason).toBeUndefined();
+	});
+
+	it("rejects abandonment by a different lender", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+
+		await expect(
+			asOtherCheckoutBuyer(t).action(
+				api.checkout.actions.abandonMarketplaceCheckout,
+				{ checkoutSessionId: prepared.checkoutSessionId }
+			)
+		).rejects.toThrow("checkout session owner required");
+		const snapshot = await t.run(async (ctx) => {
+			const checkoutSession = await ctx.db.get(prepared.checkoutSessionId);
+			const reservation = await ctx.db.get(prepared.reservationId);
+			return { checkoutSession, reservation };
+		});
+		expect(snapshot.checkoutSession).toMatchObject({
+			status: "preparing_provider_session",
+		});
+		expect(snapshot.reservation).toMatchObject({ status: "pending" });
+	});
+
+	it("allows FairLend admin to abandon another lender checkout", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+
+		const result = await asAdmin(t).action(
+			api.checkout.actions.abandonMarketplaceCheckout,
+			{ checkoutSessionId: prepared.checkoutSessionId }
+		);
+
+		expect(result).toMatchObject({
+			ok: true,
+			providerExpiryStatus: "not_required",
+			status: "abandoned",
+		});
+		const reservation = await t.run(async (ctx) =>
+			ctx.db.get(prepared.reservationId)
+		);
+		expect(reservation).toMatchObject({ status: "voided" });
+	});
+
+	it("does not let expiry void a reservation after checkout already completed", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await t.run(async (ctx) => {
+			await ctx.db.patch(prepared.checkoutSessionId, {
+				completedAt: prepared.expiresAt - 1,
+				status: "completed",
+				updatedAt: prepared.expiresAt - 1,
+			});
+		});
+
+		const result = await t.mutation(
+			internal.checkout.mutations.expireCheckoutSession,
+			{
+				checkoutSessionId: prepared.checkoutSessionId,
+				now: prepared.expiresAt + 1,
+			}
+		);
+
+		expect(result).toMatchObject({ status: "completed" });
+		const reservation = await t.run(async (ctx) =>
+			ctx.db.get(prepared.reservationId)
+		);
+		expect(reservation).toMatchObject({ status: "pending" });
 	});
 });
 

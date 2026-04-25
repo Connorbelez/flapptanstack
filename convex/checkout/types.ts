@@ -94,6 +94,13 @@ export function buildCheckoutIdempotencyKey(
 	return `marketplace-checkout:${String(checkoutSessionId)}`;
 }
 
+export function buildCheckoutReleaseIdempotencyKey(
+	checkoutSessionId: Id<"checkoutSessions">,
+	status: "abandoned" | "expired"
+): string {
+	return `marketplace-checkout-${status}:${String(checkoutSessionId)}`;
+}
+
 export const CHECKOUT_LOCK_FEE = {
 	amount: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
 	currency: CHECKOUT_LOCK_FEE_CURRENCY,

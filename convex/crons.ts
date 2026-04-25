@@ -28,6 +28,11 @@ const expireLenderRenewalIntentsPastDeadlineRef = makeFunctionReference<
 	{ asOf?: number; limit?: number },
 	Promise<unknown>
 >("renewals/internal:expireLenderRenewalIntentsPastDeadline");
+const sweepExpiredCheckoutSessionsRef = makeFunctionReference<
+	"action",
+	{ limit?: number; now?: number },
+	Promise<unknown>
+>("checkout/actions:sweepExpiredCheckoutSessions");
 
 // Audit trail crons (outbox processor + retention) are managed by the
 // auditTrail component — see convex/components/auditTrail/crons.ts
@@ -69,6 +74,16 @@ crons.interval(
 	{ minutes: 15 },
 	internal.payments.collectionPlan.runner.processDuePlanEntries,
 	{}
+);
+
+// Marketplace checkout expiry: FairLend owns the five-minute inventory TTL.
+// Stripe session expiration is a provider cleanup attempt; reservation release
+// happens through the checkout runtime and ownership ledger.
+crons.interval(
+	"marketplace checkout expiry sweep",
+	{ minutes: 1 },
+	sweepExpiredCheckoutSessionsRef,
+	{ limit: 50 }
 );
 
 // Provider-managed schedule polling spine: keeps externally managed recurring
