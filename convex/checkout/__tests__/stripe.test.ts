@@ -108,21 +108,53 @@ describe("Stripe Checkout provider", () => {
 
 	it("expires hosted Checkout sessions when provider attach fails", async () => {
 		const urls: string[] = [];
+		const calls: RequestInit[] = [];
 		const provider = createStripeCheckoutProvider({
 			secretKey: "sk_test_123",
 			apiBaseUrl: "https://stripe.test",
-			fetch: async (url) => {
+			fetch: async (url, init) => {
 				urls.push(String(url));
+				calls.push(init ?? {});
 				return new Response("{}", { status: 200 });
 			},
 		});
 
 		await expect(
-			provider.expireHostedCheckoutSession("cs_test_123")
+			provider.expireHostedCheckoutSession({
+				idempotencyKey: "marketplace-checkout-provider-expire:checkout_123",
+				stripeCheckoutSessionId: "cs_test_123",
+			})
 		).resolves.toEqual({ ok: true });
 		expect(urls).toEqual([
 			"https://stripe.test/v1/checkout/sessions/cs_test_123/expire",
 		]);
+		expect(calls[0]?.headers).toMatchObject({
+			Authorization: "Bearer sk_test_123",
+			"Idempotency-Key": "marketplace-checkout-provider-expire:checkout_123",
+		});
+	});
+
+	it("treats already-expired hosted Checkout sessions as provider expiry success", async () => {
+		const provider = createStripeCheckoutProvider({
+			secretKey: "sk_test_123",
+			apiBaseUrl: "https://stripe.test",
+			fetch: async () =>
+				new Response(
+					JSON.stringify({
+						error: {
+							message: "This Checkout Session is already expired.",
+						},
+					}),
+					{ status: 400 }
+				),
+		});
+
+		await expect(
+			provider.expireHostedCheckoutSession({
+				idempotencyKey: "marketplace-checkout-provider-expire:checkout_123",
+				stripeCheckoutSessionId: "cs_test_123",
+			})
+		).resolves.toEqual({ ok: true });
 	});
 
 	it("refunds payment intents with Stripe idempotency", async () => {

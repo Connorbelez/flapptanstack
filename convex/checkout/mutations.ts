@@ -107,6 +107,15 @@ function checkoutSystemSource(reason: string) {
 	};
 }
 
+function isProviderCleanupUnfinished(session: CheckoutSessionDoc): boolean {
+	return (
+		session.stripeCheckoutSessionId !== undefined &&
+		(session.status === "expired" || session.status === "abandoned") &&
+		session.providerExpiryStatus !== "succeeded" &&
+		session.providerExpiryStatus !== "not_required"
+	);
+}
+
 function isSameActiveCheckout(
 	session: CheckoutSessionDoc,
 	args: {
@@ -185,6 +194,7 @@ function releasePrepared(session: CheckoutSessionDoc) {
 	return {
 		checkoutSessionId: session._id,
 		expiresAt: session.expiresAt,
+		providerExpiryAttemptedAt: session.providerExpiryAttemptedAt,
 		providerExpiryStatus: session.providerExpiryStatus,
 		status: session.status,
 		stripeCheckoutSessionId: session.stripeCheckoutSessionId,
@@ -605,6 +615,12 @@ export const expireCheckoutSession = convex
 		if (!checkoutSession) {
 			throw new ConvexError("Checkout session not found");
 		}
+		if (
+			isActiveCheckoutStatus(checkoutSession.status) &&
+			checkoutSession.expiresAt > now
+		) {
+			return releasePrepared(checkoutSession);
+		}
 		return releaseCheckoutSession(ctx, {
 			actorAuthId: "checkout-expiry",
 			checkoutSession,
@@ -661,6 +677,25 @@ export const listExpiredCheckoutSessions = convex
 				break;
 			}
 		}
+		if (checkoutSessionIds.length < limit) {
+			const unfinishedTerminalSessions = await ctx.db
+				.query("checkoutSessions")
+				.withIndex("by_status_expires_at", (q) =>
+					q.eq("status", "expired").lte("expiresAt", now)
+				)
+				.filter((q) =>
+					q.and(
+						q.neq(q.field("providerExpiryStatus"), "succeeded"),
+						q.neq(q.field("providerExpiryStatus"), "not_required")
+					)
+				)
+				.take(limit - checkoutSessionIds.length);
+			checkoutSessionIds.push(
+				...unfinishedTerminalSessions
+					.filter(isProviderCleanupUnfinished)
+					.map((session) => session._id)
+			);
+		}
 		return { checkoutSessionIds, now };
 	})
 	.internal();
@@ -673,6 +708,12 @@ export const recordProviderExpiryAttempt = convex
 		const checkoutSession = await ctx.db.get(args.checkoutSessionId);
 		if (!checkoutSession) {
 			throw new ConvexError("Checkout session not found");
+		}
+		if (
+			checkoutSession.providerExpiryStatus === "succeeded" ||
+			checkoutSession.providerExpiryStatus === "not_required"
+		) {
+			return releasePrepared(checkoutSession);
 		}
 		await ctx.db.patch(args.checkoutSessionId, {
 			providerExpiryAttemptedAt: now,

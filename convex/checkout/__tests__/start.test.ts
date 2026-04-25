@@ -723,6 +723,36 @@ describe("checkout start internal mutations", () => {
 		expect(snapshot.voidEntries).toHaveLength(1);
 	});
 
+	it("does not expire an active checkout before its internal TTL", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+
+		const result = await t.mutation(
+			internal.checkout.mutations.expireCheckoutSession,
+			{
+				checkoutSessionId: prepared.checkoutSessionId,
+				now: prepared.expiresAt - 1,
+			}
+		);
+
+		expect(result).toMatchObject({ status: "hosted_checkout_open" });
+		const snapshot = await t.run(async (ctx) => {
+			const checkoutSession = await ctx.db.get(prepared.checkoutSessionId);
+			const reservation = await ctx.db.get(prepared.reservationId);
+			return { checkoutSession, reservation };
+		});
+		expect(snapshot.checkoutSession).toMatchObject({
+			status: "hosted_checkout_open",
+			expiresAt: prepared.expiresAt,
+		});
+		expect(snapshot.reservation).toMatchObject({ status: "pending" });
+	});
+
 	it("repairs an expired checkout that still has a pending reservation", async () => {
 		const t = createHarness();
 		const fixture = await setupCheckoutFixture(t);
@@ -905,11 +935,17 @@ describe("checkout start internal mutations", () => {
 		}
 		await attachProviderSession(t, prepared.checkoutSessionId);
 		let providerCalls = 0;
+		const providerIdempotencyKeys: Array<string | undefined> = [];
 		Object.defineProperty(globalThis, "fetch", {
 			configurable: true,
 			writable: true,
-			value: async () => {
+			value: async (_url: RequestInfo | URL, init?: RequestInit) => {
 				providerCalls += 1;
+				providerIdempotencyKeys.push(
+					(init?.headers as Record<string, string> | undefined)?.[
+						"Idempotency-Key"
+					]
+				);
 				return new Response("{}", { status: 200 });
 			},
 		});
@@ -932,6 +968,11 @@ describe("checkout start internal mutations", () => {
 			status: "abandoned",
 		});
 		expect(providerCalls).toBe(1);
+		expect(providerIdempotencyKeys).toEqual([
+			`marketplace-checkout-provider-expire:${String(
+				prepared.checkoutSessionId
+			)}`,
+		]);
 		const checkoutSession = await t.run(async (ctx) =>
 			ctx.db.get(prepared.checkoutSessionId)
 		);
@@ -951,11 +992,17 @@ describe("checkout start internal mutations", () => {
 		}
 		await attachProviderSession(t, prepared.checkoutSessionId);
 		let providerCalls = 0;
+		const providerIdempotencyKeys: Array<string | undefined> = [];
 		Object.defineProperty(globalThis, "fetch", {
 			configurable: true,
 			writable: true,
-			value: async () => {
+			value: async (_url: RequestInfo | URL, init?: RequestInit) => {
 				providerCalls += 1;
+				providerIdempotencyKeys.push(
+					(init?.headers as Record<string, string> | undefined)?.[
+						"Idempotency-Key"
+					]
+				);
 				return providerCalls === 1
 					? new Response("temporary provider failure", { status: 500 })
 					: new Response("{}", { status: 200 });
@@ -966,20 +1013,32 @@ describe("checkout start internal mutations", () => {
 			api.checkout.actions.abandonMarketplaceCheckout,
 			{ checkoutSessionId: prepared.checkoutSessionId }
 		);
+		expect(first).toMatchObject({
+			providerExpiryStatus: "failed",
+			status: "abandoned",
+		});
+		const firstAttemptedAt = await t.run(async (ctx) => {
+			const checkoutSession = await ctx.db.get(prepared.checkoutSessionId);
+			return checkoutSession?.providerExpiryAttemptedAt;
+		});
 		const second = await asCheckoutBuyer(t).action(
 			api.checkout.actions.abandonMarketplaceCheckout,
 			{ checkoutSessionId: prepared.checkoutSessionId }
 		);
 
-		expect(first).toMatchObject({
-			providerExpiryStatus: "failed",
-			status: "abandoned",
-		});
 		expect(second).toMatchObject({
 			providerExpiryStatus: "succeeded",
 			status: "abandoned",
 		});
 		expect(providerCalls).toBe(2);
+		expect(providerIdempotencyKeys).toEqual([
+			`marketplace-checkout-provider-expire:${String(
+				prepared.checkoutSessionId
+			)}`,
+			`marketplace-checkout-provider-expire:${String(
+				prepared.checkoutSessionId
+			)}:retry-after-${firstAttemptedAt}`,
+		]);
 		const checkoutSession = await t.run(async (ctx) =>
 			ctx.db.get(prepared.checkoutSessionId)
 		);
@@ -988,6 +1047,249 @@ describe("checkout start internal mutations", () => {
 			providerExpiryStatus: "succeeded",
 		});
 		expect(checkoutSession?.providerExpiryFailureReason).toBeUndefined();
+	});
+
+	it("attempts provider cleanup when abandon replays an expired checkout without final provider status", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		process.env.STRIPE_SECRET_KEY = "sk_test_checkout";
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		await t.mutation(internal.checkout.mutations.expireCheckoutSession, {
+			checkoutSessionId: prepared.checkoutSessionId,
+			now: prepared.expiresAt + 1,
+		});
+		let providerCalls = 0;
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			writable: true,
+			value: async () => {
+				providerCalls += 1;
+				return new Response("{}", { status: 200 });
+			},
+		});
+
+		const result = await asCheckoutBuyer(t).action(
+			api.checkout.actions.abandonMarketplaceCheckout,
+			{ checkoutSessionId: prepared.checkoutSessionId }
+		);
+
+		expect(result).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "expired",
+		});
+		expect(providerCalls).toBe(1);
+		const checkoutSession = await t.run(async (ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "expired",
+		});
+	});
+
+	it("does not downgrade provider expiry success after a stale failed replay record", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		await t.mutation(internal.checkout.mutations.abandonCheckoutSession, {
+			checkoutSessionId: prepared.checkoutSessionId,
+			viewerAuthId: BUYER_AUTH_ID,
+			viewerIsFairLendAdmin: false,
+		});
+		await t.mutation(internal.checkout.mutations.recordProviderExpiryAttempt, {
+			checkoutSessionId: prepared.checkoutSessionId,
+			error: "transient provider failure",
+			ok: false,
+		});
+		await t.mutation(internal.checkout.mutations.recordProviderExpiryAttempt, {
+			checkoutSessionId: prepared.checkoutSessionId,
+			ok: true,
+		});
+
+		const staleReplay = await t.mutation(
+			internal.checkout.mutations.recordProviderExpiryAttempt,
+			{
+				checkoutSessionId: prepared.checkoutSessionId,
+				error: "late stale provider failure",
+				ok: false,
+			}
+		);
+
+		expect(staleReplay).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "abandoned",
+		});
+		const checkoutSession = await t.run(async (ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "abandoned",
+		});
+		expect(checkoutSession?.providerExpiryFailureReason).toBeUndefined();
+	});
+
+	it("does not retry provider cleanup after successful sweep replay", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		process.env.STRIPE_SECRET_KEY = "sk_test_checkout";
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		let providerCalls = 0;
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			writable: true,
+			value: async () => {
+				providerCalls += 1;
+				return new Response("{}", { status: 200 });
+			},
+		});
+
+		const first = await t.action(
+			internal.checkout.actions.sweepExpiredCheckoutSessions,
+			{ limit: 10, now: prepared.expiresAt + 1 }
+		);
+		const staleReplay = await t.mutation(
+			internal.checkout.mutations.expireCheckoutSession,
+			{
+				checkoutSessionId: prepared.checkoutSessionId,
+				now: prepared.expiresAt + 2,
+			}
+		);
+		const second = await t.action(
+			internal.checkout.actions.sweepExpiredCheckoutSessions,
+			{ limit: 10, now: prepared.expiresAt + 2 }
+		);
+
+		expect(first).toMatchObject({
+			processed: 1,
+			results: [
+				{
+					providerExpiryStatus: "succeeded",
+					status: "expired",
+				},
+			],
+		});
+		expect(staleReplay).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "expired",
+		});
+		expect(second).toMatchObject({ processed: 0, results: [] });
+		expect(providerCalls).toBe(1);
+	});
+
+	it("retries failed provider cleanup for expired sessions during later sweeps", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		process.env.STRIPE_SECRET_KEY = "sk_test_checkout";
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		let providerCalls = 0;
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			writable: true,
+			value: async () => {
+				providerCalls += 1;
+				return providerCalls === 1
+					? new Response("provider unavailable", { status: 500 })
+					: new Response("{}", { status: 200 });
+			},
+		});
+
+		const first = await t.action(
+			internal.checkout.actions.sweepExpiredCheckoutSessions,
+			{ limit: 10, now: prepared.expiresAt + 1 }
+		);
+		const second = await t.action(
+			internal.checkout.actions.sweepExpiredCheckoutSessions,
+			{ limit: 10, now: prepared.expiresAt + 2 }
+		);
+
+		expect(first).toMatchObject({
+			processed: 1,
+			results: [
+				{
+					providerExpiryStatus: "failed",
+					status: "expired",
+				},
+			],
+		});
+		expect(second).toMatchObject({
+			processed: 1,
+			results: [
+				{
+					providerExpiryStatus: "succeeded",
+					status: "expired",
+				},
+			],
+		});
+		expect(providerCalls).toBe(2);
+		const checkoutSession = await t.run(async (ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "expired",
+		});
+		expect(checkoutSession?.providerExpiryFailureReason).toBeUndefined();
+	});
+
+	it("does not run provider cleanup when abandon loses to completed checkout", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		process.env.STRIPE_SECRET_KEY = "sk_test_checkout";
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		await t.run(async (ctx) => {
+			await ctx.db.patch(prepared.checkoutSessionId, {
+				completedAt: prepared.expiresAt - 1,
+				status: "completed",
+				updatedAt: prepared.expiresAt - 1,
+			});
+		});
+		let providerCalls = 0;
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			writable: true,
+			value: async () => {
+				providerCalls += 1;
+				return new Response("{}", { status: 200 });
+			},
+		});
+
+		const result = await asCheckoutBuyer(t).action(
+			api.checkout.actions.abandonMarketplaceCheckout,
+			{ checkoutSessionId: prepared.checkoutSessionId }
+		);
+
+		expect(result).toMatchObject({
+			status: "completed",
+		});
+		expect(providerCalls).toBe(0);
+		const checkoutSession = await t.run(async (ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			status: "completed",
+		});
+		expect(checkoutSession?.providerExpiryStatus).toBeUndefined();
 	});
 
 	it("rejects abandonment by a different lender", async () => {
