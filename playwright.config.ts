@@ -6,6 +6,7 @@ dotenv.config({ path: path.resolve(import.meta.dirname, ".env.local") });
 
 const e2ePort = Number(process.env.E2E_PORT ?? 3000);
 const e2eBaseUrl = `http://localhost:${e2ePort}`;
+const e2eAppBaseUrl = `http://app.localhost:${e2ePort}`;
 
 export default defineConfig({
 	testDir: "./e2e",
@@ -43,6 +44,7 @@ export default defineConfig({
 				"rbac/**",
 				"deal-closing/**",
 				"document-engine/**",
+				"marketplace/**",
 				"origination/**",
 				"auth.setup.ts",
 				"simulation.spec.ts",
@@ -104,6 +106,25 @@ export default defineConfig({
 			use: {
 				...devices["Desktop Chrome"],
 				storageState: ".auth/admin.json",
+			},
+		},
+		{
+			name: "marketplace-setup",
+			testDir: "./e2e/marketplace",
+			testMatch: "auth.setup.ts",
+			use: {
+				...devices["Desktop Chrome"],
+			},
+		},
+		{
+			name: "marketplace",
+			testDir: "./e2e/marketplace",
+			dependencies: ["marketplace-setup"],
+			testIgnore: "auth.setup.ts",
+			use: {
+				...devices["Desktop Chrome"],
+				baseURL: e2eAppBaseUrl,
+				storageState: ".auth/marketplace-admin.json",
 			},
 		},
 		{
