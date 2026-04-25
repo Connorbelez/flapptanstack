@@ -10,7 +10,10 @@ import { internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "../../_generated/server";
 import { internalAction, internalMutation } from "../../_generated/server";
-import { fundsReceiptSourceValidator } from "../../deals/closeEvidence";
+import {
+	fundsReceiptSourceValidator,
+	recordFundsReceiptRow,
+} from "../../deals/closeEvidence";
 import { appendAuditJournalEntry } from "../../engine/auditJournal";
 import { buildSource } from "../../engine/commands";
 import { executeTransition } from "../../engine/transition";
@@ -719,6 +722,32 @@ export const fireDealTransitionInternal = internalMutation({
 		),
 	},
 	handler: async (ctx, args) => {
+		const fundsReceiptSource = args.payload?.fundsReceiptSource;
+		if (!fundsReceiptSource) {
+			throw new ConvexError(
+				"FUNDS_RECEIVED requires fundsReceiptSource evidence"
+			);
+		}
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal) {
+			throw new ConvexError("Deal not found");
+		}
+		if (deal.status !== "fundsTransfer.pending") {
+			throw new ConvexError(
+				`Deal must be in fundsTransfer.pending to confirm funds, currently: ${deal.status}`
+			);
+		}
+		const evidenceResult = await recordFundsReceiptRow(ctx, {
+			dealId: args.dealId,
+			source: fundsReceiptSource,
+			recordedBy: "system",
+		});
+		if (evidenceResult.status === "blocked") {
+			throw new ConvexError(
+				"FUNDS_RECEIVED funds evidence is incompatible with existing evidence"
+			);
+		}
+
 		return executeTransition(ctx, {
 			entityType: "deal",
 			entityId: args.dealId,

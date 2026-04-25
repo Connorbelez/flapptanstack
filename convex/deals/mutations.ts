@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { DatabaseWriter } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
@@ -6,7 +6,12 @@ import { buildSource, transitionCommandArgs } from "../engine/commands";
 import { executeTransition } from "../engine/transition";
 import type { CommandSource } from "../engine/types";
 import { adminMutation } from "../fluent";
-import { normalizeEvidenceNote } from "./closeEvidence";
+import { PROVIDER_CODES, type ProviderCode } from "../payments/transfers/types";
+import {
+	type FundsReceiptSource,
+	normalizeEvidenceNote,
+	recordFundsReceiptRow,
+} from "./closeEvidence";
 
 export type DealAccessRole =
 	| "platform_lawyer"
@@ -107,6 +112,85 @@ export const revokeAccess = internalMutation({
 
 // ── Deal Transition Mutations ──────────────────────────────────────────
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProviderCode(value: string): value is ProviderCode {
+	return (PROVIDER_CODES as readonly string[]).includes(value);
+}
+
+function parseFundsReceiptSource(value: unknown): FundsReceiptSource | null {
+	if (!isRecord(value)) {
+		return null;
+	}
+
+	if (value.kind === "transfer_pipeline") {
+		const { pipelineId, leg2TransferId, providerCode } = value;
+		if (
+			typeof pipelineId !== "string" ||
+			typeof leg2TransferId !== "string" ||
+			typeof providerCode !== "string" ||
+			!isProviderCode(providerCode)
+		) {
+			return null;
+		}
+
+		return {
+			kind: "transfer_pipeline",
+			pipelineId,
+			leg2TransferId: leg2TransferId as Id<"transferRequests">,
+			providerCode,
+		};
+	}
+
+	if (value.kind === "manual_admin") {
+		const { confirmedBy, evidenceNote, receivedAt, attachmentIds } = value;
+		if (
+			typeof confirmedBy !== "string" ||
+			typeof evidenceNote !== "string" ||
+			typeof receivedAt !== "number"
+		) {
+			return null;
+		}
+		if (
+			attachmentIds !== undefined &&
+			!(
+				Array.isArray(attachmentIds) &&
+				attachmentIds.every((id) => typeof id === "string")
+			)
+		) {
+			return null;
+		}
+
+		return {
+			kind: "manual_admin",
+			confirmedBy,
+			evidenceNote,
+			receivedAt,
+			attachmentIds: attachmentIds as Id<"documentAssets">[] | undefined,
+		};
+	}
+
+	return null;
+}
+
+function extractFundsReceiptSource(
+	payload: Record<string, unknown> | undefined
+): FundsReceiptSource | null {
+	return parseFundsReceiptSource(payload?.fundsReceiptSource);
+}
+
+function assertFundsEvidenceAccepted(
+	status: "recorded" | "replayed" | "blocked"
+) {
+	if (status === "blocked") {
+		throw new ConvexError(
+			"FUNDS_RECEIVED funds evidence is incompatible with existing evidence"
+		);
+	}
+}
+
 /**
  * Admin-gated transition for deals.
  * Requires FairLend admin role (enforced by adminMutation).
@@ -126,11 +210,37 @@ export const transitionDeal = adminMutation
 		const source =
 			(args.source as CommandSource | undefined) ??
 			buildSource(ctx.viewer, "admin_dashboard");
+		const payload = args.payload as Record<string, unknown> | undefined;
+
+		if (args.eventType === "FUNDS_RECEIVED") {
+			const fundsReceiptSource = extractFundsReceiptSource(payload);
+			if (!fundsReceiptSource) {
+				throw new ConvexError(
+					"FUNDS_RECEIVED requires fundsReceiptSource evidence"
+				);
+			}
+			const deal = await ctx.db.get(args.entityId);
+			if (!deal) {
+				throw new ConvexError("Deal not found");
+			}
+			if (deal.status !== "fundsTransfer.pending") {
+				throw new ConvexError(
+					`Deal must be in fundsTransfer.pending to confirm funds, currently: ${deal.status}`
+				);
+			}
+			const evidenceResult = await recordFundsReceiptRow(ctx, {
+				dealId: args.entityId,
+				source: fundsReceiptSource,
+				recordedBy: ctx.viewer.authId,
+			});
+			assertFundsEvidenceAccepted(evidenceResult.status);
+		}
+
 		return executeTransition(ctx, {
 			entityType: "deal",
 			entityId: args.entityId,
 			eventType: args.eventType,
-			payload: args.payload as Record<string, unknown> | undefined,
+			payload,
 			source,
 		});
 	})
@@ -173,6 +283,20 @@ export const confirmManualFundsReceipt = adminMutation
 			}
 		}
 
+		const fundsReceiptSource: FundsReceiptSource = {
+			kind: "manual_admin",
+			confirmedBy: ctx.viewer.authId,
+			evidenceNote,
+			receivedAt: args.receivedAt,
+			attachmentIds: args.attachmentIds,
+		};
+		const evidenceResult = await recordFundsReceiptRow(ctx, {
+			dealId: args.dealId,
+			source: fundsReceiptSource,
+			recordedBy: ctx.viewer.authId,
+		});
+		assertFundsEvidenceAccepted(evidenceResult.status);
+
 		const source = buildSource(ctx.viewer, "admin_dashboard");
 		return executeTransition(ctx, {
 			entityType: "deal",
@@ -180,13 +304,7 @@ export const confirmManualFundsReceipt = adminMutation
 			eventType: "FUNDS_RECEIVED",
 			payload: {
 				method: "manual",
-				fundsReceiptSource: {
-					kind: "manual_admin",
-					confirmedBy: ctx.viewer.authId,
-					evidenceNote,
-					receivedAt: args.receivedAt,
-					attachmentIds: args.attachmentIds,
-				},
+				fundsReceiptSource,
 			},
 			source,
 		});
