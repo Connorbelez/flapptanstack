@@ -79,14 +79,19 @@ export function ListingDetailPage({
 	);
 	const [fractionInput, setFractionInput] = useState(String(defaultFractions));
 	const [showMobileMap, setShowMobileMap] = useState(false);
+	const [checkoutSubmitted, setCheckoutSubmitted] = useState(false);
+	const firstHeroImageId = listing.heroImages[0]?.id;
+	const firstDocumentId = listing.documents[0]?.id;
+	const firstLawyerId = checkout?.lawyers[0]?.id;
 
 	useEffect(() => {
-		setSelectedImageId(listing.heroImages[0]?.id);
-		setSelectedDocumentId(listing.documents[0]?.id);
-		setSelectedLawyerId(checkout?.lawyers[0]?.id);
+		setSelectedImageId(firstHeroImageId);
+		setSelectedDocumentId(firstDocumentId);
+		setSelectedLawyerId(firstLawyerId);
 		setFractionInput(String(defaultFractions));
 		setShowMobileMap(false);
-	}, [checkout, defaultFractions, listing]);
+		setCheckoutSubmitted(false);
+	}, [defaultFractions, firstDocumentId, firstHeroImageId, firstLawyerId]);
 
 	const selectedImageIndex = selectedImageId
 		? listing.heroImages.findIndex((image) => image.id === selectedImageId)
@@ -118,13 +123,19 @@ export function ListingDetailPage({
 		availableFractions
 	);
 	const calculatedInvestment = effectiveFractions * perFractionAmount;
-	const ctaLabel = checkout
-		? `Lock ${effectiveFractions} Fractions — Pay ${checkout.lockFee.replace(
-				".00",
-				""
-			)} Fee`
-		: "";
+	let ctaLabel = "";
+	if (checkoutSubmitted) {
+		ctaLabel = "Lock request queued";
+	} else if (checkout) {
+		ctaLabel = `Lock ${effectiveFractions} Fractions — Pay ${checkout.lockFee.replace(
+			".00",
+			""
+		)} Fee`;
+	}
 	const summaryParagraphs = splitSummary(listing.summary);
+	const handleLockFeeCheckout = () => {
+		setCheckoutSubmitted(true);
+	};
 
 	function goToNextImage() {
 		if (listing.heroImages.length <= 1) {
@@ -340,6 +351,7 @@ export function ListingDetailPage({
 							ctaLabel={ctaLabel}
 							fractions={effectiveFractions}
 							listingTitle={listing.title}
+							onCheckout={handleLockFeeCheckout}
 							selectedLawyerLabel={selectedLawyer?.label}
 						/>
 					</section>
@@ -697,6 +709,7 @@ export function ListingDetailPage({
 								ctaLabel={ctaLabel}
 								fractions={effectiveFractions}
 								listingTitle={listing.title}
+								onCheckout={handleLockFeeCheckout}
 								selectedLawyerLabel={selectedLawyer?.label}
 							/>
 						</div>
@@ -1118,6 +1131,7 @@ function CheckoutCard({
 	ctaLabel,
 	fractions,
 	listingTitle,
+	onCheckout,
 	selectedLawyerLabel,
 }: {
 	calculatedInvestment: number;
@@ -1126,6 +1140,7 @@ function CheckoutCard({
 	ctaLabel: string;
 	fractions: number;
 	listingTitle: string;
+	onCheckout: () => void;
 	selectedLawyerLabel?: string;
 }) {
 	const idBase = useId();
@@ -1189,7 +1204,11 @@ function CheckoutCard({
 				</div>
 			</div>
 
-			<Button className="mt-6 h-11 w-full rounded-xl bg-white text-[#173A2B] hover:bg-white/90">
+			<Button
+				className="mt-6 h-11 w-full rounded-xl bg-white text-[#173A2B] hover:bg-white/90"
+				onClick={onCheckout}
+				type="button"
+			>
 				{ctaLabel}
 			</Button>
 

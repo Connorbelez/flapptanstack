@@ -16,6 +16,15 @@ const DEFAULT_MARKETPLACE_COORDINATES = {
 	lng: -79.3832,
 } as const;
 
+function parseValidDate(value: string | undefined): Date | undefined {
+	if (!value) {
+		return undefined;
+	}
+
+	const parsed = new Date(value);
+	return Number.isFinite(parsed.getTime()) ? parsed : undefined;
+}
+
 export function searchStateToFilterState(
 	search: MarketplaceListingsSearchState
 ): FilterState {
@@ -33,9 +42,7 @@ export function searchStateToFilterState(
 			search.ltvMin ?? DEFAULT_FILTERS.ltvRange[0],
 			search.ltvMax ?? DEFAULT_FILTERS.ltvRange[1],
 		],
-		maturityDate: search.maturityBefore
-			? new Date(search.maturityBefore)
-			: undefined,
+		maturityDate: parseValidDate(search.maturityBefore),
 		mortgageTypes: search.mortgageTypes ?? [],
 		propertyTypes: search.propertyTypes ?? [],
 		searchQuery: search.q ?? "",
@@ -69,7 +76,7 @@ export function filterStateToSearchState(
 			filters.interestRateRange[0] !== DEFAULT_FILTERS.interestRateRange[0]
 				? filters.interestRateRange[0]
 				: undefined,
-		sort: currentSort ?? "featured",
+		sort: currentSort && currentSort !== "featured" ? currentSort : undefined,
 		ltvMax:
 			filters.ltvRange[1] !== DEFAULT_FILTERS.ltvRange[1]
 				? filters.ltvRange[1]

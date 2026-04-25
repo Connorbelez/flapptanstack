@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader } from "../_generated/server";
+import { FAIRLEND_MIC_POOL_LENDER_ID } from "../constants";
 import { adminQuery, authedQuery } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
 import {
@@ -18,7 +19,6 @@ const FILTERED_LISTING_SCAN_LIMIT = 250;
 const MAX_PAGE_SIZE = 50;
 const OFFSET_CURSOR_PREFIX = "offset:";
 const OFFSET_CURSOR_PATTERN = /^\d+$/;
-const MIC_LENDER_ID_PATTERN = /(^|[_@.+-])mic([_@.+-]|$)/i;
 const TRANSACTION_ENTRY_TYPES = new Set([
 	"SHARES_ISSUED",
 	"SHARES_TRANSFERRED",
@@ -186,7 +186,7 @@ function amountToNumber(value: number | bigint, label: string): number {
 }
 
 function isMicLenderId(lenderId: string): boolean {
-	return MIC_LENDER_ID_PATTERN.test(lenderId);
+	return lenderId === FAIRLEND_MIC_POOL_LENDER_ID;
 }
 
 function compareMaybeNumber(
@@ -472,8 +472,10 @@ async function buildListingAvailability(
 			} => position.balance > 0n && position.lenderId !== undefined
 		);
 
-	const inferredMicPosition =
-		positions.find((position) => isMicLenderId(position.lenderId)) ?? null;
+	const micPositions = positions.filter((position) =>
+		isMicLenderId(position.lenderId)
+	);
+	const inferredMicPosition = micPositions[0] ?? null;
 
 	return {
 		availableFractions: summary.availableFractions,

@@ -24,6 +24,8 @@ type ListingItem = FilterableItem &
 		| "soldPercent"
 	>;
 
+const listings: ListingItem[] = demoListings.map((listing) => ({ ...listing }));
+
 function applyDemoFilters(
 	items: readonly ListingItem[],
 	filters: FilterState
@@ -129,12 +131,9 @@ function groupItemsForMobile(items: readonly ListingItem[]) {
 
 export function ListingsClient() {
 	const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-	const listings: ListingItem[] = demoListings.map((listing) => ({
-		...listing,
-	}));
 	const filteredListings = useMemo(
 		() => applyDemoFilters(listings, filters),
-		[listings, filters]
+		[filters]
 	);
 
 	return (

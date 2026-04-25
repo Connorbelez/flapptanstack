@@ -181,7 +181,7 @@ function buildComparables(
 			date: comparable.saleDate
 				? formatDate(comparable.saleDate)
 				: "Unavailable",
-			distance: comparable.propertyType ?? "—",
+			distance: "—",
 			id: comparable.id,
 			price:
 				comparable.salePrice !== null
@@ -195,7 +195,7 @@ function buildComparables(
 	);
 
 	return {
-		asIf: rows,
+		asIf: [],
 		asIs: rows,
 	};
 }

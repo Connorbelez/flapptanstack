@@ -112,7 +112,7 @@ function buildListingDoc(
 		lastTransitionAt: undefined,
 		lienPosition: 1,
 		loanType: "conventional",
-		ltvRatio: 0.65,
+		ltvRatio: 65,
 		machineContext: undefined,
 		marketplaceCopy: "Marketplace copy",
 		maturityDate: "2027-01-01",

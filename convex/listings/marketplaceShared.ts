@@ -1,5 +1,6 @@
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { FAIRLEND_MIC_POOL_LENDER_ID } from "../constants";
 import { getAccountLenderId } from "../ledger/accountOwnership";
 import { getAvailableBalance, getPostedBalance } from "../ledger/accounts";
 import { TOTAL_SUPPLY } from "../ledger/constants";
@@ -15,10 +16,8 @@ export interface MarketplaceAvailabilitySummary {
 	totalInvestors: number;
 }
 
-const MIC_LENDER_ID_PATTERN = /(^|[_@.+-])mic([_@.+-]|$)/i;
-
 function isMicLenderId(lenderId: string): boolean {
-	return MIC_LENDER_ID_PATTERN.test(lenderId);
+	return lenderId === FAIRLEND_MIC_POOL_LENDER_ID;
 }
 
 function roundToTwoDecimals(value: number): number {
@@ -63,7 +62,7 @@ function buildAvailabilitySummary(args: {
 
 export function deriveMarketplacePropertyType(
 	propertyType: Doc<"listings">["propertyType"]
-): Doc<"listings">["marketplacePropertyType"] {
+): NonNullable<Doc<"listings">["marketplacePropertyType"]> {
 	switch (propertyType) {
 		case "condo":
 			return "Condo";
@@ -71,8 +70,12 @@ export function deriveMarketplacePropertyType(
 			return "Duplex";
 		case "commercial":
 			return "Commercial";
-		default:
+		case "residential":
 			return "Detached Home";
+		default: {
+			const _exhaustive: never = propertyType;
+			return _exhaustive;
+		}
 	}
 }
 
@@ -130,7 +133,7 @@ export async function buildMarketplaceAvailabilitySummary(
 			} => position.postedBalance > 0n && position.lenderId !== undefined
 		);
 
-	const micPosition = positions.find((position) =>
+	const micPositions = positions.filter((position) =>
 		isMicLenderId(position.lenderId)
 	);
 	const soldFractions = toSafeNumber(
@@ -142,12 +145,22 @@ export async function buildMarketplaceAvailabilitySummary(
 	const totalInvestors = positions.filter(
 		(position) => !isMicLenderId(position.lenderId)
 	).length;
-	const lockedFractions = micPosition
-		? toSafeNumber(micPosition.account.pendingCredits ?? 0n, "lockedFractions")
-		: 0;
-	const availableFractions = micPosition
+	const lockedFractions = toSafeNumber(
+		micPositions.reduce(
+			(total, position) => total + (position.account.pendingCredits ?? 0n),
+			0n
+		),
+		"lockedFractions"
+	);
+	const availableFractions = micPositions.length
 		? Math.max(
-				toSafeNumber(micPosition.availableBalance, "availableFractions"),
+				toSafeNumber(
+					micPositions.reduce(
+						(total, position) => total + position.availableBalance,
+						0n
+					),
+					"availableFractions"
+				),
 				0
 			)
 		: Math.max(totalFractions - soldFractions - lockedFractions, 0);

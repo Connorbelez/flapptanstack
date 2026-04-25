@@ -72,13 +72,18 @@ export function ListingCard({
 	return (
 		<Card
 			className={cn(
-				"group overflow-hidden border-border/70 bg-card/95 shadow-sm transition-all duration-300",
+				"group relative overflow-hidden border-border/70 bg-card/95 shadow-sm transition-all duration-300",
 				onClick ? "cursor-pointer hover:-translate-y-1 hover:shadow-xl" : ""
 			)}
-			onClick={onClick}
-			role={onClick ? "button" : undefined}
-			tabIndex={onClick ? 0 : undefined}
 		>
+			{onClick ? (
+				<button
+					aria-label={`Open ${title}`}
+					className="absolute inset-0 z-10 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+					onClick={onClick}
+					type="button"
+				/>
+			) : null}
 			<div className="relative aspect-[4/3] overflow-hidden bg-muted">
 				{image ? (
 					<img
@@ -106,7 +111,7 @@ export function ListingCard({
 					{onFavorite ? (
 						<Button
 							aria-label="Save listing"
-							className="rounded-full bg-background/90 shadow-sm backdrop-blur-sm"
+							className="relative z-20 rounded-full bg-background/90 shadow-sm backdrop-blur-sm"
 							onClick={(event) => {
 								event.stopPropagation();
 								onFavorite();

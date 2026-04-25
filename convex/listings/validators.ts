@@ -69,7 +69,7 @@ export const listingCreateInputFields = {
 	loanType: listingLoanTypeValidator,
 	lienPosition: v.number(),
 	propertyType: listingPropertyTypeValidator,
-	marketplacePropertyType: marketplaceListingPropertyTypeValidator,
+	marketplacePropertyType: v.optional(marketplaceListingPropertyTypeValidator),
 	city: v.string(),
 	province: v.string(),
 	approximateLatitude: v.optional(v.number()),

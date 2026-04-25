@@ -113,7 +113,9 @@ export function ListingMap<T extends LatLng>({
 			for (const { marker, popup, root } of markersRef.current) {
 				marker.remove();
 				popup?.remove();
-				root?.unmount();
+				if (root) {
+					queueMicrotask(() => root.unmount());
+				}
 			}
 			markersRef.current = [];
 			setIsMapLoaded(false);
@@ -216,8 +218,8 @@ export function ListingMap<T extends LatLng>({
 				<div className="relative max-w-sm space-y-2">
 					<p className="font-semibold text-lg">Map unavailable</p>
 					<p className="text-muted-foreground text-sm">
-						Set <code>VITE_MAPBOX_TOKEN</code> to enable the copied Mapbox
-						experience for this demo.
+						Set <code>VITE_MAPBOX_TOKEN</code> to enable maps in the
+						marketplace.
 					</p>
 				</div>
 			</div>

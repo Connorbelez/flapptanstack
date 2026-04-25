@@ -29,7 +29,11 @@ function parseCsvEnum<T extends string>(
 }
 
 function parseNumber(value: unknown) {
-	if (typeof value !== "string" && typeof value !== "number") {
+	if (typeof value === "number") {
+		return Number.isFinite(value) ? value : undefined;
+	}
+
+	if (typeof value !== "string" || value.trim().length === 0) {
 		return undefined;
 	}
 
