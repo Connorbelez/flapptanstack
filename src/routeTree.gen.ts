@@ -27,6 +27,7 @@ import { Route as BorrowerRouteRouteImport } from './routes/borrower/route'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ListingsIndexRouteImport } from './routes/listings/index'
+import { Route as LawyerIndexRouteImport } from './routes/lawyer/index'
 import { Route as BrokerIndexRouteImport } from './routes/broker/index'
 import { Route as StartLendingCompleteRouteImport } from './routes/start-lending.complete'
 import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
@@ -98,6 +99,7 @@ import { Route as DemoAuditTraceabilityIndexRouteImport } from './routes/demo/au
 import { Route as DemoAmpsIndexRouteImport } from './routes/demo/amps/index'
 import { Route as AdminDocumentEngineIndexRouteImport } from './routes/admin.document-engine.index'
 import { Route as LenderDealsDealIdRouteImport } from './routes/lender.deals.$dealId'
+import { Route as LawyerDealsDealIdRouteImport } from './routes/lawyer/deals.$dealId'
 import { Route as DemoRbacAuthRolesRouteImport } from './routes/demo/rbac-auth/roles'
 import { Route as DemoRbacAuthOnboardingRouteImport } from './routes/demo/rbac-auth/onboarding'
 import { Route as DemoRbacAuthAuditRouteImport } from './routes/demo/rbac-auth/audit'
@@ -248,6 +250,11 @@ const ListingsIndexRoute = ListingsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ListingsRouteRoute,
+} as any)
+const LawyerIndexRoute = LawyerIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LawyerRouteRoute,
 } as any)
 const BrokerIndexRoute = BrokerIndexRouteImport.update({
   id: '/',
@@ -616,6 +623,11 @@ const LenderDealsDealIdRoute = LenderDealsDealIdRouteImport.update({
   path: '/$dealId',
   getParentRoute: () => LenderDealsRoute,
 } as any)
+const LawyerDealsDealIdRoute = LawyerDealsDealIdRouteImport.update({
+  id: '/deals/$dealId',
+  path: '/deals/$dealId',
+  getParentRoute: () => LawyerRouteRoute,
+} as any)
 const DemoRbacAuthRolesRoute = DemoRbacAuthRolesRouteImport.update({
   id: '/roles',
   path: '/roles',
@@ -945,7 +957,7 @@ export interface FileRoutesByFullPath {
   '/borrower': typeof BorrowerRouteRouteWithChildren
 >>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   '/broker': typeof BrokerRouteRouteWithChildren
-  '/lawyer': typeof LawyerRouteRoute
+  '/lawyer': typeof LawyerRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
   '/listings': typeof ListingsRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
@@ -1019,6 +1031,7 @@ export interface FileRoutesByFullPath {
   '/broker/': typeof BrokerIndexRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
   '/broker/': typeof BrokerIndexRoute
+  '/lawyer/': typeof LawyerIndexRoute
   '/listings/': typeof ListingsIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
@@ -1072,6 +1085,7 @@ export interface FileRoutesByFullPath {
   '/demo/rbac-auth/audit': typeof DemoRbacAuthAuditRoute
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
+  '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
   '/demo/amps/': typeof DemoAmpsIndexRoute
@@ -1099,8 +1113,11 @@ export interface FileRoutesByTo {
   '/borrower': typeof BorrowerRouteRoute
 =======
   '/borrower': typeof BorrowerRouteRouteWithChildren
+<<<<<<< HEAD
 >>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   '/lawyer': typeof LawyerRouteRoute
+=======
+>>>>>>> 8e171cf58 (Implemented ENG-347 lawyer workspace end to end, with one external E2E blocker documented.)
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
@@ -1163,6 +1180,7 @@ export interface FileRoutesByTo {
   '/broker': typeof BrokerIndexRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
   '/broker': typeof BrokerIndexRoute
+  '/lawyer': typeof LawyerIndexRoute
   '/listings': typeof ListingsIndexRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1215,6 +1233,7 @@ export interface FileRoutesByTo {
   '/demo/rbac-auth/audit': typeof DemoRbacAuthAuditRoute
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
+  '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/admin/document-engine': typeof AdminDocumentEngineIndexRoute
   '/demo/amps': typeof DemoAmpsIndexRoute
@@ -1245,7 +1264,7 @@ export interface FileRoutesById {
   '/borrower': typeof BorrowerRouteRouteWithChildren
 >>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   '/broker': typeof BrokerRouteRouteWithChildren
-  '/lawyer': typeof LawyerRouteRoute
+  '/lawyer': typeof LawyerRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
   '/listings': typeof ListingsRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
@@ -1319,6 +1338,7 @@ export interface FileRoutesById {
   '/broker/': typeof BrokerIndexRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
   '/broker/': typeof BrokerIndexRoute
+  '/lawyer/': typeof LawyerIndexRoute
   '/listings/': typeof ListingsIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
@@ -1372,6 +1392,7 @@ export interface FileRoutesById {
   '/demo/rbac-auth/audit': typeof DemoRbacAuthAuditRoute
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
+  '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
   '/demo/amps/': typeof DemoAmpsIndexRoute
@@ -1473,6 +1494,7 @@ export interface FileRouteTypes {
     | '/broker/'
     | '/start-lending/complete'
     | '/broker/'
+    | '/lawyer/'
     | '/listings/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
@@ -1526,6 +1548,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/audit'
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
+    | '/lawyer/deals/$dealId'
     | '/lender/deals/$dealId'
     | '/admin/document-engine/'
     | '/demo/amps/'
@@ -1550,7 +1573,6 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/borrower'
-    | '/lawyer'
     | '/lender'
     | '/onboard'
     | '/about'
@@ -1613,6 +1635,7 @@ export interface FileRouteTypes {
     | '/broker'
     | '/start-lending/complete'
     | '/broker'
+    | '/lawyer'
     | '/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1665,6 +1688,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/audit'
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
+    | '/lawyer/deals/$dealId'
     | '/lender/deals/$dealId'
     | '/admin/document-engine'
     | '/demo/amps'
@@ -1764,6 +1788,7 @@ export interface FileRouteTypes {
     | '/broker/'
     | '/start-lending/complete'
     | '/broker/'
+    | '/lawyer/'
     | '/listings/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
@@ -1817,6 +1842,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/audit'
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
+    | '/lawyer/deals/$dealId'
     | '/lender/deals/$dealId'
     | '/admin/document-engine/'
     | '/demo/amps/'
@@ -1847,7 +1873,7 @@ export interface RootRouteChildren {
   BorrowerRouteRoute: typeof BorrowerRouteRouteWithChildren
 >>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   BrokerRouteRoute: typeof BrokerRouteRouteWithChildren
-  LawyerRouteRoute: typeof LawyerRouteRoute
+  LawyerRouteRoute: typeof LawyerRouteRouteWithChildren
   LenderRouteRoute: typeof LenderRouteRouteWithChildren
   ListingsRouteRoute: typeof ListingsRouteRouteWithChildren
   OnboardRouteRoute: typeof OnboardRouteRoute
@@ -2030,6 +2056,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/listings/'
       preLoaderRoute: typeof ListingsIndexRouteImport
       parentRoute: typeof ListingsRouteRoute
+    }
+    '/lawyer/': {
+      id: '/lawyer/'
+      path: '/'
+      fullPath: '/lawyer/'
+      preLoaderRoute: typeof LawyerIndexRouteImport
+      parentRoute: typeof LawyerRouteRoute
     }
     '/broker/': {
       id: '/broker/'
@@ -2527,6 +2560,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/lender/deals/$dealId'
       preLoaderRoute: typeof LenderDealsDealIdRouteImport
       parentRoute: typeof LenderDealsRoute
+    }
+    '/lawyer/deals/$dealId': {
+      id: '/lawyer/deals/$dealId'
+      path: '/deals/$dealId'
+      fullPath: '/lawyer/deals/$dealId'
+      preLoaderRoute: typeof LawyerDealsDealIdRouteImport
+      parentRoute: typeof LawyerRouteRoute
     }
     '/demo/rbac-auth/roles': {
       id: '/demo/rbac-auth/roles'
@@ -3132,6 +3172,20 @@ const BrokerRouteRouteWithChildren = BrokerRouteRoute._addFileChildren(
   BrokerRouteRouteChildren,
 )
 
+interface LawyerRouteRouteChildren {
+  LawyerIndexRoute: typeof LawyerIndexRoute
+  LawyerDealsDealIdRoute: typeof LawyerDealsDealIdRoute
+}
+
+const LawyerRouteRouteChildren: LawyerRouteRouteChildren = {
+  LawyerIndexRoute: LawyerIndexRoute,
+  LawyerDealsDealIdRoute: LawyerDealsDealIdRoute,
+}
+
+const LawyerRouteRouteWithChildren = LawyerRouteRoute._addFileChildren(
+  LawyerRouteRouteChildren,
+)
+
 interface LenderDealsRouteChildren {
   LenderDealsDealIdRoute: typeof LenderDealsDealIdRoute
 }
@@ -3419,7 +3473,7 @@ const rootRouteChildren: RootRouteChildren = {
   BorrowerRouteRoute: BorrowerRouteRouteWithChildren,
 >>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   BrokerRouteRoute: BrokerRouteRouteWithChildren,
-  LawyerRouteRoute: LawyerRouteRoute,
+  LawyerRouteRoute: LawyerRouteRouteWithChildren,
   LenderRouteRoute: LenderRouteRouteWithChildren,
   ListingsRouteRoute: ListingsRouteRouteWithChildren,
   OnboardRouteRoute: OnboardRouteRoute,
@@ -3478,13 +3532,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

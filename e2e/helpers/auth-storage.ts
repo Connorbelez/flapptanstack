@@ -25,6 +25,14 @@ function buildSameOriginUrl(currentUrl: string, pathname: string) {
 	return url;
 }
 
+function buildE2eUtilityUrl(currentUrl: string, pathname: string) {
+	const url = buildSameOriginUrl(currentUrl, pathname);
+	if (url.hostname.startsWith("mock-")) {
+		url.hostname = "localhost";
+	}
+	return url;
+}
+
 export async function createAuthStorageState(args: {
 	entryHref?: string;
 	expectedRole?: string;
@@ -54,9 +62,7 @@ export async function createAuthStorageState(args: {
 		// Force the auth client to settle on the switched organization before
 		// persisting the browser state. Use a dedicated e2e route so setup does
 		// not depend on demo page tabs or layout structure.
-		await args.page.goto(
-			buildSameOriginUrl(args.page.url(), "/e2e/session").toString()
-		);
+		await args.page.goto(buildE2eUtilityUrl(args.page.url(), "/e2e/session").toString());
 		try {
 			await args.page.waitForFunction(
 				([expectedOrgId, expectedSessionRole]) => {
