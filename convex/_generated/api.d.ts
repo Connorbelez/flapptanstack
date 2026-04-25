@@ -387,7 +387,7 @@ import type * as portals_borrowerPortalAttribution from "../portals/borrowerPort
 import type * as portals_helpers from "../portals/helpers.js";
 import type * as portals_homePortalAssignment from "../portals/homePortalAssignment.js";
 import type * as portals_invariants from "../portals/invariants.js";
-import type * as portals_landingMutations from "../portals/landingMutations.js";
+import type * as portals_micConfig from "../portals/micConfig.js";
 import type * as portals_middleware from "../portals/middleware.js";
 import type * as portals_pricing from "../portals/pricing.js";
 import type * as portals_proof from "../portals/proof.js";
@@ -829,7 +829,7 @@ declare const fullApi: ApiFromModules<{
   "portals/helpers": typeof portals_helpers;
   "portals/homePortalAssignment": typeof portals_homePortalAssignment;
   "portals/invariants": typeof portals_invariants;
-  "portals/landingMutations": typeof portals_landingMutations;
+  "portals/micConfig": typeof portals_micConfig;
   "portals/middleware": typeof portals_middleware;
   "portals/pricing": typeof portals_pricing;
   "portals/proof": typeof portals_proof;

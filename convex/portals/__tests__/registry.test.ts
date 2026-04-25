@@ -13,7 +13,14 @@ import {
 	FAIRLEND_STAFF_ORG_ID,
 } from "../../constants";
 import { getLatestOnboardingPortalIdForUser } from "../borrowerPortalAttribution";
-import { DEFAULT_PORTAL_POST_AUTH_PATH } from "../helpers";
+import {
+	DEFAULT_PORTAL_POST_AUTH_PATH,
+	MIC_PORTAL_DEFAULT_POST_AUTH_PATH,
+	MIC_PORTAL_LOCAL_HOST,
+	MIC_PORTAL_PRODUCTION_HOST,
+	MIC_PORTAL_SLUG,
+	micPortalFields,
+} from "../helpers";
 import { assertPortalRegistryInvariants } from "../invariants";
 
 const migrationsModules = import.meta.glob(
@@ -35,8 +42,9 @@ function createHarness() {
 function buildPortalRecord(overrides?: {
 	brokerId?: Id<"brokers">;
 	localHost?: string;
+	micLenderAuthId?: string;
 	orgId?: string;
-	portalType?: "broker" | "fairlend";
+	portalType?: "broker" | "fairlend" | "mic";
 	productionHost?: string;
 	slug?: string;
 }) {
@@ -55,6 +63,7 @@ function buildPortalRecord(overrides?: {
 		publicTeaserEnabled: true,
 		teaserListingLimit: 12,
 		defaultPostAuthPath: DEFAULT_PORTAL_POST_AUTH_PATH,
+		micLenderAuthId: overrides?.micLenderAuthId,
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -329,7 +338,6 @@ describe("portal registry backfill", () => {
 			{}
 		);
 		expect(fairLendPortal?.slug).toBe("app");
-		expect(fairLendPortal?.pricingPolicyId).toBeDefined();
 
 		const resolvedFairLendPortal = await t.query(
 			api.portals.queries.resolvePortalByHost,
@@ -341,13 +349,18 @@ describe("portal registry backfill", () => {
 
 		const records = await t.run(async (ctx) => {
 			const user = await ctx.db.get(userId);
-			const policy = fairLendPortal?.pricingPolicyId
-				? await ctx.db.get(fairLendPortal.pricingPolicyId)
+			const portalRow = await ctx.db
+				.query("portals")
+				.withIndex("by_slug", (query) => query.eq("slug", "app"))
+				.unique();
+			const policy = portalRow?.pricingPolicyId
+				? await ctx.db.get(portalRow.pricingPolicyId)
 				: null;
-			return { policy, user };
+			return { policy, portalRow, user };
 		});
+		expect(records.portalRow?.pricingPolicyId).toBeDefined();
 		expect(String(records.user?.homePortalId)).toBe(
-			String(fairLendPortal?.portalId)
+			String(records.portalRow?._id)
 		);
 		expect(records.policy?.brokerSplitPercent).toBe(0);
 	});
@@ -521,6 +534,148 @@ describe("portal registry backfill", () => {
 		expect(records.adminUser?.homePortalId).toBe(
 			fairLendPortal?.portalId as Id<"portals">
 		);
+	});
+
+	it("resolves an active MIC portal as a first-class portal registry record", async () => {
+		const t = createHarness();
+		const micOrgId = "org_mic_investors";
+		const micLenderAuthId = "lender_auth_mic";
+
+		const micPortalId = await t.run(async (ctx) => {
+			return await ctx.db.insert(
+				"portals",
+				micPortalFields({
+					micLenderAuthId,
+					now: Date.now(),
+					orgId: micOrgId,
+				})
+			);
+		});
+
+		const byLocalHost = await t.query(api.portals.queries.resolvePortalByHost, {
+			host: "MIC.localhost:3000.",
+		});
+		expect(byLocalHost).toMatchObject({
+			availability: "active",
+			canonicalHost: MIC_PORTAL_LOCAL_HOST,
+			matchedHostType: "local",
+			portal: {
+				defaultPostAuthPath: MIC_PORTAL_DEFAULT_POST_AUTH_PATH,
+				portalId: micPortalId,
+				portalType: "mic",
+				slug: MIC_PORTAL_SLUG,
+			},
+		});
+
+		const byProductionHost = await t.query(
+			api.portals.queries.resolvePortalByHost,
+			{
+				host: MIC_PORTAL_PRODUCTION_HOST,
+			}
+		);
+		expect(byProductionHost?.availability).toBe("active");
+		expect(byProductionHost?.portal.portalId).toBe(micPortalId);
+
+		const config = await t.query(
+			internal.portals.micConfig.getMicPortalConfig,
+			{
+				portalId: micPortalId,
+			}
+		);
+		expect(config).toEqual({
+			availability: "active",
+			micLenderAuthId,
+			orgId: micOrgId,
+			portalId: micPortalId,
+		});
+	});
+
+	it("fails closed when a MIC portal is missing its explicit lender mapping", async () => {
+		const t = createHarness();
+
+		const micPortalId = await t.run(async (ctx) => {
+			return await ctx.db.insert(
+				"portals",
+				buildPortalRecord({
+					localHost: MIC_PORTAL_LOCAL_HOST,
+					orgId: "org_mic_investors",
+					portalType: "mic",
+					productionHost: MIC_PORTAL_PRODUCTION_HOST,
+					slug: MIC_PORTAL_SLUG,
+				})
+			);
+		});
+
+		const config = await t.query(
+			internal.portals.micConfig.getMicPortalConfig,
+			{
+				portalId: micPortalId,
+			}
+		);
+		expect(config).toEqual({
+			availability: "missing_lender_mapping",
+			portalId: micPortalId,
+		});
+	});
+
+	it("fails closed for inactive, unpublished, or non-MIC portal config requests", async () => {
+		const t = createHarness();
+
+		const ids = await t.run(async (ctx) => {
+			const unpublishedMic = await ctx.db.insert("portals", {
+				...micPortalFields({
+					micLenderAuthId: "lender_auth_mic",
+					now: Date.now(),
+					orgId: "org_mic_investors",
+				}),
+				isPublished: false,
+			});
+			const suspendedMic = await ctx.db.insert("portals", {
+				...micPortalFields({
+					micLenderAuthId: "lender_auth_mic",
+					now: Date.now(),
+					orgId: "org_mic_investors",
+				}),
+				localHost: "suspended-mic.localhost:3000",
+				productionHost: "suspended-mic.fairlend.ca",
+				slug: "suspended-mic",
+				status: "suspended" as const,
+			});
+			const broker = await ctx.db.insert(
+				"portals",
+				buildPortalRecord({
+					orgId: "org_broker",
+					portalType: "broker",
+					slug: "broker",
+				})
+			);
+			return { broker, suspendedMic, unpublishedMic };
+		});
+
+		await expect(
+			t.query(internal.portals.micConfig.getMicPortalConfig, {
+				portalId: ids.unpublishedMic,
+			})
+		).resolves.toEqual({
+			availability: "unpublished",
+			portalId: ids.unpublishedMic,
+		});
+		await expect(
+			t.query(internal.portals.micConfig.getMicPortalConfig, {
+				portalId: ids.suspendedMic,
+			})
+		).resolves.toEqual({
+			availability: "unavailable",
+			portalId: ids.suspendedMic,
+		});
+		await expect(
+			t.query(internal.portals.micConfig.getMicPortalConfig, {
+				portalId: ids.broker,
+			})
+		).resolves.toEqual({
+			availability: "not_mic_portal",
+			portalId: ids.broker,
+		});
 	});
 
 	it("repairs stale FairLend fallback assignments once broker portals are backfilled", async () => {

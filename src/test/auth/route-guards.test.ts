@@ -104,6 +104,35 @@ describe("route auth permission helpers", () => {
 		).toBe(true);
 	});
 
+	it("grants MIC portal route access through mic:access and admin wildcard only", () => {
+		expect(
+			canAccessRoute("micPortal", {
+				orgId: "org_mic",
+				permissions: ["mic:access"],
+				role: "micinvestor",
+				roles: ["micinvestor"],
+			})
+		).toBe(true);
+
+		expect(
+			canAccessRoute("micPortal", {
+				orgId: "org_lender",
+				permissions: ["portfolio:view"],
+				role: "lender",
+				roles: ["lender"],
+			})
+		).toBe(false);
+
+		expect(
+			canAccessRoute("micPortal", {
+				orgId: "org_admin",
+				permissions: ["admin:access"],
+				role: "admin",
+				roles: ["admin"],
+			})
+		).toBe(true);
+	});
+
 	it("keeps admin subtree access declarative by path registry", () => {
 		expect(
 			canAccessAdminPath("/admin/originations/case_123", {

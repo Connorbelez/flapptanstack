@@ -42,6 +42,11 @@ export const PERMISSION_DISPLAY_METADATA = {
 		description: "Access lawyer routes",
 		domain: "access",
 	},
+	"mic:access": {
+		name: "MIC Access",
+		description: "Access MIC investor portal routes",
+		domain: "access",
+	},
 	"onboarding:access": {
 		name: "Onboarding Access",
 		description: "Access onboarding routes",
@@ -479,6 +484,7 @@ export const ROLE_PERMISSIONS = {
 		"renewal:signal",
 	],
 	lawyer: ["lawyer:access", "onboarding:access", "deal:view"],
+	micinvestor: ["mic:access"],
 	jr_underwriter: [
 		"underwriter:access",
 		"application:review",
