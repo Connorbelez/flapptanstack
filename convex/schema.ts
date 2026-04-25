@@ -1579,6 +1579,48 @@ export default defineSchema({
 		updatedAt: v.number(),
 		lastProviderEventId: v.optional(v.string()),
 		failureReason: v.optional(v.string()),
+		lateSuccessRefund: v.optional(
+			v.union(
+				v.object({
+					status: v.literal("intent_recorded"),
+					amount: checkoutLockFeeAmountValidator,
+					currency: checkoutLockFeeCurrencyValidator,
+					idempotencyKey: v.string(),
+					providerEventId: v.string(),
+					paymentIntentId: v.string(),
+					webhookEventId: v.id("webhookEvents"),
+					attemptedAt: v.number(),
+					error: v.optional(v.string()),
+				}),
+				v.object({
+					status: v.literal("completed"),
+					amount: checkoutLockFeeAmountValidator,
+					currency: checkoutLockFeeCurrencyValidator,
+					idempotencyKey: v.string(),
+					providerEventId: v.string(),
+					paymentIntentId: v.string(),
+					webhookEventId: v.id("webhookEvents"),
+					attemptedAt: v.number(),
+					stripeRefundId: v.string(),
+					completedAt: v.number(),
+					error: v.optional(v.string()),
+				}),
+				v.object({
+					status: v.literal("failed"),
+					amount: checkoutLockFeeAmountValidator,
+					currency: checkoutLockFeeCurrencyValidator,
+					idempotencyKey: v.string(),
+					providerEventId: v.string(),
+					paymentIntentId: v.string(),
+					webhookEventId: v.id("webhookEvents"),
+					attemptedAt: v.number(),
+					error: v.string(),
+					failedAt: v.number(),
+					stripeRefundId: v.optional(v.string()),
+					completedAt: v.optional(v.number()),
+				})
+			)
+		),
 	})
 		.index("by_listing_status", ["listingId", "status"])
 		.index("by_lender", ["lenderId", "startedAt"])
@@ -2238,6 +2280,11 @@ export default defineSchema({
 		lockingFeeAmount: v.optional(v.number()),
 		lawyerId: v.optional(v.string()),
 		reservationId: v.optional(v.id("ledger_reservations")),
+		checkoutSessionId: v.optional(v.id("checkoutSessions")),
+		lockFeeTransferRequestId: v.optional(v.id("transferRequests")),
+		stripeCheckoutSessionId: v.optional(v.string()),
+		stripePaymentIntentId: v.optional(v.string()),
+		selectedLawyer: v.optional(selectedLawyerSnapshotValidator),
 		lawyerType: v.optional(
 			v.union(v.literal("platform_lawyer"), v.literal("guest_lawyer"))
 		),
@@ -2253,6 +2300,8 @@ export default defineSchema({
 		.index("by_lender", ["lenderId"])
 		.index("by_buyer", ["buyerId"])
 		.index("by_seller", ["sellerId"])
+		.index("by_checkout_session", ["checkoutSessionId"])
+		.index("by_reservation", ["reservationId"])
 		.index("by_org", ["orgId"])
 		.index("by_org_status", ["orgId", "status"]),
 

@@ -109,6 +109,28 @@ function sameSelectedLawyer(
 	);
 }
 
+function buildReservationIdempotencyKey(args: {
+	readonly lenderId: Id<"lenders">;
+	readonly listingId: Id<"listings">;
+	readonly now: number;
+	readonly requestedFractions: number;
+	readonly selectedLawyer: CheckoutSessionDoc["selectedLawyer"];
+}): string {
+	const lawyerDiscriminator =
+		args.selectedLawyer.type === "platform_lawyer"
+			? (args.selectedLawyer.lawyerId ?? args.selectedLawyer.email)
+			: args.selectedLawyer.email;
+	return [
+		"marketplace-checkout-reservation",
+		String(args.listingId),
+		String(args.lenderId),
+		String(args.requestedFractions),
+		args.selectedLawyer.type,
+		lawyerDiscriminator,
+		String(args.now),
+	].join(":");
+}
+
 async function findActiveCheckoutSession(
 	ctx: MutationCtx,
 	args: {
@@ -323,9 +345,13 @@ export const prepareMarketplaceCheckout = convex
 				buyerLenderId: buyerLedgerLenderId,
 				amount: requestedFractions,
 				effectiveDate: today(),
-				idempotencyKey: `marketplace-checkout-reservation:${String(
-					listingCheck._id
-				)}:${String(lender._id)}:${String(now)}`,
+				idempotencyKey: buildReservationIdempotencyKey({
+					lenderId: lender._id,
+					listingId: listingCheck._id,
+					now,
+					requestedFractions,
+					selectedLawyer,
+				}),
 				source: checkoutSource(args.viewerAuthId),
 				metadata: {
 					listingId: String(listingCheck._id),

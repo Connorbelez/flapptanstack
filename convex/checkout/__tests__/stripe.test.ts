@@ -124,4 +124,36 @@ describe("Stripe Checkout provider", () => {
 			"https://stripe.test/v1/checkout/sessions/cs_test_123/expire",
 		]);
 	});
+
+	it("refunds payment intents with Stripe idempotency", async () => {
+		const calls: Array<{ body: string; init: RequestInit; url: string }> = [];
+		const provider = createStripeCheckoutProvider({
+			secretKey: "sk_test_123",
+			apiBaseUrl: "https://stripe.test",
+			fetch: async (url, init) => {
+				calls.push({
+					url: String(url),
+					init: init ?? {},
+					body: String(init?.body),
+				});
+				return response({ id: "re_test_123" });
+			},
+		});
+
+		await expect(
+			provider.refundPaymentIntent({
+				amount: 25_000,
+				idempotencyKey: "refund-key",
+				paymentIntentId: "pi_test_123",
+			})
+		).resolves.toEqual({ stripeRefundId: "re_test_123" });
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.url).toBe("https://stripe.test/v1/refunds");
+		expect(calls[0]?.body).toContain("payment_intent=pi_test_123");
+		expect(calls[0]?.body).toContain("amount=25000");
+		expect(calls[0]?.init.headers).toMatchObject({
+			Authorization: "Bearer sk_test_123",
+			"Idempotency-Key": "refund-key",
+		});
+	});
 });

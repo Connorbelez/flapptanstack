@@ -190,6 +190,24 @@ export async function canAccessDeal(
 		return true;
 	}
 
+	const viewerEmail = viewer.email;
+	if (viewerEmail) {
+		const normalizedViewerEmail = viewerEmail.trim().toLowerCase();
+		const guestLawyerAccessRecords = await ctx.db
+			.query("dealAccess")
+			.withIndex("by_user_and_deal", (q) =>
+				q.eq("userId", normalizedViewerEmail).eq("dealId", dealId)
+			)
+			.collect();
+		if (
+			guestLawyerAccessRecords.some(
+				(r) => r.status === "active" && r.role === "guest_lawyer"
+			)
+		) {
+			return true;
+		}
+	}
+
 	return false;
 }
 

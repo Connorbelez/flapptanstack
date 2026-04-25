@@ -9,12 +9,15 @@
  * within internal actions are skipped (convex-test limitation). Those paths
  * are tested in integration/e2e tests.
  */
+
+import { getFunctionName } from "convex/server";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getInitialSnapshot, transition } from "xstate";
 import type { Id } from "../../../_generated/dataModel";
 import schema from "../../../schema";
 import { convexModules } from "../../../test/moduleMaps";
+import { reserveShares } from "../../effects/dealClosing";
 import { collectLockingFee } from "../../effects/dealClosingEffects";
 import { dealMachine } from "../../machines/deal.machine";
 
@@ -46,6 +49,7 @@ interface EffectAction {
 }
 
 const collectLockingFeeAction = collectLockingFee as unknown as EffectAction;
+const reserveSharesAction = reserveShares as unknown as EffectAction;
 
 // ── Seed helpers ────────────────────────────────────────────────────
 type TestHarness = ReturnType<typeof convexTest>;
@@ -437,5 +441,51 @@ describe("collectLockingFee effect", () => {
 
 		// initiateTransferInternal should NOT have been called
 		expect(runAction).not.toHaveBeenCalled();
+	});
+});
+
+describe("reserveShares effect", () => {
+	it("skips reservation creation when the marketplace deal already has a reservationId", async () => {
+		const fakeDealId = "deals:marketplace-deal" as Id<"deals">;
+		const fakeReservationId =
+			"ledger_reservations:checkout-reservation" as Id<"ledger_reservations">;
+		const runQuery = vi.fn().mockImplementation((reference) => {
+			const referenceName = getFunctionName(reference);
+			if (referenceName === "deals/queries:getInternalDeal") {
+				return Promise.resolve({
+					_id: fakeDealId,
+					buyerId: "buyer-lender",
+					fractionalShare: 1000,
+					lenderId: "lenders:buyer-lender",
+					mortgageId: "mortgages:m1",
+					reservationId: fakeReservationId,
+					sellerId: "seller-lender",
+					status: "lawyerOnboarding.pending",
+				});
+			}
+			if (referenceName === "ledger/queries:getReservationById") {
+				return Promise.resolve({
+					_id: fakeReservationId,
+					status: "pending",
+				});
+			}
+			return Promise.resolve(null);
+		});
+		const runMutation = vi.fn();
+		const mockCtx = { runMutation, runQuery };
+
+		await reserveSharesAction._handler(
+			mockCtx,
+			makeEffectArgs(fakeDealId, "reserveShares")
+		);
+
+		expect(runMutation).not.toHaveBeenCalled();
+		expect(
+			runQuery.mock.calls.some(
+				([reference]) =>
+					getFunctionName(reference) ===
+					"ledger/queries:getAccountByMortgageAndLender"
+			)
+		).toBe(false);
 	});
 });

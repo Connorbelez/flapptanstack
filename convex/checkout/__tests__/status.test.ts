@@ -93,6 +93,7 @@ describe("checkout transition contract", () => {
 			"hosted_checkout_open",
 			"expired",
 			"abandoned",
+			"refunded_late_success",
 		]);
 		expect(
 			canTransitionCheckoutStatus(
@@ -105,9 +106,18 @@ describe("checkout transition contract", () => {
 		).toBe(false);
 	});
 
-	it("allows late success only to resolve expired sessions as refunded", () => {
+	it("allows late success to resolve terminal invalid sessions as refunded", () => {
 		expect(
 			canTransitionCheckoutStatus("expired", "refunded_late_success")
+		).toBe(true);
+		expect(
+			canTransitionCheckoutStatus("abandoned", "refunded_late_success")
+		).toBe(true);
+		expect(
+			canTransitionCheckoutStatus(
+				"provider_start_failed",
+				"refunded_late_success"
+			)
 		).toBe(true);
 		expect(canTransitionCheckoutStatus("expired", "completed")).toBe(false);
 		expect(canTransitionCheckoutStatus("expired", "hosted_checkout_open")).toBe(

@@ -395,10 +395,25 @@ async function requireBrokerParticipant(
 async function resolveLawyerPrimaryParticipant(
 	ctx: Pick<QueryCtx, "db">,
 	args: {
+		deal?: Pick<Doc<"deals">, "selectedLawyer">;
 		lawyerType?: "guest_lawyer" | "platform_lawyer";
 		mortgageId: Id<"mortgages">;
 	}
 ): Promise<ResolvedLawyerParticipant | undefined> {
+	if (args.deal?.selectedLawyer) {
+		const selectedLawyer = args.deal.selectedLawyer;
+		const user =
+			selectedLawyer.type === "platform_lawyer" && selectedLawyer.lawyerId
+				? await getUserByAuthId(ctx, selectedLawyer.lawyerId)
+				: null;
+		return {
+			email: normalizeText(selectedLawyer.email),
+			fullName: normalizeText(selectedLawyer.name),
+			lawyerType: selectedLawyer.type,
+			...(user ? { userId: user._id } : {}),
+		};
+	}
+
 	if (!args.lawyerType) {
 		return undefined;
 	}
@@ -468,6 +483,7 @@ async function buildParticipantSnapshot(
 			? requireBrokerParticipant(ctx, mortgage.assignedBrokerId)
 			: Promise.resolve(undefined),
 		resolveLawyerPrimaryParticipant(ctx, {
+			deal,
 			lawyerType: deal.lawyerType,
 			mortgageId: mortgage._id,
 		}),
@@ -2961,12 +2977,7 @@ async function prepareDealPackageRuntime(
 			: activeBlueprints.map((blueprint: BlueprintRow) =>
 					toPackageBlueprintSnapshot(blueprint)
 				);
-	if (
-		existingPackage?.status === "ready" &&
-		!args.retry &&
-		existingPackage.blueprintSnapshots &&
-		existingPackage.blueprintSnapshots.length > 0
-	) {
+	if (existingPackage?.status === "ready" && !args.retry) {
 		return {
 			result: buildCreateDocumentPackageResult({
 				dealId: args.dealId,
