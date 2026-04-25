@@ -1,10 +1,14 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader } from "../_generated/server";
+import { FAIRLEND_MIC_POOL_LENDER_ID } from "../constants";
 import { adminQuery, authedQuery } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
-import { getPostedBalance } from "../ledger/accounts";
-import { TOTAL_SUPPLY } from "../ledger/constants";
+import {
+	buildMarketplaceAvailabilitySummary,
+	getListingAppraisalsByProperty,
+	getListingEncumbrancesByProperty,
+} from "./marketplaceShared";
 import {
 	listingPropertyTypeValidator,
 	listingStatusValidator,
@@ -15,7 +19,6 @@ const FILTERED_LISTING_SCAN_LIMIT = 250;
 const MAX_PAGE_SIZE = 50;
 const OFFSET_CURSOR_PREFIX = "offset:";
 const OFFSET_CURSOR_PATTERN = /^\d+$/;
-const MIC_LENDER_ID_PATTERN = /(^|[_@.+-])mic([_@.+-]|$)/i;
 const TRANSACTION_ENTRY_TYPES = new Set([
 	"SHARES_ISSUED",
 	"SHARES_TRANSFERRED",
@@ -182,12 +185,8 @@ function amountToNumber(value: number | bigint, label: string): number {
 	return value;
 }
 
-function roundToTwoDecimals(value: number): number {
-	return Math.round(value * 100) / 100;
-}
-
 function isMicLenderId(lenderId: string): boolean {
-	return MIC_LENDER_ID_PATTERN.test(lenderId);
+	return lenderId === FAIRLEND_MIC_POOL_LENDER_ID;
 }
 
 function compareMaybeNumber(
@@ -447,17 +446,20 @@ async function buildListingAvailability(
 		return null;
 	}
 
-	const accounts = await ctx.db
-		.query("ledger_accounts")
-		.withIndex("by_type_and_mortgage", (q) =>
-			q.eq("type", "POSITION").eq("mortgageId", String(mortgageId))
-		)
-		.collect();
+	const [accounts, summary] = await Promise.all([
+		ctx.db
+			.query("ledger_accounts")
+			.withIndex("by_type_and_mortgage", (q) =>
+				q.eq("type", "POSITION").eq("mortgageId", String(mortgageId))
+			)
+			.collect(),
+		buildMarketplaceAvailabilitySummary(ctx, mortgageId),
+	]);
 
 	const positions = accounts
 		.map((account) => ({
 			accountId: account._id,
-			balance: getPostedBalance(account),
+			balance: account.cumulativeDebits - account.cumulativeCredits,
 			lenderId: getAccountLenderId(account),
 		}))
 		.filter(
@@ -470,32 +472,26 @@ async function buildListingAvailability(
 			} => position.balance > 0n && position.lenderId !== undefined
 		);
 
-	const inferredMicPosition =
-		positions.find((position) => isMicLenderId(position.lenderId)) ?? null;
-	const availableFractions = inferredMicPosition
-		? toSafeNumber(inferredMicPosition.balance, "availableFractions")
-		: 0;
-	const soldUnits = positions
-		.filter((position) => position.lenderId !== inferredMicPosition?.lenderId)
-		.reduce((total, position) => total + position.balance, 0n);
-	const totalInvestors = positions.filter(
-		(position) => position.lenderId !== inferredMicPosition?.lenderId
-	).length;
-	const totalFractions = toSafeNumber(TOTAL_SUPPLY, "totalFractions");
+	const micPositions = positions.filter((position) =>
+		isMicLenderId(position.lenderId)
+	);
+	const inferredMicPosition = micPositions[0] ?? null;
+	const micBalance = toSafeNumber(
+		micPositions.reduce((total, position) => total + position.balance, 0n),
+		"micPosition.balance"
+	);
 
 	return {
-		availableFractions,
+		availableFractions: summary.availableFractions,
 		micPosition: {
-			balance: availableFractions,
-			hasPosition: availableFractions > 0,
+			balance: micBalance,
+			hasPosition: inferredMicPosition !== null,
 			inferred: inferredMicPosition !== null,
 			lenderId: inferredMicPosition?.lenderId ?? null,
 		},
-		percentageSold: roundToTwoDecimals(
-			(toSafeNumber(soldUnits, "soldUnits") / totalFractions) * 100
-		),
-		totalFractions,
-		totalInvestors,
+		percentageSold: summary.soldPercent,
+		totalFractions: summary.totalFractions,
+		totalInvestors: summary.totalInvestors,
 	};
 }
 
@@ -705,59 +701,14 @@ export const getListingByMortgage = authedQuery
 export const getListingAppraisals = authedQuery
 	.input({ propertyId: v.id("properties") })
 	.handler(async (ctx, args) => {
-		const appraisals = await ctx.db
-			.query("appraisals")
-			.withIndex("by_property", (q) => q.eq("propertyId", args.propertyId))
-			.collect();
-
-		const appraisalsWithComparables = await Promise.all(
-			appraisals.map(async (appraisal) => {
-				const comparables = await ctx.db
-					.query("appraisalComparables")
-					.withIndex("by_appraisal", (q) => q.eq("appraisalId", appraisal._id))
-					.collect();
-
-				comparables.sort((left, right) => left.sortOrder - right.sortOrder);
-
-				return {
-					...appraisal,
-					comparables,
-				};
-			})
-		);
-
-		appraisalsWithComparables.sort((left, right) => {
-			const byEffectiveDate = right.effectiveDate.localeCompare(
-				left.effectiveDate
-			);
-			if (byEffectiveDate !== 0) {
-				return byEffectiveDate;
-			}
-
-			return right.createdAt - left.createdAt;
-		});
-
-		return appraisalsWithComparables;
+		return await getListingAppraisalsByProperty(ctx, args.propertyId);
 	})
 	.public();
 
 export const getListingEncumbrances = authedQuery
 	.input({ propertyId: v.id("properties") })
 	.handler(async (ctx, args) => {
-		const encumbrances = await ctx.db
-			.query("priorEncumbrances")
-			.withIndex("by_property", (q) => q.eq("propertyId", args.propertyId))
-			.collect();
-
-		encumbrances.sort((left, right) => {
-			if (left.priority !== right.priority) {
-				return left.priority - right.priority;
-			}
-
-			return right.createdAt - left.createdAt;
-		});
-
-		return encumbrances;
+		return await getListingEncumbrancesByProperty(ctx, args.propertyId);
 	})
 	.public();
 

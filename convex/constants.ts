@@ -4,6 +4,7 @@
 export const FAIRLEND_STAFF_ORG_ID = "org_01KKF56VABM4NYFFSR039RTJBM";
 export const FAIRLEND_BROKERAGE_ORG_ID = "org_01KKKKGXEBW1MA5NFEZVHZS7WG";
 export const FAIRLEND_LAWYERS_ORG_ID = "org_01KKRSS95YC96QA7M42C2ERVSM";
+export const FAIRLEND_MIC_POOL_LENDER_ID = "seed_maple_mic_lender_fairlend_ca";
 
 // ── Requestable Roles ──────────────────────────────────────────────
 // Roles that can be requested through the onboarding approval flow.

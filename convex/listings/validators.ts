@@ -42,6 +42,17 @@ export const listingPropertyTypeValidator = v.union(
 	v.literal("condo")
 );
 
+export const marketplaceListingPropertyTypeValidator = v.union(
+	v.literal("Detached Home"),
+	v.literal("Duplex"),
+	v.literal("Condo"),
+	v.literal("Commercial"),
+	v.literal("Townhouse"),
+	v.literal("Triplex"),
+	v.literal("Mixed-Use"),
+	v.literal("Other")
+);
+
 export const listingHeroImageValidator = v.object({
 	storageId: v.id("_storage"),
 	caption: v.optional(v.string()),
@@ -62,6 +73,7 @@ export const listingCreateInputFields = {
 	loanType: listingLoanTypeValidator,
 	lienPosition: v.number(),
 	propertyType: listingPropertyTypeValidator,
+	marketplacePropertyType: v.optional(marketplaceListingPropertyTypeValidator),
 	city: v.string(),
 	province: v.string(),
 	approximateLatitude: v.optional(v.number()),
@@ -108,6 +120,7 @@ export const listingProjectionOwnedUpdateFields = {
 	loanType: v.optional(listingLoanTypeValidator),
 	lienPosition: v.optional(v.number()),
 	propertyType: v.optional(listingPropertyTypeValidator),
+	marketplacePropertyType: v.optional(marketplaceListingPropertyTypeValidator),
 	city: v.optional(v.string()),
 	province: v.optional(v.string()),
 	approximateLatitude: v.optional(v.number()),
