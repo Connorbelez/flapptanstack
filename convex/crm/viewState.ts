@@ -490,10 +490,11 @@ function buildEffectiveColumns(args: {
 						label: baseColumn.label,
 						fieldType: baseColumn.fieldType,
 						width: baseColumn?.width,
-						isVisible: args.hasExplicitVisibilityOverride
-							? visibleFieldIds.has(fieldId.toString())
-							: visibleFieldIds.has(fieldId.toString()) ||
-								baseColumn.isVisibleByDefault,
+						isVisible:
+							visibleFieldIds.has(fieldId.toString()) ||
+							((!args.hasExplicitVisibilityOverride ||
+								fieldId.toString().startsWith("computed:")) &&
+								baseColumn.isVisibleByDefault),
 						displayOrder: index,
 					},
 					currentLayout: args.effectiveView.layout,
