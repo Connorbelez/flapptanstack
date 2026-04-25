@@ -6,11 +6,6 @@ import {
 } from "../users/byAuthId";
 import { getDeterministicPortalIdForOrgId } from "./borrowerPortalAttribution";
 import {
-	deleteOrphanUsersByAuthId,
-	findCanonicalUserByAuthId,
-} from "../users/byAuthId";
-import { getDeterministicPortalIdForOrgId } from "./borrowerPortalAttribution";
-import {
 	FAIRLEND_PORTAL_LOCAL_HOST,
 	FAIRLEND_PORTAL_PRODUCTION_HOST,
 	FAIRLEND_PORTAL_SLUG,

@@ -8,10 +8,6 @@ type ReadListingPublicDocumentsArgs =
 	| { listingId: Id<"listings"> }
 	| { mortgageId: Id<"mortgages"> | undefined };
 
-type ReadListingPublicDocumentsArgs =
-	| { listingId: Id<"listings"> }
-	| { mortgageId: Id<"mortgages"> | undefined };
-
 export async function readListingPublicDocuments(
 	ctx: Pick<QueryCtx, "db" | "storage">,
 	args: ReadListingPublicDocumentsArgs
