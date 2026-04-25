@@ -444,6 +444,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../portals/helpers.ts"),
 	"/convex/portals/invariants.ts": async () =>
 		await import("./../portals/invariants.ts"),
+	"/convex/portals/landingMutations.ts": async () =>
+		await import("./../portals/landingMutations.ts"),
 	"/convex/portals/pricing.ts": async () =>
 		await import("./../portals/pricing.ts"),
 	"/convex/portals/queries.ts": async () =>
