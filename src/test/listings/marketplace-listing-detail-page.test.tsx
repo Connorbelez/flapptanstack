@@ -112,7 +112,19 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 			monthlyPayment: 3187,
 			paymentFrequency: "monthly",
 			paymentHistory: {
-				byStatus: { overdue: 1, settled: 11 },
+				byStatus: {
+					failed: 1,
+					overdue: 1,
+					pending: 1,
+					scheduled: 1,
+					settled: 7,
+					waived: 1,
+				},
+				months: [
+					{ label: "Jan", status: "settled" },
+					{ label: "Feb", status: "overdue" },
+					{ label: "Mar", status: "failed" },
+				],
 				totalObligations: 12,
 			},
 			principal: 450000,
@@ -151,6 +163,16 @@ describe("marketplace listing detail adapter", () => {
 			"https://example.com/appraisal-report.pdf"
 		);
 		expect(model.badges[0]?.label).toBe("1ST MORTGAGE");
+		expect(model.paymentHistory).toMatchObject({
+			lateCount: 1,
+			missedCount: 1,
+			onTimeRate: "80%",
+		});
+		expect(model.paymentHistory.months).toEqual([
+			{ id: "Jan", label: "Jan", status: "onTime" },
+			{ id: "Feb", label: "Feb", status: "late" },
+			{ id: "Mar", label: "Mar", status: "missed" },
+		]);
 	});
 });
 

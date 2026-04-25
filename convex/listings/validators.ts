@@ -46,7 +46,11 @@ export const marketplaceListingPropertyTypeValidator = v.union(
 	v.literal("Detached Home"),
 	v.literal("Duplex"),
 	v.literal("Condo"),
-	v.literal("Commercial")
+	v.literal("Commercial"),
+	v.literal("Townhouse"),
+	v.literal("Triplex"),
+	v.literal("Mixed-Use"),
+	v.literal("Other")
 );
 
 export const listingHeroImageValidator = v.object({

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { ListingDetailPage } from "./ListingDetailPage";
 import { buildMarketplaceListingDetailModel } from "./marketplace-detail-adapter";
@@ -19,6 +20,11 @@ export function MarketplaceListingDetailPage({
 		<ListingDetailPage
 			backHref="/listings"
 			buildSimilarListingHref={(listingId) => `/listings/${listingId}`}
+			linkRenderer={({ children, className, href }) => (
+				<Link className={className} to={href}>
+					{children}
+				</Link>
+			)}
 			listing={listing}
 			mode="readOnly"
 		/>

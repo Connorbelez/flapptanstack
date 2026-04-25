@@ -18,6 +18,7 @@ import { marketplaceListingPropertyTypeValidator } from "./validators";
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 50;
 const FILTERED_LISTING_SCAN_LIMIT = 500;
+const SIMILAR_LISTING_CANDIDATE_LIMIT = 50;
 const OFFSET_CURSOR_PREFIX = "offset:";
 const OFFSET_CURSOR_PATTERN = /^\d+$/;
 
@@ -222,6 +223,8 @@ async function getSimilarMarketplaceListings(
 	ctx: Pick<QueryCtx, "db" | "storage">,
 	listing: ListingDoc
 ) {
+	// TODO: Add an index ordered for featured/displayOrder/publishedAt so this
+	// detail hot path can read the top 3 similar listings without JS sorting.
 	const candidates = await ctx.db
 		.query("listings")
 		.withIndex("by_marketplace_property_type_and_status", (q) =>
@@ -229,7 +232,7 @@ async function getSimilarMarketplaceListings(
 				.eq("marketplacePropertyType", getMarketplacePropertyType(listing))
 				.eq("status", "published")
 		)
-		.collect();
+		.take(SIMILAR_LISTING_CANDIDATE_LIMIT);
 
 	return await Promise.all(
 		candidates

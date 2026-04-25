@@ -277,15 +277,24 @@ function buildPaymentHistory(
 	const lateCount =
 		(readNumber(byStatus.overdue) ?? 0) +
 		(readNumber(byStatus.partially_settled) ?? 0);
-	const missedCount = readNumber(byStatus.waived) ?? 0;
-	const onTimeCount = Math.max(0, totalObligations - lateCount - missedCount);
+	const missedCount =
+		(readNumber(byStatus.missed) ?? 0) +
+		(readNumber(byStatus.defaulted) ?? 0) +
+		(readNumber(byStatus.failed) ?? 0);
+	const pendingCount =
+		(readNumber(byStatus.pending) ?? 0) + (readNumber(byStatus.scheduled) ?? 0);
+	const completedObligations = Math.max(0, totalObligations - pendingCount);
+	const onTimeCount = Math.max(
+		0,
+		completedObligations - lateCount - missedCount
+	);
 
 	const onTimeRate =
-		totalObligations > 0
-			? `${Math.round((onTimeCount / totalObligations) * 100)}%`
+		completedObligations > 0
+			? `${Math.round((onTimeCount / completedObligations) * 100)}%`
 			: "N/A";
 
-	const months: ListingPaymentHistoryMonth[] = [];
+	const months = buildPaymentHistoryMonths(paymentHistory);
 
 	return {
 		lateCount,
@@ -293,6 +302,58 @@ function buildPaymentHistory(
 		months,
 		onTimeRate,
 	};
+}
+
+function buildPaymentHistoryMonths(
+	paymentHistory: Record<string, unknown> | null
+): ListingPaymentHistoryMonth[] {
+	return asArray(paymentHistory?.months).flatMap((rawMonth, index) => {
+		const month = asRecord(rawMonth);
+		if (month === null) {
+			return [];
+		}
+
+		const status = normalizePaymentHistoryMonthStatus(month.status);
+		if (status === null) {
+			return [];
+		}
+
+		const label =
+			readString(month.label) ??
+			readString(month.month) ??
+			readString(month.period) ??
+			`Period ${index + 1}`;
+
+		return [
+			{
+				id: readString(month.id) ?? label,
+				label,
+				status,
+			},
+		];
+	});
+}
+
+function normalizePaymentHistoryMonthStatus(
+	status: unknown
+): ListingPaymentHistoryMonth["status"] | null {
+	if (
+		status === "late" ||
+		status === "overdue" ||
+		status === "partially_settled"
+	) {
+		return "late";
+	}
+
+	if (status === "missed" || status === "defaulted" || status === "failed") {
+		return "missed";
+	}
+
+	if (status === "onTime" || status === "settled" || status === "paid") {
+		return "onTime";
+	}
+
+	return null;
 }
 
 function buildDocuments(

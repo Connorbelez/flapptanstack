@@ -1,6 +1,14 @@
 export type MortgageType = "First" | "Second" | "Other";
 
-export type PropertyType = "Detached Home" | "Duplex" | "Condo" | "Commercial";
+export type PropertyType =
+	| "Detached Home"
+	| "Duplex"
+	| "Condo"
+	| "Commercial"
+	| "Townhouse"
+	| "Triplex"
+	| "Mixed-Use"
+	| "Other";
 
 export interface FilterMetricItem {
 	apr?: number;

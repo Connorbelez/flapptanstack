@@ -57,6 +57,12 @@ function PropertyTypeIcon({ type }: { type: PropertyType }) {
 			return <Building2 className="h-5 w-5" />;
 		case "Commercial":
 			return <Briefcase className="h-5 w-5" />;
+		case "Townhouse":
+			return <Home className="h-5 w-5" />;
+		case "Triplex":
+			return <Building className="h-5 w-5" />;
+		case "Mixed-Use":
+			return <Building2 className="h-5 w-5" />;
 		default:
 			return <HelpCircle className="h-5 w-5" />;
 	}
@@ -215,6 +221,10 @@ export default function FilterModal({
 		{ value: "Duplex", label: "Duplex" },
 		{ value: "Condo", label: "Condo" },
 		{ value: "Commercial", label: "Commercial" },
+		{ value: "Townhouse", label: "Townhouse" },
+		{ value: "Triplex", label: "Triplex" },
+		{ value: "Mixed-Use", label: "Mixed-Use" },
+		{ value: "Other", label: "Other" },
 	];
 
 	return (

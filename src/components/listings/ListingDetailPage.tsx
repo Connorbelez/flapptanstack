@@ -10,7 +10,14 @@ import {
 	ImageIcon,
 	MapPinned,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import {
+	Fragment,
+	type ReactNode,
+	useEffect,
+	useId,
+	useMemo,
+	useState,
+} from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -45,17 +52,35 @@ const DIGITS_ONLY_PATTERN = /^\d+$/;
 
 type ListingDetailPageMode = "interactive" | "readOnly";
 
+type ListingDetailLinkRenderer = (args: {
+	children: ReactNode;
+	className?: string;
+	href: string;
+}) => ReactNode;
+
 interface ListingDetailPageProps {
 	backHref?: string;
 	buildSimilarListingHref?: (listingId: string) => string;
+	linkRenderer?: ListingDetailLinkRenderer;
 	listing: ListingDetailData;
 	mode?: ListingDetailPageMode;
 }
+
+const defaultLinkRenderer: ListingDetailLinkRenderer = ({
+	children,
+	className,
+	href,
+}) => (
+	<a className={className} href={href}>
+		{children}
+	</a>
+);
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Large component intentionally composes many presentation controls for read-only and interactive paths.
 export function ListingDetailPage({
 	backHref = "/demo/listings",
 	buildSimilarListingHref = (listingId) => `${backHref}/${listingId}`,
+	linkRenderer = defaultLinkRenderer,
 	listing,
 	mode = "interactive",
 }: ListingDetailPageProps) {
@@ -183,10 +208,18 @@ export function ListingDetailPage({
 	return (
 		<div className="min-h-screen bg-[#FAFAF8] text-[#1F1F1B]">
 			<div className="hidden lg:block">
-				<DesktopTopNav backHref={backHref} mode={mode} />
+				<DesktopTopNav
+					backHref={backHref}
+					linkRenderer={linkRenderer}
+					mode={mode}
+				/>
 			</div>
 			<div className="lg:hidden">
-				<MobileTopNav backHref={backHref} mode={mode} />
+				<MobileTopNav
+					backHref={backHref}
+					linkRenderer={linkRenderer}
+					mode={mode}
+				/>
 			</div>
 
 			<div className="hidden lg:block" data-testid="desktop-listing-detail">
@@ -367,6 +400,7 @@ export function ListingDetailPage({
 					buildHref={buildSimilarListingHref}
 					cards={listing.similarListings}
 					className="px-16 pt-10"
+					linkRenderer={linkRenderer}
 					title="You May Also Be Interested In"
 				/>
 			</div>
@@ -726,6 +760,7 @@ export function ListingDetailPage({
 					buildHref={buildSimilarListingHref}
 					cards={listing.similarListings}
 					className="px-5 pt-6"
+					linkRenderer={linkRenderer}
 					mobile
 					title="You May Also Like"
 				/>
@@ -736,20 +771,26 @@ export function ListingDetailPage({
 
 function DesktopTopNav({
 	backHref,
+	linkRenderer,
 	mode,
 }: {
 	backHref: string;
+	linkRenderer: ListingDetailLinkRenderer;
 	mode: ListingDetailPageMode;
 }) {
 	return (
 		<header className="flex items-center justify-between border-[#E7E5E4] border-b bg-white px-16 py-4">
-			<a
-				className="inline-flex items-center gap-2 font-medium text-[#3F3F46] text-[13px]"
-				href={backHref}
-			>
-				<ArrowLeft className="size-4" />
-				Back to Listings
-			</a>
+			{linkRenderer({
+				children: (
+					<>
+						<ArrowLeft className="size-4" />
+						Back to Listings
+					</>
+				),
+				className:
+					"inline-flex items-center gap-2 font-medium text-[#3F3F46] text-[13px]",
+				href: backHref,
+			})}
 
 			<div className="flex items-center gap-3">
 				<div className="inline-flex items-center gap-2 rounded-full bg-[#F6FBF7] px-3 py-2 text-[#2E7D4F] text-[12px]">
@@ -758,7 +799,10 @@ function DesktopTopNav({
 				</div>
 				{mode === "interactive" ? (
 					<button
-						className="inline-flex items-center gap-2 rounded-full border border-[#E7E5E4] px-4 py-2 font-medium text-[13px]"
+						aria-disabled="true"
+						className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#E7E5E4] px-4 py-2 font-medium text-[#A3A3A3] text-[13px]"
+						disabled
+						title="Save is not available yet"
 						type="button"
 					>
 						<Heart className="size-4" />
@@ -772,25 +816,37 @@ function DesktopTopNav({
 
 function MobileTopNav({
 	backHref,
+	linkRenderer,
 	mode,
 }: {
 	backHref: string;
+	linkRenderer: ListingDetailLinkRenderer;
 	mode: ListingDetailPageMode;
 }) {
 	return (
 		<header className="flex items-center justify-between border-[#E7E5E4] border-b bg-white px-5 py-3">
-			<a href={backHref}>
-				<ChevronLeft className="size-5 text-[#3F3F46]" />
-				<span className="sr-only">Back to Listings</span>
-			</a>
+			{linkRenderer({
+				children: (
+					<>
+						<ChevronLeft className="size-5 text-[#3F3F46]" />
+						<span className="sr-only">Back to Listings</span>
+					</>
+				),
+				href: backHref,
+			})}
 			<div className="flex items-center gap-3 text-[12px]">
 				<div className="inline-flex items-center gap-1 text-[#2E7D4F]">
 					<span className="size-1.5 rounded-full bg-[#22C55E]" />
 					{mode === "readOnly" ? "View" : "12"}
 				</div>
 				{mode === "interactive" ? (
-					<button type="button">
-						<Heart className="size-4 text-[#737373]" />
+					<button
+						aria-disabled="true"
+						disabled
+						title="Save is not available yet"
+						type="button"
+					>
+						<Heart className="size-4 text-[#A3A3A3]" />
 						<span className="sr-only">Save listing</span>
 					</button>
 				) : null}
@@ -1224,12 +1280,14 @@ function SimilarListingsSection({
 	buildHref,
 	cards,
 	className,
+	linkRenderer,
 	mobile = false,
 	title,
 }: {
 	buildHref: (listingId: string) => string;
 	cards: ListingSimilarCard[];
 	className?: string;
+	linkRenderer: ListingDetailLinkRenderer;
 	mobile?: boolean;
 	title: string;
 }) {
@@ -1243,45 +1301,49 @@ function SimilarListingsSection({
 				)}
 			>
 				{cards.map((card) => (
-					<a
-						className={cn(
-							"overflow-hidden rounded-xl border border-[#E7E5E4] bg-white",
-							mobile ? "w-[220px] shrink-0" : "min-w-0"
-						)}
-						href={card.href ?? buildHref(card.id)}
-						key={card.id}
-					>
-						<div className="h-[138px] overflow-hidden">
-							<MediaPanel
-								className="h-full rounded-none"
-								image={{
-									id: card.id,
-									label: card.title,
-									alt: card.title,
-									url: card.imageUrl,
-									tone: card.tone,
-								}}
-							/>
-						</div>
-						<div className="space-y-3 px-4 py-4">
-							<div className="flex flex-wrap gap-1.5">
-								{card.badges.map((badge) => (
-									<BadgePill badge={badge} key={badge.id} mobile />
-								))}
-							</div>
-							<div className="space-y-1">
-								<p className="font-medium leading-6">{card.title}</p>
-								<div className="flex flex-wrap gap-2 text-[#5A5956] text-sm">
-									<span className="font-medium text-[#1F1F1B]">
-										{card.price}
-									</span>
-									{card.metrics.map((metric) => (
-										<span key={metric}>{metric}</span>
-									))}
-								</div>
-							</div>
-						</div>
-					</a>
+					<Fragment key={card.id}>
+						{linkRenderer({
+							children: (
+								<>
+									<div className="h-[138px] overflow-hidden">
+										<MediaPanel
+											className="h-full rounded-none"
+											image={{
+												id: card.id,
+												label: card.title,
+												alt: card.title,
+												url: card.imageUrl,
+												tone: card.tone,
+											}}
+										/>
+									</div>
+									<div className="space-y-3 px-4 py-4">
+										<div className="flex flex-wrap gap-1.5">
+											{card.badges.map((badge) => (
+												<BadgePill badge={badge} key={badge.id} mobile />
+											))}
+										</div>
+										<div className="space-y-1">
+											<p className="font-medium leading-6">{card.title}</p>
+											<div className="flex flex-wrap gap-2 text-[#5A5956] text-sm">
+												<span className="font-medium text-[#1F1F1B]">
+													{card.price}
+												</span>
+												{card.metrics.map((metric) => (
+													<span key={metric}>{metric}</span>
+												))}
+											</div>
+										</div>
+									</div>
+								</>
+							),
+							className: cn(
+								"overflow-hidden rounded-xl border border-[#E7E5E4] bg-white",
+								mobile ? "w-[220px] shrink-0" : "min-w-0"
+							),
+							href: card.href ?? buildHref(card.id),
+						})}
+					</Fragment>
 				))}
 			</div>
 		</section>

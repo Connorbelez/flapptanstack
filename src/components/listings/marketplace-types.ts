@@ -22,6 +22,10 @@ export const MARKETPLACE_PROPERTY_TYPES = [
 	"Duplex",
 	"Condo",
 	"Commercial",
+	"Townhouse",
+	"Triplex",
+	"Mixed-Use",
+	"Other",
 ] as const satisfies readonly PropertyType[];
 
 export type MarketplaceSortKey = (typeof MARKETPLACE_SORT_KEYS)[number];

@@ -476,11 +476,15 @@ async function buildListingAvailability(
 		isMicLenderId(position.lenderId)
 	);
 	const inferredMicPosition = micPositions[0] ?? null;
+	const micBalance = toSafeNumber(
+		micPositions.reduce((total, position) => total + position.balance, 0n),
+		"micPosition.balance"
+	);
 
 	return {
 		availableFractions: summary.availableFractions,
 		micPosition: {
-			balance: summary.availableFractions,
+			balance: micBalance,
 			hasPosition: inferredMicPosition !== null,
 			inferred: inferredMicPosition !== null,
 			lenderId: inferredMicPosition?.lenderId ?? null,

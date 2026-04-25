@@ -58,16 +58,20 @@ function applyDemoFilters(
 
 			if (
 				filters.mortgageTypes.length > 0 &&
-				item.mortgageType &&
-				!filters.mortgageTypes.includes(item.mortgageType as MortgageType)
+				!(
+					item.mortgageType &&
+					filters.mortgageTypes.includes(item.mortgageType as MortgageType)
+				)
 			) {
 				return false;
 			}
 
 			if (
 				filters.propertyTypes.length > 0 &&
-				item.propertyType &&
-				!filters.propertyTypes.includes(item.propertyType as PropertyType)
+				!(
+					item.propertyType &&
+					filters.propertyTypes.includes(item.propertyType as PropertyType)
+				)
 			) {
 				return false;
 			}
