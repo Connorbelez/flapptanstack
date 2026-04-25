@@ -3,7 +3,7 @@
 - Overall status: complete
 - Current phase: validation
 - Current chunk: all chunks complete
-- Last updated: 2026-04-25T16:18:04Z
+- Last updated: 2026-04-25T19:49:49Z
 
 ## Active focus
 - Completed implementation, tests, quality gates, and spec audit.
@@ -18,3 +18,4 @@
 - Impact analysis before edits: `ListingDetailPage`, `MarketplaceListingDetailPage`, `buildMarketplaceListingDetailModel`, `getMarketplaceListingDetail`, and `marketplaceListingDetailQueryOptions` are LOW risk.
 - Validation passed: `bunx convex codegen`, `bun check`, `bun typecheck`, and focused Vitest coverage for launcher/page/route behavior.
 - Vitest reports a post-success Vite server close timeout; all targeted assertions passed.
+- Follow-up review findings were addressed: portable React test resolution, checkout maximum-fraction bounds, valid guest-lawyer email validation, stable thrown-error copy, non-positive fraction validation, demo route read-only mode, and expanded return-state/search coverage.

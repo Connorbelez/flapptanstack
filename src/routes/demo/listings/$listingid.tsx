@@ -18,7 +18,7 @@ export const Route = createFileRoute("/demo/listings/$listingid")({
 function DemoListingDetailRouteComponent() {
 	const { listing } = Route.useLoaderData();
 
-	return <ListingDetailPage listing={listing} />;
+	return <ListingDetailPage listing={listing} mode="readOnly" />;
 }
 
 function DemoListingDetailNotFoundComponent() {

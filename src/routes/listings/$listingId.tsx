@@ -16,6 +16,15 @@ const CHECKOUT_RETURN_STATES = new Set([
 	"success_pending",
 ]);
 
+export function parseListingCheckoutReturnState(
+	search: Record<string, unknown>
+): ListingCheckoutReturnState | undefined {
+	return typeof search.checkout === "string" &&
+		CHECKOUT_RETURN_STATES.has(search.checkout)
+		? (search.checkout as ListingCheckoutReturnState)
+		: undefined;
+}
+
 export const Route = createFileRoute("/listings/$listingId")({
 	beforeLoad: guardRouteAccess("listings"),
 	loader: async ({ context, params }) => {
@@ -35,11 +44,7 @@ export const Route = createFileRoute("/listings/$listingId")({
 	component: RouteComponent,
 	notFoundComponent: MarketplaceListingNotFoundComponent,
 	validateSearch: (search: Record<string, unknown>) => ({
-		checkout:
-			typeof search.checkout === "string" &&
-			CHECKOUT_RETURN_STATES.has(search.checkout)
-				? search.checkout
-				: undefined,
+		checkout: parseListingCheckoutReturnState(search),
 	}),
 });
 

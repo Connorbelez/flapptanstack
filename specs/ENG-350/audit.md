@@ -2,11 +2,12 @@
 
 - Audit skill: `$linear-pr-spec-audit`
 - Review target: current branch diff against repository base
-- Last run: 2026-04-25T16:18:04Z
+- Last run: 2026-04-25T19:49:49Z
 - Verdict: ready
 
 ## Findings
 - No material spec-compliance findings.
+- Follow-up code-review findings were fixed and revalidated.
 
 ## Unresolved items
 - none
@@ -35,6 +36,7 @@
 | SATISFIED | read-only states | Demo/read-only/ineligible listings cannot start checkout and render disabled reason | `src/components/listings/ListingDetailPage.tsx`, `src/test/listings/listing-detail-checkout.test.tsx` | Server disabled reasons pass through. |
 | SATISFIED | tests | Relevant RTL tests cover launcher and route/action handoff | `src/test/listings/listing-detail-checkout.test.tsx`, `src/test/listings/marketplace-listing-detail-page.test.tsx`, `src/test/routes/listings-route.test.tsx` | E2E/Storybook not added; rationale recorded in checklist. |
 | SATISFIED | validation | Required commands pass | execution log | `bunx convex codegen`, `bun check`, `bun typecheck`, targeted tests all pass. |
+| SATISFIED | review remediation | Follow-up review findings are addressed | `src/components/listings/ListingDetailPage.tsx`, `src/routes/demo/listings/$listingid.tsx`, `src/test/listings/listing-detail-checkout.test.tsx`, `src/test/routes/listings-route.test.tsx` | Covers portable tests, bounds, email validation, stable errors, zero fractions, return states, and demo read-only mode. |
 
 ## Open Questions
 - none
