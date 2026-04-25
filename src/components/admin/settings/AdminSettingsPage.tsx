@@ -40,11 +40,14 @@ import type {
 	AdminOrgSettingsSnapshot,
 } from "../../../../convex/admin/settings/queries";
 
-function getErrorMessage(error: unknown) {
+function getErrorMessage(
+	error: unknown,
+	fallbackMessage = "Something went wrong while bootstrapping CRM objects."
+) {
 	if (error instanceof Error && error.message.trim().length > 0) {
 		return error.message;
 	}
-	return "Something went wrong while bootstrapping CRM objects.";
+	return fallbackMessage;
 }
 
 function formatTimestamp(value: number | null) {
@@ -238,7 +241,7 @@ export function BrokerPortalPricingCard({
 	const saveBrokerPortalPricing = useMutation(
 		api.admin.settings.mutations.setBrokerPortalPricing
 	);
-	async function handleSave(formData: FormData) {
+	async function handleSave(formData: FormData, form: HTMLFormElement) {
 		const rawBrokerSplitPercent = String(
 			formData.get("brokerSplitPercent") ?? ""
 		).trim();
@@ -254,6 +257,20 @@ export function BrokerPortalPricingCard({
 			return;
 		}
 
+		const submitButton = form.querySelector<HTMLButtonElement>(
+			'button[type="submit"]'
+		);
+		if (form.dataset.saving === "true") {
+			return;
+		}
+
+		form.dataset.saving = "true";
+		submitButton?.setAttribute("disabled", "");
+		submitButton?.setAttribute("aria-busy", "true");
+		const previousLabel = submitButton?.textContent;
+		if (submitButton) {
+			submitButton.textContent = "Saving…";
+		}
 		try {
 			const result = await saveBrokerPortalPricing({
 				brokerSplitPercent: parsedBrokerSplitPercent,
@@ -262,7 +279,19 @@ export function BrokerPortalPricingCard({
 				`Broker portal pricing saved at ${result.brokerSplitPercent}% across ${result.brokerPortalCount} broker portals. ${result.brokerPortalsUpdated} broker portal policies were updated.`
 			);
 		} catch (error) {
-			toast.error(getErrorMessage(error));
+			toast.error(
+				getErrorMessage(
+					error,
+					"Unable to save broker portal pricing. Please try again."
+				)
+			);
+		} finally {
+			form.dataset.saving = "false";
+			submitButton?.removeAttribute("disabled");
+			submitButton?.removeAttribute("aria-busy");
+			if (submitButton && previousLabel !== null) {
+				submitButton.textContent = previousLabel;
+			}
 		}
 	}
 
@@ -308,7 +337,10 @@ export function BrokerPortalPricingCard({
 					className="space-y-2 rounded-xl border border-border/70 bg-muted/20 p-4"
 					onSubmit={(event) => {
 						event.preventDefault();
-						void handleSave(new FormData(event.currentTarget));
+						void handleSave(
+							new FormData(event.currentTarget),
+							event.currentTarget
+						);
 					}}
 				>
 					<div className="space-y-1">
@@ -319,8 +351,11 @@ export function BrokerPortalPricingCard({
 							defaultValue={String(brokerPortalPricing.brokerSplitPercent)}
 							id="broker-portal-pricing-percent"
 							inputMode="decimal"
+							max={100}
+							min={0}
 							name="brokerSplitPercent"
 							placeholder="0"
+							step="0.01"
 							type="number"
 						/>
 						<p className="text-muted-foreground text-xs">

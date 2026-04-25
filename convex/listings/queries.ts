@@ -5,18 +5,15 @@ import { FAIRLEND_MIC_POOL_LENDER_ID } from "../constants";
 import { adminQuery, authedQuery } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
 import {
-	buildMarketplaceAvailabilitySummary,
-	getListingAppraisalsByProperty,
-	getListingEncumbrancesByProperty,
-} from "./marketplaceShared";
-import { getPostedBalance } from "../ledger/accounts";
-import { TOTAL_SUPPLY } from "../ledger/constants";
-import {
 	loadPortalPricingSelection,
 	projectListingForPortal,
 	requirePortalPricingSelection,
 } from "../portals/pricing";
-import { roundToTwoDecimals } from "./math";
+import {
+	buildMarketplaceAvailabilitySummary,
+	getListingAppraisalsByProperty,
+	getListingEncumbrancesByProperty,
+} from "./marketplaceShared";
 import {
 	listingPropertyTypeValidator,
 	listingStatusValidator,
@@ -333,6 +330,7 @@ async function getRequiredPortalPricingPolicy(
 
 	const selection = await loadPortalPricingSelection(ctx, {
 		atTime: Date.now(),
+		portal,
 		portalId,
 	});
 	return requirePortalPricingSelection(selection, portal.slug).policy;

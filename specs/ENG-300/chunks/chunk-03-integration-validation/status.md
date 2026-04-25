@@ -9,11 +9,11 @@
 - T-910
 
 ## Validation
-- `bunx convex codegen`: blocked by missing `CONVEX_DEPLOYMENT`
+- `CONVEX_DEPLOYMENT=dev:impartial-sturgeon-498 bunx convex codegen`: passed (scoped command; see `specs/ENG-300/status.md`)
 - `bun check`: blocked by unrelated repo-wide complexity diagnostics
 - `bun typecheck`: passed
 - targeted Vitest coverage: passed
-- `coderabbit review --plain`: blocked because the review service refuses worktrees with more than 300 changed files
+- `coderabbit review --plain --type uncommitted --files <ENG-300 files>`: passed with no findings (scoped invocation; see `specs/ENG-300/status.md`)
 
 ## Notes
 - The targeted pricing test run passed for `convex/portals/__tests__/pricing.test.ts` and `convex/listings/__tests__/queries.test.ts`.

@@ -20,5 +20,7 @@
 - GitNexus note: schema/table edits are not modeled directly by the CLI, so this chunk relies on focused regression coverage in addition to the low-risk impacts already captured for listing query consumers
 
 ## Validation
-- `bunx convex codegen`
-- targeted portal-pricing contract tests once they exist
+- `bunx convex codegen` (set `CONVEX_DEPLOYMENT` when running locally; see `specs/ENG-300/status.md`)
+- targeted portal-pricing contract tests: `bun run test -- convex/portals/__tests__/pricing.test.ts` (and the broader ENG-300 suite listed in `specs/ENG-300/status.md`)
+
+Markdown-only spec notes should stay limited to architectural drift or implementation inconsistencies versus the codebase (avoid re-litigating product intent here).
