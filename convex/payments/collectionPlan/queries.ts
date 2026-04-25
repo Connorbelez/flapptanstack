@@ -1,11 +1,62 @@
 import { v } from "convex/values";
-import { internalQuery } from "../../_generated/server";
+import type { Id } from "../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../_generated/server";
+import { convex } from "../../fluent";
 import {
 	compareCollectionRules,
 	isCollectionRuleActive,
 	isCollectionRuleEffectiveAt,
 	matchesCollectionRuleScope,
 } from "./ruleContract";
+
+type CollectionPlanReaderCtx = Pick<QueryCtx, "db">;
+
+/**
+ * Shared index + filter pipeline for "due planned" entries used by both the
+ * bounded scheduler selection path and diagnostic counts.
+ */
+function buildDuePlannedEntriesReader(
+	ctx: CollectionPlanReaderCtx,
+	args: { asOf: number; mortgageId?: Id<"mortgages"> }
+) {
+	const { asOf, mortgageId } = args;
+	const duePlannedEntries =
+		mortgageId === undefined
+			? ctx.db
+					.query("collectionPlanEntries")
+					.withIndex("by_status_scheduled_date", (q) =>
+						q.eq("status", "planned").lte("scheduledDate", asOf)
+					)
+			: ctx.db
+					.query("collectionPlanEntries")
+					.withIndex("by_mortgage_status_scheduled", (q) =>
+						q
+							.eq("mortgageId", mortgageId)
+							.eq("status", "planned")
+							.lte("scheduledDate", asOf)
+					);
+
+	return duePlannedEntries
+		.filter((q) =>
+			q.or(
+				q.eq(q.field("executionMode"), undefined),
+				q.eq(q.field("executionMode"), "app_owned")
+			)
+		)
+		.filter((q) =>
+			q.or(
+				q.eq(q.field("balancePreCheckDecision"), undefined),
+				q.eq(q.field("balancePreCheckDecision"), "proceed"),
+				q.and(
+					q.eq(q.field("balancePreCheckDecision"), "defer"),
+					q.or(
+						q.eq(q.field("balancePreCheckNextEvaluationAt"), undefined),
+						q.lte(q.field("balancePreCheckNextEvaluationAt"), asOf)
+					)
+				)
+			)
+		);
+}
 
 /**
  * Returns all active collection rules for a given trigger type, filtered by
@@ -144,93 +195,39 @@ export const getDuePlannedEntries = internalQuery({
 	handler: async (ctx, { asOf, limit, mortgageId }) => {
 		const boundedLimit = Math.max(1, Math.min(limit ?? 25, 100));
 
-		const duePlannedEntries =
-			mortgageId === undefined
-				? ctx.db
-						.query("collectionPlanEntries")
-						.withIndex("by_status_scheduled_date", (q) =>
-							q.eq("status", "planned").lte("scheduledDate", asOf)
-						)
-				: ctx.db
-						.query("collectionPlanEntries")
-						.withIndex("by_mortgage_status_scheduled", (q) =>
-							q
-								.eq("mortgageId", mortgageId)
-								.eq("status", "planned")
-								.lte("scheduledDate", asOf)
-						);
-
-		return await duePlannedEntries
-			.filter((q) =>
-				q.or(
-					q.eq(q.field("executionMode"), undefined),
-					q.eq(q.field("executionMode"), "app_owned")
-				)
-			)
-			.filter((q) =>
-				q.or(
-					q.eq(q.field("balancePreCheckDecision"), undefined),
-					q.eq(q.field("balancePreCheckDecision"), "proceed"),
-					q.and(
-						q.eq(q.field("balancePreCheckDecision"), "defer"),
-						q.or(
-							q.eq(q.field("balancePreCheckNextEvaluationAt"), undefined),
-							q.lte(q.field("balancePreCheckNextEvaluationAt"), asOf)
-						)
-					)
-				)
-			)
-			.take(boundedLimit);
+		return await buildDuePlannedEntriesReader(ctx, {
+			asOf,
+			mortgageId,
+		}).take(boundedLimit);
 	},
 });
 
-export const countDuePlannedEntries = internalQuery({
-	args: {
+const COUNT_DUE_PLANNED_PAGE_SIZE = 256;
+
+export const countDuePlannedEntries = convex
+	.query()
+	.input({
 		asOf: v.number(),
 		mortgageId: v.optional(v.id("mortgages")),
-	},
-	handler: async (ctx, { asOf, mortgageId }) => {
-		const duePlannedEntries =
-			mortgageId === undefined
-				? ctx.db
-						.query("collectionPlanEntries")
-						.withIndex("by_status_scheduled_date", (q) =>
-							q.eq("status", "planned").lte("scheduledDate", asOf)
-						)
-				: ctx.db
-						.query("collectionPlanEntries")
-						.withIndex("by_mortgage_status_scheduled", (q) =>
-							q
-								.eq("mortgageId", mortgageId)
-								.eq("status", "planned")
-								.lte("scheduledDate", asOf)
-						);
+	})
+	.handler(async (ctx, { asOf, mortgageId }) => {
+		const reader = buildDuePlannedEntriesReader(ctx, { asOf, mortgageId });
+		let total = 0;
+		let cursor: string | null = null;
 
-		return (
-			await duePlannedEntries
-				.filter((q) =>
-					q.or(
-						q.eq(q.field("executionMode"), undefined),
-						q.eq(q.field("executionMode"), "app_owned")
-					)
-				)
-				.filter((q) =>
-					q.or(
-						q.eq(q.field("balancePreCheckDecision"), undefined),
-						q.eq(q.field("balancePreCheckDecision"), "proceed"),
-						q.and(
-							q.eq(q.field("balancePreCheckDecision"), "defer"),
-							q.or(
-								q.eq(q.field("balancePreCheckNextEvaluationAt"), undefined),
-								q.lte(q.field("balancePreCheckNextEvaluationAt"), asOf)
-							)
-						)
-					)
-				)
-				.collect()
-		).length;
-	},
-});
+		for (;;) {
+			const page = await reader.paginate({
+				cursor,
+				numItems: COUNT_DUE_PLANNED_PAGE_SIZE,
+			});
+			total += page.page.length;
+			if (page.isDone) {
+				return total;
+			}
+			cursor = page.continueCursor;
+		}
+	})
+	.internal();
 
 /**
  * Idempotency check for the retry rule.

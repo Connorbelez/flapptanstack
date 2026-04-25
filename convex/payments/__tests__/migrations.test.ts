@@ -135,6 +135,7 @@ async function seedMortgageFixture(
 			dispersalHealingAttemptId?: Id<"dispersalHealingAttempts">;
 			ledgerAccountId?: Id<"ledger_accounts">;
 			listingId?: Id<"listings">;
+			servicingFeeEntryId?: Id<"servicingFeeEntries">;
 			transferHealingAttemptId?: Id<"transferHealingAttempts">;
 			transferRequestId?: Id<"transferRequests">;
 			webhookEventId?: Id<"webhookEvents">;
@@ -299,8 +300,7 @@ async function seedMortgageFixture(
 			createdIds.transferHealingAttemptId = transferHealingAttemptId;
 			createdIds.transferRequestId = transferRequestId;
 			createdIds.webhookEventId = webhookEventId;
-
-			void servicingFeeEntryId;
+			createdIds.servicingFeeEntryId = servicingFeeEntryId;
 		}
 
 		if (args.addListing) {
@@ -345,6 +345,7 @@ async function seedMortgageFixture(
 			mortgageId,
 			obligationId,
 			propertyId,
+			servicingFeeEntryId: createdIds.servicingFeeEntryId,
 			transferHealingAttemptId: createdIds.transferHealingAttemptId,
 			transferRequestId: createdIds.transferRequestId,
 			webhookEventId: createdIds.webhookEventId,
@@ -451,6 +452,11 @@ describe("payments malformed mortgage cleanup migration", () => {
 			expect(
 				malformed.ledgerAccountId
 					? await ctx.db.get(malformed.ledgerAccountId)
+					: null
+			).toBeNull();
+			expect(
+				malformed.servicingFeeEntryId
+					? await ctx.db.get(malformed.servicingFeeEntryId)
 					: null
 			).toBeNull();
 

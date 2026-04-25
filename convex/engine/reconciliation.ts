@@ -40,7 +40,7 @@ interface Layer2ReconciliationResult {
 }
 
 interface AuditJournalEntityIdPageResult {
-	continueCursor: string;
+	continueCursor: string | null;
 	entityIds: string[];
 	isDone: boolean;
 }

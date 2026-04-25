@@ -6,6 +6,14 @@ import { adminMutation, adminQuery } from "../fluent";
 import { findCashAccount } from "./cashLedger/accounts";
 
 const migrations = new Migrations<DataModel>(components.migrations);
+
+/**
+ * Hard-coded org identifiers for the known-bad legacy mortgage cohort that
+ * this migration is allowed to delete. Both values are seed / test tenants used
+ * by fixtures (`org_seed_*`) and preview-blocking scenarios — do not add
+ * production org IDs here. Operators must still run
+ * {@link previewMalformedMortgageCleanup} before {@link runMalformedMortgageCleanup}.
+ */
 const FROZEN_MALFORMED_MORTGAGE_COHORT_ORG_IDS = new Set([
 	"org_seed_north_harbor_mortgage_group",
 	"org_01KKKKGXEBW1MA5NFEZVHZS7WG",
@@ -485,6 +493,11 @@ export const deleteMalformedMortgageCohorts = migrations.define({
 		if (!isMalformedMortgageCleanupCandidate(graph)) {
 			return;
 		}
+
+		console.info("[malformed-mortgage-cleanup] deleting malformed cohort mortgage", {
+			mortgageId: mortgage._id,
+			orgId: mortgage.orgId,
+		});
 
 		await deleteByIds(
 			ctx,

@@ -1,5 +1,6 @@
 import { type FunctionReference, makeFunctionReference } from "convex/server";
 import { ConvexError, v } from "convex/values";
+import { internal } from "../../_generated/api";
 import type { ActionCtx } from "../../_generated/server";
 import { convex } from "../../fluent";
 import { drainCursorPages } from "../../lib/drainLoops";
@@ -46,7 +47,9 @@ interface PollingCandidate {
 
 const DEFAULT_POLL_LIMIT = 25;
 const MAX_POLL_LIMIT = 100;
-const MAX_POLL_WAVES = 500;
+/** Bounded waves per run; remaining work is continued via {@link POLL_CONTINUATION_DELAY_MS}. */
+const MAX_POLL_WAVES = 100;
+const POLL_CONTINUATION_DELAY_MS = 10_000;
 
 const ingestExternalOccurrenceEventRef = makeFunctionReference<
 	"mutation",
@@ -535,6 +538,14 @@ export const pollProviderManagedSchedules = convex
 		const maxWavesReached =
 			wavesRun >= MAX_POLL_WAVES && remainingEligibleCount > 0;
 		const drainedAllEligibleWork = !maxWavesReached;
+
+		if (maxWavesReached) {
+			await ctx.scheduler.runAfter(
+				POLL_CONTINUATION_DELAY_MS,
+				internal.payments.recurringSchedules.poller.pollProviderManagedSchedules,
+				{ asOf, limit }
+			);
+		}
 
 		return {
 			candidateCount,

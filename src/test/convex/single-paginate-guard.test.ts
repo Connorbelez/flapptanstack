@@ -31,9 +31,9 @@ interface AnalyzeEnv {
 	>;
 }
 
-const QUERY_BUILDERS = new Set(["internalQuery"]);
-const MUTATION_BUILDERS = new Set(["internalMutation"]);
-const ACTION_BUILDERS = new Set(["internalAction"]);
+const QUERY_BUILDERS = new Set(["query", "internalQuery"]);
+const MUTATION_BUILDERS = new Set(["mutation", "internalMutation"]);
+const ACTION_BUILDERS = new Set(["action", "internalAction"]);
 
 function combineSequential(parts: HandlerMetrics[]): HandlerMetrics {
 	return {
@@ -151,6 +151,117 @@ function collectLocalFunctions(
 	}
 
 	return localFunctions;
+}
+
+function collectScopedLocalFunctions(
+	root: ts.Node
+): Map<
+	string,
+	ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression
+> {
+	const map = new Map<
+		string,
+		ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression
+	>();
+
+	function visit(node: ts.Node) {
+		if (ts.isFunctionDeclaration(node) && node.name) {
+			map.set(node.name.text, node);
+		} else if (ts.isVariableStatement(node)) {
+			for (const declaration of node.declarationList.declarations) {
+				if (!ts.isIdentifier(declaration.name) || !declaration.initializer) {
+					continue;
+				}
+
+				if (
+					ts.isArrowFunction(declaration.initializer) ||
+					ts.isFunctionExpression(declaration.initializer)
+				) {
+					map.set(declaration.name.text, declaration.initializer);
+				}
+			}
+		}
+
+		ts.forEachChild(node, visit);
+	}
+
+	visit(root);
+	return map;
+}
+
+function completesWithNormalCompletion(statement: ts.Statement | undefined): boolean {
+	if (!statement) {
+		return true;
+	}
+
+	if (ts.isReturnStatement(statement) || ts.isThrowStatement(statement)) {
+		return false;
+	}
+
+	if (ts.isBlock(statement)) {
+		if (statement.statements.length === 0) {
+			return true;
+		}
+		return completesWithNormalCompletion(
+			statement.statements[statement.statements.length - 1]
+		);
+	}
+
+	if (ts.isIfStatement(statement)) {
+		if (!statement.elseStatement) {
+			return true;
+		}
+		return (
+			completesWithNormalCompletion(statement.thenStatement) &&
+			completesWithNormalCompletion(statement.elseStatement)
+		);
+	}
+
+	return true;
+}
+
+function analyzeStatementSequence(
+	statements: readonly ts.Statement[],
+	startIndex: number,
+	env: AnalyzeEnv,
+	visiting: Set<ts.Node>
+): HandlerMetrics {
+	let accumulated: HandlerMetrics = { maxPaginateCount: 0, paginateInLoop: false };
+	let index = startIndex;
+
+	while (index < statements.length) {
+		const statement = statements[index];
+
+		if (
+			ts.isIfStatement(statement) &&
+			!statement.elseStatement &&
+			index + 1 < statements.length &&
+			!completesWithNormalCompletion(statement.thenStatement)
+		) {
+			const conditionMetrics = analyzeNode(statement.expression, env, visiting);
+			const thenMetrics = analyzeNode(statement.thenStatement, env, visiting);
+			const restMetrics = analyzeStatementSequence(statements, index + 1, env, visiting);
+			accumulated = combineSequential([
+				accumulated,
+				conditionMetrics,
+				combineBranch([thenMetrics, restMetrics]),
+			]);
+			break;
+		}
+
+		accumulated = combineSequential([
+			accumulated,
+			analyzeNode(statement, env, visiting),
+		]);
+
+		if (!completesWithNormalCompletion(statement)) {
+			break;
+		}
+
+		index += 1;
+	}
+
+	return accumulated;
 }
 
 function extractObjectHandler(
@@ -302,7 +413,7 @@ function analyzeNode(
 			analyzeNode(node.expression.expression, env, visiting),
 		]);
 	} else if (ts.isBlock(node) || ts.isSourceFile(node)) {
-		result = combineSequential(node.statements.map((statement) => analyzeNode(statement, env, visiting)));
+		result = analyzeStatementSequence(node.statements, 0, env, visiting);
 	} else if (ts.isIfStatement(node)) {
 		result = combineSequential([
 			analyzeNode(node.expression, env, visiting),
@@ -414,16 +525,23 @@ function analyzeSourceText(filePath: string, sourceText: string): GuardIssue[] {
 		true,
 		ts.ScriptKind.TS
 	);
-	const env: AnalyzeEnv = {
-		cache: new Map(),
-		localFunctions: collectLocalFunctions(sourceFile),
-	};
+	const topLevelLocals = collectLocalFunctions(sourceFile);
 
 	const issues: GuardIssue[] = [];
 	for (const handler of extractExportedHandlers(sourceFile)) {
 		if (handler.kind === "action") {
 			continue;
 		}
+
+		const mergedLocals = new Map(topLevelLocals);
+		for (const [name, fn] of collectScopedLocalFunctions(handler.handler.body)) {
+			mergedLocals.set(name, fn);
+		}
+
+		const env: AnalyzeEnv = {
+			cache: new Map(),
+			localFunctions: mergedLocals,
+		};
 
 		const metrics = analyzeNode(handler.handler.body, env, new Set());
 		if (metrics.paginateInLoop) {
@@ -448,6 +566,13 @@ function analyzeSourceText(filePath: string, sourceText: string): GuardIssue[] {
 	return issues;
 }
 
+const SKIPPED_CONVEX_DIRECTORY_NAMES = new Set([
+	"demo",
+	"__tests__",
+	"test",
+	"_generated",
+]);
+
 function collectConvexFiles(directory: string): string[] {
 	const entries = fs.readdirSync(directory, { withFileTypes: true });
 	const files: string[] = [];
@@ -456,12 +581,7 @@ function collectConvexFiles(directory: string): string[] {
 		const resolved = path.join(directory, entry.name);
 
 		if (entry.isDirectory()) {
-			if (
-				resolved.includes(`${path.sep}demo${path.sep}`) ||
-				resolved.includes(`${path.sep}__tests__${path.sep}`) ||
-				resolved.includes(`${path.sep}test${path.sep}`) ||
-				resolved.includes(`${path.sep}_generated${path.sep}`)
-			) {
+			if (SKIPPED_CONVEX_DIRECTORY_NAMES.has(entry.name)) {
 				continue;
 			}
 			files.push(...collectConvexFiles(resolved));
@@ -498,6 +618,53 @@ describe("single paginate guard", () => {
 		`;
 
 		expect(analyzeSourceText("safe.ts", safeSource)).toEqual([]);
+	});
+
+	it("recognizes lowercase Convex public builders", () => {
+		const source = `
+			import { query } from "../_generated/server";
+
+			export const listContacts = query({
+				handler: async (ctx) => {
+					return ctx.db.query("contacts").paginate({ cursor: null, numItems: 10 });
+				},
+			});
+		`;
+
+		expect(analyzeSourceText("contacts.ts", source)).toEqual([]);
+	});
+
+	it("tracks paginate calls through handler-local helpers", () => {
+		const source = `
+			import { internalQuery } from "../_generated/server";
+
+			export const list = internalQuery({
+				handler: async (ctx) => {
+					const loadPage = async () =>
+						ctx.db.query("foo").paginate({ cursor: null, numItems: 10 });
+					return loadPage();
+				},
+			});
+		`;
+
+		expect(analyzeSourceText("local-helper.ts", source)).toEqual([]);
+	});
+
+	it("treats terminating if-branch as exclusive with trailing paginate", () => {
+		const source = `
+			import { internalQuery } from "../_generated/server";
+
+			export const list = internalQuery({
+				handler: async (ctx: any) => {
+					if (ctx.foo) {
+						return ctx.db.query("foo").paginate({ cursor: null, numItems: 10 });
+					}
+					return ctx.db.query("bar").paginate({ cursor: null, numItems: 10 });
+				},
+			});
+		`;
+
+		expect(analyzeSourceText("exclusive-if.ts", source)).toEqual([]);
 	});
 
 	it("flags sequential multi-paginate paths and paginate-in-loop paths", () => {

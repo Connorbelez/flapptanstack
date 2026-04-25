@@ -3,15 +3,15 @@ import { Authenticated, AuthLoading } from "convex/react";
 // import { SpinnerIcon } from "lucide-react";
 import { AppRoutePendingScreen } from "#/components/AppRoutePendingScreen";
 // import { useConvexAuth } from "convex/react";
-import { guardRouteAccess } from "#/lib/auth";
+import { canAccessRoute } from "#/lib/auth";
 import { buildSignInRedirect } from "#/lib/auth-redirect";
 export const Route = createFileRoute("/listings")({
 	beforeLoad: ({ context, location }) => {
 		if (!context.userId) {
 			throw redirect(buildSignInRedirect(location.href));
 		}
-		//TODO:  guardRouteAccess causes a race condition, canAccessAdminPath was tested and is functioning correctly. We need to re-write guardRouteAccess, and base it on canAccessAdminPath.
-		if (!guardRouteAccess("listings", context)) {
+		// TODO: Align listings auth with guardRouteAccess / canAccessAdminPath once the race is resolved.
+		if (!canAccessRoute("listings", context)) {
 			throw redirect({ to: "/unauthorized" });
 		}
 	},

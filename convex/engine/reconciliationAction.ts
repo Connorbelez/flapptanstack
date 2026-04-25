@@ -41,7 +41,7 @@ interface AuditJournalPageEntry {
 }
 
 interface AuditJournalPageResult {
-	continueCursor: string;
+	continueCursor: string | null;
 	isDone: boolean;
 	page: AuditJournalPageEntry[];
 }

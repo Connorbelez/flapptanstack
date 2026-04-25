@@ -59,6 +59,8 @@ export const processDuePlanEntries = internalAction({
 			maxWavesReached: false,
 		};
 
+		let sawExecutionError = false;
+
 		while (summary.wavesRun < MAX_WAVES_PER_RUN) {
 			const dueEntries: Doc<"collectionPlanEntries">[] = await ctx.runQuery(
 				internal.payments.collectionPlan.queries.getDuePlannedEntries,
@@ -116,6 +118,7 @@ export const processDuePlanEntries = internalAction({
 							break;
 					}
 				} catch (error) {
+					sawExecutionError = true;
 					console.error(
 						"[collection-plan-runner] failed to execute due plan entry",
 						{
@@ -131,7 +134,7 @@ export const processDuePlanEntries = internalAction({
 			}
 		}
 
-		if (summary.wavesRun >= MAX_WAVES_PER_RUN) {
+		if (summary.wavesRun >= MAX_WAVES_PER_RUN || sawExecutionError) {
 			summary.remainingEligibleCount = await ctx.runQuery(
 				internal.payments.collectionPlan.queries.countDuePlannedEntries,
 				{
@@ -139,8 +142,11 @@ export const processDuePlanEntries = internalAction({
 					mortgageId: args.mortgageId,
 				}
 			);
-			summary.maxWavesReached = summary.remainingEligibleCount > 0;
-			summary.drainedAllEligibleWork = summary.remainingEligibleCount === 0;
+			summary.maxWavesReached =
+				summary.wavesRun >= MAX_WAVES_PER_RUN &&
+				summary.remainingEligibleCount > 0;
+			summary.drainedAllEligibleWork =
+				!sawExecutionError && summary.remainingEligibleCount === 0;
 		} else {
 			summary.drainedAllEligibleWork = true;
 			summary.remainingEligibleCount = 0;
