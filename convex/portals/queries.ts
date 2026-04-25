@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { adminQuery, convex } from "../fluent";
+import { adminQuery, authedQuery, convex } from "../fluent";
 import {
 	FAIRLEND_PORTAL_LOCAL_HOST,
 	FAIRLEND_PORTAL_PRODUCTION_HOST,
@@ -50,6 +50,16 @@ async function getPortalByLocalHost(ctx: PortalReaderCtx, host: string) {
 		.withIndex("by_local_host", (query) => query.eq("localHost", host))
 		.take(2);
 	return assertSinglePortal(rows, `localHost:${host}`);
+}
+
+async function getPortalByOrgId(ctx: PortalReaderCtx, orgId: string) {
+	return assertSinglePortal(
+		await ctx.db
+			.query("portals")
+			.withIndex("by_org", (query) => query.eq("orgId", orgId))
+			.collect(),
+		`orgId:${orgId}`
+	);
 }
 
 function toPortalSummary(portal: Doc<"portals">): PortalSummary {
@@ -149,6 +159,44 @@ export const getFairLendPortalHosts = convex
 		return {
 			productionHost: FAIRLEND_PORTAL_PRODUCTION_HOST,
 			localHost: FAIRLEND_PORTAL_LOCAL_HOST,
+		};
+	})
+	.public();
+
+export const getViewerHomePortal = authedQuery
+	.input({})
+	.handler(async (ctx) => {
+		const user = await ctx.db
+			.query("users")
+			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+			.unique();
+		const currentOrgPortal = ctx.viewer.orgId
+			? await getPortalByOrgId(ctx, ctx.viewer.orgId)
+			: null;
+
+		if (!user?.homePortalId) {
+			return {
+				userId: user?._id ?? null,
+				homePortalId: user?.homePortalId ?? null,
+				homePortal: null,
+				currentOrgPortalId: currentOrgPortal?._id ?? null,
+				currentOrgPortal: currentOrgPortal
+					? toPublicPortalSummary(currentOrgPortal)
+					: null,
+				isFairLendAdmin: ctx.viewer.isFairLendAdmin,
+			};
+		}
+
+		const homePortal = await ctx.db.get(user.homePortalId);
+		return {
+			userId: user._id,
+			homePortalId: user.homePortalId,
+			homePortal: homePortal ? toPublicPortalSummary(homePortal) : null,
+			currentOrgPortalId: currentOrgPortal?._id ?? null,
+			currentOrgPortal: currentOrgPortal
+				? toPublicPortalSummary(currentOrgPortal)
+				: null,
+			isFairLendAdmin: ctx.viewer.isFairLendAdmin,
 		};
 	})
 	.public();

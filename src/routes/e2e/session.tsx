@@ -3,19 +3,30 @@ import {
 	useAccessToken,
 	useAuth,
 } from "@workos/authkit-tanstack-react-start/client";
+import { ConvexHttpClient } from "convex/browser";
+import type { FunctionReturnType } from "convex/server";
 import { useEffect, useState } from "react";
+import { api } from "../../../convex/_generated/api";
 
 export const Route = createFileRoute("/e2e/session")({
 	ssr: false,
 	component: E2eSessionRoute,
 });
 
+type ViewerHomePortalSnapshot = FunctionReturnType<
+	typeof api.portals.queries.getViewerHomePortal
+>;
+
 interface ReadyTokenSnapshot {
 	accessToken: string;
+	currentOrgPortal: ViewerHomePortalSnapshot["currentOrgPortal"] | null;
+	currentOrgPortalId: string | null;
 	organizationId: string | null;
 	permissions: string[];
 	role: string | null;
 	status: "ready";
+	viewerHomePortal: ViewerHomePortalSnapshot | null;
+	viewerHomePortalError: string | null;
 }
 
 interface ErrorTokenSnapshot {
@@ -28,10 +39,14 @@ type TokenSnapshot = ErrorTokenSnapshot | ReadyTokenSnapshot;
 function buildSignedOutTokenSnapshot(): ReadyTokenSnapshot {
 	return {
 		accessToken: "",
+		currentOrgPortal: null,
+		currentOrgPortalId: null,
 		status: "ready",
 		organizationId: null,
 		permissions: [],
 		role: null,
+		viewerHomePortal: null,
+		viewerHomePortalError: null,
 	};
 }
 
@@ -59,15 +74,51 @@ async function loadTokenSnapshot(args: {
 		}
 
 		const claims = decodeAccessToken(token);
+		const viewerHomePortal = await loadViewerHomePortal(token);
 		return {
 			accessToken: token,
+			currentOrgPortal: viewerHomePortal.assignment?.currentOrgPortal ?? null,
+			currentOrgPortalId:
+				viewerHomePortal.assignment?.currentOrgPortalId ?? null,
 			status: "ready",
 			organizationId: claims.orgId,
 			permissions: claims.permissions,
 			role: claims.role,
+			viewerHomePortal: viewerHomePortal.assignment,
+			viewerHomePortalError: viewerHomePortal.error,
 		};
 	} catch {
 		return buildTokenErrorSnapshot();
+	}
+}
+
+async function loadViewerHomePortal(token: string): Promise<{
+	assignment: ViewerHomePortalSnapshot | null;
+	error: string | null;
+}> {
+	const convexUrl = import.meta.env.VITE_CONVEX_URL;
+	if (!convexUrl) {
+		return {
+			assignment: null,
+			error: "missing_convex_url",
+		};
+	}
+
+	try {
+		const client = new ConvexHttpClient(convexUrl);
+		client.setAuth(token);
+		return {
+			assignment: await client.query(
+				api.portals.queries.getViewerHomePortal,
+				{}
+			),
+			error: null,
+		};
+	} catch {
+		return {
+			assignment: null,
+			error: "viewer_home_portal_query_failed",
+		};
 	}
 }
 
@@ -134,9 +185,13 @@ function E2eSessionRoute() {
 				authOrganizationId: auth.organizationId ?? null,
 				authPermissions: auth.permissions ?? [],
 				authRole: auth.role ?? null,
+				currentOrgPortal: tokenSnapshot.currentOrgPortal,
+				currentOrgPortalId: tokenSnapshot.currentOrgPortalId,
 				tokenOrganizationId: tokenSnapshot.organizationId,
 				tokenPermissions: tokenSnapshot.permissions,
 				tokenRole: tokenSnapshot.role,
+				viewerHomePortal: tokenSnapshot.viewerHomePortal,
+				viewerHomePortalError: tokenSnapshot.viewerHomePortalError,
 				userId: auth.user?.id ?? null,
 			})}
 		</pre>

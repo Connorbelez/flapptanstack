@@ -15,6 +15,7 @@ import { Route as SignOutRouteImport } from './routes/sign-out'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ListingsRouteImport } from './routes/listings'
 import { Route as CallbackRouteImport } from './routes/callback'
+import { Route as AuthCompleteRouteImport } from './routes/auth-complete'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as OnboardRouteRouteImport } from './routes/onboard/route'
 import { Route as LenderRouteRouteImport } from './routes/lender/route'
@@ -25,6 +26,7 @@ import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BrokerIndexRouteImport } from './routes/broker/index'
 import { Route as ListingsListingIdRouteImport } from './routes/listings.$listingId'
+import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
 import { Route as LenderListingsRouteImport } from './routes/lender.listings'
 import { Route as LenderDealsRouteImport } from './routes/lender.deals'
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
@@ -176,6 +178,11 @@ const CallbackRoute = CallbackRouteImport.update({
   path: '/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCompleteRoute = AuthCompleteRouteImport.update({
+  id: '/auth-complete',
+  path: '/auth-complete',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -225,6 +232,11 @@ const ListingsListingIdRoute = ListingsListingIdRouteImport.update({
   id: '/$listingId',
   path: '/$listingId',
   getParentRoute: () => ListingsRoute,
+} as any)
+const SignOutLocalRoute = SignOutLocalRouteImport.update({
+  id: '/local',
+  path: '/local',
+  getParentRoute: () => SignOutRoute,
 } as any)
 const LenderListingsRoute = LenderListingsRouteImport.update({
   id: '/listings',
@@ -877,10 +889,11 @@ export interface FileRoutesByFullPath {
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
+  '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
   '/listings': typeof ListingsRouteWithChildren
   '/sign-in': typeof SignInRoute
-  '/sign-out': typeof SignOutRoute
+  '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
@@ -939,6 +952,7 @@ export interface FileRoutesByFullPath {
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/broker/': typeof BrokerIndexRoute
+  '/sign-out/local': typeof SignOutLocalRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1014,10 +1028,11 @@ export interface FileRoutesByTo {
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
+  '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
   '/listings': typeof ListingsRouteWithChildren
   '/sign-in': typeof SignInRoute
-  '/sign-out': typeof SignOutRoute
+  '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
@@ -1066,6 +1081,7 @@ export interface FileRoutesByTo {
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/broker': typeof BrokerIndexRoute
+  '/sign-out/local': typeof SignOutLocalRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
   '/demo/rbac/broker': typeof DemoRbacBrokerRouteRoute
@@ -1142,10 +1158,11 @@ export interface FileRoutesById {
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
+  '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
   '/listings': typeof ListingsRouteWithChildren
   '/sign-in': typeof SignInRoute
-  '/sign-out': typeof SignOutRoute
+  '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
@@ -1204,6 +1221,7 @@ export interface FileRoutesById {
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/broker/': typeof BrokerIndexRoute
+  '/sign-out/local': typeof SignOutLocalRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1282,6 +1300,7 @@ export interface FileRouteTypes {
     | '/lender'
     | '/onboard'
     | '/about'
+    | '/auth-complete'
     | '/callback'
     | '/listings'
     | '/sign-in'
@@ -1344,6 +1363,7 @@ export interface FileRouteTypes {
     | '/lender/listings'
     | '/listings/$listingId'
     | '/broker/'
+    | '/sign-out/local'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1419,6 +1439,7 @@ export interface FileRouteTypes {
     | '/lender'
     | '/onboard'
     | '/about'
+    | '/auth-complete'
     | '/callback'
     | '/listings'
     | '/sign-in'
@@ -1471,6 +1492,7 @@ export interface FileRouteTypes {
     | '/lender/listings'
     | '/listings/$listingId'
     | '/broker'
+    | '/sign-out/local'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
     | '/demo/rbac/broker'
@@ -1546,6 +1568,7 @@ export interface FileRouteTypes {
     | '/lender'
     | '/onboard'
     | '/about'
+    | '/auth-complete'
     | '/callback'
     | '/listings'
     | '/sign-in'
@@ -1608,6 +1631,7 @@ export interface FileRouteTypes {
     | '/lender/listings'
     | '/listings/$listingId'
     | '/broker/'
+    | '/sign-out/local'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1685,10 +1709,11 @@ export interface RootRouteChildren {
   LenderRouteRoute: typeof LenderRouteRouteWithChildren
   OnboardRouteRoute: typeof OnboardRouteRoute
   AboutRoute: typeof AboutRoute
+  AuthCompleteRoute: typeof AuthCompleteRoute
   CallbackRoute: typeof CallbackRoute
   ListingsRoute: typeof ListingsRouteWithChildren
   SignInRoute: typeof SignInRoute
-  SignOutRoute: typeof SignOutRoute
+  SignOutRoute: typeof SignOutRouteWithChildren
   SignUpRoute: typeof SignUpRoute
   UnauthorizedRoute: typeof UnauthorizedRoute
   DemoAmpsRouteRoute: typeof DemoAmpsRouteRouteWithChildren
@@ -1776,6 +1801,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth-complete': {
+      id: '/auth-complete'
+      path: '/auth-complete'
+      fullPath: '/auth-complete'
+      preLoaderRoute: typeof AuthCompleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -1845,6 +1877,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/listings/$listingId'
       preLoaderRoute: typeof ListingsListingIdRouteImport
       parentRoute: typeof ListingsRoute
+    }
+    '/sign-out/local': {
+      id: '/sign-out/local'
+      path: '/local'
+      fullPath: '/sign-out/local'
+      preLoaderRoute: typeof SignOutLocalRouteImport
+      parentRoute: typeof SignOutRoute
     }
     '/lender/listings': {
       id: '/lender/listings'
@@ -2919,6 +2958,17 @@ const ListingsRouteWithChildren = ListingsRoute._addFileChildren(
   ListingsRouteChildren,
 )
 
+interface SignOutRouteChildren {
+  SignOutLocalRoute: typeof SignOutLocalRoute
+}
+
+const SignOutRouteChildren: SignOutRouteChildren = {
+  SignOutLocalRoute: SignOutLocalRoute,
+}
+
+const SignOutRouteWithChildren =
+  SignOutRoute._addFileChildren(SignOutRouteChildren)
+
 interface DemoAmpsRouteRouteChildren {
   DemoAmpsCollectionAttemptsRoute: typeof DemoAmpsCollectionAttemptsRoute
   DemoAmpsCollectionPlanRoute: typeof DemoAmpsCollectionPlanRoute
@@ -3143,10 +3193,11 @@ const rootRouteChildren: RootRouteChildren = {
   LenderRouteRoute: LenderRouteRouteWithChildren,
   OnboardRouteRoute: OnboardRouteRoute,
   AboutRoute: AboutRoute,
+  AuthCompleteRoute: AuthCompleteRoute,
   CallbackRoute: CallbackRoute,
   ListingsRoute: ListingsRouteWithChildren,
   SignInRoute: SignInRoute,
-  SignOutRoute: SignOutRoute,
+  SignOutRoute: SignOutRouteWithChildren,
   SignUpRoute: SignUpRoute,
   UnauthorizedRoute: UnauthorizedRoute,
   DemoAmpsRouteRoute: DemoAmpsRouteRouteWithChildren,

@@ -1,5 +1,9 @@
 import type { Page } from "@playwright/test";
 
+export interface WorkosLoginOptions {
+	entryHref?: string;
+}
+
 /**
  * Automates the WorkOS AuthKit hosted login page.
  *
@@ -10,10 +14,12 @@ import type { Page } from "@playwright/test";
 export async function loginViaWorkOS(
 	page: Page,
 	email: string,
-	password: string
+	password: string,
+	options: WorkosLoginOptions = {}
 ) {
-	// Navigate to /sign-in which triggers a server-side redirect to WorkOS
-	await page.goto("/sign-in");
+	// Navigate to the caller-selected entrypoint, which can be a relative path
+	// on the Playwright baseURL or an absolute localhost/*.localhost URL.
+	await page.goto(options.entryHref ?? "/sign-in");
 
 	// ── Step 1: Email ──
 	const emailInput = page.getByRole("textbox", { name: "Email" });
@@ -21,11 +27,16 @@ export async function loginViaWorkOS(
 	await emailInput.fill(email);
 	await page.getByRole("button").filter({ hasText: "Continue" }).click();
 
-	// ── Step 2: Password ──
+	// ── Step 2: Password (optional when the hosted session is still active) ──
 	const passwordInput = page.getByRole("textbox", { name: "Password" });
-	await passwordInput.waitFor({ state: "visible", timeout: 15_000 });
-	await passwordInput.fill(password);
-	await page.getByRole("button", { name: "Sign in", exact: true }).click();
+	const hasPasswordPrompt = await passwordInput
+		.waitFor({ state: "visible", timeout: 15_000 })
+		.then(() => true)
+		.catch(() => false);
+	if (hasPasswordPrompt) {
+		await passwordInput.fill(password);
+		await page.getByRole("button", { name: "Sign in", exact: true }).click();
+	}
 
 	// ── Step 3: Org picker (multi-org users only) ──
 	const orgHeading = page.getByRole("heading", {

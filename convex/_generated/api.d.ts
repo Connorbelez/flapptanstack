@@ -328,6 +328,7 @@ import type * as payments_webhooks_verification from "../payments/webhooks/verif
 import type * as payments_webhooks_vopay from "../payments/webhooks/vopay.js";
 import type * as platform_defaultOriginationOwner from "../platform/defaultOriginationOwner.js";
 import type * as portals_helpers from "../portals/helpers.js";
+import type * as portals_homePortalAssignment from "../portals/homePortalAssignment.js";
 import type * as portals_invariants from "../portals/invariants.js";
 import type * as portals_queries from "../portals/queries.js";
 import type * as portals_validators from "../portals/validators.js";
@@ -679,6 +680,7 @@ declare const fullApi: ApiFromModules<{
   "payments/webhooks/vopay": typeof payments_webhooks_vopay;
   "platform/defaultOriginationOwner": typeof platform_defaultOriginationOwner;
   "portals/helpers": typeof portals_helpers;
+  "portals/homePortalAssignment": typeof portals_homePortalAssignment;
   "portals/invariants": typeof portals_invariants;
   "portals/queries": typeof portals_queries;
   "portals/validators": typeof portals_validators;

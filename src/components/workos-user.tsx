@@ -1,13 +1,14 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { useHostAwareSignOut } from "#/hooks/use-host-aware-sign-out";
 import { buildSignInRedirect, buildSignUpRedirect } from "#/lib/auth-redirect";
-import { handleWorkosSignOut } from "#/lib/workos-sign-out";
 
 export default function SignInButton({ large }: { large?: boolean }) {
 	const { user, signOut } = useAuth();
 	const href = useLocation({
 		select: (location) => location.href,
 	});
+	const handleSignOut = useHostAwareSignOut(signOut);
 
 	const buttonClasses = `${
 		large ? "px-6 py-3 text-base" : "px-4 py-2 text-sm"
@@ -31,7 +32,7 @@ export default function SignInButton({ large }: { large?: boolean }) {
 				<button
 					className={buttonClasses}
 					onClick={() => {
-						void handleWorkosSignOut(signOut);
+						void handleSignOut();
 					}}
 					type="button"
 				>
