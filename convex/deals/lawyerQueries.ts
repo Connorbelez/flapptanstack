@@ -81,7 +81,9 @@ function packageApprovalStatus(
 	}
 	if (
 		signableInstances.some(
-			(instance) => instance.status === "signature_pending_recipient_resolution"
+			(instance) =>
+				instance.status === "signature_pending_recipient_resolution" ||
+				instance.signingState?.status === "pending_recipient_resolution"
 		)
 	) {
 		blockers.push("Signatory mappings are incomplete.");
@@ -255,6 +257,32 @@ async function legalTimeline(ctx: LawyerQueryCtx, dealId: Id<"deals">) {
 		.collect();
 }
 
+function closeMilestonesForDeal(
+	deal: Doc<"deals">,
+	timelineEntries: readonly Doc<"auditJournal">[]
+) {
+	if (!isCompletedDealStatus(deal.status)) {
+		return [];
+	}
+
+	const closeEntry = [...timelineEntries]
+		.filter(
+			(entry) =>
+				entry.newState === "confirmed" ||
+				entry.eventType === "CLOSE_CONFIRMED" ||
+				entry.eventType === "CLOSING_CONFIRMED"
+		)
+		.sort((left, right) => right.timestamp - left.timestamp)[0];
+
+	return [
+		{
+			at: closeEntry?.timestamp ?? deal.closingDate ?? deal.createdAt,
+			description: closeEntry?.reason ?? "Deal close confirmed.",
+			title: "Close complete",
+		},
+	];
+}
+
 export const listAssignedClosings = lawyerQuery
 	.handler(async (ctx) => {
 		const deals = await ctx.db.query("deals").collect();
@@ -361,6 +389,7 @@ export const getLawyerDealWorkspace = lawyerQuery
 			},
 			readOnly: accessPolicy.accessState !== "active",
 			timeline: {
+				closeMilestones: closeMilestonesForDeal(deal, timelineEntries),
 				legalActions: timelineEntries.map((entry) => ({
 					at: entry.timestamp,
 					description:

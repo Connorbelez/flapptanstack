@@ -68,6 +68,15 @@ function labelFromToken(value: string) {
 		.join(" ");
 }
 
+function formatFractionalShare(
+	participants: Workspace["matterOverview"]["participants"]
+) {
+	if (typeof participants.fractionalShareDisplayPercent === "number") {
+		return `${participants.fractionalShareDisplayPercent}%`;
+	}
+	return participants.fractionalShareStatus.validationError ?? "Unavailable";
+}
+
 interface LawyerDealWorkspacePageProps {
 	workspace: Workspace;
 }
@@ -88,6 +97,10 @@ export function LawyerDealWorkspacePage({
 	});
 	const timeline = buildLawyerTimeline({
 		attempts: workspace.envelope.attempts,
+		closeMilestones: workspace.timeline.closeMilestones.map((entry) => ({
+			...entry,
+			type: "close" as const,
+		})),
 		exceptions: workspace.envelope.exceptions,
 		legalActions: workspace.timeline.legalActions.map((entry) => ({
 			...entry,
@@ -330,8 +343,8 @@ function OverviewTab({ workspace }: { workspace: Workspace }) {
 						value={participants.lawyer?.displayName ?? "Unassigned"}
 					/>
 					<Fact
-						label="Share units"
-						value={participants.fractionalShareUnits.toString()}
+						label="Fractional share"
+						value={formatFractionalShare(participants)}
 					/>
 				</CardContent>
 			</Card>

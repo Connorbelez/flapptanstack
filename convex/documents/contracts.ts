@@ -120,6 +120,7 @@ export const dealEnvelopeProviderValidator = v.literal("documenso");
 
 export const dealEnvelopeAttemptStatusValidator = v.union(
 	v.literal("draft"),
+	v.literal("pending_recipient_resolution"),
 	v.literal("sent"),
 	v.literal("partially_signed"),
 	v.literal("completed"),

@@ -80,7 +80,9 @@ function packageApprovalBlockers(
 	}
 	if (
 		signableInstances.some(
-			(instance) => instance.status === "signature_pending_recipient_resolution"
+			(instance) =>
+				instance.status === "signature_pending_recipient_resolution" ||
+				instance.signingState?.status === "pending_recipient_resolution"
 		)
 	) {
 		blockers.push("Signatory mappings are incomplete.");

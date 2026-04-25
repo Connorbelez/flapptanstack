@@ -128,7 +128,9 @@ function memberIdentity(authId: string) {
 
 async function seedLawyerWorkspaceFixture(args?: {
 	accessStatus?: "active" | "revoked";
+	attemptStatus?: Doc<"dealEnvelopeAttempts">["status"];
 	dealStatus?: string;
+	includePreSendException?: boolean;
 	includeEnvelope?: boolean;
 	instanceStatus?: Doc<"dealDocumentInstances">["status"];
 	lawyerAuthId?: string;
@@ -274,7 +276,7 @@ async function seedLawyerWorkspaceFixture(args?: {
 				providerDocumentId: "doc_1",
 				providerEnvelopeId: "env_1",
 				recipientRoster: [],
-				status: "partially_signed",
+				status: args?.attemptStatus ?? "partially_signed",
 				updatedAt: 10,
 			});
 			await ctx.db.insert("dealEnvelopeRecipients", {
@@ -315,18 +317,20 @@ async function seedLawyerWorkspaceFixture(args?: {
 				tokenExpiresAt: 2_000_000_000_000,
 				updatedAt: 12,
 			});
-			await ctx.db.insert("dealSigningExceptions", {
-				attemptId,
-				createdAt: 13,
-				dealDocumentInstanceId: instanceId,
-				dealId,
-				kind: "pre_send_configuration_failure",
-				message: "Package configuration is incomplete.",
-				packageId,
-				severity: "blocking",
-				status: "open",
-				updatedAt: 13,
-			});
+			if (args.includePreSendException ?? true) {
+				await ctx.db.insert("dealSigningExceptions", {
+					attemptId,
+					createdAt: 13,
+					dealDocumentInstanceId: instanceId,
+					dealId,
+					kind: "pre_send_configuration_failure",
+					message: "Package configuration is incomplete.",
+					packageId,
+					severity: "blocking",
+					status: "open",
+					updatedAt: 13,
+				});
+			}
 		}
 
 		return { dealId, lawyerUserId, packageId };
@@ -389,6 +393,12 @@ describe("lawyer workspace projections", () => {
 			accessState: "completed_read_only",
 		});
 		expect(result?.readOnly).toBe(true);
+		expect(result?.timeline.closeMilestones).toEqual([
+			expect.objectContaining({
+				description: "Deal close confirmed.",
+				title: "Close complete",
+			}),
+		]);
 	});
 
 	it("projects package blockers, envelope progress, exceptions, and hides embedded tokens", async () => {
@@ -516,6 +526,21 @@ describe("lawyer workspace mutations", () => {
 				.withIdentity(lawyerIdentity("lawyer-auth", "lawyer@test.fairlend.ca"))
 				.mutation(api.deals.lawyerMutations.approveDocuments, {
 					dealId: openPreSendException.dealId,
+				})
+		).rejects.toThrow(PACKAGE_APPROVAL_BLOCKED_ERROR);
+
+		const pendingSigningState = await seedLawyerWorkspaceFixture({
+			attemptStatus: "pending_recipient_resolution",
+			dealStatus: "documentReview.pending",
+			includeEnvelope: true,
+			includePreSendException: false,
+			instanceStatus: "available",
+		});
+		await expect(
+			pendingSigningState.t
+				.withIdentity(lawyerIdentity("lawyer-auth", "lawyer@test.fairlend.ca"))
+				.mutation(api.deals.lawyerMutations.approveDocuments, {
+					dealId: pendingSigningState.dealId,
 				})
 		).rejects.toThrow(PACKAGE_APPROVAL_BLOCKED_ERROR);
 	});
