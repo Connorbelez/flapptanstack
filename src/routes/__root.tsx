@@ -143,18 +143,39 @@ export const Route = createRootRouteWithContext<{
 	},
 });
 
+export type RootRoutePortalContext = ReturnType<
+	typeof Route.useRouteContext
+>["portalContext"];
+
+export function shouldRenderSharedHeader({
+	pathname,
+	portalContext,
+}: {
+	pathname: string;
+	portalContext: RootRoutePortalContext;
+}) {
+	const isAdminRoute = isAdminPathname(pathname);
+	const isPublicPortalRoot =
+		pathname === "/" && portalContext.kind === "portal";
+
+	return !(isAdminRoute || isPublicPortalRoot);
+}
+
 function RootComponent() {
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
 	});
 	const { portalContext } = Route.useRouteContext();
-	const isAdminRoute = isAdminPathname(pathname);
+	const renderSharedHeader = shouldRenderSharedHeader({
+		pathname,
+		portalContext,
+	});
 
 	return (
 		<RootDocument>
 			<PortalStateBoundary portalContext={portalContext}>
 				<div className="flex h-dvh max-h-dvh min-h-0 w-full min-w-0 flex-col overflow-hidden">
-					{isAdminRoute ? null : <Header />}
+					{renderSharedHeader ? <Header /> : null}
 					<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
 						<Outlet />
 					</div>
