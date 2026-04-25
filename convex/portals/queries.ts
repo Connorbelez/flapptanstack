@@ -108,6 +108,7 @@ async function resolvePortalAvailability(
 		portal.isPublished && portal.status === "active"
 			? await loadPortalPricingSelection(ctx, {
 					atTime: Date.now(),
+					portal,
 					portalId: portal._id,
 				})
 			: undefined;

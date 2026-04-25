@@ -81,8 +81,11 @@ function hasValidPolicyConfiguration(policy: PortalPricingPolicyDoc) {
 	try {
 		validatePortalPricingPolicyContract(policy);
 		return true;
-	} catch {
-		return false;
+	} catch (error) {
+		if (error instanceof ConvexError) {
+			return false;
+		}
+		throw error;
 	}
 }
 
@@ -283,11 +286,19 @@ export async function loadPortalPricingSelection(
 	args: {
 		atTime: number;
 		portalId: PortalDoc["_id"];
+		/** When set, skips re-fetching the portal document (caller must match `portalId`). */
+		portal?: PortalDoc | null;
 	}
 ): Promise<PortalPricingSelection> {
-	const portal = await ctx.db.get(args.portalId);
+	const portal =
+		args.portal !== undefined && args.portal !== null
+			? args.portal
+			: await ctx.db.get(args.portalId);
 	if (!portal) {
 		throw new ConvexError("Portal no longer exists for pricing selection");
+	}
+	if (portal._id !== args.portalId) {
+		throw new ConvexError("Portal id mismatch for pricing selection");
 	}
 
 	const policies = await loadPortalPricingPolicies(ctx, args.portalId);
@@ -349,10 +360,23 @@ export async function ensurePortalSelectedPricingPolicy(
 			parameters.brokerSplitPercent
 		)
 	) {
+		const policyId = currentSelection.policy._id;
+		if (portal.pricingPolicyId !== policyId) {
+			const now = Date.now();
+			await ctx.db.patch(portal._id, {
+				pricingPolicyId: policyId,
+				updatedAt: now,
+			});
+			return {
+				brokerSplitPercent: parameters.brokerSplitPercent,
+				changed: true,
+				policyId,
+			};
+		}
 		return {
 			brokerSplitPercent: parameters.brokerSplitPercent,
 			changed: false,
-			policyId: currentSelection.policy._id,
+			policyId,
 		};
 	}
 
@@ -449,18 +473,6 @@ export async function getBrokerPortalPricingSnapshot(
 	const setting = await getSingleBrokerPortalPricingSetting(ctx);
 	const brokerSplitPercent = setting?.brokerSplitPercent ?? 0;
 	const portals = await ctx.db.query("portals").collect();
-	const policies = await ctx.db.query("portalPricingPolicies").collect();
-	const policiesByPortalId = new Map<
-		PortalDoc["_id"],
-		PortalPricingPolicyDoc[]
-	>();
-
-	for (const policy of policies) {
-		const current = policiesByPortalId.get(policy.portalId) ?? [];
-		current.push(policy);
-		policiesByPortalId.set(policy.portalId, current);
-	}
-
 	const atTime = Date.now();
 	let brokerPortalCount = 0;
 	let driftedBrokerPortalCount = 0;
@@ -471,9 +483,10 @@ export async function getBrokerPortalPricingSnapshot(
 		}
 
 		brokerPortalCount += 1;
+		const policies = await loadPortalPricingPolicies(ctx, portal._id);
 		const selection = selectEffectivePortalPricingPolicy({
 			atTime,
-			policies: policiesByPortalId.get(portal._id) ?? [],
+			policies,
 			portal,
 		});
 		if (!isReadySelectionWithBrokerSplit(selection, brokerSplitPercent)) {

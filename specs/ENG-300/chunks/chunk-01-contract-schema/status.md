@@ -1,15 +1,19 @@
 # Status: chunk-01-contract-schema
 
-- Result: complete
-- Last updated: 2026-04-20T21:10:58Z
+- Result: partial
+- Last updated: 2026-04-25T00:00:00Z
 
 ## Completed tasks
 - T-010
 - T-011
 
 ## Validation
-- `bunx convex codegen`: blocked by missing `CONVEX_DEPLOYMENT`
-- portal-pricing targeted tests: passed
+- `CONVEX_DEPLOYMENT=dev:impartial-sturgeon-498 bunx convex codegen`: passed (see `specs/ENG-300/status.md`)
+- `bun typecheck`: passed
+- `bun check`: blocked on unrelated repo-wide Biome complexity diagnostics (same blocker as the canonical ENG-300 closeout)
+- portal-pricing targeted tests: passed (`convex/portals/__tests__/pricing.test.ts` and related files in `specs/ENG-300/status.md`)
+
+Completion here is **partial** until `bun check` is clean (or explicitly scoped out) alongside the other repo-wide gates tracked in `specs/ENG-300/status.md`.
 
 ## Notes
 - `portalPricingPolicies` now includes `status`, `effectiveFrom`, `effectiveTo`, a required `brokerSplitPercent`, and the indexes needed for deterministic selection.
