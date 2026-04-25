@@ -184,6 +184,12 @@ async function resolveDefaultOriginationOwnerLinks(
 		);
 	}
 
+	if (trustBankAccount && trustBankAccount.status !== "validated") {
+		throw invalidDefaultOriginationOwnerError(
+			"Configured trust account is not validated"
+		);
+	}
+
 	return {
 		investmentVehicle,
 		lender,
@@ -219,6 +225,21 @@ export async function getRequiredDefaultOriginationOwner(
 	};
 }
 
+function isDefaultOriginationOwnerLinkConfigUnchanged(
+	existing: Doc<"platformSettings">,
+	args: DefaultOriginationOwnerLinkArgs
+): boolean {
+	return (
+		existing.defaultOriginationLenderId === args.defaultOriginationLenderId &&
+		existing.defaultOriginationInvestmentVehicleId ===
+			args.defaultOriginationInvestmentVehicleId &&
+		existing.defaultOriginationWorkspaceId ===
+			args.defaultOriginationWorkspaceId &&
+		existing.defaultFairlendTrustBankAccountId ===
+			args.defaultFairlendTrustBankAccountId
+	);
+}
+
 export async function upsertDefaultOriginationOwner(
 	ctx: MutationCtx,
 	args: UpsertDefaultOriginationOwnerArgs
@@ -228,9 +249,16 @@ export async function upsertDefaultOriginationOwner(
 		.query("platformSettings")
 		.withIndex("by_key", (q) => q.eq("key", PLATFORM_SETTINGS_KEY))
 		.unique();
-	const beforeState = existing ? snapshotPlatformSettings(existing) : undefined;
 
 	const resolved = await resolveDefaultOriginationOwnerLinks(ctx, args);
+	if (
+		existing &&
+		isDefaultOriginationOwnerLinkConfigUnchanged(existing, args)
+	) {
+		return { settings: existing };
+	}
+
+	const beforeState = existing ? snapshotPlatformSettings(existing) : undefined;
 	const nextSettingsFields = {
 		key: PLATFORM_SETTINGS_KEY,
 		defaultOriginationLenderId: args.defaultOriginationLenderId,
