@@ -6,6 +6,10 @@ export const FAIRLEND_ADMIN_LOCAL_HOST = "admin.localhost:3000";
 export const FAIRLEND_PORTAL_SLUG = "app";
 export const FAIRLEND_PORTAL_PRODUCTION_HOST = "app.fairlend.ca";
 export const FAIRLEND_PORTAL_LOCAL_HOST = "app.localhost:3000";
+export const MIC_PORTAL_SLUG = "mic";
+export const MIC_PORTAL_PRODUCTION_HOST = "mic.fairlend.ca";
+export const MIC_PORTAL_LOCAL_HOST = "mic.localhost:3000";
+export const MIC_PORTAL_DEFAULT_POST_AUTH_PATH = "/portal";
 export const PORTAL_RESERVED_SLUGS = ["app", "api", "admin", "staging", "www"];
 
 const TRAILING_DOT_REGEX = /\.$/;
