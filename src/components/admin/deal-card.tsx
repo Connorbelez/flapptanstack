@@ -20,6 +20,14 @@ import { Avatar, AvatarFallback } from "../ui/avatar";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "../ui/dialog";
 import { Textarea } from "../ui/textarea";
 
 // Types (mirrored from convex/deals/queries.ts)
@@ -147,6 +155,9 @@ interface DealCardProps {
 export function DealCard({ deal }: DealCardProps) {
 	const closingTeams = useQuery(api.deals.queries.closingTeamAssignments);
 	const transitionDeal = useMutation(api.deals.mutations.transitionDeal);
+	const confirmManualFundsReceipt = useMutation(
+		api.deals.mutations.confirmManualFundsReceipt
+	);
 	const { actions: dealActions, isTerminal } = useDealActions(deal.status);
 
 	const currentPhase = getCurrentPhase(deal.status);
@@ -174,6 +185,8 @@ export function DealCard({ deal }: DealCardProps) {
 
 	// State for cancel reason
 	const [cancelReason, setCancelReason] = useState("");
+	const [fundsDialogOpen, setFundsDialogOpen] = useState(false);
+	const [fundsEvidenceNote, setFundsEvidenceNote] = useState("");
 
 	// Handle deal cancellation
 	const handleCancel = async (reason: string) => {
@@ -199,6 +212,11 @@ export function DealCard({ deal }: DealCardProps) {
 	const availableActions = dealActions.filter((a) => !a.isCancel);
 
 	const handleAction = async (event: string) => {
+		if (event === "FUNDS_RECEIVED") {
+			setFundsDialogOpen(true);
+			return;
+		}
+
 		try {
 			const result = await transitionDeal({
 				entityId: deal._id,
@@ -212,6 +230,32 @@ export function DealCard({ deal }: DealCardProps) {
 			}
 		} catch {
 			toast.error("Transition failed");
+		}
+	};
+
+	const handleConfirmManualFundsReceipt = async () => {
+		const evidenceNote = fundsEvidenceNote.trim();
+		if (!evidenceNote) {
+			toast.error("Evidence note required");
+			return;
+		}
+
+		try {
+			const result = await confirmManualFundsReceipt({
+				dealId: deal._id,
+				evidenceNote,
+				receivedAt: Date.now(),
+			});
+
+			if (result.success) {
+				toast.success("Funds receipt confirmed");
+				setFundsDialogOpen(false);
+				setFundsEvidenceNote("");
+			} else {
+				toast.error(result.reason ?? "Funds confirmation failed");
+			}
+		} catch {
+			toast.error("Funds confirmation failed");
 		}
 	};
 
@@ -337,6 +381,47 @@ export function DealCard({ deal }: DealCardProps) {
 							{action.label}
 						</Button>
 					))}
+
+					<Dialog
+						onOpenChange={(open) => {
+							setFundsDialogOpen(open);
+							if (!open) {
+								setFundsEvidenceNote("");
+							}
+						}}
+						open={fundsDialogOpen}
+					>
+						<DialogContent className="sm:max-w-md">
+							<DialogHeader>
+								<DialogTitle>Confirm Funds Received</DialogTitle>
+								<DialogDescription>
+									Record the trust-account evidence used to confirm receipt of
+									funds for this closing.
+								</DialogDescription>
+							</DialogHeader>
+							<div className="space-y-2">
+								<label className="font-medium text-sm" htmlFor="funds-evidence">
+									Evidence note
+								</label>
+								<Textarea
+									className="min-h-[120px]"
+									id="funds-evidence"
+									onChange={(event) => setFundsEvidenceNote(event.target.value)}
+									placeholder="Wire receipt, trust account statement, reference number..."
+									value={fundsEvidenceNote}
+								/>
+							</div>
+							<DialogFooter>
+								<Button
+									disabled={!fundsEvidenceNote.trim()}
+									onClick={handleConfirmManualFundsReceipt}
+									size="sm"
+								>
+									Confirm Funds
+								</Button>
+							</DialogFooter>
+						</DialogContent>
+					</Dialog>
 
 					{/* Cancel button for non-terminal deals */}
 					{!isTerminal && (

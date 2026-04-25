@@ -6,10 +6,10 @@ import { buildSource, transitionCommandArgs } from "../engine/commands";
 import { executeTransition } from "../engine/transition";
 import type { CommandSource } from "../engine/types";
 import { adminMutation } from "../fluent";
-import { PROVIDER_CODES, type ProviderCode } from "../payments/transfers/types";
 import {
 	type FundsReceiptSource,
 	normalizeEvidenceNote,
+	parseFundsReceiptSource,
 	recordFundsReceiptRow,
 } from "./closeEvidence";
 
@@ -112,69 +112,6 @@ export const revokeAccess = internalMutation({
 
 // ── Deal Transition Mutations ──────────────────────────────────────────
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isProviderCode(value: string): value is ProviderCode {
-	return (PROVIDER_CODES as readonly string[]).includes(value);
-}
-
-function parseFundsReceiptSource(value: unknown): FundsReceiptSource | null {
-	if (!isRecord(value)) {
-		return null;
-	}
-
-	if (value.kind === "transfer_pipeline") {
-		const { pipelineId, leg2TransferId, providerCode } = value;
-		if (
-			typeof pipelineId !== "string" ||
-			typeof leg2TransferId !== "string" ||
-			typeof providerCode !== "string" ||
-			!isProviderCode(providerCode)
-		) {
-			return null;
-		}
-
-		return {
-			kind: "transfer_pipeline",
-			pipelineId,
-			leg2TransferId: leg2TransferId as Id<"transferRequests">,
-			providerCode,
-		};
-	}
-
-	if (value.kind === "manual_admin") {
-		const { confirmedBy, evidenceNote, receivedAt, attachmentIds } = value;
-		if (
-			typeof confirmedBy !== "string" ||
-			typeof evidenceNote !== "string" ||
-			typeof receivedAt !== "number"
-		) {
-			return null;
-		}
-		if (
-			attachmentIds !== undefined &&
-			!(
-				Array.isArray(attachmentIds) &&
-				attachmentIds.every((id) => typeof id === "string")
-			)
-		) {
-			return null;
-		}
-
-		return {
-			kind: "manual_admin",
-			confirmedBy,
-			evidenceNote,
-			receivedAt,
-			attachmentIds: attachmentIds as Id<"documentAssets">[] | undefined,
-		};
-	}
-
-	return null;
-}
-
 function extractFundsReceiptSource(
 	payload: Record<string, unknown> | undefined
 ): FundsReceiptSource | null {
@@ -256,20 +193,22 @@ export const confirmManualFundsReceipt = adminMutation
 	.handler(async (ctx, args) => {
 		const deal = await ctx.db.get(args.dealId);
 		if (!deal) {
-			throw new Error("Deal not found");
+			throw new ConvexError("Deal not found");
 		}
 		if (deal.status !== "fundsTransfer.pending") {
-			throw new Error(
+			throw new ConvexError(
 				`Deal must be in fundsTransfer.pending to confirm funds, currently: ${deal.status}`
 			);
 		}
 
 		const evidenceNote = normalizeEvidenceNote(args.evidenceNote);
 		if (!evidenceNote) {
-			throw new Error("Manual funds confirmation requires an evidence note");
+			throw new ConvexError(
+				"Manual funds confirmation requires an evidence note"
+			);
 		}
 		if (args.receivedAt <= 0) {
-			throw new Error(
+			throw new ConvexError(
 				`Manual funds confirmation requires a positive receivedAt timestamp, got ${args.receivedAt}`
 			);
 		}
@@ -277,7 +216,7 @@ export const confirmManualFundsReceipt = adminMutation
 		for (const attachmentId of args.attachmentIds ?? []) {
 			const attachment = await ctx.db.get(attachmentId);
 			if (!attachment) {
-				throw new Error(
+				throw new ConvexError(
 					`Manual evidence attachment not found: ${attachmentId}`
 				);
 			}

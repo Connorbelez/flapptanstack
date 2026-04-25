@@ -2,6 +2,7 @@ import { ConvexError, type Infer, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { convex } from "../fluent";
+import { PROVIDER_CODES, type ProviderCode } from "../payments/transfers/types";
 import { providerCodeValidator } from "../payments/transfers/validators";
 
 export const fundsReceiptSourceValidator = v.union(
@@ -85,99 +86,6 @@ export const closeReceiptSummaryValidator = v.object({
 });
 
 export type FundsReceiptSource = Infer<typeof fundsReceiptSourceValidator>;
-type TransferProviderCode = Extract<
-	FundsReceiptSource,
-	{ kind: "transfer_pipeline" }
->["providerCode"];
-
-const providerCodes: readonly TransferProviderCode[] = [
-	"manual",
-	"manual_review",
-	"mock_pad",
-	"mock_eft",
-	"pad_vopay",
-	"pad_rotessa",
-	"eft_vopay",
-	"e_transfer",
-	"wire",
-	"plaid_transfer",
-];
-
-const providerCodeSet: ReadonlySet<TransferProviderCode> = new Set(
-	providerCodes
-);
-
-/**
- * Best-effort parse of untrusted effect payload `fundsReceiptSource`.
- * Returns null when the shape is not recognized; `recordFundsReceiptInternal` re-validates.
- */
-export function parseFundsReceiptSource(
-	value: unknown
-): FundsReceiptSource | null {
-	if (value == null) {
-		return null;
-	}
-	if (typeof value !== "object" || Array.isArray(value)) {
-		return null;
-	}
-	const o = value as Record<string, unknown>;
-	if (o.kind === "transfer_pipeline") {
-		if (typeof o.pipelineId !== "string") {
-			return null;
-		}
-		if (typeof o.leg2TransferId !== "string") {
-			return null;
-		}
-		if (
-			typeof o.providerCode !== "string" ||
-			!providerCodeSet.has(o.providerCode as TransferProviderCode)
-		) {
-			return null;
-		}
-		return {
-			kind: "transfer_pipeline",
-			pipelineId: o.pipelineId,
-			leg2TransferId: o.leg2TransferId as Id<"transferRequests">,
-			providerCode: o.providerCode as TransferProviderCode,
-		};
-	}
-	if (o.kind === "manual_admin") {
-		if (typeof o.confirmedBy !== "string") {
-			return null;
-		}
-		if (typeof o.evidenceNote !== "string") {
-			return null;
-		}
-		if (typeof o.receivedAt !== "number") {
-			return null;
-		}
-		const rawAttachments = o.attachmentIds;
-		if (rawAttachments === undefined) {
-			return {
-				kind: "manual_admin",
-				confirmedBy: o.confirmedBy,
-				evidenceNote: o.evidenceNote,
-				receivedAt: o.receivedAt,
-			};
-		}
-		if (!Array.isArray(rawAttachments)) {
-			return null;
-		}
-		for (const id of rawAttachments) {
-			if (typeof id !== "string") {
-				return null;
-			}
-		}
-		return {
-			kind: "manual_admin",
-			confirmedBy: o.confirmedBy,
-			evidenceNote: o.evidenceNote,
-			receivedAt: o.receivedAt,
-			attachmentIds: rawAttachments as Id<"documentAssets">[],
-		};
-	}
-	return null;
-}
 
 export type CloseEffectName = Infer<typeof closeEffectNameValidator>;
 export type CloseEffectOutcomeStatus = Infer<
@@ -191,6 +99,75 @@ type CloseEvidenceQueryCtx = Pick<QueryCtx, "db">;
 
 export function normalizeEvidenceNote(note: string): string {
 	return note.trim().replace(/\s+/g, " ");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProviderCode(value: string): value is ProviderCode {
+	return (PROVIDER_CODES as readonly string[]).includes(value);
+}
+
+/**
+ * Best-effort parse of untrusted effect payload `fundsReceiptSource`.
+ * Returns null when the shape is not recognized; `recordFundsReceiptInternal` re-validates.
+ */
+export function parseFundsReceiptSource(
+	value: unknown
+): FundsReceiptSource | null {
+	if (!isRecord(value)) {
+		return null;
+	}
+
+	if (value.kind === "transfer_pipeline") {
+		const { pipelineId, leg2TransferId, providerCode } = value;
+		if (
+			typeof pipelineId !== "string" ||
+			typeof leg2TransferId !== "string" ||
+			typeof providerCode !== "string" ||
+			!isProviderCode(providerCode)
+		) {
+			return null;
+		}
+
+		return {
+			kind: "transfer_pipeline",
+			pipelineId,
+			leg2TransferId: leg2TransferId as Id<"transferRequests">,
+			providerCode,
+		};
+	}
+
+	if (value.kind === "manual_admin") {
+		const { confirmedBy, evidenceNote, receivedAt, attachmentIds } = value;
+		if (
+			typeof confirmedBy !== "string" ||
+			typeof evidenceNote !== "string" ||
+			typeof receivedAt !== "number"
+		) {
+			return null;
+		}
+		if (
+			attachmentIds !== undefined &&
+			!(
+				Array.isArray(attachmentIds) &&
+				attachmentIds.every((id) => typeof id === "string")
+			)
+		) {
+			return null;
+		}
+
+		return {
+			kind: "manual_admin",
+			confirmedBy,
+			evidenceNote,
+			receivedAt,
+			attachmentIds: attachmentIds as Id<"documentAssets">[] | undefined,
+		};
+	}
+
+	return null;
 }
 
 export function buildFundsEvidenceIdempotencyKey(args: {
@@ -519,17 +496,22 @@ export async function recordFundsReceiptRow(
 		.unique();
 
 	if (existingByKey) {
-		await recordCloseEffectOutcomeRow(ctx, {
-			dealId: args.dealId,
-			effectName: "funds_confirmation",
-			status: "skipped",
-			idempotencyKey: buildCloseEffectIdempotencyKey({
+		if (!fundsSourcesMatch(existingByKey.source, args.source)) {
+			await recordCloseEffectOutcomeRow(ctx, {
 				dealId: args.dealId,
 				effectName: "funds_confirmation",
-			}),
-			message: "Funds evidence already recorded for this source",
-			now,
-		});
+				status: "blocked",
+				idempotencyKey: buildCloseEffectIdempotencyKey({
+					dealId: args.dealId,
+					effectName: "funds_confirmation",
+				}),
+				exceptionKind: "incompatible_duplicate_evidence",
+				message:
+					"Funds evidence idempotency key matched incompatible source data",
+				now,
+			});
+			return { evidenceId: null, status: "blocked" };
+		}
 		return { evidenceId: existingByKey._id, status: "replayed" };
 	}
 
