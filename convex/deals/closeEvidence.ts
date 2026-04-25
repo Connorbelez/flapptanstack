@@ -487,6 +487,147 @@ export const recordCloseEffectOutcomeInternal = convex
 	})
 	.internal();
 
+export interface RecordFundsReceiptResult {
+	evidenceId: Id<"dealFundsEvidence"> | null;
+	status: "recorded" | "replayed" | "blocked";
+}
+
+export async function recordFundsReceiptRow(
+	ctx: CloseEvidenceMutationCtx,
+	args: {
+		dealId: Id<"deals">;
+		source: FundsReceiptSource;
+		journalEntryId?: string;
+		recordedBy: string;
+	}
+): Promise<RecordFundsReceiptResult> {
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal) {
+		throw new ConvexError("Deal not found");
+	}
+
+	const now = Date.now();
+	const idempotencyKey = buildFundsEvidenceIdempotencyKey({
+		dealId: args.dealId,
+		source: args.source,
+	});
+	const existingByKey = await ctx.db
+		.query("dealFundsEvidence")
+		.withIndex("by_idempotency", (query) =>
+			query.eq("idempotencyKey", idempotencyKey)
+		)
+		.unique();
+
+	if (existingByKey) {
+		await recordCloseEffectOutcomeRow(ctx, {
+			dealId: args.dealId,
+			effectName: "funds_confirmation",
+			status: "skipped",
+			idempotencyKey: buildCloseEffectIdempotencyKey({
+				dealId: args.dealId,
+				effectName: "funds_confirmation",
+			}),
+			message: "Funds evidence already recorded for this source",
+			now,
+		});
+		return { evidenceId: existingByKey._id, status: "replayed" };
+	}
+
+	const existingForDeal = await getLatestFundsEvidence(ctx, args.dealId);
+	if (
+		existingForDeal &&
+		!fundsSourcesMatch(existingForDeal.source, args.source)
+	) {
+		await recordCloseEffectOutcomeRow(ctx, {
+			dealId: args.dealId,
+			effectName: "funds_confirmation",
+			status: "blocked",
+			idempotencyKey: buildCloseEffectIdempotencyKey({
+				dealId: args.dealId,
+				effectName: "funds_confirmation",
+			}),
+			exceptionKind: "incompatible_duplicate_evidence",
+			message: "Funds evidence already exists with incompatible source data",
+			now,
+		});
+		return { evidenceId: null, status: "blocked" };
+	}
+
+	let receivedAt: number;
+	if (args.source.kind === "transfer_pipeline") {
+		const transfer = await validateProviderSource(ctx, {
+			dealId: args.dealId,
+			source: args.source,
+		});
+		receivedAt = transfer.confirmedAt ?? transfer.settledAt ?? now;
+	} else {
+		const evidenceNote = normalizeEvidenceNote(args.source.evidenceNote);
+		if (!evidenceNote) {
+			throw new ConvexError(
+				"Manual funds confirmation requires an evidence note"
+			);
+		}
+		if (args.source.receivedAt <= 0) {
+			throw new ConvexError("Manual funds confirmation requires receivedAt");
+		}
+		await validateManualAttachments(ctx, args.source.attachmentIds ?? []);
+		receivedAt = args.source.receivedAt;
+	}
+
+	const evidenceId = await ctx.db.insert("dealFundsEvidence", {
+		dealId: args.dealId,
+		source:
+			args.source.kind === "manual_admin"
+				? {
+						...args.source,
+						evidenceNote: normalizeEvidenceNote(args.source.evidenceNote),
+					}
+				: args.source,
+		sourceKind: args.source.kind,
+		idempotencyKey,
+		receivedAt,
+		recordedAt: now,
+		recordedBy: args.recordedBy,
+		journalEntryId: args.journalEntryId,
+		pipelineId:
+			args.source.kind === "transfer_pipeline"
+				? args.source.pipelineId
+				: undefined,
+		leg2TransferId:
+			args.source.kind === "transfer_pipeline"
+				? args.source.leg2TransferId
+				: undefined,
+		providerCode:
+			args.source.kind === "transfer_pipeline"
+				? args.source.providerCode
+				: undefined,
+		manualConfirmedBy:
+			args.source.kind === "manual_admin" ? args.source.confirmedBy : undefined,
+		manualEvidenceNote:
+			args.source.kind === "manual_admin"
+				? normalizeEvidenceNote(args.source.evidenceNote)
+				: undefined,
+		manualAttachmentIds:
+			args.source.kind === "manual_admin"
+				? args.source.attachmentIds
+				: undefined,
+	});
+
+	await recordCloseEffectOutcomeRow(ctx, {
+		dealId: args.dealId,
+		effectName: "funds_confirmation",
+		status: "succeeded",
+		idempotencyKey: buildCloseEffectIdempotencyKey({
+			dealId: args.dealId,
+			effectName: "funds_confirmation",
+		}),
+		message: "Funds evidence recorded",
+		now,
+	});
+
+	return { evidenceId, status: "recorded" };
+}
+
 export const recordFundsReceiptInternal = convex
 	.mutation()
 	.input({
@@ -495,146 +636,9 @@ export const recordFundsReceiptInternal = convex
 		journalEntryId: v.optional(v.string()),
 		recordedBy: v.string(),
 	})
-	.handler(
-		async (
-			ctx,
-			args
-		): Promise<{
-			evidenceId: Id<"dealFundsEvidence"> | null;
-			status: "recorded" | "replayed" | "blocked";
-		}> => {
-			const deal = await ctx.db.get(args.dealId);
-			if (!deal) {
-				throw new ConvexError("Deal not found");
-			}
-
-			const now = Date.now();
-			const idempotencyKey = buildFundsEvidenceIdempotencyKey({
-				dealId: args.dealId,
-				source: args.source,
-			});
-			const existingByKey = await ctx.db
-				.query("dealFundsEvidence")
-				.withIndex("by_idempotency", (query) =>
-					query.eq("idempotencyKey", idempotencyKey)
-				)
-				.unique();
-
-			if (existingByKey) {
-				await recordCloseEffectOutcomeRow(ctx, {
-					dealId: args.dealId,
-					effectName: "funds_confirmation",
-					status: "skipped",
-					idempotencyKey: buildCloseEffectIdempotencyKey({
-						dealId: args.dealId,
-						effectName: "funds_confirmation",
-					}),
-					message: "Funds evidence already recorded for this source",
-					now,
-				});
-				return { evidenceId: existingByKey._id, status: "replayed" };
-			}
-
-			const existingForDeal = await getLatestFundsEvidence(ctx, args.dealId);
-			if (
-				existingForDeal &&
-				!fundsSourcesMatch(existingForDeal.source, args.source)
-			) {
-				await recordCloseEffectOutcomeRow(ctx, {
-					dealId: args.dealId,
-					effectName: "funds_confirmation",
-					status: "blocked",
-					idempotencyKey: buildCloseEffectIdempotencyKey({
-						dealId: args.dealId,
-						effectName: "funds_confirmation",
-					}),
-					exceptionKind: "incompatible_duplicate_evidence",
-					message:
-						"Funds evidence already exists with incompatible source data",
-					now,
-				});
-				return { evidenceId: null, status: "blocked" };
-			}
-
-			let receivedAt: number;
-			if (args.source.kind === "transfer_pipeline") {
-				const transfer = await validateProviderSource(ctx, {
-					dealId: args.dealId,
-					source: args.source,
-				});
-				receivedAt = transfer.confirmedAt ?? transfer.settledAt ?? now;
-			} else {
-				const evidenceNote = normalizeEvidenceNote(args.source.evidenceNote);
-				if (!evidenceNote) {
-					throw new ConvexError(
-						"Manual funds confirmation requires an evidence note"
-					);
-				}
-				if (args.source.receivedAt <= 0) {
-					throw new ConvexError(
-						"Manual funds confirmation requires receivedAt"
-					);
-				}
-				await validateManualAttachments(ctx, args.source.attachmentIds ?? []);
-				receivedAt = args.source.receivedAt;
-			}
-
-			const evidenceId = await ctx.db.insert("dealFundsEvidence", {
-				dealId: args.dealId,
-				source:
-					args.source.kind === "manual_admin"
-						? {
-								...args.source,
-								evidenceNote: normalizeEvidenceNote(args.source.evidenceNote),
-							}
-						: args.source,
-				sourceKind: args.source.kind,
-				idempotencyKey,
-				receivedAt,
-				recordedAt: now,
-				recordedBy: args.recordedBy,
-				journalEntryId: args.journalEntryId,
-				pipelineId:
-					args.source.kind === "transfer_pipeline"
-						? args.source.pipelineId
-						: undefined,
-				leg2TransferId:
-					args.source.kind === "transfer_pipeline"
-						? args.source.leg2TransferId
-						: undefined,
-				providerCode:
-					args.source.kind === "transfer_pipeline"
-						? args.source.providerCode
-						: undefined,
-				manualConfirmedBy:
-					args.source.kind === "manual_admin"
-						? args.source.confirmedBy
-						: undefined,
-				manualEvidenceNote:
-					args.source.kind === "manual_admin"
-						? normalizeEvidenceNote(args.source.evidenceNote)
-						: undefined,
-				manualAttachmentIds:
-					args.source.kind === "manual_admin"
-						? args.source.attachmentIds
-						: undefined,
-			});
-
-			await recordCloseEffectOutcomeRow(ctx, {
-				dealId: args.dealId,
-				effectName: "funds_confirmation",
-				status: "succeeded",
-				idempotencyKey: buildCloseEffectIdempotencyKey({
-					dealId: args.dealId,
-					effectName: "funds_confirmation",
-				}),
-				message: "Funds evidence recorded",
-				now,
-			});
-
-			return { evidenceId, status: "recorded" };
-		}
-	)
+	.handler(async (ctx, args): Promise<RecordFundsReceiptResult> => {
+		return recordFundsReceiptRow(ctx, args);
+	})
 	.internal();
 
 export const listCloseEvidenceForDealInternal = convex

@@ -25,6 +25,9 @@ const ADMIN_IDENTITY = {
 	user_last_name: "User",
 };
 
+const FUNDS_SOURCE_EVIDENCE_ERROR = /fundsReceiptSource evidence/;
+const PROVIDER_NOT_CONFIRMED_ERROR = /not confirmed/;
+
 async function seedDeal(t: ReturnType<typeof convexTest>) {
 	return t.run(async (ctx) => {
 		const userId = await ctx.db.insert("users", {
@@ -399,6 +402,70 @@ describe("close evidence helpers", () => {
 				.withIndex("by_deal", (query) => query.eq("dealId", dealId))
 				.collect()
 		);
+		expect(evidenceRows).toHaveLength(0);
+	});
+
+	it("rejects admin FUNDS_RECEIVED before transition when evidence is missing", async () => {
+		const t = convexTest(schema, modules);
+		const { dealId } = await seedDeal(t);
+
+		await expect(
+			t
+				.withIdentity(ADMIN_IDENTITY)
+				.mutation(api.deals.mutations.transitionDeal, {
+					entityId: dealId,
+					eventType: "FUNDS_RECEIVED",
+					payload: { method: "manual" },
+				})
+		).rejects.toThrow(FUNDS_SOURCE_EVIDENCE_ERROR);
+
+		const { deal, evidenceRows } = await t.run(async (ctx) => ({
+			deal: await ctx.db.get(dealId),
+			evidenceRows: await ctx.db
+				.query("dealFundsEvidence")
+				.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+				.collect(),
+		}));
+		expect(deal?.status).toBe("fundsTransfer.pending");
+		expect(evidenceRows).toHaveLength(0);
+	});
+
+	it("rejects system FUNDS_RECEIVED before transition when provider evidence is invalid", async () => {
+		const t = convexTest(schema, modules);
+		const { dealId, mortgageId } = await seedDeal(t);
+		const cancelledTransferId = await seedLeg2WithStatus(t, {
+			dealId,
+			mortgageId,
+			status: "cancelled",
+		});
+
+		await expect(
+			t.mutation(
+				internal.payments.transfers.mutations.fireDealTransitionInternal,
+				{
+					dealId,
+					eventType: "FUNDS_RECEIVED",
+					payload: {
+						method: "manual",
+						fundsReceiptSource: {
+							kind: "transfer_pipeline",
+							pipelineId: `deal-closing:${dealId}`,
+							leg2TransferId: cancelledTransferId,
+							providerCode: "manual",
+						},
+					},
+				}
+			)
+		).rejects.toThrow(PROVIDER_NOT_CONFIRMED_ERROR);
+
+		const { deal, evidenceRows } = await t.run(async (ctx) => ({
+			deal: await ctx.db.get(dealId),
+			evidenceRows: await ctx.db
+				.query("dealFundsEvidence")
+				.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+				.collect(),
+		}));
+		expect(deal?.status).toBe("fundsTransfer.pending");
 		expect(evidenceRows).toHaveLength(0);
 	});
 
