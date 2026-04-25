@@ -255,6 +255,21 @@ export function createOriginationE2eClient(accessToken: string) {
 				}
 			);
 		},
+		async ensureDefaultOriginationOwner() {
+			const brokers = await convex.mutation(api.seed.seedBroker.seedBroker, {});
+			const platformOwnership = await convex.mutation(
+				api.seed.seedPlatformOwnership.seedPlatformOwnership,
+				{
+					brokerId: brokers.brokerIds[0],
+				}
+			);
+			const defaultOwner = await convex.query(
+				api.platform.defaultOriginationOwner.getDefaultOriginationOwner,
+				{}
+			);
+
+			return { defaultOwner, platformOwnership };
+		},
 		cleanupDealPackageScenario(args: {
 			assetIds: Id<"documentAssets">[];
 			basePdfIds: Id<"documentBasePdfs">[];
@@ -311,6 +326,11 @@ export function createOriginationE2eClient(accessToken: string) {
 		getDealPackageSurface(dealId: string) {
 			return convex.query(api.documents.dealPackages.getPortalDocumentPackage, {
 				dealId: dealId as Id<"deals">,
+			});
+		},
+		getCommittedOriginationArtifacts(caseId: string) {
+			return convex.query(api.test.originationE2e.getCommittedOriginationArtifacts, {
+				caseId: caseId as Id<"adminOriginationCases">,
 			});
 		},
 		getListingByMortgage(mortgageId: string) {

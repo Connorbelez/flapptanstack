@@ -599,6 +599,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../payments/webhooks/utils.ts"),
 	"/convex/payments/webhooks/vopay.ts": async () =>
 		await import("./../payments/webhooks/vopay.ts"),
+	"/convex/platform/defaultOriginationOwner.ts": async () =>
+		await import("./../platform/defaultOriginationOwner.ts"),
 	"/convex/prorateEntries/mutations.ts": async () =>
 		await import("./../prorateEntries/mutations.ts"),
 	"/convex/prorateEntries/queries.ts": async () =>
@@ -624,6 +626,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../seed/seedOnboardingRequest.ts"),
 	"/convex/seed/seedPaymentData.ts": async () =>
 		await import("./../seed/seedPaymentData.ts"),
+	"/convex/seed/seedPlatformOwnership.ts": async () =>
+		await import("./../seed/seedPlatformOwnership.ts"),
 	"/convex/test/authTestEndpoints.ts": async () =>
 		await import("./authTestEndpoints.ts"),
 	"/convex/test/moduleMaps.ts": async () => await import("./moduleMaps.ts"),

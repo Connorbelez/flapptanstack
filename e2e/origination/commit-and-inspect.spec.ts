@@ -67,6 +67,7 @@ test.describe("Admin origination commit flow", () => {
 	}) => {
 		accessToken = await readE2eAccessToken(page);
 		const client = createOriginationE2eClient(accessToken);
+		const { defaultOwner } = await client.ensureDefaultOriginationOwner();
 		const { borrowerId, brokerOfRecordId } =
 			await client.ensureOriginationE2eContext();
 		const uniqueSuffix = uniqueOriginationValue("origination");
@@ -219,6 +220,36 @@ test.describe("Admin origination commit flow", () => {
 				timeout: UI_TIMEOUT,
 			});
 			await expect(detailSection(page, "Summary")).toContainText(/active/i);
+		});
+
+		await test.step("verify Convex artifacts show the mortgage minted and issued to the configured FairLend MIC owner", async () => {
+			if (!caseId) {
+				throw new Error("Expected origination case id to be available");
+			}
+
+			const artifacts = await client.getCommittedOriginationArtifacts(caseId);
+			expect(artifacts.caseRecord?.status).toBe("committed");
+			expect(String(artifacts.committedMortgageId)).toBe(mortgageId);
+			expect(
+				artifacts.ledgerEntries.some(
+					(entry) => entry.entryType === "MORTGAGE_MINTED"
+				)
+			).toBe(true);
+			expect(
+				artifacts.ledgerEntries.some(
+					(entry) => entry.entryType === "SHARES_ISSUED"
+				)
+			).toBe(true);
+			expect(
+				artifacts.ledgerAccounts.some((account) => account.type === "TREASURY")
+			).toBe(true);
+			expect(
+				artifacts.ledgerAccounts.some(
+					(account) =>
+						account.type === "POSITION" &&
+						account.lenderId === String(defaultOwner.lender._id)
+				)
+			).toBe(true);
 		});
 	});
 });

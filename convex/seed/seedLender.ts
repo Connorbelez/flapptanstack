@@ -75,29 +75,6 @@ const LENDER_FIXTURES: readonly LenderSeedFixture[] = [
 			activatedAtOffsetMs: 600_000,
 		},
 	},
-	{
-		user: {
-			authId: seedAuthIdFromEmail("maple.mic+lender@fairlend.ca"),
-			email: "maple.mic+lender@fairlend.ca",
-			firstName: "Maple",
-			lastName: "MIC",
-			phoneNumber: "+1-905-555-0189",
-			address: {
-				streetAddress: "5500 North Service Rd",
-				unit: "Suite 310",
-				city: "Burlington",
-				postalCode: "L7L6W6",
-			},
-		},
-		lender: {
-			status: "pending_activation",
-			accreditationStatus: "pending",
-			idvStatus: "pending_review",
-			kycStatus: "in_progress",
-			personaInquiryId: "inq_seed_lender_003",
-			onboardingEntryPath: "admin_dashboard",
-		},
-	},
 ];
 
 export const seedLender = adminMutation

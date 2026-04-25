@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import type { Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { FAIRLEND_STAFF_ORG_ID } from "../constants";
-import { adminMutation } from "../fluent";
+import { adminMutation, adminQuery } from "../fluent";
 import { ORIGINATION_WORKFLOW_SOURCE_TYPE } from "../mortgages/provenance";
 
 const ORIGINATION_E2E_ENABLED_ENV = "ORIGINATION_E2E_ENABLED";
@@ -597,5 +597,21 @@ export const cleanupCommittedOrigination = adminMutation
 		const artifacts = await loadCommittedOriginationArtifacts(ctx, args.caseId);
 		assertOriginationE2eCleanupTarget(args.caseId, artifacts);
 		return cleanupCommittedOriginationArtifacts(ctx, args.caseId, artifacts);
+	})
+	.public();
+
+export const getCommittedOriginationArtifacts = adminQuery
+	.input({
+		caseId: v.id("adminOriginationCases"),
+	})
+	.handler(async (ctx, args) => {
+		const artifacts = await loadCommittedOriginationArtifacts(ctx, args.caseId);
+		return {
+			caseRecord: artifacts.caseRecord,
+			committedListingId: artifacts.committedListingId,
+			committedMortgageId: artifacts.committedMortgageId,
+			ledgerAccounts: artifacts.ledgerAccounts,
+			ledgerEntries: artifacts.ledgerEntries,
+		};
 	})
 	.public();

@@ -1,0 +1,436 @@
+import { describe, expect, it } from "vitest";
+import { api } from "../../../../convex/_generated/api";
+import { getRequiredDefaultOriginationOwner } from "../../../../convex/platform/defaultOriginationOwner";
+import {
+	FAIRLEND_BROKERAGE_ORG_ID,
+	FAIRLEND_STAFF_ORG_ID,
+} from "../../../../convex/constants";
+import {
+	createMockViewer,
+	createTestConvex,
+	ensureSeededIdentity,
+} from "../../auth/helpers";
+import { FAIRLEND_ADMIN } from "../../auth/identities";
+
+async function getConvexErrorData(error: unknown) {
+	if (typeof error === "string") {
+		const parsed = JSON.parse(error) as unknown;
+		return typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+	}
+	if (
+		error &&
+		typeof error === "object" &&
+		"data" in error &&
+		typeof error.data === "string"
+	) {
+		const parsed = JSON.parse(error.data) as unknown;
+		return typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+	}
+	if (error && typeof error === "object" && "data" in error) {
+		return error.data;
+	}
+	return undefined;
+}
+
+describe("default origination owner", () => {
+	it("fails closed when the singleton settings row is missing", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+
+		const error = await t
+			.run(async (ctx) => {
+				await getRequiredDefaultOriginationOwner(ctx);
+			})
+			.catch((caughtError: unknown) => caughtError);
+
+		expect(await getConvexErrorData(error)).toMatchObject({
+			code: "DEFAULT_ORIGINATION_OWNER_MISSING",
+		});
+	});
+
+	it("writes a governance audit entry when the default pair changes", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const lenderUserId = await ensureSeededIdentity(
+			t,
+			createMockViewer({
+				email: "fairlend.mic+lender@fairlend.ca",
+				firstName: "FairLend",
+				lastName: "MIC",
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				orgName: "FairLend Capital",
+				roles: ["lender"],
+				subject: "user_fairlend_mic_lender",
+			})
+		);
+
+		const { lenderId, vehicleId, workspaceId } = await t.run(async (ctx) => {
+			const brokerId = await ctx.db.insert("brokers", {
+				createdAt: Date.now(),
+				lastTransitionAt: Date.now(),
+				onboardedAt: Date.now(),
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				status: "active",
+				userId: lenderUserId,
+			});
+			const lenderId = await ctx.db.insert("lenders", {
+				accreditationStatus: "exempt",
+				brokerId,
+				createdAt: Date.now(),
+				onboardingEntryPath: "admin_dashboard",
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				status: "active",
+				userId: lenderUserId,
+			});
+			const vehicleId = await ctx.db.insert("investmentVehicles", {
+				lenderId,
+				name: "FairLend MIC",
+				legalName: "FairLend Mortgage Investment Corporation",
+				entityType: "mic",
+				status: "active",
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+			const workspaceId = await ctx.db.insert("investmentVehicleWorkspaces", {
+				investmentVehicleId: vehicleId,
+				name: "FairLend MIC Workspace",
+				status: "active",
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+			return { lenderId, vehicleId, workspaceId };
+		});
+
+		const result = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.platform.defaultOriginationOwner.setDefaultOriginationOwner,
+			{
+				changeReason: "Promote FairLend MIC to canonical origination owner",
+				defaultOriginationInvestmentVehicleId: vehicleId,
+				defaultOriginationLenderId: lenderId,
+				defaultOriginationWorkspaceId: workspaceId,
+			}
+		);
+
+		expect(result.settings.key).toBe("default");
+
+		const auditEntry = await t.run(async (ctx) => {
+			return ctx.db
+				.query("auditJournal")
+				.withIndex("by_entity", (q) =>
+					q
+						.eq("entityType", "platformSetting")
+						.eq("entityId", String(result.settings._id))
+				)
+				.first();
+		});
+
+		expect(auditEntry?.eventType).toBe("DEFAULT_ORIGINATION_OWNER_SET");
+	});
+
+	it("rejects lenders that are not anchored to the FairLend brokerage org", async () => {
+		const t = createTestConvex();
+		const userId = await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+
+		const { lenderId, vehicleId, workspaceId } = await t.run(async (ctx) => {
+			const brokerId = await ctx.db.insert("brokers", {
+				createdAt: Date.now(),
+				lastTransitionAt: Date.now(),
+				onboardedAt: Date.now(),
+				orgId: FAIRLEND_STAFF_ORG_ID,
+				status: "active",
+				userId,
+			});
+			const lenderId = await ctx.db.insert("lenders", {
+				accreditationStatus: "exempt",
+				brokerId,
+				createdAt: Date.now(),
+				onboardingEntryPath: "admin_dashboard",
+				orgId: FAIRLEND_STAFF_ORG_ID,
+				status: "active",
+				userId,
+			});
+			const vehicleId = await ctx.db.insert("investmentVehicles", {
+				lenderId,
+				name: "Not FairLend MIC",
+				legalName: "Not FairLend Mortgage Investment Corporation",
+				entityType: "mic",
+				status: "active",
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+			const workspaceId = await ctx.db.insert("investmentVehicleWorkspaces", {
+				investmentVehicleId: vehicleId,
+				name: "Not FairLend MIC Workspace",
+				status: "active",
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+			return { lenderId, vehicleId, workspaceId };
+		});
+
+		const error = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(api.platform.defaultOriginationOwner.setDefaultOriginationOwner, {
+				changeReason: "Attempt to point originations at a non-FairLend lender",
+				defaultOriginationInvestmentVehicleId: vehicleId,
+				defaultOriginationLenderId: lenderId,
+				defaultOriginationWorkspaceId: workspaceId,
+			})
+			.catch((caughtError: unknown) => caughtError);
+
+		expect(await getConvexErrorData(error)).toMatchObject({
+			code: "DEFAULT_ORIGINATION_OWNER_INVALID",
+			message: "Configured lender must belong to the FairLend brokerage org",
+		});
+	});
+
+	it("rejects brokerage-org lenders that impersonate the canonical FairLend MIC by name only", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const impostorUserId = await ensureSeededIdentity(
+			t,
+			createMockViewer({
+				email: "other.mic+lender@fairlend.ca",
+				firstName: "Other",
+				lastName: "MIC",
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				orgName: "FairLend Capital",
+				roles: ["lender"],
+				subject: "user_other_fairlend_mic_lender",
+			})
+		);
+
+		const { lenderId, vehicleId, workspaceId } = await t.run(async (ctx) => {
+			const now = Date.now();
+			const brokerId = await ctx.db.insert("brokers", {
+				createdAt: now,
+				lastTransitionAt: now,
+				onboardedAt: now,
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				status: "active",
+				userId: impostorUserId,
+			});
+			const lenderId = await ctx.db.insert("lenders", {
+				accreditationStatus: "exempt",
+				brokerId,
+				createdAt: now,
+				onboardingEntryPath: "admin_dashboard",
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				status: "active",
+				userId: impostorUserId,
+			});
+			const vehicleId = await ctx.db.insert("investmentVehicles", {
+				lenderId,
+				name: "FairLend MIC",
+				legalName: "FairLend Mortgage Investment Corporation",
+				entityType: "mic",
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			const workspaceId = await ctx.db.insert("investmentVehicleWorkspaces", {
+				investmentVehicleId: vehicleId,
+				name: "FairLend MIC Workspace",
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			return { lenderId, vehicleId, workspaceId };
+		});
+
+		const error = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(api.platform.defaultOriginationOwner.setDefaultOriginationOwner, {
+				changeReason: "Attempt to point originations at an impostor MIC owner",
+				defaultOriginationInvestmentVehicleId: vehicleId,
+				defaultOriginationLenderId: lenderId,
+				defaultOriginationWorkspaceId: workspaceId,
+			})
+			.catch((caughtError: unknown) => caughtError);
+
+		expect(await getConvexErrorData(error)).toMatchObject({
+			code: "DEFAULT_ORIGINATION_OWNER_INVALID",
+			message: "Configured lender must be the canonical FairLend MIC owner",
+		});
+	});
+
+	it("rejects a configured trust bank account that is not validated", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const lenderUserId = await ensureSeededIdentity(
+			t,
+			createMockViewer({
+				email: "fairlend.mic+lender@fairlend.ca",
+				firstName: "FairLend",
+				lastName: "MIC",
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				orgName: "FairLend Capital",
+				roles: ["lender"],
+				subject: "user_fairlend_mic_lender_trust_validation",
+			})
+		);
+
+		const { lenderId, vehicleId, workspaceId, trustBankAccountId } =
+			await t.run(async (ctx) => {
+				const brokerId = await ctx.db.insert("brokers", {
+					createdAt: Date.now(),
+					lastTransitionAt: Date.now(),
+					onboardedAt: Date.now(),
+					orgId: FAIRLEND_BROKERAGE_ORG_ID,
+					status: "active",
+					userId: lenderUserId,
+				});
+				const lenderId = await ctx.db.insert("lenders", {
+					accreditationStatus: "exempt",
+					brokerId,
+					createdAt: Date.now(),
+					onboardingEntryPath: "admin_dashboard",
+					orgId: FAIRLEND_BROKERAGE_ORG_ID,
+					status: "active",
+					userId: lenderUserId,
+				});
+				const vehicleId = await ctx.db.insert("investmentVehicles", {
+					lenderId,
+					name: "FairLend MIC",
+					legalName: "FairLend Mortgage Investment Corporation",
+					entityType: "mic",
+					status: "active",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				const workspaceId = await ctx.db.insert("investmentVehicleWorkspaces", {
+					investmentVehicleId: vehicleId,
+					name: "FairLend MIC Workspace",
+					status: "active",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				const trustBankAccountId = await ctx.db.insert("bankAccounts", {
+					accountLast4: "2401",
+					country: "CA",
+					createdAt: Date.now(),
+					currency: "CAD",
+					institutionNumber: "001",
+					mandateStatus: "not_required",
+					ownerId: String(vehicleId),
+					ownerType: "trust",
+					status: "pending_validation",
+					transitNumber: "00011",
+					updatedAt: Date.now(),
+					validationMethod: "manual",
+				});
+				return { lenderId, vehicleId, workspaceId, trustBankAccountId };
+			});
+
+		const error = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(api.platform.defaultOriginationOwner.setDefaultOriginationOwner, {
+				changeReason: "Point at a trust account that is not validated yet",
+				defaultFairlendTrustBankAccountId: trustBankAccountId,
+				defaultOriginationInvestmentVehicleId: vehicleId,
+				defaultOriginationLenderId: lenderId,
+				defaultOriginationWorkspaceId: workspaceId,
+			})
+			.catch((caughtError: unknown) => caughtError);
+
+		expect(await getConvexErrorData(error)).toMatchObject({
+			code: "DEFAULT_ORIGINATION_OWNER_INVALID",
+			message: "Configured trust account is not validated",
+		});
+	});
+
+	it("does not append a second audit entry when the configured link ids are unchanged", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const lenderUserId = await ensureSeededIdentity(
+			t,
+			createMockViewer({
+				email: "fairlend.mic+lender@fairlend.ca",
+				firstName: "FairLend",
+				lastName: "MIC",
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				orgName: "FairLend Capital",
+				roles: ["lender"],
+				subject: "user_fairlend_mic_lender_idempotent",
+			})
+		);
+
+		const { lenderId, vehicleId, workspaceId } = await t.run(async (ctx) => {
+			const brokerId = await ctx.db.insert("brokers", {
+				createdAt: Date.now(),
+				lastTransitionAt: Date.now(),
+				onboardedAt: Date.now(),
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				status: "active",
+				userId: lenderUserId,
+			});
+			const lenderId = await ctx.db.insert("lenders", {
+				accreditationStatus: "exempt",
+				brokerId,
+				createdAt: Date.now(),
+				onboardingEntryPath: "admin_dashboard",
+				orgId: FAIRLEND_BROKERAGE_ORG_ID,
+				status: "active",
+				userId: lenderUserId,
+			});
+			const vehicleId = await ctx.db.insert("investmentVehicles", {
+				lenderId,
+				name: "FairLend MIC",
+				legalName: "FairLend Mortgage Investment Corporation",
+				entityType: "mic",
+				status: "active",
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+			const workspaceId = await ctx.db.insert("investmentVehicleWorkspaces", {
+				investmentVehicleId: vehicleId,
+				name: "FairLend MIC Workspace",
+				status: "active",
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+			return { lenderId, vehicleId, workspaceId };
+		});
+
+		const payload = {
+			changeReason: "Promote FairLend MIC to canonical origination owner",
+			defaultOriginationInvestmentVehicleId: vehicleId,
+			defaultOriginationLenderId: lenderId,
+			defaultOriginationWorkspaceId: workspaceId,
+		} as const;
+
+		const first = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(
+				api.platform.defaultOriginationOwner.setDefaultOriginationOwner,
+				payload
+			);
+
+		const countAuditEntries = () =>
+			t.run(async (ctx) => {
+				return ctx.db
+					.query("auditJournal")
+					.withIndex("by_entity", (q) =>
+						q
+							.eq("entityType", "platformSetting")
+							.eq("entityId", String(first.settings._id))
+					)
+					.collect()
+					.then((entries) => entries.length);
+			});
+
+		expect(await countAuditEntries()).toBe(1);
+
+		await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(
+				api.platform.defaultOriginationOwner.setDefaultOriginationOwner,
+				{
+					...payload,
+					changeReason: "Replay with different metadata only",
+				}
+			);
+
+		expect(await countAuditEntries()).toBe(1);
+	});
+});

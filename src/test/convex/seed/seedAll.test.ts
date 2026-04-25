@@ -46,11 +46,14 @@ describe("seedAll", () => {
 			brokers: 2,
 			borrowers: 5,
 			lenders: 3,
+			investmentVehicles: 1,
+			investmentVehicleWorkspaces: 1,
 			properties: 5,
 			mortgages: 5,
 			deals: 3,
 			obligations: 15,
 			onboardingRequests: 3,
+			platformSettings: 1,
 		});
 
 		const countsAfterFirstRun = await t.run(async (ctx) => {
@@ -153,6 +156,18 @@ describe("seedAll", () => {
 			obligations: 15,
 			onboardingRequests: 3,
 		});
+
+		const platformArtifacts = await t.run(async (ctx) => ({
+			investmentVehicles: await ctx.db.query("investmentVehicles").collect(),
+			investmentVehicleWorkspaces: await ctx.db
+				.query("investmentVehicleWorkspaces")
+				.collect(),
+			platformSettings: await ctx.db.query("platformSettings").collect(),
+		}));
+
+		expect(platformArtifacts.platformSettings).toHaveLength(1);
+		expect(platformArtifacts.investmentVehicles).toHaveLength(1);
+		expect(platformArtifacts.investmentVehicleWorkspaces).toHaveLength(1);
 
 		const dealStatuses = new Set(
 			countsAfterFirstRun.deals.map((deal) => deal.status)
