@@ -473,6 +473,12 @@ describe("processObligationTransitions", () => {
 			settledAt: Date.now() - 2 * MS_PER_DAY,
 		});
 
+		// Exercise the cron path so any transformation of the obligation is applied
+		await t.action(
+			internal.payments.obligations.crons.processObligationTransitions,
+			{}
+		);
+
 		const obligation = await t.run(async (ctx) => ctx.db.get(obligationId));
 		expect(typeof obligation?.dueDate).toBe("number");
 		expect(typeof obligation?.gracePeriodEnd).toBe("number");
