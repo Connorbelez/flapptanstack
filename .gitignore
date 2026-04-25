@@ -25,6 +25,6 @@ playwright-report
 test-results
 coverage
 .auth/
-# reviews/
+reviews/
 src/routeTree.gen.ts
 .gitnexus/

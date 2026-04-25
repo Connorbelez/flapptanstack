@@ -87,6 +87,8 @@ import type * as dealReroutes_mutations from "../dealReroutes/mutations.js";
 import type * as dealReroutes_queries from "../dealReroutes/queries.js";
 import type * as deals_envelopeWebhooks from "../deals/envelopeWebhooks.js";
 import type * as deals_envelopes from "../deals/envelopes.js";
+import type * as deals_lawyerMutations from "../deals/lawyerMutations.js";
+import type * as deals_lawyerQueries from "../deals/lawyerQueries.js";
 import type * as deals_mutations from "../deals/mutations.js";
 import type * as deals_participantProjection from "../deals/participantProjection.js";
 import type * as deals_queries from "../deals/queries.js";
@@ -368,6 +370,7 @@ import type * as seed_seedOnboardingRequest from "../seed/seedOnboardingRequest.
 import type * as seed_seedPaymentData from "../seed/seedPaymentData.js";
 import type * as test_authTestEndpoints from "../test/authTestEndpoints.js";
 import type * as test_dealPackageE2e from "../test/dealPackageE2e.js";
+import type * as test_lawyerWorkspaceE2e from "../test/lawyerWorkspaceE2e.js";
 import type * as test_moduleMaps from "../test/moduleMaps.js";
 import type * as test_originationE2e from "../test/originationE2e.js";
 import type * as test_packageSchemas from "../test/packageSchemas.js";
@@ -476,6 +479,8 @@ declare const fullApi: ApiFromModules<{
   "dealReroutes/queries": typeof dealReroutes_queries;
   "deals/envelopeWebhooks": typeof deals_envelopeWebhooks;
   "deals/envelopes": typeof deals_envelopes;
+  "deals/lawyerMutations": typeof deals_lawyerMutations;
+  "deals/lawyerQueries": typeof deals_lawyerQueries;
   "deals/mutations": typeof deals_mutations;
   "deals/participantProjection": typeof deals_participantProjection;
   "deals/queries": typeof deals_queries;
@@ -757,6 +762,7 @@ declare const fullApi: ApiFromModules<{
   "seed/seedPaymentData": typeof seed_seedPaymentData;
   "test/authTestEndpoints": typeof test_authTestEndpoints;
   "test/dealPackageE2e": typeof test_dealPackageE2e;
+  "test/lawyerWorkspaceE2e": typeof test_lawyerWorkspaceE2e;
   "test/moduleMaps": typeof test_moduleMaps;
   "test/originationE2e": typeof test_originationE2e;
   "test/packageSchemas": typeof test_packageSchemas;
