@@ -2,11 +2,13 @@ import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { httpAction } from "../../_generated/server";
+import { createStripeCheckoutProviderFromEnv } from "../../checkout/stripe";
 import { convex } from "../../fluent";
 import {
 	markTransferWebhookFailed,
 	persistVerifiedTransferWebhook,
 } from "./transferCore";
+import type { NormalizedTransferWebhookEventType } from "./types";
 import { jsonResponse } from "./utils";
 import type { VerificationResult } from "./verification";
 
@@ -16,8 +18,10 @@ export interface StripeWebhookEvent {
 	created: number;
 	data: {
 		object: {
-			amount: number;
+			amount?: number;
+			amount_total?: number;
 			charge?: string;
+			currency?: string;
 			failure_code?: string;
 			failure_message?: string;
 			id: string;
@@ -41,6 +45,18 @@ interface StripeReversalPayload {
 	reversalReason: string;
 }
 
+interface StripeCheckoutWebhookPayload {
+	amount?: number;
+	currency?: string;
+	failureReason?: string;
+	kind: "success" | "failure";
+	metadata: Record<string, string>;
+	occurredAt: number;
+	providerEventId: string;
+	stripeCheckoutSessionId?: string;
+	stripePaymentIntentId?: string;
+}
+
 const UNSUPPORTED_PROVIDER_ERROR = "unsupported_provider";
 
 // ── Constants ───────────────────────────────────────────────────────
@@ -50,6 +66,22 @@ export const REVERSAL_EVENT_TYPES = new Set([
 	"charge.refunded",
 	"payment_intent.payment_failed",
 ]);
+
+export const CHECKOUT_SUCCESS_EVENT_TYPES = new Set([
+	"checkout.session.completed",
+	"checkout.session.async_payment_succeeded",
+]);
+
+export const CHECKOUT_FAILURE_EVENT_TYPES = new Set([
+	"checkout.session.async_payment_failed",
+	"payment_intent.payment_failed",
+]);
+
+type StripeWebhookClassification =
+	| "checkout_failure"
+	| "checkout_success"
+	| "ignored"
+	| "reversal";
 
 const stripeUnsupportedWebhookArgsValidator = v.object({
 	providerEventId: v.string(),
@@ -111,7 +143,7 @@ export function toPayload(event: StripeWebhookEvent): StripeReversalPayload {
 		.slice(0, 10);
 
 	return {
-		originalAmount: event.data.object.amount,
+		originalAmount: event.data.object.amount ?? 0,
 		provider: "stripe",
 		providerEventId: event.id,
 		providerRef: extractProviderRef(event),
@@ -121,11 +153,83 @@ export function toPayload(event: StripeWebhookEvent): StripeReversalPayload {
 	};
 }
 
+function hasCheckoutMetadata(event: StripeWebhookEvent): boolean {
+	return typeof event.data.object.metadata?.checkoutSessionId === "string";
+}
+
+export function classifyStripeWebhookEvent(
+	event: StripeWebhookEvent
+): StripeWebhookClassification {
+	if (
+		CHECKOUT_SUCCESS_EVENT_TYPES.has(event.type) &&
+		hasCheckoutMetadata(event)
+	) {
+		return "checkout_success";
+	}
+	if (
+		CHECKOUT_FAILURE_EVENT_TYPES.has(event.type) &&
+		hasCheckoutMetadata(event)
+	) {
+		return "checkout_failure";
+	}
+	if (REVERSAL_EVENT_TYPES.has(event.type)) {
+		return "reversal";
+	}
+	return "ignored";
+}
+
+function readPaymentIntentId(event: StripeWebhookEvent): string | undefined {
+	if (event.type.startsWith("payment_intent.")) {
+		return event.data.object.id;
+	}
+	const value = event.data.object.payment_intent;
+	return typeof value === "string" && value.trim().length > 0
+		? value
+		: undefined;
+}
+
+function readCheckoutSessionId(event: StripeWebhookEvent): string | undefined {
+	return event.type.startsWith("checkout.session.")
+		? event.data.object.id
+		: undefined;
+}
+
+function buildCheckoutFailureReason(event: StripeWebhookEvent): string {
+	const object = event.data.object;
+	return (
+		object.failure_message ??
+		object.failure_code ??
+		object.status ??
+		"stripe_payment_failed"
+	);
+}
+
+export function toCheckoutPayload(
+	event: StripeWebhookEvent,
+	kind: "success" | "failure"
+): StripeCheckoutWebhookPayload {
+	const object = event.data.object;
+	const metadata = object.metadata ?? {};
+	return {
+		amount: object.amount_total ?? object.amount,
+		currency: object.currency,
+		...(kind === "failure"
+			? { failureReason: buildCheckoutFailureReason(event) }
+			: {}),
+		kind,
+		metadata,
+		occurredAt: event.created * 1000,
+		providerEventId: event.id,
+		stripeCheckoutSessionId: readCheckoutSessionId(event),
+		stripePaymentIntentId: readPaymentIntentId(event),
+	};
+}
+
 async function persistStripeWebhook(
 	ctx: Parameters<typeof persistVerifiedTransferWebhook>[0],
 	args: {
 		body: string;
-		normalizedEventType?: "TRANSFER_REVERSED";
+		normalizedEventType?: NormalizedTransferWebhookEventType;
 		providerEventId: string;
 	}
 ) {
@@ -149,6 +253,114 @@ async function persistStripeWebhook(
 					: "stripe_webhook_persist_failed",
 		};
 	}
+}
+
+async function processStripeCheckoutWebhook(
+	ctx: Parameters<typeof persistVerifiedTransferWebhook>[0],
+	args: {
+		body: string;
+		event: StripeWebhookEvent;
+		kind: "success" | "failure";
+	}
+) {
+	const payload = toCheckoutPayload(args.event, args.kind);
+	const persisted = await persistStripeWebhook(ctx, {
+		body: args.body,
+		normalizedEventType:
+			args.kind === "success" ? "FUNDS_SETTLED" : "TRANSFER_FAILED",
+		providerEventId: payload.providerEventId,
+	});
+	if (!persisted.ok) {
+		return jsonResponse({ error: persisted.error }, 500);
+	}
+
+	const reconciled = await ctx.runMutation(
+		internal.checkout.reconciliation.reconcileStripeCheckoutWebhook,
+		{
+			amount: payload.amount,
+			currency: payload.currency,
+			failureReason: payload.failureReason,
+			kind: payload.kind,
+			metadata: payload.metadata,
+			occurredAt: payload.occurredAt,
+			providerEventId: payload.providerEventId,
+			stripeCheckoutSessionId: payload.stripeCheckoutSessionId,
+			stripePaymentIntentId: payload.stripePaymentIntentId,
+			webhookEventId: persisted.webhookEventId,
+		}
+	);
+
+	if (!reconciled.ok) {
+		return jsonResponse({
+			accepted: true,
+			processed: false,
+			reason: reconciled.error,
+			providerEventId: payload.providerEventId,
+		});
+	}
+
+	if (reconciled.status === "refund_required") {
+		const provider = createStripeCheckoutProviderFromEnv();
+		let refund: Awaited<ReturnType<typeof provider.refundPaymentIntent>>;
+		try {
+			refund = await provider.refundPaymentIntent({
+				amount: reconciled.refundRequest.amount,
+				idempotencyKey: reconciled.refundRequest.idempotencyKey,
+				paymentIntentId: reconciled.refundRequest.paymentIntentId,
+			});
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "stripe_refund_failed";
+			await ctx.runMutation(internal.checkout.refunds.failLateSuccessRefund, {
+				checkoutSessionId: reconciled.refundRequest.checkoutSessionId,
+				error: message,
+				providerEventId: reconciled.refundRequest.providerEventId,
+				webhookEventId: reconciled.refundRequest.webhookEventId,
+			});
+			return jsonResponse({
+				accepted: true,
+				processed: false,
+				reason: message,
+				providerEventId: payload.providerEventId,
+			});
+		}
+		await ctx.runMutation(internal.checkout.refunds.completeLateSuccessRefund, {
+			checkoutSessionId: reconciled.refundRequest.checkoutSessionId,
+			providerEventId: reconciled.refundRequest.providerEventId,
+			stripeRefundId: refund.stripeRefundId,
+			webhookEventId: reconciled.refundRequest.webhookEventId,
+		});
+	}
+
+	if (
+		reconciled.status === "completed" ||
+		reconciled.status === "already_completed"
+	) {
+		const checkoutSessionId = payload.metadata.checkoutSessionId;
+		if (checkoutSessionId) {
+			const handoff = await ctx.runAction(
+				internal.checkout.dealHandoff.createDealFromPaidCheckoutInternal,
+				{
+					checkoutSessionId: checkoutSessionId as Id<"checkoutSessions">,
+				}
+			);
+			if (!handoff.ok) {
+				return jsonResponse({
+					accepted: true,
+					processed: false,
+					reason: handoff.code,
+					providerEventId: payload.providerEventId,
+				});
+			}
+		}
+	}
+
+	return jsonResponse({
+		accepted: true,
+		processed: true,
+		providerEventId: payload.providerEventId,
+		status: reconciled.status,
+	});
 }
 
 async function scheduleUnsupportedStripeWebhookProcessing(
@@ -240,9 +452,27 @@ export const stripeWebhook = httpAction(async (ctx, request) => {
 		return jsonResponse({ error: "malformed_json" }, 400);
 	}
 
-	// 3. Filter for reversal events only
-	if (!REVERSAL_EVENT_TYPES.has(event.type)) {
+	const classification = classifyStripeWebhookEvent(event);
+
+	// 3. Filter for checkout/reversal events only
+	if (classification === "ignored") {
 		return jsonResponse({ ignored: true, event_type: event.type });
+	}
+
+	if (classification === "checkout_success") {
+		return processStripeCheckoutWebhook(ctx, {
+			body,
+			event,
+			kind: "success",
+		});
+	}
+
+	if (classification === "checkout_failure") {
+		return processStripeCheckoutWebhook(ctx, {
+			body,
+			event,
+			kind: "failure",
+		});
 	}
 
 	// Foot Gun P4: Log warning for disputes

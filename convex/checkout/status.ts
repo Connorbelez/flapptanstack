@@ -47,11 +47,16 @@ export const CHECKOUT_ALLOWED_TRANSITIONS = {
 		"abandoned",
 		"refunded_late_success",
 	],
-	payment_failed_retryable: ["hosted_checkout_open", "expired", "abandoned"],
+	payment_failed_retryable: [
+		"hosted_checkout_open",
+		"expired",
+		"abandoned",
+		"refunded_late_success",
+	],
 	completed: [],
 	expired: ["refunded_late_success"],
-	abandoned: [],
-	provider_start_failed: [],
+	abandoned: ["refunded_late_success"],
+	provider_start_failed: ["refunded_late_success"],
 	refunded_late_success: [],
 } as const satisfies Record<CheckoutStatus, readonly CheckoutStatus[]>;
 

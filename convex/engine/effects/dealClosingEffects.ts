@@ -38,6 +38,23 @@ export const notifyCancellation = internalAction({
 export const createDocumentPackage = internalAction({
 	args: dealEffectPayloadValidator,
 	handler: async (ctx, args) => {
+		const deal = await ctx
+			.runQuery(internal.deals.queries.getInternalDeal, {
+				dealId: args.entityId,
+			})
+			.catch(() => null);
+		if (deal?.checkoutSessionId) {
+			const existingPackage = await ctx.runQuery(
+				internal.documents.dealPackages.getPackageByDealInternal,
+				{ dealId: args.entityId }
+			);
+			if (existingPackage) {
+				console.info(
+					`[createDocumentPackage] Deal ${args.entityId} was created by checkout handoff and already has package ${existingPackage._id}; skipping duplicate scheduled generation`
+				);
+				return;
+			}
+		}
 		await ctx.runAction(
 			internal.documents.dealPackages.runCreateDocumentPackageInternal,
 			{
@@ -97,6 +114,13 @@ export const collectLockingFee = internalAction({
 		if (deal.lockingFeeAmount === undefined || deal.lockingFeeAmount <= 0) {
 			console.info(
 				`[collectLockingFee] No locking fee configured for deal ${args.entityId} — skipping`
+			);
+			return;
+		}
+
+		if (deal.lockFeeTransferRequestId) {
+			console.info(
+				`[collectLockingFee] Deal ${args.entityId} already has lock-fee transfer ${deal.lockFeeTransferRequestId} — skipping duplicate collection`
 			);
 			return;
 		}
