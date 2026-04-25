@@ -13,8 +13,8 @@
 
 ## Notes
 - ENG-303 landing contract is present locally as `api.portals.queries.getPublicPortalLandingPage`.
-- Current `src/routes/index.tsx` still renders diagnostic portal chrome and reads `publicPortalListingsQueryOptions`; ENG-305 should move root rendering to the landing contract.
-- Current `src/routes/__root.tsx` renders the shared `Header` for all non-admin routes; public portal root needs an exception.
+- Initial `src/routes/index.tsx` state rendered diagnostic portal chrome and read `publicPortalListingsQueryOptions`; ENG-305 moved root rendering to the landing contract.
+- Initial `src/routes/__root.tsx` state rendered the shared `Header` for all non-admin routes; ENG-305 added the public portal root exception.
 - Ready-to-edit artifact validation passed.
 - GitNexus impact analysis: `HomeContent`, `PortalHomeContent`, and `RootComponent` all LOW risk with no direct upstream callers or affected flows.
 - Implemented root landing contract consumption, public portal root header suppression, and fixed-template landing components.

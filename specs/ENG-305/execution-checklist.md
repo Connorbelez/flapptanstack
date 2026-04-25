@@ -15,7 +15,7 @@
 - [x] Avoid demo route imports, Zustand stores, and mock-data modules entirely.
 
 ## Definition Of Done From Linear
-- [x] A valid portal host renders the approved landing-page IA at `/` from production code.
+- [x] The production root code path renders the approved landing-page IA at `/` for an active portal context in route validation; live seeded-host browser validation remains recorded as manual validation in `audit.md`.
 - [x] The page reads as broker-first and trust-first rather than as generic app chrome.
 - [x] The teaser section shows live, portal-aware listing data in a dedicated landing presentation.
 - [x] Invalid or unavailable portal hosts still fail closed through the root boundary.
@@ -35,8 +35,8 @@
 - [x] Storybook stories considered; not added because this is a route-owned fixed-template page, not a reusable Storybook component surface in the current repo.
 
 ## Final Validation
-- [x] All requirements are satisfied.
-- [x] All definition-of-done items are satisfied.
+- [x] Code-level requirements are satisfied.
+- [x] Definition-of-done items are satisfied by code and automated tests, with live seeded-host browser validation explicitly tracked in `audit.md`.
 - [x] `bun check` passed.
 - [x] `bun typecheck` passed.
 - [x] `bunx convex codegen` passed.
