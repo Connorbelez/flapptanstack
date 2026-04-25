@@ -294,7 +294,7 @@ export const getPortalDealDetail = dealQuery
 			return null;
 		}
 
-		const [property, lenderUser, sellerUser, packageSurface] =
+		const [property, lenderUser, sellerUser, viewerUser] =
 			await Promise.all([
 				ctx.db.get(mortgage.propertyId),
 				ctx.db
@@ -305,9 +305,20 @@ export const getPortalDealDetail = dealQuery
 					.query("users")
 					.withIndex("authId", (query) => query.eq("authId", deal.sellerId))
 					.unique(),
-				readDealDocumentPackageSurface(ctx, args.dealId),
+				ctx.db
+					.query("users")
+					.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+					.unique(),
 			]);
 
+		const packageSurfaceWithViewer = await readDealDocumentPackageSurface(
+			ctx,
+			args.dealId,
+			{
+				isFairLendAdmin: ctx.viewer.isFairLendAdmin,
+				userId: viewerUser?._id,
+			}
+		);
 		return {
 			deal: {
 				closingDate: deal.closingDate ?? null,
@@ -356,7 +367,7 @@ export const getPortalDealDetail = dealQuery
 						deal.sellerId,
 				},
 			},
-			documentInstances: packageSurface.instances
+			documentInstances: packageSurfaceWithViewer.instances
 				.filter(
 					(instance) =>
 						instance.class === "private_static" ||
@@ -364,10 +375,10 @@ export const getPortalDealDetail = dealQuery
 						instance.class === "private_templated_signable"
 				)
 				.map(projectPortalDealDocumentInstance),
-			documentPackage: packageSurface.package
+			documentPackage: packageSurfaceWithViewer.package
 				? {
-						readyAt: packageSurface.package.readyAt,
-						status: packageSurface.package.status,
+						readyAt: packageSurfaceWithViewer.package.readyAt,
+						status: packageSurfaceWithViewer.package.status,
 					}
 				: null,
 		};

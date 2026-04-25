@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { api, internal } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../../../../convex/constants";
+import { getSignatureProvider } from "../../../../convex/documents/signature/provider";
 import {
 	createMockViewer,
 	createTestConvex,
@@ -29,6 +30,115 @@ async function createPdfBytes(label: string) {
 		color: rgb(0, 0, 0),
 	});
 	return new Uint8Array(await pdf.save());
+}
+
+interface MockDocumensoOptions {
+	envelopeStatus?: "COMPLETED" | "PENDING";
+	failCreate?: boolean;
+	failDelete?: boolean;
+	failDistribute?: boolean;
+	failSync?: boolean;
+	recipientEmail?: string;
+	recipientName?: string;
+	recipientSigningStatus?: "SIGNED" | null;
+	signingUrl?: string;
+}
+
+function installMockDocumensoFetch(options?: MockDocumensoOptions) {
+	const envelopeId = "doc_env_1";
+	const recipientId = "doc_rcpt_1";
+	const signingUrl =
+		options?.signingUrl ?? "https://documenso.test/sign/session_1";
+	const recipientSigningStatus = options?.recipientSigningStatus ?? null;
+	const envelopeStatus = options?.envelopeStatus ?? "PENDING";
+
+	const recipientPayload = {
+		email: options?.recipientEmail ?? "borrower.phase7@test.fairlend.ca",
+		id: recipientId,
+		name: options?.recipientName ?? "Ada Borrower",
+		readStatus: recipientSigningStatus ? "OPENED" : null,
+		role: "SIGNER",
+		signedAt:
+			recipientSigningStatus === "SIGNED"
+				? "2026-05-15T16:00:00.000Z"
+				: null,
+		signingOrder: 0,
+		signingStatus: recipientSigningStatus,
+		signingUrl,
+		token: "token_1",
+	};
+
+	const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = String(input);
+		if (url.endsWith("/envelope/create")) {
+			if (options?.failCreate) {
+				return new Response(JSON.stringify({ error: "create failed" }), {
+					status: 500,
+				});
+			}
+			return new Response(JSON.stringify({ id: envelopeId }), { status: 200 });
+		}
+		if (url.endsWith(`/envelope/${envelopeId}`)) {
+			if (options?.failSync) {
+				return new Response(JSON.stringify({ error: "sync failed" }), {
+					status: 500,
+				});
+			}
+			return new Response(
+				JSON.stringify({
+					id: envelopeId,
+					recipients: [recipientPayload],
+					status: envelopeStatus,
+					updatedAt: "2026-05-15T16:00:00.000Z",
+				}),
+				{ status: 200 }
+			);
+		}
+		if (url.endsWith("/envelope/distribute")) {
+			if (options?.failDistribute) {
+				return new Response(JSON.stringify({ error: "distribution failed" }), {
+					status: 500,
+				});
+			}
+			return new Response(
+				JSON.stringify({
+					id: envelopeId,
+					recipients: [recipientPayload],
+					success: true,
+				}),
+				{ status: 200 }
+			);
+		}
+		if (url.endsWith("/envelope/delete")) {
+			if (options?.failDelete) {
+				return new Response(JSON.stringify({ error: "delete failed" }), {
+					status: 500,
+				});
+			}
+			return new Response(JSON.stringify({ success: true }), { status: 200 });
+		}
+		if (url.endsWith(`/envelope/recipient/${recipientId}`)) {
+			return new Response(JSON.stringify(recipientPayload), { status: 200 });
+		}
+
+		return new Response(
+			JSON.stringify({
+				init,
+				url,
+			}),
+			{ status: 404 }
+		);
+	});
+
+	vi.stubGlobal("fetch", fetchMock);
+	process.env.DOCUMENSO_API_TOKEN = "documenso_test_token";
+
+	return {
+		envelopeId,
+		fetchMock,
+		recipientId,
+		signingUrl,
+	};
 }
 
 async function seedDocumentAsset(
@@ -71,6 +181,30 @@ async function seedDocumentAsset(
 		});
 	});
 }
+
+async function storePdfStorageId(
+	t: ReturnType<typeof createTestConvex>,
+	label: string
+) {
+	const bytes = await createPdfBytes(label);
+
+	return t.run(async (ctx) => {
+		return (
+			ctx.storage as unknown as {
+				store: (blob: Blob) => Promise<Id<"_storage">>;
+			}
+		).store(new Blob([bytes], { type: "application/pdf" }));
+	});
+}
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+	delete process.env.DOCUMENSO_API_KEY;
+	delete process.env.DOCUMENSO_API_TOKEN;
+	delete process.env.DOCUMENSO_API_BASE_URL;
+	delete process.env.DOCUMENSO_APP_BASE_URL;
+	delete process.env.DOCUMENSO_TIMEOUT_MS;
+});
 
 async function seedPublishedTemplate(
 	t: ReturnType<typeof createTestConvex>,
@@ -232,7 +366,9 @@ async function seedDealPackageFixture(
 	t: ReturnType<typeof createTestConvex>,
 	args?: {
 		includeListing?: boolean;
+		omitSignableSignatories?: boolean;
 		requireLawyerSignatory?: boolean;
+		signablePlatformRole?: "borrower_primary" | "lawyer_primary" | "lender_primary";
 		templatedVariableKey?: string;
 	}
 ) {
@@ -331,18 +467,20 @@ async function seedDealPackageFixture(
 				position: { height: 18, page: 0, width: 180, x: 72, y: 180 },
 				required: true,
 				signableType: "SIGNATURE",
-				signatoryPlatformRole: "borrower_primary",
+				signatoryPlatformRole: args?.signablePlatformRole ?? "borrower_primary",
 				type: "signable",
 			},
 		],
 		name: "Borrower Signature Packet",
-		signatories: [
-			{
-				order: 0,
-				platformRole: "borrower_primary",
-				role: "signatory",
-			},
-		],
+		signatories: args?.omitSignableSignatories
+			? []
+			: [
+					{
+						order: 0,
+						platformRole: args?.signablePlatformRole ?? "borrower_primary",
+						role: "signatory",
+					},
+				],
 	});
 
 	return t.run(async (ctx) => {
@@ -559,6 +697,8 @@ async function seedDealPackageFixture(
 
 		return {
 			borrowerId,
+			borrowerUserId,
+			borrowerIdentity,
 			dealId,
 			lenderIdentity,
 			lawyerIdentity,
@@ -570,6 +710,7 @@ async function seedDealPackageFixture(
 
 describe("documents/dealPackages", () => {
 	it("materializes immutable deal packages from active private mortgage blueprints", async () => {
+		installMockDocumensoFetch();
 		const t = createTestConvex({ includeWorkflowComponents: false });
 		const fixture = await seedDealPackageFixture(t, {
 			includeListing: true,
@@ -597,6 +738,12 @@ describe("documents/dealPackages", () => {
 		);
 		const generatedDocuments = await t.run((ctx) =>
 			ctx.db.query("generatedDocuments").collect()
+		);
+		const signatureEnvelopes = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+		const signatureRecipients = await t.run((ctx) =>
+			ctx.db.query("signatureRecipients").collect()
 		);
 
 		expect(result.status).toBe("ready");
@@ -628,24 +775,65 @@ describe("documents/dealPackages", () => {
 					status: "available",
 					url: expect.any(String),
 				}),
+				expect.objectContaining({
+					displayName: "Borrower signature packet",
+					generatedDocumentId: expect.any(String),
+					kind: "generated",
+					signing: expect.objectContaining({
+						generatedDocumentSigningStatus: "sent",
+						status: "sent",
+					}),
+					status: "signature_sent",
+					url: null,
+				}),
 			])
 		);
-		expect(generatedDocuments).toHaveLength(1);
-		expect(generatedDocuments[0]).toMatchObject({
-			entityId: String(fixture.dealId),
-			entityType: "deal",
-			name: "Counsel memo",
-			signingStatus: "not_applicable",
-		});
+		expect(generatedDocuments).toHaveLength(2);
+		expect(generatedDocuments).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					entityId: String(fixture.dealId),
+					entityType: "deal",
+					name: "Counsel memo",
+					signingStatus: "not_applicable",
+				}),
+				expect.objectContaining({
+					documensoEnvelopeId: "doc_env_1",
+					entityId: String(fixture.dealId),
+					entityType: "deal",
+					name: "Borrower signature packet",
+					signingStatus: "sent",
+				}),
+			])
+		);
+		expect(signatureEnvelopes).toEqual([
+			expect.objectContaining({
+				dealId: fixture.dealId,
+				providerCode: "documenso",
+				providerEnvelopeId: "doc_env_1",
+				status: "sent",
+			}),
+		]);
+		expect(signatureRecipients).toEqual([
+			expect.objectContaining({
+				email: "borrower.phase7@test.fairlend.ca",
+				platformRole: "borrower_primary",
+				providerRecipientId: "doc_rcpt_1",
+				status: "pending",
+			}),
+		]);
 		expect(dealDetail.documentPackage?.status).toBe("ready");
 		expect(
 			dealDetail.documentInstances.filter(
-				(instance) => instance.status === "available"
+				(instance) =>
+					instance.status === "available" ||
+					instance.status === "signature_sent"
 			)
-		).toHaveLength(2);
+		).toHaveLength(3);
 	});
 
 	it("archives failed instances and creates successor rows on retry", async () => {
+		installMockDocumensoFetch();
 		const t = createTestConvex({ includeWorkflowComponents: false });
 		const fixture = await seedDealPackageFixture(t, {
 			includeListing: false,
@@ -733,6 +921,7 @@ describe("documents/dealPackages", () => {
 	});
 
 	it("replays missing package members from the frozen blueprint snapshot without adopting later blueprint changes", async () => {
+		installMockDocumensoFetch();
 		const t = createTestConvex({ includeWorkflowComponents: false });
 		const fixture = await seedDealPackageFixture(t, {
 			includeListing: true,
@@ -860,5 +1049,564 @@ describe("documents/dealPackages", () => {
 				(instance) => instance.displayName === "Late addendum"
 			)
 		).toBe(false);
+	});
+
+	it("keeps signable documents pending when recipient resolution is incomplete", async () => {
+		installMockDocumensoFetch();
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signablePlatformRole: "lawyer_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		const result = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: false,
+			}
+		);
+		const packageSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const signatureEnvelopes = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+
+		expect(result.status).toBe("partial_failure");
+		expect(packageSurface.instances).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					displayName: "Borrower signature packet",
+					lastError: expect.stringContaining("lawyer_primary"),
+					status: "signature_pending_recipient_resolution",
+				}),
+			])
+		);
+		expect(signatureEnvelopes).toHaveLength(0);
+	});
+
+	it("treats signable templates without Documenso recipients as deterministic configuration failures", async () => {
+		const { fetchMock } = installMockDocumensoFetch();
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			omitSignableSignatories: true,
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		const result = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: false,
+			}
+		);
+		const packageSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const signableInstance = packageSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+		const generatedDocuments = await t.run((ctx) =>
+			ctx.db.query("generatedDocuments").collect()
+		);
+		const signatureEnvelopes = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+
+		expect(result.status).toBe("partial_failure");
+		expect(signableInstance).toMatchObject({
+			generatedDocumentId: expect.any(String),
+			lastError: expect.stringContaining("no Documenso recipients"),
+			status: "signature_pending_recipient_resolution",
+		});
+		expect(generatedDocuments).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "Borrower signature packet",
+					signingStatus: "draft",
+				}),
+			])
+		);
+		expect(signatureEnvelopes).toHaveLength(0);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("records provider failures when Documenso envelope creation fails", async () => {
+		installMockDocumensoFetch({ failCreate: true });
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		const result = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: false,
+			}
+		);
+		const packageSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const signableInstance = packageSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+		const generatedDocuments = await t.run((ctx) =>
+			ctx.db.query("generatedDocuments").collect()
+		);
+		const signatureEnvelopes = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+
+		expect(result.status).toBe("partial_failure");
+		expect(signableInstance).toMatchObject({
+			lastError: expect.stringContaining("/envelope/create"),
+			status: "generation_failed",
+		});
+		expect(generatedDocuments).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					signingStatus: "provider_error",
+				}),
+			])
+		);
+		expect(signatureEnvelopes).toHaveLength(0);
+	});
+
+	it("accepts DOCUMENSO_API_KEY as a fallback credential name", async () => {
+		const { fetchMock } = installMockDocumensoFetch();
+		delete process.env.DOCUMENSO_API_TOKEN;
+		process.env.DOCUMENSO_API_KEY = "documenso_test_key";
+
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		const result = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: false,
+			}
+		);
+		const signatureEnvelopes = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+
+		expect(result.status).toBe("ready");
+		expect(signatureEnvelopes).toHaveLength(1);
+		expect(fetchMock).toHaveBeenCalled();
+	});
+
+	it("exposes Documenso envelope deletion for cleanup paths", async () => {
+		const { envelopeId, fetchMock } = installMockDocumensoFetch();
+		const provider = getSignatureProvider("documenso", {
+			fetchFn: fetch,
+			getStorageBlob: async () => null,
+		});
+
+		await provider.deleteEnvelope({
+			providerEnvelopeId: envelopeId,
+		});
+
+		expect(fetchMock).toHaveBeenCalledWith(
+			expect.stringContaining("/envelope/delete"),
+			expect.objectContaining({
+				body: JSON.stringify({ envelopeId }),
+				method: "POST",
+			})
+		);
+	});
+
+	it("issues embedded signing sessions only to canonical recipients and syncs envelope completion", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+		const packageSurface = await t.withIdentity(fixture.lenderIdentity).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const signableInstance = packageSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+		if (!signableInstance) {
+			throw new Error("Expected a signable package instance");
+		}
+
+		const session = await t.withIdentity(fixture.lenderIdentity).action(
+			api.documents.signature.sessions.createEmbeddedSigningSession,
+			{
+				dealId: fixture.dealId,
+				instanceId: signableInstance.instanceId,
+			}
+		);
+
+		expect(session).toMatchObject({
+			expiresAt: expect.any(Number),
+			url: "https://documenso.test/sign/session_1",
+		});
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).action(
+				api.documents.signature.sessions.createEmbeddedSigningSession,
+				{
+					dealId: fixture.dealId,
+					instanceId: signableInstance.instanceId,
+				}
+			)
+		).rejects.toThrow(/no embedded signing recipient/i);
+
+		installMockDocumensoFetch({
+			envelopeStatus: "COMPLETED",
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+			recipientSigningStatus: "SIGNED",
+		});
+		await t.withIdentity(fixture.lenderIdentity).action(
+			api.documents.signature.webhooks.syncSignableDocumentEnvelope,
+			{
+				dealId: fixture.dealId,
+				instanceId: signableInstance.instanceId,
+			}
+		);
+
+		const refreshedSurface = await t.withIdentity(fixture.lenderIdentity).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const refreshedSignable = refreshedSurface.instances.find(
+			(instance) => instance.instanceId === signableInstance.instanceId
+		);
+		const generatedDocuments = await t.run((ctx) =>
+			ctx.db.query("generatedDocuments").collect()
+		);
+
+		expect(refreshedSignable).toMatchObject({
+			status: "signed",
+			signing: expect.objectContaining({
+				generatedDocumentSigningStatus: "completed",
+				status: "completed",
+			}),
+		});
+		expect(generatedDocuments).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					signingStatus: "completed",
+				}),
+			])
+		);
+	});
+
+	it("hides embedded signing until lower signing orders are completed", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const [signatureEnvelope] = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+		if (!signatureEnvelope) {
+			throw new Error("Expected a signature envelope");
+		}
+
+		const [lenderRecipient] = await t.run((ctx) =>
+			ctx.db.query("signatureRecipients").collect()
+		);
+		if (!lenderRecipient) {
+			throw new Error("Expected a signature recipient");
+		}
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(lenderRecipient._id, {
+				signingOrder: 1,
+			});
+			await ctx.db.insert("signatureRecipients", {
+				createdAt: Date.now(),
+				declinedAt: undefined,
+				email: fixture.borrowerIdentity.user_email,
+				envelopeId: signatureEnvelope._id,
+				name: `${fixture.borrowerIdentity.user_first_name} ${fixture.borrowerIdentity.user_last_name}`,
+				openedAt: undefined,
+				platformRole: "borrower_primary",
+				providerRecipientId: "doc_rcpt_blocker",
+				providerRole: "SIGNER",
+				signedAt: undefined,
+				signingOrder: 0,
+				status: "pending",
+				updatedAt: Date.now(),
+				userId: fixture.borrowerUserId,
+			});
+		});
+
+		const blockedSurface = await t
+			.withIdentity(fixture.lenderIdentity)
+			.query(api.documents.dealPackages.getPortalDocumentPackage, {
+				dealId: fixture.dealId,
+			});
+		const blockedInstance = blockedSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+
+		expect(blockedInstance?.signing).toMatchObject({
+			canLaunchEmbeddedSigning: false,
+		});
+
+		await t.run(async (ctx) => {
+			const blocker = await ctx.db
+				.query("signatureRecipients")
+				.withIndex("by_envelope", (query) =>
+					query.eq("envelopeId", signatureEnvelope._id)
+				)
+				.filter((query) => query.eq(query.field("platformRole"), "borrower_primary"))
+				.first();
+			if (!blocker) {
+				throw new Error("Expected a lower-order blocker recipient");
+			}
+			await ctx.db.patch(blocker._id, {
+				signedAt: Date.now(),
+				status: "signed",
+			});
+		});
+
+		const unblockedSurface = await t
+			.withIdentity(fixture.lenderIdentity)
+			.query(api.documents.dealPackages.getPortalDocumentPackage, {
+				dealId: fixture.dealId,
+			});
+		const unblockedInstance = unblockedSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+
+		expect(unblockedInstance?.signing).toMatchObject({
+			canLaunchEmbeddedSigning: true,
+		});
+	});
+
+	it("preserves stored signing artifacts when patching signing state without new storage ids", async () => {
+		installMockDocumensoFetch();
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const generatedDocument = await t.run(async (ctx) => {
+			return ctx.db
+				.query("generatedDocuments")
+				.filter((query) =>
+					query.eq(query.field("documensoEnvelopeId"), "doc_env_1")
+				)
+				.first();
+		});
+		if (!generatedDocument) {
+			throw new Error("Expected a signable generated document");
+		}
+
+		const completionCertificateStorageId = await storePdfStorageId(
+			t,
+			"Completion certificate"
+		);
+		const finalPdfStorageId = await storePdfStorageId(t, "Signed final PDF");
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(generatedDocument._id, {
+				completionCertificateStorageId,
+				finalPdfStorageId,
+			});
+		});
+
+		await t.mutation(
+			internal.documents.dealPackages.patchGeneratedDocumentSigningStateInternal,
+			{
+				generatedDocumentId: generatedDocument._id,
+				now: Date.now(),
+				signingStatus: "partially_signed",
+			}
+		);
+
+		const refreshedGeneratedDocument = await t.run((ctx) =>
+			ctx.db.get(generatedDocument._id)
+		);
+
+		expect(refreshedGeneratedDocument).toMatchObject({
+			completionCertificateStorageId,
+			finalPdfStorageId,
+			signingStatus: "partially_signed",
+		});
+	});
+
+	it("preserves stored signing artifacts when syncs omit replacement storage ids", async () => {
+		installMockDocumensoFetch();
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const [signatureEnvelope] = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+		if (!signatureEnvelope) {
+			throw new Error("Expected a signature envelope");
+		}
+
+		const generatedDocument = await t.run((ctx) =>
+			ctx.db.get(signatureEnvelope.generatedDocumentId)
+		);
+		if (!generatedDocument) {
+			throw new Error("Expected a signable generated document");
+		}
+
+		const completionCertificateStorageId = await storePdfStorageId(
+			t,
+			"Existing completion certificate"
+		);
+		const finalPdfStorageId = await storePdfStorageId(
+			t,
+			"Existing final PDF"
+		);
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(generatedDocument._id, {
+				completionCertificateStorageId,
+				finalPdfStorageId,
+			});
+		});
+
+		await t.mutation(
+			internal.documents.dealPackages.syncSignatureEnvelopeStateInternal,
+			{
+				envelopeId: signatureEnvelope._id,
+				lastError: undefined,
+				recipients: [],
+				status: "sent",
+			}
+		);
+
+		const refreshedGeneratedDocument = await t.run((ctx) =>
+			ctx.db.get(generatedDocument._id)
+		);
+
+		expect(refreshedGeneratedDocument).toMatchObject({
+			completionCertificateStorageId,
+			finalPdfStorageId,
+			signingStatus: "sent",
+		});
+	});
+
+	it("preserves the last successful provider sync timestamp when sync refresh fails", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const initialPackageSurface = await t
+			.withIdentity(fixture.lenderIdentity)
+			.query(api.documents.dealPackages.getPortalDocumentPackage, {
+				dealId: fixture.dealId,
+			});
+		const signableInstance = initialPackageSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+		if (!signableInstance?.signing?.lastProviderSyncAt) {
+			throw new Error("Expected a signable instance with a sync timestamp");
+		}
+
+		const initialSyncAt = signableInstance.signing.lastProviderSyncAt;
+
+		installMockDocumensoFetch({
+			failSync: true,
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		await expect(
+			t.withIdentity(fixture.lenderIdentity).action(
+				api.documents.signature.webhooks.syncSignableDocumentEnvelope,
+				{
+					dealId: fixture.dealId,
+					instanceId: signableInstance.instanceId,
+				}
+			)
+		).rejects.toThrow(/Documenso GET \/envelope\/doc_env_1 failed with status 500/i);
+
+		const refreshedPackageSurface = await t
+			.withIdentity(fixture.lenderIdentity)
+			.query(api.documents.dealPackages.getPortalDocumentPackage, {
+				dealId: fixture.dealId,
+			});
+		const refreshedSignable = refreshedPackageSurface.instances.find(
+			(instance) => instance.instanceId === signableInstance.instanceId
+		);
+
+		expect(refreshedSignable).toMatchObject({
+			status: "generation_failed",
+			signing: expect.objectContaining({
+				lastError: expect.stringContaining(
+					"Documenso GET /envelope/doc_env_1 failed with status 500"
+				),
+				lastProviderSyncAt: initialSyncAt,
+				status: "provider_error",
+			}),
+		});
 	});
 });
