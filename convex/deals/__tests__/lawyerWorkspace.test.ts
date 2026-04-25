@@ -355,6 +355,7 @@ describe("lawyer workspace projections", () => {
 			matterName: "Bianca Buyer / Sam Seller",
 			status: "documentReview.pending",
 		});
+		expect(JSON.stringify(result)).not.toContain("fractionalShareUnits");
 
 		const unrelated = await t
 			.withIdentity(lawyerIdentity("other-lawyer-auth"))
@@ -399,6 +400,24 @@ describe("lawyer workspace projections", () => {
 				title: "Close complete",
 			}),
 		]);
+		expect(JSON.stringify(result)).not.toContain("fractionalShareUnits");
+	});
+
+	it("returns completed active lawyer access as read-only workspace data", async () => {
+		const { dealId, t } = await seedLawyerWorkspaceFixture({
+			accessStatus: "active",
+			dealStatus: "confirmed",
+		});
+
+		const result = await t
+			.withIdentity(lawyerIdentity("lawyer-auth", "lawyer@test.fairlend.ca"))
+			.query(api.deals.lawyerQueries.getLawyerDealWorkspace, { dealId });
+
+		expect(result?.access).toMatchObject({
+			accessRole: "guest_lawyer",
+			accessState: "completed_read_only",
+		});
+		expect(result?.readOnly).toBe(true);
 	});
 
 	it("projects package blockers, envelope progress, exceptions, and hides embedded tokens", async () => {

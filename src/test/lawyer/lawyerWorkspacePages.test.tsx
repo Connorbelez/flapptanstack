@@ -69,12 +69,9 @@ const ASSIGNED_MATTERS_PLACEHOLDER_PARTICIPANTS = {
 	},
 	fractionalShareDisplayPercent: 10,
 	fractionalShareStatus: {
-		fractionalShareDisplayPercent: 10,
-		fractionalShareUnits: 1000,
 		isValid: true,
 		validationError: null,
 	},
-	fractionalShareUnits: 1000,
 	lawyer: {
 		authId: "lawyer-auth",
 		displayName: "Laura Lawyer",
@@ -107,7 +104,6 @@ const ASSIGNED_MATTERS: AssignedMatters = [
 		closingDate: new Date("2026-05-15T12:00:00.000Z").getTime(),
 		dealId: "deal_rep" as never,
 		fractionalShareDisplayPercent: 25,
-		fractionalShareUnits: 2500,
 		lawyer: {
 			authId: "lawyer-auth",
 			displayName: "Laura Lawyer",
@@ -129,12 +125,9 @@ const ASSIGNED_MATTERS: AssignedMatters = [
 			dealId: "deal_rep" as never,
 			fractionalShareDisplayPercent: 25,
 			fractionalShareStatus: {
-				fractionalShareDisplayPercent: 25,
-				fractionalShareUnits: 2500,
 				isValid: true,
 				validationError: null,
 			},
-			fractionalShareUnits: 2500,
 			lawyer: {
 				authId: "lawyer-auth",
 				displayName: "Laura Lawyer",
@@ -167,7 +160,6 @@ const ASSIGNED_MATTERS: AssignedMatters = [
 		closingDate: new Date("2026-04-01T12:00:00.000Z").getTime(),
 		dealId: "deal_done" as never,
 		fractionalShareDisplayPercent: 10,
-		fractionalShareUnits: 1000,
 		lawyer: null,
 		matterName: "Closed Buyer / Closed Seller",
 		participants: {
@@ -188,7 +180,6 @@ function createWorkspace(overrides?: Partial<Workspace>): Workspace {
 			closingDate: new Date("2026-05-15T12:00:00.000Z").getTime(),
 			dealId: "deal_workspace" as never,
 			fractionalShareDisplayPercent: 25,
-			fractionalShareUnits: 2500,
 			status: "documentReview.pending",
 		},
 		envelope: {
