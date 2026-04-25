@@ -54,7 +54,7 @@ function PortalLandingNavigation({
 						{landing.navigation.poweredByLabel}
 					</span>
 				</a>
-				<div className="hidden justify-center gap-6 text-[13px] text-stone-600 md:flex">
+				<div className="flex gap-4 overflow-x-auto whitespace-nowrap text-[13px] text-stone-600 md:justify-center md:overflow-visible">
 					{landing.navigation.items.map((item) => (
 						<a
 							className="transition-colors hover:text-stone-950"
@@ -239,7 +239,10 @@ function PortalLandingTeaserCard({
 	const isSecondPosition = listing.mortgagePositionLabel === "2nd";
 
 	return (
-		<article className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+		<article
+			aria-label={`Featured listing: ${listing.title}`}
+			className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm"
+		>
 			<div className="relative flex aspect-[16/10] items-center justify-center bg-stone-200">
 				{listing.heroImageUrl ? (
 					<img
@@ -318,13 +321,15 @@ function PortalLandingFeaturedListings({
 						{landing.featuredListings.subcopy}
 					</p>
 				</div>
-				<a
-					className="inline-flex items-center gap-2 font-semibold text-emerald-900 text-sm"
-					href={landing.featuredListings.viewAllAction.href}
-				>
-					{landing.featuredListings.viewAllAction.label}
-					<ArrowRight aria-hidden className="size-4" />
-				</a>
+				{landing.featuredListings.enabled ? (
+					<a
+						className="inline-flex items-center gap-2 font-semibold text-emerald-900 text-sm"
+						href={landing.featuredListings.viewAllAction.href}
+					>
+						{landing.featuredListings.viewAllAction.label}
+						<ArrowRight aria-hidden className="size-4" />
+					</a>
+				) : null}
 			</div>
 
 			{landing.featuredListings.enabled ? null : (
@@ -348,6 +353,7 @@ function PortalLandingFeaturedListings({
 				<div
 					aria-hidden
 					className="mt-5 h-12 overflow-hidden [mask-image:linear-gradient(to_bottom,black,transparent)]"
+					data-testid="featured-listings-continuation"
 				>
 					<div className="grid translate-y-2 gap-5 opacity-45 blur-[2.5px] md:grid-cols-3">
 						<div className="h-24 rounded-lg border border-stone-200 bg-white" />
@@ -392,24 +398,28 @@ function PortalLandingFinancingStrip({
 							Inline pre-start
 						</p>
 					</div>
-					<div className="mt-4 grid gap-2 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
+					<form
+						action={landing.financingStrip.submitAction.href}
+						className="mt-4 grid gap-2 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]"
+						method="get"
+					>
 						{landing.financingStrip.fields.map((field) => (
 							<input
 								aria-label={field.label}
 								className="min-h-11 rounded-md border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-emerald-900 focus:ring-2 focus:ring-emerald-900/15"
 								key={field.key}
+								name={field.key}
 								placeholder={field.label}
 							/>
 						))}
 						<Button
-							asChild
 							className="min-h-11 bg-emerald-950 text-white hover:bg-emerald-900"
+							type="submit"
 						>
-							<a href={landing.financingStrip.submitAction.href}>
-								{landing.financingStrip.submitAction.label}
-							</a>
+							{landing.financingStrip.submitAction.label}
+							<ArrowRight aria-hidden className="size-4" />
 						</Button>
-					</div>
+					</form>
 				</div>
 			</div>
 		</section>

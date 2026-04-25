@@ -117,10 +117,22 @@ function buildLandingContract(
 					termLabel: "12 mo",
 					title: "Semi-Detached, Vaughan",
 				},
+				{
+					amountLabel: "$510,000",
+					heroImageUrl: null,
+					id: "listing_4",
+					ltvLabel: "60% LTV",
+					mortgagePositionLabel: "1st",
+					propertyTypeLabel: "Townhome",
+					rateLabel: "8.9%",
+					statusLabel: "Active",
+					termLabel: "30 mo",
+					title: "Townhome, Mississauga",
+				},
 			],
 			label: "Featured Listings",
 			subcopy: "Currently available mortgage investment opportunities",
-			viewAllAction: { href: "/listings", label: "View All" },
+			viewAllAction: { href: "/contract/listings", label: "View All" },
 			visibleCardCount: 3,
 		},
 		financingStrip: {
@@ -131,23 +143,23 @@ function buildLandingContract(
 				{ key: "amountNeeded", label: "Amount needed" },
 			],
 			kicker: "Short inline start, then dedicated flow",
-			submitAction: { href: "/financing/start", label: "Continue" },
+			submitAction: { href: "/contract/financing-submit", label: "Continue" },
 			title: "Need to start quickly?",
 		},
 		hero: {
 			body: "Meridian leads the public experience. FairLend is the operating layer behind it.",
 			eyebrow: "Broker-led private mortgage access",
 			headline: "A branded front door for lenders and mortgage seekers.",
-			primaryAction: { href: "#contact", label: "Talk to Meridian" },
-			secondaryAction: { href: "#how-it-works", label: "See how it works" },
+			primaryAction: { href: "/contract/hero-primary", label: "Talk to Meridian" },
+			secondaryAction: { href: "/contract/hero-secondary", label: "See how it works" },
 		},
 		navigation: {
 			brandLabel: "Meridian Capital",
 			items: [
-				{ href: "#how-it-works", label: "How Meridian works" },
-				{ href: "/listings", label: "Current opportunities" },
-				{ href: "/financing/start", label: "Borrower start" },
-				{ href: "#contact", label: "Contact" },
+				{ href: "/contract/how-it-works", label: "How Meridian works" },
+				{ href: "/contract/nav-listings", label: "Current opportunities" },
+				{ href: "/contract/nav-borrower-start", label: "Borrower start" },
+				{ href: "/contract/contact", label: "Contact" },
 			],
 			poweredByLabel: "Powered by FairLend",
 			rightLabel: "Private mortgage brokerage",
@@ -166,11 +178,11 @@ function buildLandingContract(
 				helper: "Pre-approval stays available, but nested under the broader borrower path.",
 				label: "Borrower / Mortgage Applicant",
 				nestedActions: [
-					{ href: "/financing/start", label: "Borrower intake" },
-					{ href: "/financing/pre-approval", label: "Jump to pre-approval" },
+					{ href: "/contract/borrower-intake", label: "Borrower intake" },
+					{ href: "/contract/pre-approval", label: "Jump to pre-approval" },
 				],
 				primaryAction: {
-					href: "/financing/start",
+					href: "/contract/borrower-primary",
 					label: "Start financing intake",
 				},
 			},
@@ -183,7 +195,10 @@ function buildLandingContract(
 				body: "Review live opportunities and continue into Meridian onboarding.",
 				helper: "For accredited lenders and repeat deal-flow participants.",
 				label: "Lender",
-				primaryAction: { href: "/listings", label: "Browse current listings" },
+				primaryAction: {
+					href: "/contract/lender-primary",
+					label: "Browse current listings",
+				},
 			},
 		},
 		trustStrip: {
@@ -237,13 +252,47 @@ describe("portal home route", () => {
 		expect(
 			screen.getByRole("heading", { name: "Need to start quickly?" })
 		).toBeTruthy();
-		expect(screen.getByRole("link", { name: /Browse current listings/ }))
-			.toBeTruthy();
-		expect(screen.getByRole("link", { name: /Start financing intake/ }))
-			.toBeTruthy();
-		expect(screen.getByRole("link", { name: /Jump to pre-approval/ }))
-			.toBeTruthy();
+		expect(
+			screen
+				.getByRole("link", { name: /Talk to Meridian/ })
+				.getAttribute("href")
+		).toBe("/contract/hero-primary");
+		expect(
+			screen
+				.getByRole("link", { name: "How Meridian works" })
+				.getAttribute("href")
+		).toBe("/contract/how-it-works");
+		expect(
+			screen
+				.getByRole("link", { name: /Browse current listings/ })
+				.getAttribute("href")
+		).toBe("/contract/lender-primary");
+		expect(
+			screen
+				.getByRole("link", { name: /Start financing intake/ })
+				.getAttribute("href")
+		).toBe("/contract/borrower-primary");
+		expect(
+			screen
+				.getByRole("link", { name: /Jump to pre-approval/ })
+				.getAttribute("href")
+		).toBe("/contract/pre-approval");
+		expect(
+			screen.getByRole("link", { name: "How Meridian works" }).parentElement
+				?.className
+		).not.toContain("hidden");
+		expect(screen.getByRole("button", { name: /Continue/ })).toBeTruthy();
+		expect(screen.getByLabelText("Full name").getAttribute("name")).toBe(
+			"fullName"
+		);
 		expect(screen.getByText("Detached Home, North York")).toBeTruthy();
+		expect(screen.getByText("Condo, Scarborough")).toBeTruthy();
+		expect(screen.getByText("Semi-Detached, Vaughan")).toBeTruthy();
+		expect(screen.queryByText("Townhome, Mississauga")).toBeNull();
+		expect(
+			screen.getAllByRole("article", { name: /Featured listing:/ })
+		).toHaveLength(3);
+		expect(screen.getByTestId("featured-listings-continuation")).toBeTruthy();
 		expect(screen.queryByText("Resolved host context")).toBeNull();
 		expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
 	});
@@ -268,6 +317,7 @@ describe("portal home route", () => {
 			)
 		).toBeTruthy();
 		expect(screen.queryByText("Detached Home, North York")).toBeNull();
+		expect(screen.queryByRole("link", { name: "View All" })).toBeNull();
 	});
 
 	it("renders an unavailable state when the landing contract is missing", () => {
