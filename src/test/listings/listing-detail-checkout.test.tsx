@@ -5,14 +5,19 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ListingDetailPage } from "#/components/listings/ListingDetailPage";
-import type { ListingDetailData } from "#/components/listings/listing-detail-types";
 import { getListingDetailMock } from "#/components/demo/listings/listing-detail-mock-data";
+import { ListingDetailPage } from "#/components/listings/ListingDetailPage";
+import type {
+	ListingCheckoutReturnState,
+	ListingDetailData,
+} from "#/components/listings/listing-detail-types";
+
+const reactModulePath = vi.hoisted(
+	() => new URL("../../../node_modules/react/index.js", import.meta.url).pathname
+);
 
 vi.mock("react", async () => {
-	return await vi.importActual<typeof import("react")>(
-		"/Users/connor/.codex/worktrees/ab93/fairlendapp/node_modules/react/index.js"
-	);
+	return await vi.importActual<typeof import("react")>(reactModulePath);
 });
 
 vi.mock("@tanstack/react-router", async () => {
@@ -57,6 +62,7 @@ function getListing(overrides: Partial<ListingDetailData> = {}): ListingDetailDa
 function renderInteractiveListing(
 	options: {
 		listing?: ListingDetailData;
+		checkoutReturnState?: ListingCheckoutReturnState;
 		onStartCheckout?: Parameters<typeof ListingDetailPage>[0]["onStartCheckout"];
 		redirectToHostedCheckout?: Parameters<
 			typeof ListingDetailPage
@@ -78,6 +84,7 @@ function renderInteractiveListing(
 	render(
 		<ListingDetailPage
 			buildSimilarListingHref={(listingId) => `/listings/${listingId}`}
+			checkoutReturnState={options.checkoutReturnState}
 			listing={listing}
 			mode="interactive"
 			onStartCheckout={onStartCheckout}
@@ -170,6 +177,69 @@ describe("listing detail hosted checkout launcher", () => {
 		expect(screen.getAllByLabelText("Email").length).toBeGreaterThan(0);
 	});
 
+	it("rejects non-positive fraction input instead of submitting the default", () => {
+		const onStartCheckout = vi.fn();
+		renderInteractiveListing({ onStartCheckout });
+
+		fireEvent.change(screen.getAllByLabelText("Number of fractions")[0]!, {
+			target: { value: "0" },
+		});
+		const button = firstCheckoutButton();
+		fireEvent.click(button);
+
+		expect(button.disabled).toBe(true);
+		expect(onStartCheckout).not.toHaveBeenCalled();
+		expect(screen.getAllByText("Enter 10 to 6,200 fractions.").length).toBeGreaterThan(0);
+	});
+
+	it("uses checkout maximum fractions for launcher bounds", () => {
+		const listing = getListing({
+			checkout: {
+				...getListing().checkout!,
+				defaultFractions: 1,
+				maximumFractions: 5,
+				minimumFractions: 1,
+			},
+		});
+		renderInteractiveListing({ listing });
+
+		fireEvent.change(screen.getAllByLabelText("Number of fractions")[0]!, {
+			target: { value: "6" },
+		});
+
+		expect(firstCheckoutButton().disabled).toBe(true);
+		expect(screen.getAllByText("Enter 1 to 5 fractions.").length).toBeGreaterThan(0);
+	});
+
+	it("requires a valid guest lawyer email", () => {
+		renderInteractiveListing();
+
+		fireEvent.click(screen.getAllByRole("button", { name: "Guest lawyer" })[0]!);
+		fireEvent.change(screen.getAllByLabelText("Name")[0]!, {
+			target: { value: "Jordan Counsel" },
+		});
+		fireEvent.change(screen.getAllByLabelText("Email")[0]!, {
+			target: { value: "not-an-email" },
+		});
+
+		expect(firstCheckoutButton().disabled).toBe(true);
+		expect(
+			screen.getAllByText("Enter a guest lawyer name and valid email.").length
+		).toBeGreaterThan(0);
+	});
+
+	it("renders stable copy for thrown checkout start failures", async () => {
+		const onStartCheckout = vi.fn().mockRejectedValue(new Error("internal stack"));
+		renderInteractiveListing({ onStartCheckout });
+
+		fireEvent.click(firstCheckoutButton());
+
+		expect(
+			await screen.findAllByText("Unable to start hosted checkout. Please try again.")
+		).toHaveLength(2);
+		expect(screen.queryByText("internal stack")).toBeNull();
+	});
+
 	it("guards against duplicate checkout submissions while pending", async () => {
 		let resolveStart: (value: Awaited<ReturnType<NonNullable<Parameters<typeof ListingDetailPage>[0]["onStartCheckout"]>>>) => void;
 		const onStartCheckout = vi.fn(
@@ -202,4 +272,19 @@ describe("listing detail hosted checkout launcher", () => {
 			stripeCheckoutUrl: "https://checkout.stripe.test/session",
 		});
 	});
+
+	it.each([
+		["abandoned", "Checkout canceled"],
+		["error", "Checkout status unavailable"],
+		["expired", "Checkout expired"],
+		["provider_start_failed", "Hosted checkout did not open"],
+		["success_pending", "Checkout received"],
+	] satisfies Array<[ListingCheckoutReturnState, string]>)(
+		"renders the %s return-state banner",
+		(checkoutReturnState, heading) => {
+			renderInteractiveListing({ checkoutReturnState });
+
+			expect(screen.getAllByText(heading).length).toBeGreaterThan(0);
+		}
+	);
 });

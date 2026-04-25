@@ -53,6 +53,7 @@ const VALUE_TONE_CLASSES: Record<ListingValueTone, string> = {
 };
 
 const DIGITS_ONLY_PATTERN = /^\d+$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Frosted panels: coherent on gradient page bg + dark mode; avoids flat white slabs. */
 const LISTING_ISLAND_CLASS =
@@ -184,29 +185,32 @@ export function ListingDetailPage({
 	const selectedLawyer = checkout?.lawyers.find(
 		(lawyer) => lawyer.id === selectedLawyerId
 	);
-	const availableFractions = listing.investment.availableFractions;
+	const maximumCheckoutFractions =
+		checkout?.maximumFractions ?? listing.investment.availableFractions;
 	const referenceLabel =
 		listing.referenceLabel ??
 		(listing.mlsId ? `MLS #${listing.mlsId}` : undefined);
 
-	const requestedFractions = useMemo(() => {
+	const parsedFractionInput = useMemo(() => {
 		const parsed = Number.parseInt(fractionInput, 10);
-		if (!Number.isFinite(parsed) || parsed <= 0) {
-			return defaultFractions;
+		if (!Number.isFinite(parsed)) {
+			return null;
 		}
 		return parsed;
-	}, [defaultFractions, fractionInput]);
+	}, [fractionInput]);
+	const requestedFractions = parsedFractionInput ?? defaultFractions;
 
 	const effectiveFractions = Math.min(
 		Math.max(minimumFractions, requestedFractions),
-		availableFractions
+		maximumCheckoutFractions
 	);
 	const fractionError =
 		fractionInput === "" ||
 		!DIGITS_ONLY_PATTERN.test(fractionInput) ||
-		requestedFractions < minimumFractions ||
-		requestedFractions > availableFractions
-			? `Enter ${minimumFractions.toLocaleString()} to ${availableFractions.toLocaleString()} fractions.`
+		parsedFractionInput === null ||
+		parsedFractionInput < minimumFractions ||
+		parsedFractionInput > maximumCheckoutFractions
+			? `Enter ${minimumFractions.toLocaleString()} to ${maximumCheckoutFractions.toLocaleString()} fractions.`
 			: null;
 	const calculatedInvestment = effectiveFractions * perFractionAmount;
 	const selectedLawyerSnapshot = buildSelectedLawyerSnapshot({
@@ -259,12 +263,8 @@ export function ListingDetailPage({
 				return;
 			}
 			redirectToHostedCheckout(result.stripeCheckoutUrl);
-		} catch (error) {
-			setCheckoutError(
-				error instanceof Error
-					? error.message
-					: "Unable to start hosted checkout."
-			);
+		} catch {
+			setCheckoutError("Unable to start hosted checkout. Please try again.");
 		} finally {
 			setIsCheckoutPending(false);
 		}
@@ -294,7 +294,7 @@ export function ListingDetailPage({
 
 	function normalizeFractions(value: number) {
 		return String(
-			Math.min(Math.max(minimumFractions, value), availableFractions)
+			Math.min(Math.max(minimumFractions, value), maximumCheckoutFractions)
 		);
 	}
 
@@ -310,7 +310,9 @@ export function ListingDetailPage({
 	}
 
 	function handleFractionBlur() {
-		setFractionInput(normalizeFractions(requestedFractions));
+		setFractionInput(
+			normalizeFractions(parsedFractionInput ?? defaultFractions)
+		);
 	}
 
 	return (
@@ -452,7 +454,7 @@ export function ListingDetailPage({
 
 				{isInteractive && checkout ? (
 					<HostedCheckoutLauncher
-						availableFractions={availableFractions}
+						availableFractions={maximumCheckoutFractions}
 						calculatedInvestment={calculatedInvestment}
 						canStartCheckout={canStartCheckout}
 						checkout={checkout}
@@ -481,7 +483,7 @@ export function ListingDetailPage({
 					/>
 				) : (
 					<ReadOnlyMarketplaceNotice
-						availableFractions={listing.investment.availableFractions}
+						availableFractions={maximumCheckoutFractions}
 						className="mx-16 mt-6"
 						reason={checkout?.disabledReason}
 						totalFractions={listing.investment.totalFractions}
@@ -796,7 +798,7 @@ export function ListingDetailPage({
 
 				{isInteractive && checkout ? (
 					<HostedCheckoutLauncher
-						availableFractions={availableFractions}
+						availableFractions={maximumCheckoutFractions}
 						calculatedInvestment={calculatedInvestment}
 						canStartCheckout={canStartCheckout}
 						checkout={checkout}
@@ -826,7 +828,7 @@ export function ListingDetailPage({
 					/>
 				) : (
 					<ReadOnlyMarketplaceNotice
-						availableFractions={listing.investment.availableFractions}
+						availableFractions={maximumCheckoutFractions}
 						className="mx-5 mt-4"
 						reason={checkout?.disabledReason}
 						totalFractions={listing.investment.totalFractions}
@@ -1865,7 +1867,7 @@ function buildSelectedLawyerSnapshot({
 		const name = guestName.trim();
 		const email = guestEmail.trim();
 		const firm = guestFirm.trim();
-		if (name.length === 0 || email.length === 0) {
+		if (name.length === 0 || !EMAIL_PATTERN.test(email)) {
 			return null;
 		}
 		return {
@@ -1897,7 +1899,7 @@ function getLawyerError(
 		return null;
 	}
 	if (lawyerMode === "guest") {
-		return "Enter a guest lawyer name and email.";
+		return "Enter a guest lawyer name and valid email.";
 	}
 	return "Select a platform lawyer.";
 }
