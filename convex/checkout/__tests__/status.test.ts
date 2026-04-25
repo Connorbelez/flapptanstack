@@ -62,6 +62,8 @@ describe("checkout transition contract", () => {
 		expect(CHECKOUT_ALLOWED_TRANSITIONS.preparing_provider_session).toEqual([
 			"hosted_checkout_open",
 			"provider_start_failed",
+			"expired",
+			"abandoned",
 		]);
 		expect(
 			canTransitionCheckoutStatus(

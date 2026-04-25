@@ -1621,6 +1621,15 @@ export default defineSchema({
 				})
 			)
 		),
+		providerExpiryAttemptedAt: v.optional(v.number()),
+		providerExpiryFailureReason: v.optional(v.string()),
+		providerExpiryStatus: v.optional(
+			v.union(
+				v.literal("not_required"),
+				v.literal("succeeded"),
+				v.literal("failed")
+			)
+		),
 	})
 		.index("by_listing_status", ["listingId", "status"])
 		.index("by_lender", ["lenderId", "startedAt"])
