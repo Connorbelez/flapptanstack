@@ -12,6 +12,20 @@ interface SignableEnvelopeDocument {
 	};
 }
 
+function toSyncEnvelopeMutationRecipients(
+	recipients: Awaited<
+		ReturnType<ReturnType<typeof getSignatureProvider>["syncEnvelope"]>
+	>["recipients"]
+) {
+	return recipients.map((recipient) => ({
+		declinedAt: recipient.declinedAt,
+		openedAt: recipient.openedAt,
+		providerRecipientId: recipient.providerRecipientId,
+		signedAt: recipient.signedAt,
+		status: recipient.status,
+	}));
+}
+
 export const syncSignableDocumentEnvelope = authedAction
 	.input({
 		dealId: v.id("deals"),
@@ -52,19 +66,19 @@ export const syncSignableDocumentEnvelope = authedAction
 					envelopeId: signableDocument.envelope.envelopeId,
 					lastError: undefined,
 					now: Date.now(),
-					recipients: syncResult.recipients,
+					recipients: toSyncEnvelopeMutationRecipients(syncResult.recipients),
 					status: syncResult.envelopeStatus,
 				}
 			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			await ctx.runMutation(
-				internal.documents.dealPackages.syncSignatureEnvelopeStateInternal,
+				internal.documents.dealPackages
+					.recordSignatureEnvelopeSyncErrorInternal,
 				{
 					envelopeId: signableDocument.envelope.envelopeId,
 					lastError: message,
-					recipients: [],
-					status: "provider_error",
+					now: Date.now(),
 				}
 			);
 			throw new ConvexError(message);

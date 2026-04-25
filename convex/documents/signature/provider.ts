@@ -60,6 +60,10 @@ export interface SignatureProviderCreateEnvelopeResult {
 	status: "draft" | "sent";
 }
 
+export interface SignatureProviderDistributeEnvelopeInput {
+	providerEnvelopeId: string;
+}
+
 export interface SignatureProviderCreateEmbeddedSigningSessionInput {
 	providerEnvelopeId: string;
 	providerRecipientId: string;
@@ -81,8 +85,12 @@ export interface SignatureProviderSyncEnvelopeInput {
 export interface SignatureProviderSyncEnvelopeResult {
 	envelopeStatus: SignatureEnvelopeStatus;
 	recipients: Array<{
+		email: string;
+		name: string;
+		providerRole: SignatureProviderRole;
 		openedAt?: number;
 		providerRecipientId: string;
+		signingOrder: number;
 		signedAt?: number;
 		status: SignatureRecipientStatus;
 		declinedAt?: number;
@@ -106,6 +114,9 @@ export interface SignatureProvider {
 		input: SignatureProviderCreateEnvelopeInput
 	): Promise<SignatureProviderCreateEnvelopeResult>;
 	deleteEnvelope(input: SignatureProviderDeleteEnvelopeInput): Promise<void>;
+	distributeEnvelope(
+		input: SignatureProviderDistributeEnvelopeInput
+	): Promise<void>;
 	downloadCompletedArtifacts(
 		input: SignatureProviderDownloadCompletedArtifactsInput
 	): Promise<SignatureProviderDownloadCompletedArtifactsResult>;

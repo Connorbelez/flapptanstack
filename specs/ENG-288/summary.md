@@ -8,7 +8,7 @@
 
 ## Scope
 - Add normalized `signatureEnvelopes` and `signatureRecipients` persistence, including provider status, sync metadata, recipient timestamps, and a canonical platform-identity link for recipient matching.
-- Extend `generatedDocuments` and related document contracts so signable package generation can persist provider linkage now and hand off final-archive fields to phase 9 later.
+- Extend `generatedDocuments` and related document contracts so signable package generation can persist provider linkage, final signed-artifact storage references, and completion metadata, then archive completed signable artifacts into platform storage when signing finishes.
 - Replace the placeholder-only `private_templated_signable` package branch with real pinned-template PDF generation, recipient resolution, provider envelope creation, mirrored instance and package statuses, and conservative retry behavior.
 - Introduce a backend `SignatureProvider` seam, a Documenso-backed adapter, embedded signing session issuance, and idempotent provider sync or webhook handling.
 - Replace lender and admin reserved signable placeholders with normalized signable document rows, recipient chips, embedded signing launch, and envelope-level operational state.
@@ -21,7 +21,7 @@
 - Embedded signing session issuance must require both `assertDealAccess` and a canonical recipient match; read-model strings are not sufficient for authorization.
 - Recipient resolution failures must remain explicit and auditable; do not manufacture fake recipients when the canonical participant graph is incomplete.
 - Retry and sync flows must stay idempotent and conservative so failures do not silently create duplicate live envelopes.
-- Existing phase 7 static and non-signable package behavior must remain green, and phase 9 still owns archival of final signed artifacts into platform storage.
+- Existing phase 7 static and non-signable package behavior must remain green, and phase 9 is limited to audit and validation follow-through for the signed-artifact archive path implemented here.
 
 ## Open questions
 - none
