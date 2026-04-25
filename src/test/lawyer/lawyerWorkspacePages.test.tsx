@@ -296,6 +296,13 @@ function createWorkspace(overrides?: Partial<Workspace>): Workspace {
 		},
 		readOnly: false,
 		timeline: {
+			closeMilestones: [
+				{
+					at: new Date("2026-05-15T12:00:00.000Z").getTime(),
+					description: "Deal close confirmed.",
+					title: "Close complete",
+				},
+			],
 			legalActions: [
 				{
 					at: 20,
@@ -337,6 +344,8 @@ describe("lawyer workspace pages", () => {
 		render(<LawyerDealWorkspacePage workspace={createWorkspace()} />);
 
 		expect(screen.getByText("Bianca Buyer / Sam Seller")).toBeTruthy();
+		expect(screen.getAllByText("Fractional share")).not.toHaveLength(0);
+		expect(screen.queryByText("Share units")).toBeNull();
 		fireEvent.click(screen.getByRole("tab", { name: "Package Review" }));
 		expect(screen.getByText("Closing Signature Package")).toBeTruthy();
 
@@ -345,6 +354,7 @@ describe("lawyer workspace pages", () => {
 
 		fireEvent.click(screen.getByRole("tab", { name: "Timeline" }));
 		expect(screen.getByText("Representation confirmed.")).toBeTruthy();
+		expect(screen.getByText("Deal close confirmed.")).toBeTruthy();
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "Approve Package For Signing" })
