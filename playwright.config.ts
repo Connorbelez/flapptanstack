@@ -104,6 +104,7 @@ export default defineConfig({
 		{
 			name: "deal-closing",
 			testDir: "./e2e/deal-closing",
+			testIgnore: ["participant-workspaces.spec.ts"],
 			dependencies: ["setup"],
 			use: {
 				...devices["Desktop Chrome"],
@@ -128,6 +129,12 @@ export default defineConfig({
 				baseURL: e2eAppBaseUrl,
 				storageState: ".auth/marketplace-admin.json",
 			},
+		},
+		{
+			name: "participant-workspaces",
+			testDir: "./e2e/deal-closing",
+			testMatch: "participant-workspaces.spec.ts",
+			use: { ...devices["Desktop Chrome"] },
 		},
 		{
 			name: "origination",
