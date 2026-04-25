@@ -47,6 +47,7 @@ const DEFAULT_LANDING_THEME: PublicPortalLandingPage["theme"] = {
 	surfaceColor: "#ffffff",
 	textColor: "#1c1917",
 };
+const LENDER_HANDOFF_START_PATH = "/start-lending";
 
 function assertSinglePortal(
 	portals: Doc<"portals">[],
@@ -164,6 +165,18 @@ function mortgagePositionLabel(value: string): string {
 
 function action(label: string, href: string) {
 	return { href, label };
+}
+
+function lenderHandoffAction(
+	label: string,
+	source: "featured-listing" | "switchboard" | "view-all",
+	listingId?: string
+) {
+	const params = new URLSearchParams({ source });
+	if (listingId) {
+		params.set("listingId", listingId);
+	}
+	return action(label, `${LENDER_HANDOFF_START_PATH}?${params.toString()}`);
 }
 
 async function getPortalLandingPageContent(
@@ -339,9 +352,11 @@ function buildSwitchboard(
 				args.content?.switchboard?.lender?.helper ??
 				"For accredited lenders and repeat deal-flow participants.",
 			label: args.content?.switchboard?.lender?.label ?? "Lender",
-			primaryAction:
-				args.content?.switchboard?.lender?.primaryAction ??
-				action("Browse current listings", "/listings"),
+			primaryAction: lenderHandoffAction(
+				args.content?.switchboard?.lender?.primaryAction?.label ??
+					"Browse current listings",
+				"switchboard"
+			),
 		},
 	};
 }
@@ -423,6 +438,11 @@ function toLandingListingItem(
 
 	return {
 		amountLabel: formatCurrency(listing.principal),
+		action: lenderHandoffAction(
+			`Continue with ${listing.title}`,
+			"featured-listing",
+			listing.id
+		),
 		heroImageUrl: listing.heroImageUrl,
 		id: listing.id,
 		ltvLabel: `${formatPercent(listing.ltvRatio)} LTV`,
@@ -466,9 +486,10 @@ async function buildFeaturedListings(args: {
 		subcopy:
 			args.content?.featuredListings?.subcopy ??
 			"Currently available mortgage investment opportunities",
-		viewAllAction:
-			args.content?.featuredListings?.viewAllAction ??
-			action("View All", "/listings"),
+		viewAllAction: lenderHandoffAction(
+			args.content?.featuredListings?.viewAllAction?.label ?? "View All",
+			"view-all"
+		),
 		visibleCardCount,
 	};
 

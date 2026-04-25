@@ -484,6 +484,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../onboarding/brokerApplication/queries.ts"),
 	"/convex/onboarding/brokerApplication/validators.ts": async () =>
 		await import("./../onboarding/brokerApplication/validators.ts"),
+	"/convex/onboarding/lenderLanding.ts": async () =>
+		await import("./../onboarding/lenderLanding.ts"),
 	"/convex/onboarding/mutations.ts": async () =>
 		await import("./../onboarding/mutations.ts"),
 	"/convex/onboarding/queries.ts": async () =>

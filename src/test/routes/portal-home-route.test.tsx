@@ -87,6 +87,10 @@ function buildLandingContract(
 			items: [
 				{
 					amountLabel: "$450,000",
+					action: {
+						href: "/start-lending?source=featured-listing&listingId=listing_1",
+						label: "Continue with Detached Home, North York",
+					},
 					heroImageUrl: null,
 					id: "listing_1",
 					ltvLabel: "65% LTV",
@@ -99,6 +103,10 @@ function buildLandingContract(
 				},
 				{
 					amountLabel: "$320,000",
+					action: {
+						href: "/start-lending?source=featured-listing&listingId=listing_2",
+						label: "Continue with Condo, Scarborough",
+					},
 					heroImageUrl: null,
 					id: "listing_2",
 					ltvLabel: "70% LTV",
@@ -111,6 +119,10 @@ function buildLandingContract(
 				},
 				{
 					amountLabel: "$180,000",
+					action: {
+						href: "/start-lending?source=featured-listing&listingId=listing_3",
+						label: "Continue with Semi-Detached, Vaughan",
+					},
 					heroImageUrl: null,
 					id: "listing_3",
 					ltvLabel: "72% LTV",
@@ -123,6 +135,10 @@ function buildLandingContract(
 				},
 				{
 					amountLabel: "$510,000",
+					action: {
+						href: "/start-lending?source=featured-listing&listingId=listing_4",
+						label: "Continue with Townhome, Mississauga",
+					},
 					heroImageUrl: null,
 					id: "listing_4",
 					ltvLabel: "60% LTV",
@@ -200,7 +216,7 @@ function buildLandingContract(
 				helper: "For accredited lenders and repeat deal-flow participants.",
 				label: "Lender",
 				primaryAction: {
-					href: "/contract/lender-primary",
+					href: "/start-lending?source=switchboard",
 					label: "Browse current listings",
 				},
 			},
@@ -280,7 +296,12 @@ describe("portal home route", () => {
 			screen
 				.getByRole("link", { name: /Browse current listings/ })
 				.getAttribute("href")
-		).toBe("/contract/lender-primary");
+		).toBe("/start-lending?source=switchboard");
+		expect(
+			screen
+				.getByRole("link", { name: "Continue with Detached Home, North York" })
+				.getAttribute("href")
+		).toBe("/start-lending?source=featured-listing&listingId=listing_1");
 		expect(
 			screen
 				.getByRole("link", { name: /Start financing intake/ })
