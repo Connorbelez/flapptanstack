@@ -33,6 +33,8 @@ import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
 import { Route as ListingsListingIdRouteImport } from './routes/listings/$listingId'
 import { Route as LenderPortfolioRouteImport } from './routes/lender.portfolio'
 import { Route as LenderDealsRouteImport } from './routes/lender.deals'
+import { Route as FinancingStartRouteImport } from './routes/financing.start'
+import { Route as FinancingPreApprovalRouteImport } from './routes/financing.pre-approval'
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
 import { Route as E2eSessionRouteImport } from './routes/e2e/session'
 import { Route as DemoWorkosRouteImport } from './routes/demo/workos'
@@ -124,6 +126,11 @@ import { Route as DemoAmpsE2ePaymentsRouteImport } from './routes/demo/amps/e2e-
 import { Route as DemoAmpsCollectionPlanRouteImport } from './routes/demo/amps/collection-plan'
 import { Route as DemoAmpsCollectionAttemptsRouteImport } from './routes/demo/amps/collection-attempts'
 import { Route as BrokerDealsDealIdRouteImport } from './routes/broker.deals.$dealId'
+<<<<<<< HEAD
+=======
+import { Route as BorrowerFinancingStartRouteImport } from './routes/borrower/financing.start'
+import { Route as BorrowerFinancingPreApprovalRouteImport } from './routes/borrower/financing.pre-approval'
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
 import { Route as AdminPropertiesRecordidRouteImport } from './routes/admin/properties/$recordid'
 import { Route as AdminOriginationsNewRouteImport } from './routes/admin/originations.new'
 import { Route as AdminOriginationsCaseIdRouteImport } from './routes/admin/originations.$caseId'
@@ -271,6 +278,16 @@ const LenderDealsRoute = LenderDealsRouteImport.update({
   id: '/deals',
   path: '/deals',
   getParentRoute: () => LenderRouteRoute,
+} as any)
+const FinancingStartRoute = FinancingStartRouteImport.update({
+  id: '/financing/start',
+  path: '/financing/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinancingPreApprovalRoute = FinancingPreApprovalRouteImport.update({
+  id: '/financing/pre-approval',
+  path: '/financing/pre-approval',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const E2eSwitchOrgRoute = E2eSwitchOrgRouteImport.update({
   id: '/e2e/switch-org',
@@ -755,6 +772,20 @@ const BrokerDealsDealIdRoute = BrokerDealsDealIdRouteImport.update({
   path: '/$dealId',
   getParentRoute: () => BrokerDealsRoute,
 } as any)
+<<<<<<< HEAD
+=======
+const BorrowerFinancingStartRoute = BorrowerFinancingStartRouteImport.update({
+  id: '/financing/start',
+  path: '/financing/start',
+  getParentRoute: () => BorrowerRouteRoute,
+} as any)
+const BorrowerFinancingPreApprovalRoute =
+  BorrowerFinancingPreApprovalRouteImport.update({
+    id: '/financing/pre-approval',
+    path: '/financing/pre-approval',
+    getParentRoute: () => BorrowerRouteRoute,
+  } as any)
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
 const AdminPropertiesRecordidRoute = AdminPropertiesRecordidRouteImport.update({
   id: '/$recordid',
   path: '/$recordid',
@@ -908,7 +939,11 @@ const DemoAmpsMortgagesMortgageIdPaymentsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
+<<<<<<< HEAD
   '/borrower': typeof BorrowerRouteRoute
+=======
+  '/borrower': typeof BorrowerRouteRouteWithChildren
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   '/broker': typeof BrokerRouteRouteWithChildren
   '/lawyer': typeof LawyerRouteRoute
   '/lender': typeof LenderRouteRouteWithChildren
@@ -975,12 +1010,15 @@ export interface FileRoutesByFullPath {
   '/demo/workos': typeof DemoWorkosRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
+  '/financing/pre-approval': typeof FinancingPreApprovalRoute
+  '/financing/start': typeof FinancingStartRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/portfolio': typeof LenderPortfolioRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
+  '/broker/': typeof BrokerIndexRoute
   '/listings/': typeof ListingsIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
@@ -1001,6 +1039,11 @@ export interface FileRoutesByFullPath {
   '/admin/originations/$caseId': typeof AdminOriginationsCaseIdRoute
   '/admin/originations/new': typeof AdminOriginationsNewRoute
   '/admin/properties/$recordid': typeof AdminPropertiesRecordidRoute
+<<<<<<< HEAD
+=======
+  '/borrower/financing/pre-approval': typeof BorrowerFinancingPreApprovalRoute
+  '/borrower/financing/start': typeof BorrowerFinancingStartRoute
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   '/broker/deals/$dealId': typeof BrokerDealsDealIdRoute
   '/demo/amps/collection-attempts': typeof DemoAmpsCollectionAttemptsRoute
   '/demo/amps/collection-plan': typeof DemoAmpsCollectionPlanRoute
@@ -1052,7 +1095,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
+<<<<<<< HEAD
   '/borrower': typeof BorrowerRouteRoute
+=======
+  '/borrower': typeof BorrowerRouteRouteWithChildren
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   '/lawyer': typeof LawyerRouteRoute
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
@@ -1107,12 +1154,15 @@ export interface FileRoutesByTo {
   '/demo/workos': typeof DemoWorkosRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
+  '/financing/pre-approval': typeof FinancingPreApprovalRoute
+  '/financing/start': typeof FinancingStartRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/portfolio': typeof LenderPortfolioRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker': typeof BrokerIndexRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
+  '/broker': typeof BrokerIndexRoute
   '/listings': typeof ListingsIndexRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1132,6 +1182,11 @@ export interface FileRoutesByTo {
   '/admin/originations/$caseId': typeof AdminOriginationsCaseIdRoute
   '/admin/originations/new': typeof AdminOriginationsNewRoute
   '/admin/properties/$recordid': typeof AdminPropertiesRecordidRoute
+<<<<<<< HEAD
+=======
+  '/borrower/financing/pre-approval': typeof BorrowerFinancingPreApprovalRoute
+  '/borrower/financing/start': typeof BorrowerFinancingStartRoute
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   '/broker/deals/$dealId': typeof BrokerDealsDealIdRoute
   '/demo/amps/collection-attempts': typeof DemoAmpsCollectionAttemptsRoute
   '/demo/amps/collection-plan': typeof DemoAmpsCollectionPlanRoute
@@ -1184,7 +1239,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
+<<<<<<< HEAD
   '/borrower': typeof BorrowerRouteRoute
+=======
+  '/borrower': typeof BorrowerRouteRouteWithChildren
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   '/broker': typeof BrokerRouteRouteWithChildren
   '/lawyer': typeof LawyerRouteRoute
   '/lender': typeof LenderRouteRouteWithChildren
@@ -1251,12 +1310,15 @@ export interface FileRoutesById {
   '/demo/workos': typeof DemoWorkosRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
+  '/financing/pre-approval': typeof FinancingPreApprovalRoute
+  '/financing/start': typeof FinancingStartRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/portfolio': typeof LenderPortfolioRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
+  '/broker/': typeof BrokerIndexRoute
   '/listings/': typeof ListingsIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
@@ -1277,6 +1339,11 @@ export interface FileRoutesById {
   '/admin/originations/$caseId': typeof AdminOriginationsCaseIdRoute
   '/admin/originations/new': typeof AdminOriginationsNewRoute
   '/admin/properties/$recordid': typeof AdminPropertiesRecordidRoute
+<<<<<<< HEAD
+=======
+  '/borrower/financing/pre-approval': typeof BorrowerFinancingPreApprovalRoute
+  '/borrower/financing/start': typeof BorrowerFinancingStartRoute
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   '/broker/deals/$dealId': typeof BrokerDealsDealIdRoute
   '/demo/amps/collection-attempts': typeof DemoAmpsCollectionAttemptsRoute
   '/demo/amps/collection-plan': typeof DemoAmpsCollectionPlanRoute
@@ -1397,12 +1464,15 @@ export interface FileRouteTypes {
     | '/demo/workos'
     | '/e2e/session'
     | '/e2e/switch-org'
+    | '/financing/pre-approval'
+    | '/financing/start'
     | '/lender/deals'
     | '/lender/portfolio'
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker/'
     | '/start-lending/complete'
+    | '/broker/'
     | '/listings/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
@@ -1423,6 +1493,11 @@ export interface FileRouteTypes {
     | '/admin/originations/$caseId'
     | '/admin/originations/new'
     | '/admin/properties/$recordid'
+<<<<<<< HEAD
+=======
+    | '/borrower/financing/pre-approval'
+    | '/borrower/financing/start'
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
     | '/broker/deals/$dealId'
     | '/demo/amps/collection-attempts'
     | '/demo/amps/collection-plan'
@@ -1529,12 +1604,15 @@ export interface FileRouteTypes {
     | '/demo/workos'
     | '/e2e/session'
     | '/e2e/switch-org'
+    | '/financing/pre-approval'
+    | '/financing/start'
     | '/lender/deals'
     | '/lender/portfolio'
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker'
     | '/start-lending/complete'
+    | '/broker'
     | '/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1554,6 +1632,11 @@ export interface FileRouteTypes {
     | '/admin/originations/$caseId'
     | '/admin/originations/new'
     | '/admin/properties/$recordid'
+<<<<<<< HEAD
+=======
+    | '/borrower/financing/pre-approval'
+    | '/borrower/financing/start'
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
     | '/broker/deals/$dealId'
     | '/demo/amps/collection-attempts'
     | '/demo/amps/collection-plan'
@@ -1672,12 +1755,15 @@ export interface FileRouteTypes {
     | '/demo/workos'
     | '/e2e/session'
     | '/e2e/switch-org'
+    | '/financing/pre-approval'
+    | '/financing/start'
     | '/lender/deals'
     | '/lender/portfolio'
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker/'
     | '/start-lending/complete'
+    | '/broker/'
     | '/listings/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
@@ -1698,6 +1784,11 @@ export interface FileRouteTypes {
     | '/admin/originations/$caseId'
     | '/admin/originations/new'
     | '/admin/properties/$recordid'
+<<<<<<< HEAD
+=======
+    | '/borrower/financing/pre-approval'
+    | '/borrower/financing/start'
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
     | '/broker/deals/$dealId'
     | '/demo/amps/collection-attempts'
     | '/demo/amps/collection-plan'
@@ -1750,7 +1841,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
+<<<<<<< HEAD
   BorrowerRouteRoute: typeof BorrowerRouteRoute
+=======
+  BorrowerRouteRoute: typeof BorrowerRouteRouteWithChildren
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   BrokerRouteRoute: typeof BrokerRouteRouteWithChildren
   LawyerRouteRoute: typeof LawyerRouteRoute
   LenderRouteRoute: typeof LenderRouteRouteWithChildren
@@ -1802,6 +1897,8 @@ export interface RootRouteChildren {
   DemoWorkosRoute: typeof DemoWorkosRoute
   E2eSessionRoute: typeof E2eSessionRoute
   E2eSwitchOrgRoute: typeof E2eSwitchOrgRoute
+  FinancingPreApprovalRoute: typeof FinancingPreApprovalRoute
+  FinancingStartRoute: typeof FinancingStartRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
   DemoFormSimpleRoute: typeof DemoFormSimpleRoute
 }
@@ -1975,6 +2072,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/lender/deals'
       preLoaderRoute: typeof LenderDealsRouteImport
       parentRoute: typeof LenderRouteRoute
+    }
+    '/financing/start': {
+      id: '/financing/start'
+      path: '/financing/start'
+      fullPath: '/financing/start'
+      preLoaderRoute: typeof FinancingStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/financing/pre-approval': {
+      id: '/financing/pre-approval'
+      path: '/financing/pre-approval'
+      fullPath: '/financing/pre-approval'
+      preLoaderRoute: typeof FinancingPreApprovalRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/e2e/switch-org': {
       id: '/e2e/switch-org'
@@ -2613,6 +2724,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrokerDealsDealIdRouteImport
       parentRoute: typeof BrokerDealsRoute
     }
+<<<<<<< HEAD
+=======
+    '/borrower/financing/start': {
+      id: '/borrower/financing/start'
+      path: '/financing/start'
+      fullPath: '/borrower/financing/start'
+      preLoaderRoute: typeof BorrowerFinancingStartRouteImport
+      parentRoute: typeof BorrowerRouteRoute
+    }
+    '/borrower/financing/pre-approval': {
+      id: '/borrower/financing/pre-approval'
+      path: '/financing/pre-approval'
+      fullPath: '/borrower/financing/pre-approval'
+      preLoaderRoute: typeof BorrowerFinancingPreApprovalRouteImport
+      parentRoute: typeof BorrowerRouteRoute
+    }
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
     '/admin/properties/$recordid': {
       id: '/admin/properties/$recordid'
       path: '/$recordid'
@@ -2961,6 +3089,23 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
   AdminRouteRouteChildren,
 )
 
+<<<<<<< HEAD
+=======
+interface BorrowerRouteRouteChildren {
+  BorrowerFinancingPreApprovalRoute: typeof BorrowerFinancingPreApprovalRoute
+  BorrowerFinancingStartRoute: typeof BorrowerFinancingStartRoute
+}
+
+const BorrowerRouteRouteChildren: BorrowerRouteRouteChildren = {
+  BorrowerFinancingPreApprovalRoute: BorrowerFinancingPreApprovalRoute,
+  BorrowerFinancingStartRoute: BorrowerFinancingStartRoute,
+}
+
+const BorrowerRouteRouteWithChildren = BorrowerRouteRoute._addFileChildren(
+  BorrowerRouteRouteChildren,
+)
+
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
 interface BrokerDealsRouteChildren {
   BrokerDealsDealIdRoute: typeof BrokerDealsDealIdRoute
 }
@@ -3268,7 +3413,11 @@ const DemoListingsRouteWithChildren = DemoListingsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRouteRoute: AdminRouteRouteWithChildren,
+<<<<<<< HEAD
   BorrowerRouteRoute: BorrowerRouteRoute,
+=======
+  BorrowerRouteRoute: BorrowerRouteRouteWithChildren,
+>>>>>>> 5c04f67f7 (Implemented ENG-307 on branch codex/eng-307-borrower-financing-handoff.)
   BrokerRouteRoute: BrokerRouteRouteWithChildren,
   LawyerRouteRoute: LawyerRouteRoute,
   LenderRouteRoute: LenderRouteRouteWithChildren,
@@ -3321,6 +3470,8 @@ const rootRouteChildren: RootRouteChildren = {
   DemoWorkosRoute: DemoWorkosRoute,
   E2eSessionRoute: E2eSessionRoute,
   E2eSwitchOrgRoute: E2eSwitchOrgRoute,
+  FinancingPreApprovalRoute: FinancingPreApprovalRoute,
+  FinancingStartRoute: FinancingStartRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,
   DemoFormSimpleRoute: DemoFormSimpleRoute,
 }
