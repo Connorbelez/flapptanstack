@@ -33,12 +33,22 @@ interface LawyerAssignedClosing {
 	closingDate: number | null;
 	dealId: Id<"deals">;
 	fractionalShareDisplayPercent: number | null;
-	fractionalShareUnits: number;
 	lawyer: ParticipantProjection["lawyer"];
 	matterName: string;
-	participants: ParticipantProjection;
+	participants: LawyerParticipantProjection;
 	status: string;
 }
+
+type LawyerParticipantProjection = Pick<
+	ParticipantProjection,
+	"buyer" | "dealId" | "lawyer" | "personas" | "seller"
+> & {
+	fractionalShareDisplayPercent: number | null;
+	fractionalShareStatus: Pick<
+		ParticipantProjection["fractionalShareStatus"],
+		"isValid" | "validationError"
+	>;
+};
 
 function isLawyerAccessRole(role: Doc<"dealAccess">["role"]) {
 	return role === "platform_lawyer" || role === "guest_lawyer";
@@ -117,35 +127,36 @@ async function lawyerAccessPolicyForDeal(
 	const activeLawyerAccess = rows.find(
 		(row) => row.status === "active" && isLawyerAccessRole(row.role)
 	);
+
+	const assignedPlatformLawyer =
+		deal.lawyerId === ctx.viewer.authId &&
+		deal.lawyerType === "platform_lawyer";
+	const historicalLawyerAccess = rows.find(
+		(row) => row.status === "revoked" && isLawyerAccessRole(row.role)
+	);
+	if (
+		isCompletedDealStatus(deal.status) &&
+		(activeLawyerAccess || historicalLawyerAccess || assignedPlatformLawyer)
+	) {
+		return {
+			accessRole:
+				(activeLawyerAccess?.role as "platform_lawyer" | "guest_lawyer") ??
+				(historicalLawyerAccess?.role as "platform_lawyer" | "guest_lawyer") ??
+				"platform_lawyer",
+			accessState: "completed_read_only",
+		};
+	}
+
 	if (activeLawyerAccess) {
 		return {
 			accessRole: activeLawyerAccess.role as "platform_lawyer" | "guest_lawyer",
 			accessState: "active",
 		};
 	}
-
-	const assignedPlatformLawyer =
-		deal.lawyerId === ctx.viewer.authId &&
-		deal.lawyerType === "platform_lawyer";
-	if (assignedPlatformLawyer && !isCompletedDealStatus(deal.status)) {
+	if (assignedPlatformLawyer) {
 		return {
 			accessRole: "platform_lawyer",
 			accessState: "active",
-		};
-	}
-
-	const historicalLawyerAccess = rows.find(
-		(row) => row.status === "revoked" && isLawyerAccessRole(row.role)
-	);
-	if (
-		isCompletedDealStatus(deal.status) &&
-		(historicalLawyerAccess || assignedPlatformLawyer)
-	) {
-		return {
-			accessRole:
-				(historicalLawyerAccess?.role as "platform_lawyer" | "guest_lawyer") ??
-				"platform_lawyer",
-			accessState: "completed_read_only",
 		};
 	}
 
@@ -283,6 +294,23 @@ function closeMilestonesForDeal(
 	];
 }
 
+function projectLawyerParticipants(
+	participants: ParticipantProjection
+): LawyerParticipantProjection {
+	return {
+		buyer: participants.buyer,
+		dealId: participants.dealId,
+		fractionalShareDisplayPercent: participants.fractionalShareDisplayPercent,
+		fractionalShareStatus: {
+			isValid: participants.fractionalShareStatus.isValid,
+			validationError: participants.fractionalShareStatus.validationError,
+		},
+		lawyer: participants.lawyer,
+		personas: participants.personas,
+		seller: participants.seller,
+	};
+}
+
 export const listAssignedClosings = lawyerQuery
 	.handler(async (ctx) => {
 		const deals = await ctx.db.query("deals").collect();
@@ -294,6 +322,7 @@ export const listAssignedClosings = lawyerQuery
 				continue;
 			}
 			const participants = await buildDealParticipantProjection(ctx, deal);
+			const lawyerParticipants = projectLawyerParticipants(participants);
 			assigned.push({
 				accessRole: accessPolicy.accessRole,
 				accessState: accessPolicy.accessState,
@@ -302,10 +331,9 @@ export const listAssignedClosings = lawyerQuery
 				dealId: deal._id,
 				fractionalShareDisplayPercent:
 					participants.fractionalShareDisplayPercent,
-				fractionalShareUnits: participants.fractionalShareUnits,
 				lawyer: participants.lawyer,
 				matterName: `${participants.buyer.displayName} / ${participants.seller.displayName}`,
-				participants,
+				participants: lawyerParticipants,
 				status: deal.status,
 			});
 		}
@@ -344,6 +372,7 @@ export const getLawyerDealWorkspace = lawyerQuery
 		const openExceptions = envelope.exceptions.filter(
 			(exception) => exception.status === "open"
 		);
+		const lawyerParticipants = projectLawyerParticipants(participants);
 
 		return {
 			access: accessPolicy,
@@ -352,7 +381,6 @@ export const getLawyerDealWorkspace = lawyerQuery
 				dealId: deal._id,
 				fractionalShareDisplayPercent:
 					participants.fractionalShareDisplayPercent,
-				fractionalShareUnits: participants.fractionalShareUnits,
 				status: deal.status,
 			},
 			envelope,
@@ -366,7 +394,7 @@ export const getLawyerDealWorkspace = lawyerQuery
 					principal: mortgage.principal,
 					status: mortgage.status,
 				},
-				participants,
+				participants: lawyerParticipants,
 				property: property
 					? {
 							city: property.city,
