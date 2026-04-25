@@ -37,6 +37,16 @@ interface LandingFallbackBaseArgs {
 const SLUG_WORD_SEPARATOR_PATTERN = /[-_]+/;
 const DEFAULT_LANDING_VISIBLE_CARD_COUNT = 3;
 const MAX_LANDING_VISIBLE_CARD_COUNT = 3;
+const DEFAULT_LANDING_THEME: PublicPortalLandingPage["theme"] = {
+	accentColor: "#047857",
+	backgroundColor: "#f7f5ef",
+	borderColor: "#e7e5e4",
+	mutedTextColor: "#57534e",
+	primaryColor: "#064e3b",
+	primaryHoverColor: "#065f46",
+	surfaceColor: "#ffffff",
+	textColor: "#1c1917",
+};
 
 function assertSinglePortal(
 	portals: Doc<"portals">[],
@@ -258,6 +268,39 @@ function buildHero(
 	};
 }
 
+function buildBrand(args: {
+	brandLabel: string;
+	content: PortalLandingPageContent | undefined;
+}): PublicPortalLandingPage["brand"] {
+	return {
+		logoAlt: args.content?.brand?.logoAlt ?? `${args.brandLabel} logo`,
+		logoUrl: args.content?.brand?.logoUrl ?? null,
+	};
+}
+
+function buildTheme(
+	content: PortalLandingPageContent | undefined
+): PublicPortalLandingPage["theme"] {
+	return {
+		accentColor:
+			content?.theme?.accentColor ?? DEFAULT_LANDING_THEME.accentColor,
+		backgroundColor:
+			content?.theme?.backgroundColor ?? DEFAULT_LANDING_THEME.backgroundColor,
+		borderColor:
+			content?.theme?.borderColor ?? DEFAULT_LANDING_THEME.borderColor,
+		mutedTextColor:
+			content?.theme?.mutedTextColor ?? DEFAULT_LANDING_THEME.mutedTextColor,
+		primaryColor:
+			content?.theme?.primaryColor ?? DEFAULT_LANDING_THEME.primaryColor,
+		primaryHoverColor:
+			content?.theme?.primaryHoverColor ??
+			DEFAULT_LANDING_THEME.primaryHoverColor,
+		surfaceColor:
+			content?.theme?.surfaceColor ?? DEFAULT_LANDING_THEME.surfaceColor,
+		textColor: content?.theme?.textColor ?? DEFAULT_LANDING_THEME.textColor,
+	};
+}
+
 function buildSwitchboard(
 	args: LandingFallbackBaseArgs
 ): PublicPortalLandingPage["switchboard"] {
@@ -339,6 +382,7 @@ function buildLandingFallbacks(args: {
 	const baseArgs = { brandLabel, content: args.content, portal: args.portal };
 
 	return {
+		brand: buildBrand({ brandLabel, content: args.content }),
 		broker: {
 			brokerageName: args.broker?.brokerageName ?? null,
 			license,
@@ -355,6 +399,7 @@ function buildLandingFallbacks(args: {
 			slug: args.portal.slug,
 		},
 		switchboard: buildSwitchboard(baseArgs),
+		theme: buildTheme(args.content),
 		trustStrip: {
 			items:
 				args.content?.trustStrip && args.content.trustStrip.length > 0
