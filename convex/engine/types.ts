@@ -43,6 +43,7 @@ export type GovernedEntityType =
 export type CommandChannel =
 	| "borrower_portal"
 	| "broker_portal"
+	| "lawyer_portal"
 	| "onboarding_portal"
 	| "admin_dashboard"
 	| "api_webhook"
