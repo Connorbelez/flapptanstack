@@ -9,11 +9,8 @@ const sellerQueueQueryOptions = convexQuery(
 	{ persona: "seller" }
 );
 
-// Route tree: run `node node_modules/@tanstack/router-cli/bin/tsr.cjs generate` to sync types after new routes
-export const Route = createFileRoute(
-	// @ts-expect-error file route key missing from routeTree.gen until generator picks up this module
-	"/borrower/deals"
-)({
+// Route tree: run `npx @tanstack/router-cli generate` to sync types after new routes
+export const Route = createFileRoute("/borrower/deals")({
 	loader: async ({ context }) => {
 		await context.queryClient.ensureQueryData(sellerQueueQueryOptions);
 	},

@@ -108,6 +108,10 @@ function PortalHomeContent({
 			portalId: portalContext.portal.portalId,
 		})
 	);
+	const teaserItems = teaserQuery.data
+		? (buildMarketplaceListingCardItems(teaserQuery.data.page) ?? [])
+		: [];
+	let teaserContent: ReactNode;
 
 	if (landingQuery.isPending) {
 		return (

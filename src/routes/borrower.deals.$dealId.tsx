@@ -13,10 +13,7 @@ function sellerWorkspaceQueryOptions(dealId: string) {
 }
 
 // Route tree: see borrower.deals.tsx
-export const Route = createFileRoute(
-	// @ts-expect-error file route key missing from routeTree.gen until generator picks up this module
-	"/borrower/deals/$dealId"
-)({
+export const Route = createFileRoute("/borrower/deals/$dealId")({
 	loader: async ({ context, params }) => {
 		const { dealId } = params as { dealId: string };
 		const workspace = await context.queryClient.ensureQueryData(

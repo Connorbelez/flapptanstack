@@ -125,6 +125,33 @@ describe("route auth permission helpers", () => {
 
 		expect(
 			canAccessRoute("micPortal", {
+				orgId: "org_lender",
+				permissions: ["lender:access"],
+				role: "lender",
+				roles: ["lender"],
+			})
+		).toBe(false);
+
+		expect(
+			canAccessRoute("micPortal", {
+				orgId: "org_broker",
+				permissions: ["broker:access"],
+				role: "broker",
+				roles: ["broker"],
+			})
+		).toBe(false);
+
+		expect(
+			canAccessRoute("micPortal", {
+				orgId: "org_borrower",
+				permissions: ["borrower:access"],
+				role: "borrower",
+				roles: ["borrower"],
+			})
+		).toBe(false);
+
+		expect(
+			canAccessRoute("micPortal", {
 				orgId: "org_admin",
 				permissions: ["admin:access"],
 				role: "admin",
