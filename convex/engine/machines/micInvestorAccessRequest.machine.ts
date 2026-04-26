@@ -5,6 +5,11 @@ export const micInvestorAccessRequestMachine = setup({
 		context: {} as Record<string, never>,
 		events: {} as { type: "APPROVE" } | { type: "REJECT" },
 	},
+	actions: {
+		provisionMicInvestorAccess: () => {
+			/* resolved by GT effect registry */
+		},
+	},
 }).createMachine({
 	id: "micInvestorAccessRequest",
 	initial: "pending_review",
@@ -13,6 +18,7 @@ export const micInvestorAccessRequestMachine = setup({
 		pending_review: {
 			on: {
 				APPROVE: {
+					actions: ["provisionMicInvestorAccess"],
 					target: "approved",
 				},
 				REJECT: {

@@ -16,6 +16,9 @@ export const effectRegistry: Record<
 		internal.engine.effects.onboarding.notifyApplicantRejected,
 	notifyAdminNewRequest:
 		internal.engine.effects.onboarding.notifyAdminNewRequest,
+	provisionMicInvestorAccess:
+		internal.engine.effects.micInvestorAccessRequests
+			.provisionMicInvestorAccess,
 	emitObligationOverdue:
 		internal.engine.effects.obligation.emitObligationOverdue,
 	emitObligationSettled:
