@@ -6,7 +6,7 @@ import {
 import { createTestConvex } from "../../auth/helpers";
 
 describe("users/byAuthId", () => {
-	it("keeps the referenced canonical user and deletes orphan duplicates", async () => {
+	it("keeps the referenced canonical user and reports duplicate users as surviving", async () => {
 		const t = createTestConvex();
 
 		const result = await t.run(async (ctx) => {
@@ -54,11 +54,11 @@ describe("users/byAuthId", () => {
 
 		expect(result.upsertedUser.wasCreated).toBe(false);
 		expect(result.upsertedUser.canonicalUser._id).toBe(result.canonicalUserId);
-		expect(result.upsertedUser.deletedDuplicateUserIds).toEqual([
+		expect(result.upsertedUser.deletedDuplicateUserIds).toEqual([]);
+		expect(result.upsertedUser.survivingDuplicateUserIds).toEqual([
 			result.duplicateUserId,
 		]);
-		expect(result.upsertedUser.survivingDuplicateUserIds).toEqual([]);
-		expect(result.remainingUsers).toHaveLength(1);
+		expect(result.remainingUsers).toHaveLength(2);
 		expect(result.remainingUsers[0]).toMatchObject({
 			authId: "workos_duplicate_user",
 			email: "updated@test.fairlend.ca",
@@ -68,7 +68,7 @@ describe("users/byAuthId", () => {
 		});
 	});
 
-	it("deletes orphan duplicates during cleanup without removing referenced users", async () => {
+	it("reports all duplicate users as blocked during cleanup without deleting", async () => {
 		const t = createTestConvex();
 
 		const result = await t.run(async (ctx) => {
@@ -110,10 +110,14 @@ describe("users/byAuthId", () => {
 			};
 		});
 
-		expect(result.cleanup.deletedUserIds).toEqual([result.orphanUserId]);
-		expect(result.cleanup.blockedUserIds).toEqual([result.referencedUserId]);
+		expect(result.cleanup.deletedUserIds).toEqual([]);
+		expect(result.cleanup.blockedUserIds).toEqual([
+			result.referencedUserId,
+			result.orphanUserId,
+		]);
 		expect(result.remainingUsers.map((user) => user._id)).toEqual([
 			result.referencedUserId,
+			result.orphanUserId,
 		]);
 	});
 });

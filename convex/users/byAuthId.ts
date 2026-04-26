@@ -75,6 +75,22 @@ async function rankUsersByAuthId(ctx: UserReaderCtx, authId: string) {
 	return rankedUsers;
 }
 
+function buildUserInsert(args: {
+	email: string;
+	firstName?: string;
+	lastName?: string;
+	phoneNumber?: string;
+}) {
+	return {
+		email: args.email,
+		firstName: args.firstName ?? "",
+		lastName: args.lastName ?? "",
+		...(args.phoneNumber !== undefined
+			? { phoneNumber: args.phoneNumber }
+			: {}),
+	};
+}
+
 function buildUserPatch(args: {
 	email: string;
 	firstName?: string;
@@ -83,14 +99,18 @@ function buildUserPatch(args: {
 }) {
 	const patch: {
 		email: string;
-		firstName: string;
-		lastName: string;
+		firstName?: string;
+		lastName?: string;
 		phoneNumber?: string;
 	} = {
 		email: args.email,
-		firstName: args.firstName ?? "",
-		lastName: args.lastName ?? "",
 	};
+	if (args.firstName !== undefined) {
+		patch.firstName = args.firstName;
+	}
+	if (args.lastName !== undefined) {
+		patch.lastName = args.lastName;
+	}
 	if (args.phoneNumber !== undefined) {
 		patch.phoneNumber = args.phoneNumber;
 	}
@@ -133,8 +153,9 @@ export async function deleteOrphanUsersByAuthId(
 			blockedUserIds.push(rankedUser.user._id);
 			continue;
 		}
-		await ctx.db.delete(rankedUser.user._id);
-		deletedUserIds.push(rankedUser.user._id);
+		// Deletion disabled until loadUserReferenceSummary checks all tables
+		// that may reference users (audit, admin, documents, etc.).
+		blockedUserIds.push(rankedUser.user._id);
 	}
 
 	return {
@@ -166,7 +187,7 @@ export async function upsertUserByAuthId(
 	if (!canonicalUser) {
 		const userId = await ctx.db.insert("users", {
 			authId: args.authId,
-			...buildUserPatch(args),
+			...buildUserInsert(args),
 		});
 		const createdUser = await ctx.db.get(userId);
 		if (!createdUser) {
@@ -185,13 +206,9 @@ export async function upsertUserByAuthId(
 	const deletedDuplicateUserIds: Id<"users">[] = [];
 	const survivingDuplicateUserIds: Id<"users">[] = [];
 	for (const duplicateUser of duplicateUsers) {
-		const references = await loadUserReferenceSummary(ctx, duplicateUser._id);
-		if (references.total > 0) {
-			survivingDuplicateUserIds.push(duplicateUser._id);
-			continue;
-		}
-		await ctx.db.delete(duplicateUser._id);
-		deletedDuplicateUserIds.push(duplicateUser._id);
+		// Deletion disabled until loadUserReferenceSummary checks all tables
+		// that may reference users (audit, admin, documents, etc.).
+		survivingDuplicateUserIds.push(duplicateUser._id);
 	}
 
 	const updatedUser = await ctx.db.get(canonicalUser._id);
