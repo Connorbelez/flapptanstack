@@ -128,6 +128,23 @@ export const seedOnboardingRequest = adminMutation
 			if (existingRequest) {
 				if (!existingRequest.portalId) {
 					await ctx.db.patch(existingRequest._id, { portalId });
+					const creationJournalRow = await ctx.db
+						.query("auditJournal")
+						.withIndex("by_entity", (q) =>
+							q
+								.eq("entityType", "onboardingRequest")
+								.eq("entityId", existingRequest._id)
+						)
+						.filter((q) => q.eq(q.field("eventType"), "CREATED"))
+						.first();
+					if (creationJournalRow) {
+						await ctx.db.patch(creationJournalRow._id, {
+							payload: {
+								...(creationJournalRow.payload ?? {}),
+								portalId,
+							},
+						});
+					}
 				}
 				reusedRequests += 1;
 				requestIds.push(existingRequest._id);
