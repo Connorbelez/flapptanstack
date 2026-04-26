@@ -22,7 +22,6 @@ import {
 	mergeBrokerOnboardingMachineContext,
 	resolveBrokerOnboardingPortalId,
 	resolveReopenedFieldsForResubmission,
-	resolveVerifiedEmailFromIdentity,
 	selectResumableBrokerApplication,
 } from "./helpers";
 import { brokerOnboardingDraftDataValidator } from "./validators";
@@ -76,9 +75,7 @@ export const startOrResume = brokerOnboardingMutation
 	.handler(async (ctx, args) => {
 		const now = Date.now();
 		const user = await getViewerUserOrThrow(ctx, ctx.viewer.authId);
-		const verifiedEmail = resolveVerifiedEmailFromIdentity(
-			await ctx.auth.getUserIdentity()
-		);
+		const verifiedEmail = ctx.viewer.verifiedEmail;
 		const candidates = await listCandidateBrokerApplications(ctx, {
 			authUserId: ctx.viewer.authId,
 			verifiedEmail,
@@ -109,7 +106,7 @@ export const startOrResume = brokerOnboardingMutation
 				severity: "info",
 				metadata: {
 					status: resumableApplication.status,
-					verifiedEmail,
+					verifiedEmailPresent: Boolean(verifiedEmail),
 				},
 			});
 			return getFreshReadModel(ctx, resumableApplication._id, now);
@@ -163,7 +160,7 @@ export const startOrResume = brokerOnboardingMutation
 			outcome: "transitioned",
 			payload: {
 				portalId,
-				verifiedEmail,
+				verifiedEmailPresent: Boolean(verifiedEmail),
 			},
 			previousState: "none",
 			timestamp: createdAt,
@@ -183,7 +180,7 @@ export const startOrResume = brokerOnboardingMutation
 				outcome: "transitioned",
 				portalId,
 				previousState: "none",
-				verifiedEmail,
+				verifiedEmailPresent: Boolean(verifiedEmail),
 			},
 		});
 
@@ -208,9 +205,7 @@ export const saveDraft = brokerOnboardingMutation
 			throw new ConvexError("Broker onboarding application not found");
 		}
 
-		const verifiedEmail = resolveVerifiedEmailFromIdentity(
-			await ctx.auth.getUserIdentity()
-		);
+		const verifiedEmail = ctx.viewer.verifiedEmail;
 		assertViewerCanAccessBrokerApplication(application, {
 			authUserId: ctx.viewer.authId,
 			verifiedEmail,
@@ -276,9 +271,7 @@ export const appendBrokerNote = brokerOnboardingMutation
 			throw new ConvexError("Broker onboarding application not found");
 		}
 
-		const verifiedEmail = resolveVerifiedEmailFromIdentity(
-			await ctx.auth.getUserIdentity()
-		);
+		const verifiedEmail = ctx.viewer.verifiedEmail;
 		assertViewerCanAccessBrokerApplication(application, {
 			authUserId: ctx.viewer.authId,
 			verifiedEmail,
@@ -339,9 +332,7 @@ export const submit = brokerOnboardingMutation
 			throw new ConvexError("Broker onboarding application not found");
 		}
 
-		const verifiedEmail = resolveVerifiedEmailFromIdentity(
-			await ctx.auth.getUserIdentity()
-		);
+		const verifiedEmail = ctx.viewer.verifiedEmail;
 		assertViewerCanAccessBrokerApplication(application, {
 			authUserId: ctx.viewer.authId,
 			verifiedEmail,
