@@ -13,13 +13,7 @@ import {
 	MapPin,
 	MapPinned,
 } from "lucide-react";
-import {
-	type ReactNode,
-	useEffect,
-	useId,
-	useMemo,
-	useState,
-} from "react";
+import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -421,7 +415,6 @@ export function ListingDetailPage({
 							ctaLabel={ctaLabel}
 							fractions={effectiveFractions}
 							listingTitle={listing.title}
-							onCheckout={handleLockFeeCheckout}
 							selectedLawyerLabel={selectedLawyer?.label}
 						/>
 					</ListingScrollReveal>
@@ -792,7 +785,6 @@ export function ListingDetailPage({
 								ctaLabel={ctaLabel}
 								fractions={effectiveFractions}
 								listingTitle={listing.title}
-								onCheckout={handleLockFeeCheckout}
 								selectedLawyerLabel={selectedLawyer?.label}
 							/>
 						</div>
@@ -1256,7 +1248,6 @@ function CheckoutCard({
 	ctaLabel,
 	fractions,
 	listingTitle,
-	onCheckout,
 	selectedLawyerLabel,
 }: {
 	calculatedInvestment: number;
@@ -1265,7 +1256,6 @@ function CheckoutCard({
 	ctaLabel: string;
 	fractions: number;
 	listingTitle: string;
-	onCheckout: () => void;
 	selectedLawyerLabel?: string;
 }) {
 	const idBase = useId();

@@ -2,7 +2,6 @@ import { Migrations } from "@convex-dev/migrations";
 import { components, internal } from "../_generated/api";
 import type { DataModel, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { FAIRLEND_STAFF_ORG_ID } from "../constants";
 import { adminMutation, adminQuery } from "../fluent";
 import { orgIdFromMortgageId } from "../lib/orgScope";
 import {
