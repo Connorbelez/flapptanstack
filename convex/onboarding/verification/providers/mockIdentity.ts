@@ -71,14 +71,15 @@ function parseSessionId(sessionId: string): MockIdentityScenario | null {
 function buildEvidenceReference(
 	sessionId: string,
 	capturedAt: number,
-	referenceType: VerificationEvidenceReference["referenceType"]
+	referenceType: VerificationEvidenceReference["referenceType"],
+	label = "Mock identity verification"
 ): VerificationEvidenceReference {
 	return {
 		provider: "mock_identity",
 		referenceId: sessionId,
 		referenceType,
 		capturedAt,
-		label: "Mock identity verification",
+		label,
 	};
 }
 
@@ -90,7 +91,7 @@ function buildIdentityResult(
 		sessionId: string;
 	}
 ) {
-	const evidenceReference = buildEvidenceReference(
+	const reviewEvidenceReference = buildEvidenceReference(
 		args.sessionId,
 		args.capturedAt,
 		"identity_verification_review"
@@ -105,7 +106,14 @@ function buildIdentityResult(
 				checkedAt: args.capturedAt,
 				completedAt: null,
 				fraudSignal: false,
-				evidenceReferences: [evidenceReference],
+				evidenceReferences: [
+					buildEvidenceReference(
+						args.sessionId,
+						args.capturedAt,
+						"provider_snapshot",
+						"Mock identity provider unavailable"
+					),
+				],
 			};
 		case "fraud":
 			return {
@@ -117,7 +125,7 @@ function buildIdentityResult(
 				checkedAt: args.capturedAt,
 				completedAt: args.capturedAt,
 				fraudSignal: true,
-				evidenceReferences: [evidenceReference],
+				evidenceReferences: [reviewEvidenceReference],
 			};
 		case "rejected":
 			return {
@@ -129,7 +137,7 @@ function buildIdentityResult(
 				checkedAt: args.capturedAt,
 				completedAt: args.capturedAt,
 				fraudSignal: false,
-				evidenceReferences: [evidenceReference],
+				evidenceReferences: [reviewEvidenceReference],
 			};
 		case "review_needed":
 			return {
@@ -141,7 +149,7 @@ function buildIdentityResult(
 				checkedAt: args.capturedAt,
 				completedAt: args.capturedAt,
 				fraudSignal: false,
-				evidenceReferences: [evidenceReference],
+				evidenceReferences: [reviewEvidenceReference],
 			};
 		case "verified":
 			return {
@@ -153,7 +161,7 @@ function buildIdentityResult(
 				checkedAt: args.capturedAt,
 				completedAt: args.capturedAt,
 				fraudSignal: false,
-				evidenceReferences: [evidenceReference],
+				evidenceReferences: [reviewEvidenceReference],
 			};
 		default:
 			return buildInvalidCallbackResult(args.capturedAt);
