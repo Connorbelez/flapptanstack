@@ -127,10 +127,27 @@ export interface OriginationPropertyDraft {
 }
 
 export interface OriginationValuationDraft {
+	comparables?: OriginationValuationComparableDraft[];
 	relatedDocumentAssetId?: string;
 	valuationDate?: string;
 	valueAsIs?: number;
 	visibilityHint?: "private" | "public";
+}
+
+export interface OriginationValuationComparableDraft {
+	address?: string;
+	adjustedValue?: number;
+	adjustments?: Record<string, unknown>;
+	googlePlaceData?: unknown;
+	latitude?: number;
+	longitude?: number;
+	lotSize?: string;
+	propertyType?: string;
+	saleDate?: string;
+	salePrice?: number;
+	sortOrder?: number;
+	squareFootage?: number;
+	yearBuilt?: number;
 }
 
 export interface OriginationHeroImageDraft {

@@ -25,6 +25,15 @@ export function getReturnPathname(input: unknown): string {
 	return sanitizeRedirectPath(input) ?? "/";
 }
 
+export function getReturnOnlyPathname(input: unknown): string {
+	const redirectPath = sanitizeRedirectPath(input);
+	if (!redirectPath) {
+		return "/";
+	}
+
+	return new URL(redirectPath, "https://fairlend.local").pathname;
+}
+
 export function buildSignInRedirect(
 	redirectTarget: string
 ): Pick<LinkProps, "search" | "to"> {

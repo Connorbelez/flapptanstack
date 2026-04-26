@@ -26,6 +26,8 @@ import type * as admin_origination_postCommitCollectionsActivation from "../admi
 import type * as admin_origination_properties from "../admin/origination/properties.js";
 import type * as admin_origination_validators from "../admin/origination/validators.js";
 import type * as admin_queries from "../admin/queries.js";
+import type * as admin_settings_actions from "../admin/settings/actions.js";
+import type * as admin_settings_mockMortgages from "../admin/settings/mockMortgages.js";
 import type * as admin_settings_mutations from "../admin/settings/mutations.js";
 import type * as admin_settings_queries from "../admin/settings/queries.js";
 import type * as audit_queries from "../audit/queries.js";
@@ -199,9 +201,13 @@ import type * as lib_drainLoops from "../lib/drainLoops.js";
 import type * as lib_orgScope from "../lib/orgScope.js";
 import type * as listings_create from "../listings/create.js";
 import type * as listings_curation from "../listings/curation.js";
+import type * as listings_lifecycle from "../listings/lifecycle.js";
 import type * as listings_marketplace from "../listings/marketplace.js";
 import type * as listings_marketplaceShared from "../listings/marketplaceShared.js";
 import type * as listings_math from "../listings/math.js";
+import type * as listings_portalProjection from "../listings/portalProjection.js";
+import type * as listings_portalQueries from "../listings/portalQueries.js";
+import type * as listings_portalVisibility from "../listings/portalVisibility.js";
 import type * as listings_projection from "../listings/projection.js";
 import type * as listings_publicDocuments from "../listings/publicDocuments.js";
 import type * as listings_queries from "../listings/queries.js";
@@ -333,6 +339,7 @@ import type * as payments_webhooks_verification from "../payments/webhooks/verif
 import type * as payments_webhooks_vopay from "../payments/webhooks/vopay.js";
 import type * as platform_defaultOriginationOwner from "../platform/defaultOriginationOwner.js";
 import type * as platform_defaultOriginationOwnerContract from "../platform/defaultOriginationOwnerContract.js";
+import type * as portals_borrowerPortalAttribution from "../portals/borrowerPortalAttribution.js";
 import type * as portals_helpers from "../portals/helpers.js";
 import type * as portals_homePortalAssignment from "../portals/homePortalAssignment.js";
 import type * as portals_invariants from "../portals/invariants.js";
@@ -361,6 +368,7 @@ import type * as test_moduleMaps from "../test/moduleMaps.js";
 import type * as test_originationE2e from "../test/originationE2e.js";
 import type * as test_packageSchemas from "../test/packageSchemas.js";
 import type * as todos from "../todos.js";
+import type * as users_byAuthId from "../users/byAuthId.js";
 
 import type {
   ApiFromModules,
@@ -387,6 +395,8 @@ declare const fullApi: ApiFromModules<{
   "admin/origination/properties": typeof admin_origination_properties;
   "admin/origination/validators": typeof admin_origination_validators;
   "admin/queries": typeof admin_queries;
+  "admin/settings/actions": typeof admin_settings_actions;
+  "admin/settings/mockMortgages": typeof admin_settings_mockMortgages;
   "admin/settings/mutations": typeof admin_settings_mutations;
   "admin/settings/queries": typeof admin_settings_queries;
   "audit/queries": typeof audit_queries;
@@ -560,9 +570,13 @@ declare const fullApi: ApiFromModules<{
   "lib/orgScope": typeof lib_orgScope;
   "listings/create": typeof listings_create;
   "listings/curation": typeof listings_curation;
+  "listings/lifecycle": typeof listings_lifecycle;
   "listings/marketplace": typeof listings_marketplace;
   "listings/marketplaceShared": typeof listings_marketplaceShared;
   "listings/math": typeof listings_math;
+  "listings/portalProjection": typeof listings_portalProjection;
+  "listings/portalQueries": typeof listings_portalQueries;
+  "listings/portalVisibility": typeof listings_portalVisibility;
   "listings/projection": typeof listings_projection;
   "listings/publicDocuments": typeof listings_publicDocuments;
   "listings/queries": typeof listings_queries;
@@ -694,6 +708,7 @@ declare const fullApi: ApiFromModules<{
   "payments/webhooks/vopay": typeof payments_webhooks_vopay;
   "platform/defaultOriginationOwner": typeof platform_defaultOriginationOwner;
   "platform/defaultOriginationOwnerContract": typeof platform_defaultOriginationOwnerContract;
+  "portals/borrowerPortalAttribution": typeof portals_borrowerPortalAttribution;
   "portals/helpers": typeof portals_helpers;
   "portals/homePortalAssignment": typeof portals_homePortalAssignment;
   "portals/invariants": typeof portals_invariants;
@@ -722,6 +737,7 @@ declare const fullApi: ApiFromModules<{
   "test/originationE2e": typeof test_originationE2e;
   "test/packageSchemas": typeof test_packageSchemas;
   todos: typeof todos;
+  "users/byAuthId": typeof users_byAuthId;
 }>;
 
 /**

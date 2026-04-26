@@ -44,6 +44,10 @@ function groupItemsForMobile(items: readonly MarketplaceListingCardItem[]) {
 }
 
 interface MarketplaceListingsPageProps {
+	description?: string;
+	detailRoute?: "/listings/$listingId" | "/lender/listings/$listingId";
+	eyebrow?: string;
+	heading?: string;
 	search: MarketplaceListingsSearchState;
 	setSearch: (
 		updater: (
@@ -57,6 +61,10 @@ export function MarketplaceListingsPage({
 	snapshot,
 	search,
 	setSearch,
+	description = "Published listings are read-only in this release. Review pricing, collateral quality, fractions available, and the supporting map context before opening the full listing detail.",
+	detailRoute = "/listings/$listingId",
+	eyebrow = "Lender Marketplace",
+	heading = "Browse fractional mortgage opportunities",
 }: MarketplaceListingsPageProps) {
 	const filterState = useMemo(() => searchStateToFilterState(search), [search]);
 	const filterMetrics = useMemo(
@@ -122,17 +130,15 @@ export function MarketplaceListingsPage({
 		<div className="space-y-4 px-4 py-6 sm:px-6 lg:px-8">
 			<div className="space-y-3 px-4 sm:px-8">
 				<p className="font-medium text-[11px] text-muted-foreground uppercase tracking-[0.24em]">
-					Lender Marketplace
+					{eyebrow}
 				</p>
 				<div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
 					<div className="space-y-2">
 						<h1 className="font-semibold text-3xl tracking-tight sm:text-4xl">
-							Browse fractional mortgage opportunities
+							{heading}
 						</h1>
 						<p className="max-w-3xl text-muted-foreground text-sm leading-6 sm:text-base">
-							Published listings are read-only in this release. Review pricing,
-							collateral quality, fractions available, and the supporting map
-							context before opening the full listing detail.
+							{description}
 						</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-2">
@@ -159,7 +165,7 @@ export function MarketplaceListingsPage({
 					<Link
 						className="block"
 						params={{ listingId: listing.id }}
-						to="/listings/$listingId"
+						to={detailRoute}
 					>
 						<Horizontal
 							address={listing.address}

@@ -5,29 +5,47 @@ import type { MarketplaceListingsSearchState } from "#/components/listings/marke
 import { marketplaceListingsQueryOptions } from "#/components/listings/query-options";
 import {
 	cleanMarketplaceListingsSearch,
+	marketplaceFiltersToSearchState,
 	parseMarketplaceListingsSearch,
 } from "#/components/listings/search";
+import { assertActivePortalId } from "#/lib/portal/active-portal";
+import { Route as RootRoute } from "../__root";
 
 export const Route = createFileRoute("/listings/")({
-	component: ListingsRoutePage,
+	component: ListingsIndexRoutePage,
 	loaderDeps: ({ search }) => ({ search }),
 	loader: async ({ context, deps: { search } }) => {
+		const portalId = assertActivePortalId(
+			context.portalContext,
+			"Marketplace listings require an active portal host."
+		);
 		await context.queryClient.ensureQueryData(
-			marketplaceListingsQueryOptions(search)
+			marketplaceListingsQueryOptions(portalId, search)
 		);
 	},
 	validateSearch: (search: Record<string, unknown>) =>
 		parseMarketplaceListingsSearch(search),
 });
 
-function ListingsRoutePage() {
+export function ListingsIndexRoutePage() {
 	const search = Route.useSearch();
 	const navigate = useNavigate();
-	const { data } = useSuspenseQuery(marketplaceListingsQueryOptions(search));
+	const { portalContext } = RootRoute.useRouteContext();
+	const portalId = assertActivePortalId(
+		portalContext,
+		"Marketplace listings require an active portal host."
+	);
+	const { data } = useSuspenseQuery(
+		marketplaceListingsQueryOptions(portalId, search)
+	);
+	const effectiveSearch = marketplaceFiltersToSearchState(
+		data.effectiveFilters,
+		search.sort
+	);
 
 	return (
 		<MarketplaceListingsPage
-			search={search}
+			search={effectiveSearch}
 			setSearch={(updater) =>
 				void navigate({
 					search: (current) =>

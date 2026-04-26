@@ -116,6 +116,7 @@ function resolveConfig(
 	const baseUrl =
 		input.baseUrl ??
 		process.env.ROTESSA_API_BASE_URL ??
+		process.env.ROTESSA_API_URL ??
 		ROTESSA_BASE_URLS.production;
 
 	const envTimeout =
@@ -359,8 +360,14 @@ function buildRotessaRequestError(args: {
 }) {
 	const isAbort =
 		args.error instanceof Error && args.error.name === "AbortError";
+	const causeMessage =
+		args.error instanceof Error && args.error.message.trim().length > 0
+			? ` Cause: ${args.error.message}`
+			: "";
 	return new RotessaRequestError({
-		message: isAbort ? "Rotessa request timed out." : "Rotessa request failed.",
+		message: isAbort
+			? "Rotessa request timed out."
+			: `Rotessa request failed.${causeMessage}`,
 		method: args.method,
 		path: args.path,
 		cause: args.error,

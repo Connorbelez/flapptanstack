@@ -3,6 +3,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import {
 	buildSignInRedirect,
 	buildSignUpRedirect,
+	getReturnOnlyPathname,
 	getReturnPathname,
 	sanitizeRedirectPath,
 } from "#/lib/auth-redirect";
@@ -42,6 +43,18 @@ describe("auth redirect helpers", () => {
 	describe("getReturnPathname", () => {
 		it("falls back to the homepage when the redirect is invalid", () => {
 			expect(getReturnPathname("https://evil.example/phish")).toBe("/");
+		});
+	});
+
+	describe("getReturnOnlyPathname", () => {
+		it("strips search and hash while preserving the internal pathname", () => {
+			expect(getReturnOnlyPathname("/admin?detailOpen=false#sheet")).toBe(
+				"/admin"
+			);
+		});
+
+		it("falls back to the homepage when the redirect is invalid", () => {
+			expect(getReturnOnlyPathname("https://evil.example/phish")).toBe("/");
 		});
 	});
 

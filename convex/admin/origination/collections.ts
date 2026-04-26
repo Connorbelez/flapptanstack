@@ -19,7 +19,10 @@ import {
 } from "../../fluent";
 import { validateBankAccountRecord } from "../../payments/bankAccounts/validation";
 import { hasRotessaCustomerReference } from "../../payments/recurringSchedules/rotessaCustomerReference";
-import { createRotessaClient } from "../../payments/rotessa/client";
+import {
+	createRotessaClient,
+	RotessaRequestError,
+} from "../../payments/rotessa/client";
 import {
 	computeScheduledInstallmentCount,
 	logRotessaReconciliationAction,
@@ -33,11 +36,50 @@ import {
 } from "../../payments/rotessa/readModel";
 import type { RotessaCustomerDetail } from "../../payments/rotessa/types";
 import { normalizeEmail } from "../../seed/seedHelpers";
+import { upsertUserByAuthId } from "../../users/byAuthId";
 import { normalizeOriginationCollectionsDraft } from "./validators";
 
 const originationQuery = authedQuery.use(
 	requirePermission("mortgage:originate")
 );
+
+const ROTESSA_RETRY_DELAYS_MS = [500, 1500] as const;
+
+function formatRotessaRequestError(error: RotessaRequestError) {
+	return `${error.message} (${error.method} ${error.path})`;
+}
+
+async function sleep(delayMs: number) {
+	await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function runRotessaRequestWithRetry<T>(
+	operation: string,
+	request: () => Promise<T>
+): Promise<T> {
+	for (
+		let attempt = 0;
+		attempt <= ROTESSA_RETRY_DELAYS_MS.length;
+		attempt += 1
+	) {
+		try {
+			return await request();
+		} catch (error) {
+			if (
+				!(error instanceof RotessaRequestError) ||
+				attempt === ROTESSA_RETRY_DELAYS_MS.length
+			) {
+				throw error;
+			}
+			console.warn(
+				`[rotessa] ${operation} failed on attempt ${attempt + 1}: ${formatRotessaRequestError(error)}`
+			);
+			await sleep(ROTESSA_RETRY_DELAYS_MS[attempt]);
+		}
+	}
+
+	throw new Error(`Rotessa retry loop exhausted for ${operation}`);
+}
 const originationAction = authedAction.use(
 	requirePermissionAction("mortgage:originate")
 );
@@ -149,6 +191,36 @@ interface CreatedRotessaScheduleForCaseResult {
 	providerScheduleId: Id<"externalProviderSchedules">;
 }
 
+interface CreateRotessaScheduleViewerContext {
+	viewerAuthId: string;
+	viewerIsFairLendAdmin: boolean;
+	viewerOrgId?: string;
+}
+
+interface CreateRotessaScheduleForCaseRuntimeArgs
+	extends CreateRotessaScheduleViewerContext {
+	bankAccountId: Id<"bankAccounts">;
+	borrowerId: Id<"borrowers">;
+	caseId: Id<"adminOriginationCases">;
+	padAuthorizationAssetId?: Id<"documentAssets">;
+	padAuthorizationOverrideReason?: string;
+	padAuthorizationSource: "admin_override" | "uploaded";
+}
+
+interface CreateRotessaScheduleForCaseRuntimeResult {
+	borrower: RotessaScheduleCreationContext["borrower"];
+	customerProfileId: Id<"externalCustomerProfiles">;
+	firstPaymentDate: string;
+	paymentAmountCents: number;
+	paymentFrequency: Exclude<
+		NonNullable<
+			Doc<"adminOriginationCases">["mortgageDraft"]
+		>["paymentFrequency"],
+		undefined
+	>;
+	providerScheduleId: Id<"externalProviderSchedules">;
+}
+
 interface PlanEntryWindow {
 	coveredFromPlanEntryId: Id<"collectionPlanEntries">;
 	coveredToPlanEntryId: Id<"collectionPlanEntries">;
@@ -251,6 +323,7 @@ const commitCanonicalBorrowerProfileRef = makeFunctionReference<
 		institutionNumber?: string;
 		lastName?: string;
 		orgId?: string;
+		portalId?: Id<"portals">;
 		phone?: string;
 		sourceLabel: string;
 		transitNumber?: string;
@@ -266,6 +339,7 @@ const createCanonicalBorrowerProfileRef = makeFunctionReference<
 		fullName: string;
 		institutionNumber?: string;
 		orgId?: string;
+		portalId?: Id<"portals">;
 		phone?: string;
 		sourceLabel: string;
 		transitNumber?: string;
@@ -620,21 +694,24 @@ async function ensureCollectionsUserRow(args: {
 	lastName?: string;
 	phoneNumber?: string;
 }) {
-	const existing = await args.ctx.db
-		.query("users")
-		.withIndex("authId", (query) => query.eq("authId", args.authId))
-		.unique();
-	if (existing) {
-		return existing._id;
-	}
-
-	return args.ctx.db.insert("users", {
+	const userUpsert = await upsertUserByAuthId(args.ctx, {
 		authId: args.authId,
 		email: normalizeEmail(args.email),
-		firstName: args.firstName ?? "",
-		lastName: args.lastName ?? "",
+		firstName: args.firstName,
+		lastName: args.lastName,
 		phoneNumber: args.phoneNumber,
 	});
+	if (userUpsert.deletedDuplicateUserIds.length > 0) {
+		console.warn(
+			`[origination/collections] Collapsed ${userUpsert.deletedDuplicateUserIds.length} duplicate user row(s) for ${args.authId}.`
+		);
+	}
+	if (userUpsert.survivingDuplicateUserIds.length > 0) {
+		console.warn(
+			`[origination/collections] Referenced duplicate user row(s) remain for ${args.authId}: ${userUpsert.survivingDuplicateUserIds.join(", ")}`
+		);
+	}
+	return userUpsert.canonicalUser._id;
 }
 
 function buildCollectionsWorkflowSourceKey(args: {
@@ -1090,6 +1167,7 @@ export const commitCanonicalBorrowerProfile = convex
 		institutionNumber: v.optional(v.string()),
 		lastName: v.optional(v.string()),
 		orgId: v.optional(v.string()),
+		portalId: v.optional(v.id("portals")),
 		phone: v.optional(v.string()),
 		sourceLabel: v.string(),
 		transitNumber: v.optional(v.string()),
@@ -1114,6 +1192,7 @@ export const commitCanonicalBorrowerProfile = convex
 			orgId: args.orgId,
 			originatingWorkflowId: args.sourceLabel,
 			originatingWorkflowType: "admin_origination_collections",
+			portalId: args.portalId,
 			userId,
 			workflowSourceId: args.sourceLabel,
 			workflowSourceKey,
@@ -1188,6 +1267,7 @@ export const createCanonicalBorrowerProfile = convex
 		fullName: v.string(),
 		institutionNumber: v.optional(v.string()),
 		orgId: v.optional(v.string()),
+		portalId: v.optional(v.id("portals")),
 		phone: v.optional(v.string()),
 		sourceLabel: v.string(),
 		transitNumber: v.optional(v.string()),
@@ -1220,6 +1300,7 @@ export const createCanonicalBorrowerProfile = convex
 			institutionNumber: args.institutionNumber,
 			lastName,
 			orgId: args.orgId,
+			portalId: args.portalId,
 			phone: args.phone,
 			sourceLabel: args.sourceLabel,
 			transitNumber: args.transitNumber,
@@ -1237,8 +1318,11 @@ export const createBorrowerForCollections = originationAction
 		phone: v.optional(v.string()),
 		transitNumber: v.string(),
 	})
-	.handler(async (ctx, args) => {
-		const commitContext = await ctx.runQuery(
+	.handler(async (ctx, args): Promise<CanonicalBorrowerProfileResult> => {
+		const commitContext: {
+			orgId?: string;
+			portalId: Id<"portals"> | null;
+		} | null = await ctx.runQuery(
 			internal.admin.origination.commit.getCommitContext,
 			{
 				caseId: args.caseId,
@@ -1250,13 +1334,19 @@ export const createBorrowerForCollections = originationAction
 		if (!commitContext) {
 			throw new ConvexError("Origination case not found");
 		}
+		if (!commitContext.portalId) {
+			throw new ConvexError(
+				"Borrower portal attribution could not be resolved"
+			);
+		}
 
 		return ctx.runAction(createCanonicalBorrowerProfileRef, {
 			accountNumber: args.accountNumber,
 			email: args.email,
 			fullName: args.fullName,
 			institutionNumber: args.institutionNumber,
-			orgId: ctx.viewer.orgId,
+			orgId: commitContext.orgId,
+			portalId: commitContext.portalId,
 			phone: args.phone,
 			sourceLabel: `origination_case:${args.caseId}`,
 			transitNumber: args.transitNumber,
@@ -1480,205 +1570,265 @@ export const createRotessaScheduleForCase = originationAction
 			v.literal("admin_override")
 		),
 	})
-	.handler(async (ctx, args) => {
-		const creationContext = await ctx.runQuery(
-			getRotessaScheduleCreationContextInternalRef,
+	.handler(async (ctx, args) =>
+		createRotessaScheduleForCaseRuntime(ctx, {
+			...args,
+			viewerAuthId: ctx.viewer.authId,
+			viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
+			viewerOrgId: ctx.viewer.orgId,
+		})
+	)
+	.public();
+
+async function createRotessaScheduleForCaseRuntime(
+	ctx: Pick<ActionCtx, "runMutation" | "runQuery">,
+	args: CreateRotessaScheduleForCaseRuntimeArgs
+): Promise<CreateRotessaScheduleForCaseRuntimeResult> {
+	const creationContext = await ctx.runQuery(
+		getRotessaScheduleCreationContextInternalRef,
+		{
+			bankAccountId: args.bankAccountId,
+			borrowerId: args.borrowerId,
+			caseId: args.caseId,
+			viewerAuthId: args.viewerAuthId,
+			viewerIsFairLendAdmin: args.viewerIsFairLendAdmin,
+			viewerOrgId: args.viewerOrgId,
+		}
+	);
+	const mortgageDraft = creationContext.mortgageDraft;
+	if (
+		!(
+			mortgageDraft?.paymentAmount &&
+			mortgageDraft.paymentFrequency &&
+			mortgageDraft.firstPaymentDate &&
+			mortgageDraft.maturityDate
+		)
+	) {
+		throw new ConvexError(
+			"Core Economics must stage payment amount, frequency, first payment date, and maturity date before creating a Rotessa schedule."
+		);
+	}
+	if (
+		args.padAuthorizationSource === "uploaded" &&
+		!args.padAuthorizationAssetId
+	) {
+		throw new ConvexError(
+			"Upload a signed PAD document before creating the Rotessa payment schedule."
+		);
+	}
+	if (
+		args.padAuthorizationSource === "admin_override" &&
+		!args.padAuthorizationOverrideReason?.trim()
+	) {
+		throw new ConvexError(
+			"Enter an admin override reason before creating the Rotessa payment schedule."
+		);
+	}
+	if (
+		!(
+			creationContext.bankAccount.accountNumber &&
+			creationContext.bankAccount.institutionNumber &&
+			creationContext.bankAccount.transitNumber
+		)
+	) {
+		throw new ConvexError(
+			"Selected bank account is missing the information required to create a Rotessa customer."
+		);
+	}
+	const accountNumber = creationContext.bankAccount.accountNumber;
+	const institutionNumber = creationContext.bankAccount.institutionNumber;
+	const transitNumber = creationContext.bankAccount.transitNumber;
+	const paymentAmountCents = mortgageDraft.paymentAmount;
+	const originationPaymentFrequency = mortgageDraft.paymentFrequency;
+	const firstPaymentDate = mortgageDraft.firstPaymentDate;
+	const maturityDate = mortgageDraft.maturityDate;
+
+	const client = createRotessaClient({ timeoutMs: 30_000 });
+	let customerSnapshot: NormalizedRotessaCustomerSnapshot | null = null;
+	let customerId: number | undefined;
+
+	if (creationContext.existingCustomerProfile) {
+		customerId = Number.parseInt(
+			creationContext.existingCustomerProfile.externalCustomerRef,
+			10
+		);
+		customerSnapshot = {
+			accountLast4:
+				creationContext.existingCustomerProfile.accountLast4 ?? undefined,
+			accountNumber:
+				creationContext.existingCustomerProfile.accountNumber ?? undefined,
+			email: creationContext.borrower.email,
+			externalCustomerCustomIdentifier:
+				creationContext.existingCustomerProfile
+					.externalCustomerCustomIdentifier ?? undefined,
+			externalCustomerRef:
+				creationContext.existingCustomerProfile.externalCustomerRef,
+			fullName: creationContext.borrower.fullName,
+			institutionNumber:
+				creationContext.bankAccount.institutionNumber ?? undefined,
+			phone: creationContext.borrower.phone ?? undefined,
+			schedules: [],
+			transitNumber: creationContext.bankAccount.transitNumber ?? undefined,
+		};
+	} else {
+		const createdCustomer = await runRotessaRequestWithRetry(
+			"create customer",
+			() =>
+				client.customers.create({
+					account_number: accountNumber,
+					authorization_type:
+						args.padAuthorizationSource === "uploaded" ? "Online" : "In Person",
+					bank_account_type: "Checking",
+					custom_identifier: `borrower:${args.borrowerId}:bank:${args.bankAccountId}`,
+					email: creationContext.borrower.email,
+					institution_number: institutionNumber,
+					name: creationContext.borrower.fullName,
+					phone: creationContext.borrower.phone ?? undefined,
+					transit_number: transitNumber,
+				})
+		);
+		customerId = createdCustomer.id;
+		customerSnapshot = {
+			accountLast4:
+				createdCustomer.account_number?.slice(-4) ?? accountNumber.slice(-4),
+			accountNumber: createdCustomer.account_number ?? undefined,
+			authorizationType: createdCustomer.authorization_type ?? undefined,
+			bankAccountType: createdCustomer.bank_account_type ?? undefined,
+			bankName: createdCustomer.bank_name ?? undefined,
+			customerType: createdCustomer.customer_type ?? undefined,
+			email: createdCustomer.email,
+			externalCustomerCustomIdentifier:
+				createdCustomer.custom_identifier ?? undefined,
+			externalCustomerRef: String(createdCustomer.id),
+			fullName: createdCustomer.name,
+			institutionNumber: createdCustomer.institution_number ?? undefined,
+			phone: createdCustomer.phone ?? createdCustomer.home_phone ?? undefined,
+			schedules: [],
+			transitNumber: createdCustomer.transit_number ?? undefined,
+		};
+	}
+
+	if (!(customerId && Number.isFinite(customerId))) {
+		throw new ConvexError(
+			"Unable to resolve a Rotessa customer for schedule creation."
+		);
+	}
+
+	const installments = computeScheduledInstallmentCount({
+		firstPaymentDate,
+		maturityDate,
+		paymentFrequency: originationPaymentFrequency,
+	});
+	const frequency = mapOriginationFrequencyToRotessaFrequency(
+		originationPaymentFrequency
+	);
+	const scheduleComment = `origination_case:${args.caseId};borrower:${args.borrowerId}`;
+	const createdSchedule = await runRotessaRequestWithRetry(
+		"create schedule",
+		() =>
+			client.transactionSchedules.create({
+				amount: Number((paymentAmountCents / 100).toFixed(2)),
+				comment: scheduleComment,
+				customer_id: customerId,
+				frequency,
+				installments,
+				process_date: firstPaymentDate,
+			})
+	);
+
+	try {
+		const committed = await ctx.runMutation(
+			recordCreatedRotessaScheduleForCaseRef,
 			{
+				actorUserId: creationContext.viewerUserId ?? undefined,
 				bankAccountId: args.bankAccountId,
 				borrowerId: args.borrowerId,
 				caseId: args.caseId,
-				viewerAuthId: ctx.viewer.authId,
-				viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
-				viewerOrgId: ctx.viewer.orgId,
+				customer: {
+					accountLast4:
+						customerSnapshot.accountLast4 ??
+						creationContext.bankAccount.accountNumber?.slice(-4),
+					accountNumber: customerSnapshot.accountNumber,
+					authorizationType: customerSnapshot.authorizationType,
+					bankAccountType: customerSnapshot.bankAccountType,
+					bankName: customerSnapshot.bankName,
+					customerType: customerSnapshot.customerType,
+					email: customerSnapshot.email ?? creationContext.borrower.email,
+					externalCustomerCustomIdentifier:
+						customerSnapshot.externalCustomerCustomIdentifier,
+					externalCustomerRef: customerSnapshot.externalCustomerRef,
+					fullName: customerSnapshot.fullName,
+					institutionNumber:
+						customerSnapshot.institutionNumber ??
+						creationContext.bankAccount.institutionNumber ??
+						undefined,
+					phone: customerSnapshot.phone,
+					transitNumber:
+						customerSnapshot.transitNumber ??
+						creationContext.bankAccount.transitNumber ??
+						undefined,
+				},
+				schedule: {
+					amountCents: paymentAmountCents,
+					comment: createdSchedule.comment ?? scheduleComment,
+					externalScheduleRef: String(createdSchedule.id),
+					frequency: createdSchedule.frequency,
+					installments: createdSchedule.installments ?? installments,
+					nextProcessDate: createdSchedule.next_process_date ?? undefined,
+					processDate: createdSchedule.process_date,
+				},
 			}
 		);
-		const mortgageDraft = creationContext.mortgageDraft;
-		if (
-			!(
-				mortgageDraft?.paymentAmount &&
-				mortgageDraft.paymentFrequency &&
-				mortgageDraft.firstPaymentDate &&
-				mortgageDraft.maturityDate
-			)
-		) {
-			throw new ConvexError(
-				"Core Economics must stage payment amount, frequency, first payment date, and maturity date before creating a Rotessa schedule."
-			);
-		}
-		if (
-			args.padAuthorizationSource === "uploaded" &&
-			!args.padAuthorizationAssetId
-		) {
-			throw new ConvexError(
-				"Upload a signed PAD document before creating the Rotessa payment schedule."
-			);
-		}
-		if (
-			args.padAuthorizationSource === "admin_override" &&
-			!args.padAuthorizationOverrideReason?.trim()
-		) {
-			throw new ConvexError(
-				"Enter an admin override reason before creating the Rotessa payment schedule."
-			);
-		}
-		if (
-			!(
-				creationContext.bankAccount.accountNumber &&
-				creationContext.bankAccount.institutionNumber &&
-				creationContext.bankAccount.transitNumber
-			)
-		) {
-			throw new ConvexError(
-				"Selected bank account is missing the information required to create a Rotessa customer."
-			);
-		}
-
-		const client = createRotessaClient();
-		let customerSnapshot: NormalizedRotessaCustomerSnapshot | null = null;
-		let customerId: number | undefined;
-
-		if (creationContext.existingCustomerProfile) {
-			customerId = Number.parseInt(
-				creationContext.existingCustomerProfile.externalCustomerRef,
-				10
-			);
-			customerSnapshot = {
-				accountLast4:
-					creationContext.existingCustomerProfile.accountLast4 ?? undefined,
-				accountNumber:
-					creationContext.existingCustomerProfile.accountNumber ?? undefined,
-				email: creationContext.borrower.email,
-				externalCustomerCustomIdentifier:
-					creationContext.existingCustomerProfile
-						.externalCustomerCustomIdentifier ?? undefined,
-				externalCustomerRef:
-					creationContext.existingCustomerProfile.externalCustomerRef,
-				fullName: creationContext.borrower.fullName,
-				institutionNumber:
-					creationContext.bankAccount.institutionNumber ?? undefined,
-				phone: creationContext.borrower.phone ?? undefined,
-				schedules: [],
-				transitNumber: creationContext.bankAccount.transitNumber ?? undefined,
-			};
-		} else {
-			const createdCustomer = await client.customers.create({
-				account_number: creationContext.bankAccount.accountNumber,
-				authorization_type:
-					args.padAuthorizationSource === "uploaded" ? "Online" : "In Person",
-				bank_account_type: "Checking",
-				custom_identifier: `borrower:${args.borrowerId}:bank:${args.bankAccountId}`,
-				email: creationContext.borrower.email,
-				institution_number: creationContext.bankAccount.institutionNumber,
-				name: creationContext.borrower.fullName,
-				phone: creationContext.borrower.phone ?? undefined,
-				transit_number: creationContext.bankAccount.transitNumber,
-			});
-			customerId = createdCustomer.id;
-			customerSnapshot = {
-				accountLast4:
-					createdCustomer.account_number?.slice(-4) ??
-					creationContext.bankAccount.accountNumber.slice(-4),
-				accountNumber: createdCustomer.account_number ?? undefined,
-				authorizationType: createdCustomer.authorization_type ?? undefined,
-				bankAccountType: createdCustomer.bank_account_type ?? undefined,
-				bankName: createdCustomer.bank_name ?? undefined,
-				customerType: createdCustomer.customer_type ?? undefined,
-				email: createdCustomer.email,
-				externalCustomerCustomIdentifier:
-					createdCustomer.custom_identifier ?? undefined,
-				externalCustomerRef: String(createdCustomer.id),
-				fullName: createdCustomer.name,
-				institutionNumber: createdCustomer.institution_number ?? undefined,
-				phone: createdCustomer.phone ?? createdCustomer.home_phone ?? undefined,
-				schedules: [],
-				transitNumber: createdCustomer.transit_number ?? undefined,
-			};
-		}
-
-		if (!(customerId && Number.isFinite(customerId))) {
-			throw new ConvexError(
-				"Unable to resolve a Rotessa customer for schedule creation."
-			);
-		}
-
-		const installments = computeScheduledInstallmentCount({
-			firstPaymentDate: mortgageDraft.firstPaymentDate,
-			maturityDate: mortgageDraft.maturityDate,
-			paymentFrequency: mortgageDraft.paymentFrequency,
-		});
-		const frequency = mapOriginationFrequencyToRotessaFrequency(
-			mortgageDraft.paymentFrequency
+		const paymentFrequency = mapRotessaFrequencyToOriginationPaymentFrequency(
+			createdSchedule.frequency
 		);
-		const scheduleComment = `origination_case:${args.caseId};borrower:${args.borrowerId}`;
-		const createdSchedule = await client.transactionSchedules.create({
-			amount: Number((mortgageDraft.paymentAmount / 100).toFixed(2)),
-			comment: scheduleComment,
-			customer_id: customerId,
-			frequency,
-			installments,
-			process_date: mortgageDraft.firstPaymentDate,
-		});
-
-		try {
-			const committed = await ctx.runMutation(
-				recordCreatedRotessaScheduleForCaseRef,
-				{
-					actorUserId: creationContext.viewerUserId ?? undefined,
-					bankAccountId: args.bankAccountId,
-					borrowerId: args.borrowerId,
-					caseId: args.caseId,
-					customer: {
-						accountLast4:
-							customerSnapshot.accountLast4 ??
-							creationContext.bankAccount.accountNumber?.slice(-4),
-						accountNumber: customerSnapshot.accountNumber,
-						authorizationType: customerSnapshot.authorizationType,
-						bankAccountType: customerSnapshot.bankAccountType,
-						bankName: customerSnapshot.bankName,
-						customerType: customerSnapshot.customerType,
-						email: customerSnapshot.email ?? creationContext.borrower.email,
-						externalCustomerCustomIdentifier:
-							customerSnapshot.externalCustomerCustomIdentifier,
-						externalCustomerRef: customerSnapshot.externalCustomerRef,
-						fullName: customerSnapshot.fullName,
-						institutionNumber:
-							customerSnapshot.institutionNumber ??
-							creationContext.bankAccount.institutionNumber ??
-							undefined,
-						phone: customerSnapshot.phone,
-						transitNumber:
-							customerSnapshot.transitNumber ??
-							creationContext.bankAccount.transitNumber ??
-							undefined,
-					},
-					schedule: {
-						amountCents: mortgageDraft.paymentAmount,
-						comment: createdSchedule.comment ?? scheduleComment,
-						externalScheduleRef: String(createdSchedule.id),
-						frequency: createdSchedule.frequency,
-						installments: createdSchedule.installments ?? installments,
-						nextProcessDate: createdSchedule.next_process_date ?? undefined,
-						processDate: createdSchedule.process_date,
-					},
-				}
+		if (!paymentFrequency) {
+			throw new ConvexError(
+				`Unsupported Rotessa schedule frequency returned: ${createdSchedule.frequency}`
 			);
-
-			return {
-				borrower: creationContext.borrower,
-				firstPaymentDate:
-					createdSchedule.next_process_date ?? createdSchedule.process_date,
-				paymentAmountCents: mortgageDraft.paymentAmount,
-				paymentFrequency: mapRotessaFrequencyToOriginationPaymentFrequency(
-					createdSchedule.frequency
-				),
-				providerScheduleId: String(committed.providerScheduleId),
-			};
-		} catch (error) {
-			await client.transactionSchedules.delete(createdSchedule.id);
-			throw error;
 		}
+
+		return {
+			borrower: creationContext.borrower,
+			customerProfileId: committed.customerProfileId,
+			firstPaymentDate:
+				createdSchedule.next_process_date ?? createdSchedule.process_date,
+			paymentAmountCents,
+			paymentFrequency,
+			providerScheduleId: committed.providerScheduleId,
+		};
+	} catch (error) {
+		try {
+			await runRotessaRequestWithRetry("delete schedule rollback", () =>
+				client.transactionSchedules.delete(createdSchedule.id)
+			);
+		} catch (rollbackError) {
+			console.warn(
+				`[rotessa] rollback delete failed for schedule ${createdSchedule.id}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+			);
+		}
+		throw error;
+	}
+}
+
+export const createRotessaScheduleForCaseInternal = convex
+	.action()
+	.input({
+		bankAccountId: v.id("bankAccounts"),
+		borrowerId: v.id("borrowers"),
+		caseId: v.id("adminOriginationCases"),
+		padAuthorizationAssetId: v.optional(v.id("documentAssets")),
+		padAuthorizationOverrideReason: v.optional(v.string()),
+		padAuthorizationSource: v.union(
+			v.literal("uploaded"),
+			v.literal("admin_override")
+		),
+		viewerAuthId: v.string(),
+		viewerIsFairLendAdmin: v.boolean(),
+		viewerOrgId: v.optional(v.string()),
 	})
-	.public();
+	.handler(async (ctx, args) => createRotessaScheduleForCaseRuntime(ctx, args))
+	.internal();
 
 const normalizedRotessaScheduleSnapshotValidator = v.object({
 	amountCents: v.optional(v.number()),

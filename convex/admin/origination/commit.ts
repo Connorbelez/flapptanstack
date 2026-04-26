@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { ORIGINATION_COMMIT_BLOCKING_STEP_KEYS } from "../../../src/lib/admin-origination";
 import { internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
-import type { MutationCtx } from "../../_generated/server";
+import type { ActionCtx, MutationCtx } from "../../_generated/server";
 import { assertOriginationCaseAccess } from "../../authz/origination";
 import {
 	ensureCanonicalBorrowerForOrigination,
@@ -18,9 +18,16 @@ import {
 import { authedAction, convex, requirePermissionAction } from "../../fluent";
 import { activateMortgageAggregate } from "../../mortgages/activateMortgageAggregate";
 import { buildAdminDirectMortgageActivationSource } from "../../mortgages/provenance";
-import { activateCommittedCaseCollectionsRuntime } from "./collections";
+import { ensureBorrowerPortalAttribution } from "../../portals/borrowerPortalAttribution";
+import {
+	getPortalByBrokerId,
+	syncUserHomePortalAssignmentByUserId,
+} from "../../portals/homePortalAssignment";
 import { runPostCommitCollectionsActivation } from "./postCommitCollectionsActivation";
-import { normalizeOriginationCollectionsDraft } from "./validators";
+import {
+	computeOriginationValidationSnapshot,
+	normalizeOriginationCollectionsDraft,
+} from "./validators";
 
 function collectOriginationParticipants(
 	record: Pick<Doc<"adminOriginationCases">, "participantsDraft">
@@ -78,6 +85,7 @@ function dedupeStrings(values: string[]) {
 }
 
 interface OriginationCommitContext {
+	brokerOfRecordId: Id<"brokers"> | null;
 	caseId: Id<"adminOriginationCases">;
 	caseStatus: Doc<"adminOriginationCases">["status"];
 	caseUpdatedAt: number;
@@ -85,7 +93,9 @@ interface OriginationCommitContext {
 	committedAt: number | null;
 	committedMortgageId: Id<"mortgages"> | null;
 	committedValuationSnapshotId: Id<"mortgageValuationSnapshots"> | null;
+	orgId: string | undefined;
 	participantResolutions: OriginationParticipantResolution[];
+	portalId: Id<"portals"> | null;
 	validationErrors: string[];
 	viewerUserId: Id<"users">;
 }
@@ -116,6 +126,13 @@ interface AwaitingIdentitySyncOriginationResult {
 type OriginationCommitResult =
 	| AwaitingIdentitySyncOriginationResult
 	| CommittedOriginationResult;
+
+interface CommitCaseRuntimeArgs {
+	caseId: Id<"adminOriginationCases">;
+	viewerAuthId: string;
+	viewerIsFairLendAdmin: boolean;
+	viewerOrgId?: string;
+}
 
 function listCommitBlockingValidationErrors(
 	record: Pick<
@@ -354,6 +371,7 @@ async function resolveBrokerAssignmentsForCommit(
 async function buildBorrowerLinksForCommit(
 	ctx: Pick<MutationCtx, "db">,
 	args: {
+		brokerOfRecordId: Id<"brokers">;
 		caseId: Id<"adminOriginationCases">;
 		creationSource: string;
 		now: number;
@@ -367,6 +385,11 @@ async function buildBorrowerLinksForCommit(
 		borrowerId: Id<"borrowers">;
 		role: Doc<"mortgageBorrowers">["role"];
 	}> = [];
+	const brokerPortal = await getPortalByBrokerId(ctx, args.brokerOfRecordId);
+	if (!brokerPortal) {
+		throw new ConvexError("Broker of record portal no longer exists");
+	}
+	const portalId = brokerPortal._id;
 
 	for (const participant of args.participantResolutions) {
 		if (participant.kind !== "ready") {
@@ -374,19 +397,33 @@ async function buildBorrowerLinksForCommit(
 		}
 
 		if (participant.borrowerId) {
+			const existingBorrower = await ctx.db.get(participant.borrowerId);
+			if (!existingBorrower) {
+				throw new ConvexError("Staged borrower reference no longer exists");
+			}
+			const attributedBorrower = await ensureBorrowerPortalAttribution(ctx, {
+				borrower: existingBorrower,
+				portalId,
+			});
+			await syncUserHomePortalAssignmentByUserId(
+				ctx,
+				attributedBorrower.userId
+			);
 			borrowerLinks.push({
-				borrowerId: participant.borrowerId,
+				borrowerId: attributedBorrower._id,
 				role: participant.role,
 			});
 			continue;
 		}
 
 		const ensuredBorrower = await ensureCanonicalBorrowerForOrigination(ctx, {
+			brokerId: args.brokerOfRecordId,
 			creationSource: args.creationSource,
 			now: args.now,
 			orgId: args.orgId,
 			originatingWorkflowId: args.originatingWorkflowId,
 			originatingWorkflowType: args.originatingWorkflowType,
+			portalId,
 			userId: participant.userId,
 			workflowSourceId: String(args.caseId),
 			workflowSourceKey: participant.workflowSourceKey,
@@ -473,8 +510,14 @@ export const getCommitContext = convex
 				participants: collectOriginationParticipants(caseRecord),
 			}
 		);
+		const brokerOfRecordId =
+			caseRecord.participantsDraft?.brokerOfRecordId ?? null;
+		const brokerPortal = brokerOfRecordId
+			? await getPortalByBrokerId(ctx, brokerOfRecordId)
+			: null;
 
 		return {
+			brokerOfRecordId,
 			caseId: caseRecord._id,
 			caseStatus: caseRecord.status,
 			caseUpdatedAt: caseRecord.updatedAt,
@@ -483,7 +526,9 @@ export const getCommitContext = convex
 			committedValuationSnapshotId:
 				caseRecord.committedValuationSnapshotId ?? null,
 			collectionsDraft: caseRecord.collectionsDraft,
+			orgId: caseRecord.orgId,
 			participantResolutions,
+			portalId: brokerPortal?._id ?? null,
 			validationErrors: collectCommitBlockingErrors(caseRecord),
 			viewerUserId: viewerUser._id,
 		};
@@ -650,6 +695,7 @@ export const finalizeCommit = convex
 		const { assignedBrokerId, brokerOfRecordId } =
 			await resolveBrokerAssignmentsForCommit(ctx, caseRecord);
 		const borrowerLinks = await buildBorrowerLinksForCommit(ctx, {
+			brokerOfRecordId,
 			caseId: caseRecord._id,
 			creationSource: activationSource.creationSource,
 			now,
@@ -729,181 +775,152 @@ const originationAction = authedAction.use(
 	requirePermissionAction("mortgage:originate")
 );
 
-export const commitCase = originationAction
-	.input({
-		caseId: v.id("adminOriginationCases"),
-	})
-	.handler(async (ctx, args): Promise<OriginationCommitResult> => {
-		const loadCommitContext = async (): Promise<OriginationCommitContext> => {
-			const commitContext = (await ctx.runQuery(
-				internal.admin.origination.commit.getCommitContext,
-				{
-					caseId: args.caseId,
-					viewerAuthId: ctx.viewer.authId,
-					viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
-					viewerOrgId: ctx.viewer.orgId,
-				}
-			)) as OriginationCommitContext | null;
-			if (!commitContext) {
-				throw new ConvexError("Origination case not found");
+async function commitCaseRuntime(
+	ctx: Pick<ActionCtx, "runAction" | "runMutation" | "runQuery">,
+	args: CommitCaseRuntimeArgs
+): Promise<OriginationCommitResult> {
+	const loadCommitContext = async (): Promise<OriginationCommitContext> => {
+		const commitContext = (await ctx.runQuery(
+			internal.admin.origination.commit.getCommitContext,
+			{
+				caseId: args.caseId,
+				viewerAuthId: args.viewerAuthId,
+				viewerIsFairLendAdmin: args.viewerIsFairLendAdmin,
+				viewerOrgId: args.viewerOrgId,
 			}
-			return commitContext;
-		};
+		)) as OriginationCommitContext | null;
+		if (!commitContext) {
+			throw new ConvexError("Origination case not found");
+		}
+		return commitContext;
+	};
 
-		const finalizeCommitWithCollections = async (input: {
-			collectionsDraft: OriginationCommitContext["collectionsDraft"];
-			stagedCaseStatus: OriginationCommitContext["caseStatus"];
-			viewerUserId: Id<"users">;
-		}): Promise<OriginationCommitResult> => {
-			const committedResult = (await ctx.runMutation(
-				internal.admin.origination.commit.finalizeCommit,
-				{
-					caseId: args.caseId,
-					stagedCaseStatus: input.stagedCaseStatus,
-					viewerAuthId: ctx.viewer.authId,
-					viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
-					viewerOrgId: ctx.viewer.orgId,
-					viewerUserId: input.viewerUserId,
-				}
-			)) as OriginationCommitResult;
+	const finalizeCommitWithCollections = async (input: {
+		collectionsDraft: OriginationCommitContext["collectionsDraft"];
+		stagedCaseStatus: OriginationCommitContext["caseStatus"];
+		viewerUserId: Id<"users">;
+	}): Promise<OriginationCommitResult> => {
+		const committedResult = (await ctx.runMutation(
+			internal.admin.origination.commit.finalizeCommit,
+			{
+				caseId: args.caseId,
+				stagedCaseStatus: input.stagedCaseStatus,
+				viewerAuthId: args.viewerAuthId,
+				viewerIsFairLendAdmin: args.viewerIsFairLendAdmin,
+				viewerOrgId: args.viewerOrgId,
+				viewerUserId: input.viewerUserId,
+			}
+		)) as OriginationCommitResult;
 
-			await runPostCommitCollectionsActivation(
-				{
-					caseId: args.caseId,
-					collectionsDraft: input.collectionsDraft,
-					viewerUserId: input.viewerUserId,
-				},
-				{
-					runActivation: (activationArgs) =>
-						activateCommittedCaseCollectionsRuntime(ctx, activationArgs),
-				}
-			);
+		await runPostCommitCollectionsActivation(
+			{
+				caseId: args.caseId,
+				collectionsDraft: input.collectionsDraft,
+				viewerUserId: input.viewerUserId,
+			},
+			{
+				runActivation: (activationArgs) =>
+					ctx.runAction(
+						internal.admin.origination.collections
+							.activateCommittedCaseCollections,
+						activationArgs
+					),
+			}
+		);
 
-			return committedResult;
-		};
+		return committedResult;
+	};
 
-		const commitContext = await loadCommitContext();
+	const commitContext = await loadCommitContext();
 
-		if (
-			commitContext.caseStatus === "committed" &&
-			commitContext.committedMortgageId &&
-			commitContext.committedAt
-		) {
-			return finalizeCommitWithCollections({
-				collectionsDraft: commitContext.collectionsDraft,
-				stagedCaseStatus: commitContext.caseStatus,
-				viewerUserId: commitContext.viewerUserId,
-			});
+	if (
+		commitContext.caseStatus === "committed" &&
+		commitContext.committedMortgageId &&
+		commitContext.committedAt
+	) {
+		return finalizeCommitWithCollections({
+			collectionsDraft: commitContext.collectionsDraft,
+			stagedCaseStatus: commitContext.caseStatus,
+			viewerUserId: commitContext.viewerUserId,
+		});
+	}
+
+	if (commitContext.validationErrors.length > 0) {
+		throw new ConvexError(
+			`Origination case is not ready to commit: ${commitContext.validationErrors.join(
+				" "
+			)}`
+		);
+	}
+
+	const provisioning = getWorkosProvisioning();
+	const pendingIdentities: Array<{
+		email: string;
+		fullName?: string;
+		role: Doc<"mortgageBorrowers">["role"];
+		workosUserId: string;
+	}> = [];
+
+	for (const participant of commitContext.participantResolutions) {
+		if (participant.kind !== "missing_identity") {
+			continue;
 		}
 
-		if (commitContext.validationErrors.length > 0) {
-			throw new ConvexError(
-				`Origination case is not ready to commit: ${commitContext.validationErrors.join(
-					" "
-				)}`
+		const workosUser = await getOrCreateProvisionedUser(
+			provisioning,
+			participant
+		);
+
+		pendingIdentities.push({
+			email: participant.email,
+			fullName: participant.fullName,
+			role: participant.role,
+			workosUserId: workosUser.id,
+		});
+	}
+
+	if (pendingIdentities.length > 0) {
+		const refreshedContext = await loadCommitContext();
+		const stillMissingIdentities =
+			refreshedContext.participantResolutions.filter(
+				(
+					participant
+				): participant is Extract<
+					OriginationParticipantResolution,
+					{ kind: "missing_identity" }
+				> => participant.kind === "missing_identity"
 			);
-		}
 
-		const provisioning = getWorkosProvisioning();
-		const pendingIdentities: Array<{
-			email: string;
-			fullName?: string;
-			role: Doc<"mortgageBorrowers">["role"];
-			workosUserId: string;
-		}> = [];
-
-		for (const participant of commitContext.participantResolutions) {
-			if (participant.kind !== "missing_identity") {
-				continue;
-			}
-
-			const workosUser = await getOrCreateProvisionedUser(
-				provisioning,
-				participant
-			);
-
-			pendingIdentities.push({
-				email: participant.email,
-				fullName: participant.fullName,
-				role: participant.role,
-				workosUserId: workosUser.id,
-			});
-		}
-
-		if (pendingIdentities.length > 0) {
-			const refreshedContext = await loadCommitContext();
-			const stillMissingIdentities =
-				refreshedContext.participantResolutions.filter(
-					(
-						participant
-					): participant is Extract<
-						OriginationParticipantResolution,
-						{ kind: "missing_identity" }
-					> => participant.kind === "missing_identity"
-				);
-
-			if (stillMissingIdentities.length > 0) {
-				await ctx.runMutation(
-					internal.admin.origination.commit.markCaseAwaitingIdentitySync,
-					{
-						caseId: args.caseId,
-						viewerUserId: refreshedContext.viewerUserId,
-					}
-				);
-
-				return {
-					caseId: String(args.caseId),
-					pendingIdentities,
-					status: "awaiting_identity_sync" as const,
-				};
-			}
-
+		if (stillMissingIdentities.length > 0) {
 			await ctx.runMutation(
-				internal.admin.origination.commit.markCaseCommitting,
+				internal.admin.origination.commit.markCaseAwaitingIdentitySync,
 				{
 					caseId: args.caseId,
-					expectedUpdatedAt: refreshedContext.caseUpdatedAt,
 					viewerUserId: refreshedContext.viewerUserId,
 				}
 			);
 
-			try {
-				return await finalizeCommitWithCollections({
-					collectionsDraft: refreshedContext.collectionsDraft,
-					stagedCaseStatus: refreshedContext.caseStatus,
-					viewerUserId: refreshedContext.viewerUserId,
-				});
-			} catch (error) {
-				const message =
-					error instanceof Error
-						? error.message
-						: "Unable to commit origination case";
-				await ctx.runMutation(
-					internal.admin.origination.commit.markCaseFailed,
-					{
-						caseId: args.caseId,
-						message,
-						viewerUserId: refreshedContext.viewerUserId,
-					}
-				);
-				throw error;
-			}
+			return {
+				caseId: String(args.caseId),
+				pendingIdentities,
+				status: "awaiting_identity_sync" as const,
+			};
 		}
 
 		await ctx.runMutation(
 			internal.admin.origination.commit.markCaseCommitting,
 			{
 				caseId: args.caseId,
-				expectedUpdatedAt: commitContext.caseUpdatedAt,
-				viewerUserId: commitContext.viewerUserId,
+				expectedUpdatedAt: refreshedContext.caseUpdatedAt,
+				viewerUserId: refreshedContext.viewerUserId,
 			}
 		);
 
 		try {
 			return await finalizeCommitWithCollections({
-				collectionsDraft: commitContext.collectionsDraft,
-				stagedCaseStatus: commitContext.caseStatus,
-				viewerUserId: commitContext.viewerUserId,
+				collectionsDraft: refreshedContext.collectionsDraft,
+				stagedCaseStatus: refreshedContext.caseStatus,
+				viewerUserId: refreshedContext.viewerUserId,
 			});
 		} catch (error) {
 			const message =
@@ -913,9 +930,59 @@ export const commitCase = originationAction
 			await ctx.runMutation(internal.admin.origination.commit.markCaseFailed, {
 				caseId: args.caseId,
 				message,
-				viewerUserId: commitContext.viewerUserId,
+				viewerUserId: refreshedContext.viewerUserId,
 			});
 			throw error;
 		}
+	}
+
+	await ctx.runMutation(internal.admin.origination.commit.markCaseCommitting, {
+		caseId: args.caseId,
+		expectedUpdatedAt: commitContext.caseUpdatedAt,
+		viewerUserId: commitContext.viewerUserId,
+	});
+
+	try {
+		return await finalizeCommitWithCollections({
+			collectionsDraft: commitContext.collectionsDraft,
+			stagedCaseStatus: commitContext.caseStatus,
+			viewerUserId: commitContext.viewerUserId,
+		});
+	} catch (error) {
+		const message =
+			error instanceof Error
+				? error.message
+				: "Unable to commit origination case";
+		await ctx.runMutation(internal.admin.origination.commit.markCaseFailed, {
+			caseId: args.caseId,
+			message,
+			viewerUserId: commitContext.viewerUserId,
+		});
+		throw error;
+	}
+}
+
+export const commitCase = originationAction
+	.input({
+		caseId: v.id("adminOriginationCases"),
 	})
+	.handler(async (ctx, args) =>
+		commitCaseRuntime(ctx, {
+			caseId: args.caseId,
+			viewerAuthId: ctx.viewer.authId,
+			viewerIsFairLendAdmin: ctx.viewer.isFairLendAdmin,
+			viewerOrgId: ctx.viewer.orgId,
+		})
+	)
 	.public();
+
+export const commitCaseInternal = convex
+	.action()
+	.input({
+		caseId: v.id("adminOriginationCases"),
+		viewerAuthId: v.string(),
+		viewerIsFairLendAdmin: v.boolean(),
+		viewerOrgId: v.optional(v.string()),
+	})
+	.handler(async (ctx, args) => commitCaseRuntime(ctx, args))
+	.internal();

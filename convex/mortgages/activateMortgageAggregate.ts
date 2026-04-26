@@ -453,6 +453,7 @@ export async function activateMortgageAggregate(
 
 	const valuationSnapshot = args.valuationDraft?.valueAsIs
 		? await createOriginationValuationSnapshot(ctx, {
+				comparables: args.valuationDraft.comparables,
 				createdAt: args.now,
 				createdByUserId: args.viewerUserId,
 				mortgageId,

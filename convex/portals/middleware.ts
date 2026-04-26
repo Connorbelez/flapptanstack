@@ -1,11 +1,7 @@
 import { ConvexError, type ObjectType, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import {
-	getBorrowerByAuthId,
-	getLenderByAuthId,
-	getUserByAuthId,
-} from "../auth/actorResolution";
+import { getLenderByAuthId, getUserByAuthId } from "../auth/actorResolution";
 import type { Viewer } from "../fluent";
 import type { PortalSummary, PublicPortalSummary } from "./validators";
 
@@ -173,25 +169,18 @@ export async function resolvePortalAccess(
 export async function resolvePortalBorrower(
 	context: PortalAuthedBaseContext & PortalResolvedContext
 ): Promise<Doc<"borrowers">> {
-	const borrower = await getBorrowerByAuthId(context, context.viewer.authId);
-	const borrowerOrgId = borrower?.orgId;
-	if (!borrowerOrgId) {
+	const viewerUser = await getUserByAuthId(context, context.viewer.authId);
+	if (!viewerUser) {
 		throw new ConvexError("Forbidden: borrower does not belong to this portal");
 	}
 
-	// Transitional deterministic mapping for ENG-299. ENG-302 owns the
-	// permanent borrower/onboarding portalId fields and migration cutover.
-	const mappedLivePortals = (
-		await context.db
-			.query("portals")
-			.withIndex("by_org", (query) => query.eq("orgId", borrowerOrgId))
-			.collect()
-	).filter((portal) => portal.status === "active" && portal.isPublished);
-
-	if (
-		mappedLivePortals.length !== 1 ||
-		mappedLivePortals[0]?._id !== context.portal.portalId
-	) {
+	const borrower = await context.db
+		.query("borrowers")
+		.withIndex("by_portal_user", (query) =>
+			query.eq("portalId", context.portal.portalId).eq("userId", viewerUser._id)
+		)
+		.first();
+	if (!borrower) {
 		throw new ConvexError("Forbidden: borrower does not belong to this portal");
 	}
 

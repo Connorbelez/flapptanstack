@@ -1,8 +1,17 @@
+import { v } from "convex/values";
 import type { Doc } from "../../_generated/dataModel";
 import { SYSTEM_OBJECT_CONFIGS } from "../../crm/systemAdapters/bootstrap";
-import { crmAdminQuery } from "../../fluent";
+import { adminQuery, crmAdminQuery, requirePermission } from "../../fluent";
+import {
+	type ListingPublicationStatus,
+	readListingPublicationStatus,
+} from "../../listings/lifecycle";
 import type { BrokerPortalPricingSnapshot } from "../../portals/pricing";
 import { getBrokerPortalPricingSnapshot } from "../../portals/pricing";
+import {
+	getLatestMockOriginationBatchSnapshot,
+	type MockOriginationBatchStatusSnapshot,
+} from "./mockMortgages";
 
 export interface AdminOrgMemberSummary {
 	readonly email: string | null;
@@ -114,5 +123,21 @@ export const getOrgSettings = crmAdminQuery
 			members,
 			organization,
 		};
+	})
+	.public();
+
+export const getListingPublicationStatus = adminQuery
+	.use(requirePermission("listing:manage"))
+	.input({
+		listingId: v.id("listings"),
+	})
+	.handler(async (ctx, args): Promise<ListingPublicationStatus | null> => {
+		return readListingPublicationStatus(ctx, args.listingId);
+	})
+	.public();
+
+export const getMockOriginationBatchStatus = adminQuery
+	.handler(async (ctx): Promise<MockOriginationBatchStatusSnapshot | null> => {
+		return getLatestMockOriginationBatchSnapshot(ctx, ctx.viewer.orgId);
 	})
 	.public();

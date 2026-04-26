@@ -284,6 +284,8 @@ export default defineSchema({
 
 		/** WorkOS organization id — org scope for this borrower record. */
 		orgId: v.optional(v.string()),
+		/** Explicit portal attribution for borrower access and home-portal derivation. */
+		portalId: v.optional(v.id("portals")),
 
 		// ─── Auth link ───
 		userId: v.id("users"),
@@ -306,6 +308,8 @@ export default defineSchema({
 		createdAt: v.number(),
 	})
 		.index("by_user", ["userId"])
+		.index("by_portal", ["portalId"])
+		.index("by_portal_user", ["portalId", "userId"])
 		.index("by_org_user", ["orgId", "userId"])
 		.index("by_status", ["status"])
 		.index("by_org", ["orgId"])
@@ -579,12 +583,17 @@ export default defineSchema({
 		),
 		invitedByBrokerId: v.optional(v.string()),
 		targetOrganizationId: v.optional(v.string()),
+		/** Explicit portal attribution for portal-aware onboarding requests. */
+		portalId: v.optional(v.id("portals")),
 		reviewedBy: v.optional(v.string()),
 		reviewedAt: v.optional(v.number()),
 		rejectionReason: v.optional(v.string()),
 		createdAt: v.number(),
 	})
 		.index("by_user", ["userId"])
+		.index("by_user_created_at", ["userId", "createdAt"])
+		.index("by_portal", ["portalId"])
+		.index("by_portal_status", ["portalId", "status"])
 		.index("by_status", ["status"])
 		.index("by_user_and_status", ["userId", "status"]),
 
@@ -723,6 +732,67 @@ export default defineSchema({
 		.index("by_status", ["status"])
 		.index("by_updated_at", ["updatedAt"])
 		.index("by_org_updated_at", ["orgId", "updatedAt"]),
+
+	mockOriginationBatches: defineTable({
+		orgId: v.string(),
+		catalogVersion: v.string(),
+		status: v.union(
+			v.literal("seeding"),
+			v.literal("ready"),
+			v.literal("cleaning"),
+			v.literal("failed"),
+			v.literal("clean_failed"),
+			v.literal("cleaned")
+		),
+		itemCount: v.number(),
+		startedAt: v.number(),
+		completedAt: v.optional(v.number()),
+		cleanedAt: v.optional(v.number()),
+		failedAt: v.optional(v.number()),
+		lastError: v.optional(v.string()),
+		createdByAuthId: v.string(),
+		createdByUserId: v.id("users"),
+		updatedAt: v.number(),
+	})
+		.index("by_org_started_at", ["orgId", "startedAt"])
+		.index("by_org_status", ["orgId", "status"]),
+
+	mockOriginationBatchItems: defineTable({
+		batchId: v.id("mockOriginationBatches"),
+		catalogKey: v.string(),
+		bootstrapToken: v.string(),
+		borrowerDisplayName: v.string(),
+		imageStorageId: v.id("_storage"),
+		listingTitle: v.string(),
+		status: v.union(
+			v.literal("pending"),
+			v.literal("case_created"),
+			v.literal("borrower_created"),
+			v.literal("schedule_created"),
+			v.literal("committed"),
+			v.literal("published"),
+			v.literal("cleanup_provider_done"),
+			v.literal("cleanup_local_done"),
+			v.literal("cleaned"),
+			v.literal("failed")
+		),
+		caseId: v.optional(v.id("adminOriginationCases")),
+		borrowerId: v.optional(v.id("borrowers")),
+		userId: v.optional(v.id("users")),
+		bankAccountId: v.optional(v.id("bankAccounts")),
+		customerProfileId: v.optional(v.id("externalCustomerProfiles")),
+		providerScheduleId: v.optional(v.id("externalProviderSchedules")),
+		mortgageId: v.optional(v.id("mortgages")),
+		listingId: v.optional(v.id("listings")),
+		propertyId: v.optional(v.id("properties")),
+		valuationSnapshotId: v.optional(v.id("mortgageValuationSnapshots")),
+		lastError: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_batch", ["batchId", "createdAt"])
+		.index("by_batch_catalog_key", ["batchId", "catalogKey"])
+		.index("by_batch_status", ["batchId", "status", "updatedAt"]),
 
 	originationCaseDocumentDrafts: defineTable({
 		caseId: v.id("adminOriginationCases"),

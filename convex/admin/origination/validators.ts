@@ -69,6 +69,25 @@ export const originationPropertyDraftValidator = v.object({
 });
 
 export const originationValuationDraftValidator = v.object({
+	comparables: v.optional(
+		v.array(
+			v.object({
+				address: v.optional(v.string()),
+				adjustedValue: v.optional(v.number()),
+				adjustments: v.optional(v.any()),
+				googlePlaceData: v.optional(v.any()),
+				latitude: v.optional(v.number()),
+				longitude: v.optional(v.number()),
+				lotSize: v.optional(v.string()),
+				propertyType: v.optional(v.string()),
+				saleDate: v.optional(v.string()),
+				salePrice: v.optional(v.number()),
+				sortOrder: v.optional(v.number()),
+				squareFootage: v.optional(v.number()),
+				yearBuilt: v.optional(v.number()),
+			})
+		)
+	),
 	valueAsIs: v.optional(v.number()),
 	valuationDate: v.optional(v.string()),
 	relatedDocumentAssetId: v.optional(v.id("documentAssets")),
@@ -859,13 +878,51 @@ export function normalizeOriginationValuationDraft(
 		return undefined;
 	}
 
+	const comparables =
+		value.comparables
+			?.map((comparable, index) =>
+				pruneObject({
+					...pickUnknownFields(comparable as Record<string, unknown>, [
+						"address",
+						"adjustedValue",
+						"adjustments",
+						"googlePlaceData",
+						"latitude",
+						"longitude",
+						"lotSize",
+						"propertyType",
+						"saleDate",
+						"salePrice",
+						"sortOrder",
+						"squareFootage",
+						"yearBuilt",
+					]),
+					address: trimToUndefined(comparable.address),
+					adjustedValue: comparable.adjustedValue,
+					adjustments: comparable.adjustments,
+					googlePlaceData: comparable.googlePlaceData,
+					latitude: comparable.latitude,
+					longitude: comparable.longitude,
+					lotSize: trimToUndefined(comparable.lotSize),
+					propertyType: trimToUndefined(comparable.propertyType),
+					saleDate: trimToUndefined(comparable.saleDate),
+					salePrice: comparable.salePrice,
+					sortOrder: comparable.sortOrder ?? index,
+					squareFootage: comparable.squareFootage,
+					yearBuilt: comparable.yearBuilt,
+				})
+			)
+			.filter((comparable) => comparable !== undefined) ?? undefined;
+
 	return pruneObject({
 		...pickUnknownFields(value as Record<string, unknown>, [
+			"comparables",
 			"valueAsIs",
 			"valuationDate",
 			"relatedDocumentAssetId",
 			"visibilityHint",
 		]),
+		comparables,
 		valueAsIs: value.valueAsIs,
 		valuationDate: trimToUndefined(value.valuationDate),
 		relatedDocumentAssetId: value.relatedDocumentAssetId,

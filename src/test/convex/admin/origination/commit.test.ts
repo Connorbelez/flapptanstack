@@ -12,6 +12,7 @@ import {
 } from "../../../../../convex/engine/effects/workosProvisioning";
 import { activateMortgageAggregate } from "../../../../../convex/mortgages/activateMortgageAggregate";
 import { buildAdminDirectMortgageActivationSource } from "../../../../../convex/mortgages/provenance";
+import { buildPortalHosts } from "../../../../../convex/portals/helpers";
 import { createMockViewer, createTestConvex, ensureSeededIdentity } from "../../../auth/helpers";
 import { FAIRLEND_ADMIN } from "../../../auth/identities";
 
@@ -57,19 +58,42 @@ async function seedBrokerRecord(
 			.query("brokers")
 			.withIndex("by_user", (query) => query.eq("userId", userId))
 			.unique();
-		if (existingBroker) {
-			return existingBroker._id;
+		const now = Date.now();
+		const brokerId =
+			existingBroker?._id ??
+			(await ctx.db.insert("brokers", {
+				createdAt: now,
+				lastTransitionAt: now,
+				onboardedAt: now,
+				orgId: args?.orgId ?? FAIRLEND_STAFF_ORG_ID,
+				status: "active",
+				userId,
+			}));
+		const existingPortal = await ctx.db
+			.query("portals")
+			.withIndex("by_broker", (query) => query.eq("brokerId", brokerId))
+			.first();
+		if (!existingPortal) {
+			const slug = `broker-${String(brokerId).replace(/[^a-zA-Z0-9]/g, "").slice(-8).toLowerCase()}`;
+			const hosts = buildPortalHosts(slug);
+			await ctx.db.insert("portals", {
+				slug,
+				portalType: "broker",
+				brokerId,
+				orgId: args?.orgId ?? FAIRLEND_STAFF_ORG_ID,
+				productionHost: hosts.productionHost,
+				localHost: hosts.localHost,
+				status: "active",
+				isPublished: true,
+				publicTeaserEnabled: true,
+				teaserListingLimit: 12,
+				defaultPostAuthPath: "/",
+				createdAt: now,
+				updatedAt: now,
+			});
 		}
 
-		const now = Date.now();
-		return ctx.db.insert("brokers", {
-			createdAt: now,
-			lastTransitionAt: now,
-			onboardedAt: now,
-			orgId: args?.orgId ?? FAIRLEND_STAFF_ORG_ID,
-			status: "active",
-			userId,
-		});
+		return brokerId;
 	});
 }
 
@@ -684,6 +708,7 @@ describe("admin origination commit", () => {
 			creationSource: "admin_direct",
 			originatingWorkflowId: String(caseId),
 			originatingWorkflowType: "admin_origination_case",
+			portalId: expect.any(String),
 		});
 		expect(artifacts.mortgages[0]).toMatchObject({
 			collectionExecutionMode: "app_owned",
@@ -1552,23 +1577,136 @@ describe("admin origination commit", () => {
 		});
 
 		const before = await countCanonicalRows(t);
-		const result = await t.withIdentity(FAIRLEND_ADMIN).action(
-			api.admin.origination.commit.commitCase,
-			{ caseId }
-		);
-		const after = await countCanonicalRows(t);
+			const result = await t.withIdentity(FAIRLEND_ADMIN).action(
+				api.admin.origination.commit.commitCase,
+				{ caseId }
+			);
+			const after = await countCanonicalRows(t);
+			const { reusedBorrower, reusedUser } = await t.run(async (ctx) => ({
+				reusedBorrower: await ctx.db.get(borrowerId),
+				reusedUser: await ctx.db.get(userId),
+			}));
 
-		expect(result.status).toBe("committed");
-		expect(result.borrowerIds).toEqual([String(borrowerId)]);
-		expect(result.propertyId).toBe(String(propertyId));
-		expect(after.borrowers).toBe(before.borrowers);
-		expect(after.listings).toBe(before.listings + 1);
-		expect(after.properties).toBe(before.properties);
+			expect(result.status).toBe("committed");
+			expect(result.borrowerIds).toEqual([String(borrowerId)]);
+			expect(result.propertyId).toBe(String(propertyId));
+			expect(reusedBorrower?.portalId).toBeDefined();
+			expect(reusedUser?.homePortalId).toBe(reusedBorrower?.portalId);
+			expect(after.borrowers).toBe(before.borrowers);
+			expect(after.listings).toBe(before.listings + 1);
+			expect(after.properties).toBe(before.properties);
 		expect(after.mortgageValuationSnapshots).toBe(
 			before.mortgageValuationSnapshots + 1
 		);
 		expect(after.mortgages).toBe(before.mortgages + 1);
-		expect(after.mortgageBorrowers).toBe(before.mortgageBorrowers + 1);
+			expect(after.mortgageBorrowers).toBe(before.mortgageBorrowers + 1);
+		});
+
+		it("creates collections borrowers in the staged case org", async () => {
+			const t = createTestConvex();
+			await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+			const brokerOrgId = "org_collections_case";
+			const brokerOfRecordId = await seedBrokerRecord(t, {
+				email: "collections.case.broker@test.fairlend.ca",
+				orgId: brokerOrgId,
+				subject: "user_collections_case_broker",
+			});
+			const caseId = await stageCommitReadyCase(t, {
+				brokerOfRecordId,
+				primaryBorrowerEmail: "collections.borrower@test.fairlend.ca",
+			});
+			const brokerPortalId = await t.run(async (ctx) => {
+				await ctx.db.patch(caseId, { orgId: brokerOrgId });
+				const brokerPortal = await ctx.db
+					.query("portals")
+					.withIndex("by_broker", (query) =>
+						query.eq("brokerId", brokerOfRecordId)
+					)
+					.unique();
+				if (!brokerPortal) {
+					throw new Error("Expected broker portal for collections case");
+				}
+				return brokerPortal._id;
+			});
+			setWorkosProvisioningForTests(createProvisioningMock());
+
+			const result = await t.withIdentity(FAIRLEND_ADMIN).action(
+				api.admin.origination.collections.createBorrowerForCollections,
+				{
+					accountNumber: "1234567",
+					caseId,
+					email: "collections.borrower@test.fairlend.ca",
+					fullName: "Collections Borrower",
+					institutionNumber: "001",
+					transitNumber: "00011",
+				}
+			);
+
+			const borrower = await t.run(async (ctx) => ctx.db.get(result.borrowerId));
+			expect(borrower?.orgId).toBe(brokerOrgId);
+			expect(borrower?.portalId).toBe(brokerPortalId);
+		});
+
+		it("prefers the current broker portal over stale onboarding attribution", async () => {
+			const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
+		const staleBrokerId = await seedBrokerRecord(t, {
+			email: "stale.portal.broker@test.fairlend.ca",
+			subject: "user_stale_portal_broker",
+		});
+		const { userId, identity } = await seedBorrowerUser(t, {
+			email: "stale.onboarding.borrower@test.fairlend.ca",
+			subject: "user_stale_onboarding_borrower",
+		});
+		const borrowerId = await seedBorrowerProfile(t, { userId });
+		const { currentPortalId, stalePortalId } = await t.run(async (ctx) => {
+			const currentPortal = await ctx.db
+				.query("portals")
+				.withIndex("by_broker", (query) =>
+					query.eq("brokerId", brokerOfRecordId)
+				)
+				.unique();
+			const stalePortal = await ctx.db
+				.query("portals")
+				.withIndex("by_broker", (query) => query.eq("brokerId", staleBrokerId))
+				.unique();
+			if (!(currentPortal && stalePortal)) {
+				throw new Error("Expected both broker portals to exist");
+			}
+			const now = Date.now();
+			await ctx.db.insert("onboardingRequests", {
+				createdAt: now - 60_000,
+				lastTransitionAt: now - 30_000,
+				portalId: stalePortal._id,
+				referralSource: "self_signup",
+				requestedRole: "lender",
+				reviewedAt: now - 30_000,
+				reviewedBy: FAIRLEND_ADMIN.subject,
+				status: "approved",
+				targetOrganizationId: FAIRLEND_STAFF_ORG_ID,
+				userId,
+			});
+			return {
+				currentPortalId: currentPortal._id,
+				stalePortalId: stalePortal._id,
+			};
+		});
+
+		const caseId = await stageCommitReadyCase(t, {
+			brokerOfRecordId,
+			primaryBorrowerEmail: identity.user_email,
+			primaryBorrowerName: "Stale Onboarding Borrower",
+		});
+
+		await t.withIdentity(FAIRLEND_ADMIN).action(
+			api.admin.origination.commit.commitCase,
+			{ caseId }
+		);
+
+		const borrower = await t.run(async (ctx) => ctx.db.get(borrowerId));
+		expect(borrower?.portalId).toBe(currentPortalId);
+		expect(borrower?.portalId).not.toBe(stalePortalId);
 	});
 
 	it("stops at awaiting identity sync before canonical writes", async () => {
@@ -1655,6 +1793,47 @@ describe("admin origination commit", () => {
 		expect(failedCase?.failedAt).toBeTypeOf("number");
 		expect(failedCase?.lastCommitError).toContain(
 			"Broker of record no longer exists"
+		);
+	});
+
+	it("fails closed when the broker of record has no portal", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const brokerOfRecordId = await seedBrokerRecord(t);
+		const { identity } = await seedBorrowerUser(t, {
+			email: "missing.portal.borrower@test.fairlend.ca",
+			subject: "user_missing_portal_borrower",
+		});
+		const caseId = await stageCommitReadyCase(t, {
+			brokerOfRecordId,
+			primaryBorrowerEmail: identity.user_email,
+			primaryBorrowerName: "Missing Portal Borrower",
+		});
+
+		await t.run(async (ctx) => {
+			const brokerPortal = await ctx.db
+				.query("portals")
+				.withIndex("by_broker", (query) =>
+					query.eq("brokerId", brokerOfRecordId)
+				)
+				.unique();
+			if (!brokerPortal) {
+				throw new Error("Expected a broker portal to delete");
+			}
+			await ctx.db.delete(brokerPortal._id);
+		});
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).action(
+				api.admin.origination.commit.commitCase,
+				{ caseId }
+			)
+		).rejects.toThrow("Broker of record portal no longer exists");
+
+		const failedCase = await t.run(async (ctx) => ctx.db.get(caseId));
+		expect(failedCase?.status).toBe("failed");
+		expect(failedCase?.lastCommitError).toContain(
+			"Broker of record portal no longer exists"
 		);
 	});
 

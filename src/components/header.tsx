@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { EMPTY_ADMIN_DETAIL_SEARCH } from "#/lib/admin-detail-search";
 import ThemeToggle from "./theme-toggle";
 import WorkOSHeader from "./workos-user.tsx";
 
@@ -138,6 +139,7 @@ export default function Header() {
 					<Link
 						activeProps={{ className: "nav-link is-active" }}
 						className="nav-link"
+						search={EMPTY_ADMIN_DETAIL_SEARCH}
 						to="/admin"
 						viewTransition
 					>

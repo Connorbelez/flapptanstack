@@ -44,6 +44,78 @@ function buildFetchWorkosAuthResult() {
 		portalCacheKey: portalContext.cacheKey,
 		portalContext,
 		requestHost: portalContext.requestedHost,
+		viewerPortalAssignment: null,
+	};
+}
+
+function buildMarketingFetchWorkosAuthResult() {
+	return {
+		userId: null,
+		token: null,
+		role: null,
+		roles: [],
+		permissions: [],
+		orgId: null,
+		portalCacheKey: "marketing:localhost:3000",
+		portalContext: {
+			kind: "marketing" as const,
+			requestedHost: "localhost:3000",
+			canonicalHost: "localhost:3000",
+			cacheKey: "marketing:localhost:3000",
+		},
+		requestHost: "localhost:3000",
+		viewerPortalAssignment: null,
+	};
+}
+
+function buildWrongPortalFetchWorkosAuthResult() {
+	return {
+		userId: "user_app",
+		token: "token",
+		role: "lender",
+		roles: ["lender"],
+		permissions: ["listing:view"],
+		orgId: "org_app",
+		portalCacheKey: "portal:portal_meridian:active:local:meridian.localhost:3000",
+		portalContext: {
+			kind: "portal" as const,
+			requestedHost: "meridian.localhost:3000",
+			canonicalHost: "meridian.localhost:3000",
+			cacheKey:
+				"portal:portal_meridian:active:local:meridian.localhost:3000",
+			availability: "active" as const,
+			matchedHostType: "local" as const,
+			portal: {
+				portalId: "portal_meridian",
+				slug: "meridian",
+				portalType: "broker",
+				productionHost: "meridian.fairlend.ca",
+				localHost: "meridian.localhost:3000",
+				status: "active",
+				isPublished: true,
+				publicTeaserEnabled: true,
+				teaserListingLimit: 12,
+				defaultPostAuthPath: "/",
+			},
+		},
+		requestHost: "meridian.localhost:3000",
+		viewerPortalAssignment: {
+			userId: "user_app",
+			homePortalId: "portal_app",
+			homePortal: {
+				portalId: "portal_app",
+				slug: "app",
+				portalType: "fairlend",
+				productionHost: "app.fairlend.ca",
+				localHost: "app.localhost:3000",
+				status: "active",
+				isPublished: true,
+				defaultPostAuthPath: "/borrower/home",
+			},
+			currentOrgPortalId: null,
+			currentOrgPortal: null,
+			isFairLendAdmin: false,
+		},
 	};
 }
 
@@ -154,6 +226,62 @@ describe("root route blocked-host handling", () => {
 		).resolves.toMatchObject({
 			portalContext: {
 				kind: "unknown",
+			},
+		});
+	});
+
+	it("redirects marketing-host portal routes to the host boundary before child loaders run", async () => {
+		fetchWorkosAuthMock.mockResolvedValue(buildMarketingFetchWorkosAuthResult());
+
+		const rootRouteModule = await import("#/routes/__root");
+
+		await expect(
+			rootRouteModule.Route.options.beforeLoad?.({
+				context: {
+					convexQueryClient: {
+						serverHttpClient: {
+							setAuth: vi.fn(),
+						},
+					},
+					setPortalCacheScope: vi.fn(),
+				},
+				location: { href: "/listings", pathname: "/listings" },
+			} as never)
+		).rejects.toMatchObject({
+			options: {
+				statusCode: 307,
+				to: "/host-boundary",
+				search: {
+					returnTo: "/listings",
+				},
+			},
+		});
+	});
+
+	it("redirects wrong-portal requests to the host boundary before child loaders run", async () => {
+		fetchWorkosAuthMock.mockResolvedValue(buildWrongPortalFetchWorkosAuthResult());
+
+		const rootRouteModule = await import("#/routes/__root");
+
+		await expect(
+			rootRouteModule.Route.options.beforeLoad?.({
+				context: {
+					convexQueryClient: {
+						serverHttpClient: {
+							setAuth: vi.fn(),
+						},
+					},
+					setPortalCacheScope: vi.fn(),
+				},
+				location: { href: "/listings", pathname: "/listings" },
+			} as never)
+		).rejects.toMatchObject({
+			options: {
+				statusCode: 307,
+				to: "/host-boundary",
+				search: {
+					returnTo: "/listings",
+				},
 			},
 		});
 	});

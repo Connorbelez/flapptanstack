@@ -48,11 +48,25 @@ export type MarketplaceListingsSnapshot = FunctionReturnType<
 	typeof api.listings.marketplace.listMarketplaceListings
 >;
 
+export type MarketplaceEffectiveFilters =
+	MarketplaceListingsSnapshot["effectiveFilters"];
+
+export type PortalLenderListingsSnapshot = FunctionReturnType<
+	typeof api.listings.portalQueries.listLenderPortalListings
+>;
+
+export type PortalEffectiveMarketplaceFilters =
+	PortalLenderListingsSnapshot["effectiveFilters"];
+
 export type MarketplaceListingsSnapshotItem =
 	MarketplaceListingsSnapshot["page"][number];
 
 export type MarketplaceListingDetailSnapshot = FunctionReturnType<
 	typeof api.listings.marketplace.getMarketplaceListingDetail
+>;
+
+export type PortalLenderListingDetailSnapshot = FunctionReturnType<
+	typeof api.listings.portalQueries.getLenderPortalListingDetail
 >;
 
 export interface MarketplaceListingCardItem {
