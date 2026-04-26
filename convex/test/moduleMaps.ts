@@ -329,6 +329,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../engine/effects/dealClosingPlaceholder.ts"),
 	"/convex/engine/effects/dealClosingProrate.ts": async () =>
 		await import("./../engine/effects/dealClosingProrate.ts"),
+	"/convex/engine/effects/micInvestorAccessRequests.ts": async () =>
+		await import("./../engine/effects/micInvestorAccessRequests.ts"),
 	"/convex/engine/effects/obligation.ts": async () =>
 		await import("./../engine/effects/obligation.ts"),
 	"/convex/engine/effects/obligationAccrual.ts": async () =>
@@ -542,8 +544,12 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../onboarding/verification/workosEmailVerification.ts"),
 	"/convex/onboarding/validators.ts": async () =>
 		await import("./../onboarding/validators.ts"),
+	"/convex/micInvestorAccessRequests/internal.ts": async () =>
+		await import("./../micInvestorAccessRequests/internal.ts"),
 	"/convex/micInvestorAccessRequests/mutations.ts": async () =>
 		await import("./../micInvestorAccessRequests/mutations.ts"),
+	"/convex/micInvestorAccessRequests/queries.ts": async () =>
+		await import("./../micInvestorAccessRequests/queries.ts"),
 	"/convex/micInvestorAccessRequests/validators.ts": async () =>
 		await import("./../micInvestorAccessRequests/validators.ts"),
 	"/convex/payments/bankAccounts/mutations.ts": async () =>

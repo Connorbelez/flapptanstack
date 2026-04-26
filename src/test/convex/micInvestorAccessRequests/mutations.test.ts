@@ -1,5 +1,5 @@
 import { ConvexError } from "convex/values";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { auditLog } from "../../../../convex/auditLog";
@@ -8,12 +8,23 @@ import {
 	fairLendPortalFields,
 	micPortalFields,
 } from "../../../../convex/portals/helpers";
+import { FAIRLEND_ADMIN, MEMBER } from "../../auth/identities";
+import { ensureSeededIdentity } from "../../auth/helpers";
 import { createConvexTestKit } from "../testKit";
 
 const MIC_ORG_ID = "org_mic_investors";
 const MIC_LENDER_AUTH_ID = "lender_auth_mic";
 
 type TestConvex = ReturnType<typeof createConvexTestKit>;
+
+beforeEach(() => {
+	vi.useFakeTimers();
+});
+
+afterEach(() => {
+	vi.clearAllTimers();
+	vi.useRealTimers();
+});
 
 async function seedMicPortal(
 	t: TestConvex,
@@ -356,5 +367,151 @@ describe("MIC investor access request intake", () => {
 			newState: "pending_review",
 			previousState: "none",
 		});
+	});
+});
+
+describe("MIC investor access request admin review", () => {
+	it("approves a pending request through the transition engine and stores review metadata", async () => {
+		const t = createConvexTestKit();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const portalId = await seedMicPortal(t);
+		const requestId = await seedRequest(t, {
+			email: "approve@example.com",
+			portalId,
+			status: "pending_review",
+		});
+
+		const result = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(api.micInvestorAccessRequests.mutations.approveRequest, {
+				requestId,
+			});
+
+		expect(result).toMatchObject({
+			newState: "approved",
+			previousState: "pending_review",
+			success: true,
+		});
+		const request = await t.run(async (ctx) => ctx.db.get(requestId));
+		expect(request).toMatchObject({
+			provisioningState: "not_started",
+			reviewedBy: FAIRLEND_ADMIN.subject,
+			status: "approved",
+		});
+		expect(request?.reviewedAt).toEqual(expect.any(Number));
+
+		const journalRows = await getAuditJournalRows(t, requestId);
+		expect(
+			journalRows.some(
+				(row) => row.eventType === "APPROVE" && row.newState === "approved"
+			)
+		).toBe(true);
+
+		const auditEvents = await getAuditLogEvents(t, requestId);
+		expect(
+			auditEvents.some(
+				(event) => event.action === "micInvestorAccessRequest.approved"
+			)
+		).toBe(true);
+	});
+
+	it("rejects a pending request with a trimmed reason and does not start provisioning", async () => {
+		const t = createConvexTestKit();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const portalId = await seedMicPortal(t);
+		const requestId = await seedRequest(t, {
+			email: "reject@example.com",
+			portalId,
+			status: "pending_review",
+		});
+
+		const result = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(api.micInvestorAccessRequests.mutations.rejectRequest, {
+				rejectionReason: "  Not eligible  ",
+				requestId,
+			});
+
+		expect(result).toMatchObject({
+			newState: "rejected",
+			previousState: "pending_review",
+			success: true,
+		});
+		expect(result.effectsScheduled ?? []).toEqual([]);
+
+		const request = await t.run(async (ctx) => ctx.db.get(requestId));
+		expect(request).toMatchObject({
+			provisioningState: "not_started",
+			rejectionReason: "Not eligible",
+			reviewedBy: FAIRLEND_ADMIN.subject,
+			status: "rejected",
+		});
+
+		const auditEvents = await getAuditLogEvents(t, requestId);
+		expect(
+			auditEvents.some(
+				(event) => event.action === "micInvestorAccessRequest.rejected"
+			)
+		).toBe(true);
+	});
+
+	it("rejects empty rejection reasons before transitioning", async () => {
+		const t = createConvexTestKit();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const portalId = await seedMicPortal(t);
+		const requestId = await seedRequest(t, {
+			email: "empty-reason@example.com",
+			portalId,
+			status: "pending_review",
+		});
+
+		await expect(
+			t
+				.withIdentity(FAIRLEND_ADMIN)
+				.mutation(api.micInvestorAccessRequests.mutations.rejectRequest, {
+					rejectionReason: "   ",
+					requestId,
+				})
+		).rejects.toThrow("Rejection reason is required");
+
+		const request = await t.run(async (ctx) => ctx.db.get(requestId));
+		expect(request?.status).toBe("pending_review");
+	});
+
+	it("rejects invalid review transitions", async () => {
+		const t = createConvexTestKit();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const portalId = await seedMicPortal(t);
+		const requestId = await seedRequest(t, {
+			email: "already-approved@example.com",
+			portalId,
+			status: "approved",
+		});
+
+		await expect(
+			t
+				.withIdentity(FAIRLEND_ADMIN)
+				.mutation(api.micInvestorAccessRequests.mutations.approveRequest, {
+					requestId,
+				})
+		).rejects.toThrow('Event "APPROVE" not valid in state "approved"');
+	});
+
+	it("rejects non-admin review callers", async () => {
+		const t = createConvexTestKit();
+		const portalId = await seedMicPortal(t);
+		const requestId = await seedRequest(t, {
+			email: "non-admin@example.com",
+			portalId,
+			status: "pending_review",
+		});
+
+		await expect(
+			t
+				.withIdentity(MEMBER)
+				.mutation(api.micInvestorAccessRequests.mutations.approveRequest, {
+					requestId,
+				})
+		).rejects.toThrow("Forbidden");
 	});
 });
