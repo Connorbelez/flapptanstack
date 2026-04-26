@@ -106,12 +106,11 @@ export async function loadLenderFilterConstraint(
 		return null;
 	}
 
-	const matches = (
-		await ctx.db
-			.query("lenderFilterConstraints")
-			.withIndex("by_lender", (query) => query.eq("lenderId", args.lenderId))
-			.collect()
-	).filter((constraint) => constraint.brokerId === args.brokerId);
+	const matches = await ctx.db
+		.query("lenderFilterConstraints")
+		.withIndex("by_lender", (query) => query.eq("lenderId", args.lenderId))
+		.filter((query) => query.eq(query.field("brokerId"), args.brokerId))
+		.collect();
 
 	if (matches.length > 1) {
 		throw new ConvexError(
