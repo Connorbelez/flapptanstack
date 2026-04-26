@@ -179,7 +179,32 @@ describe("root route blocked-host handling", () => {
 				statusCode: 307,
 				to: "/",
 			},
-			});
+		});
+	});
+
+	it("redirects blocked hosts away from the protected MIC portal route", async () => {
+		fetchWorkosAuthMock.mockResolvedValue(buildFetchWorkosAuthResult());
+
+		const rootRouteModule = await import("#/routes/__root");
+
+		await expect(
+			rootRouteModule.Route.options.beforeLoad?.({
+				context: {
+					convexQueryClient: {
+						serverHttpClient: {
+							setAuth: vi.fn(),
+						},
+					},
+					setPortalCacheScope: vi.fn(),
+				},
+				location: { pathname: "/portal" },
+			} as never)
+		).rejects.toMatchObject({
+			options: {
+				statusCode: 307,
+				to: "/",
+			},
+		});
 	});
 
 	it("allows /callback to pass through the blocked-host guard", async () => {
@@ -253,6 +278,34 @@ describe("root route blocked-host handling", () => {
 				to: "/host-boundary",
 				search: {
 					returnTo: "/listings",
+				},
+			},
+		});
+	});
+
+	it("redirects marketing-host MIC portal requests to the host boundary", async () => {
+		fetchWorkosAuthMock.mockResolvedValue(buildMarketingFetchWorkosAuthResult());
+
+		const rootRouteModule = await import("#/routes/__root");
+
+		await expect(
+			rootRouteModule.Route.options.beforeLoad?.({
+				context: {
+					convexQueryClient: {
+						serverHttpClient: {
+							setAuth: vi.fn(),
+						},
+					},
+					setPortalCacheScope: vi.fn(),
+				},
+				location: { href: "/portal", pathname: "/portal" },
+			} as never)
+		).rejects.toMatchObject({
+			options: {
+				statusCode: 307,
+				to: "/host-boundary",
+				search: {
+					returnTo: "/portal",
 				},
 			},
 		});
