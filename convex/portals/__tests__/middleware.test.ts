@@ -11,7 +11,7 @@ import {
 	FAIRLEND_ADMIN,
 	LENDER,
 } from "../../../src/test/auth/identities";
-import { internal } from "../../_generated/api";
+import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 
 const NOW = Date.now();

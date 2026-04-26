@@ -954,9 +954,9 @@ describe("documents/dealPackages", () => {
 		]);
 		expect(signatureRecipients).toEqual([
 			expect.objectContaining({
-				email: "borrower.phase7@test.fairlend.ca",
+				email: "seller.phase7@test.fairlend.ca",
+				name: "Sam Seller",
 				platformRole: "borrower_primary",
-				providerRecipientId: "doc_rcpt_1",
 				status: "pending",
 			}),
 		]);

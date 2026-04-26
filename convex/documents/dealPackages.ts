@@ -216,13 +216,6 @@ interface ArchiveCompletedSignableDocumentsResult {
 	targetCount: number;
 }
 
-interface ResolvedLawyerParticipant {
-	email: string;
-	fullName: string;
-	lawyerType: "guest_lawyer" | "platform_lawyer";
-	userId?: Id<"users">;
-}
-
 const SIGNATORY_MAPPING_ERROR_RE = /signatory mapping validation failed/i;
 const EMPTY_SIGNABLE_RECIPIENTS_ERROR =
 	"Signable template configuration error: no Documenso recipients were generated for this blueprint.";
@@ -355,6 +348,13 @@ async function requireBrokerParticipant(
 		fullName: toFullName(user),
 		userId: user._id,
 	};
+}
+
+async function getUserByAuthId(ctx: Pick<QueryCtx, "db">, authId: string) {
+	return ctx.db
+		.query("users")
+		.withIndex("authId", (query) => query.eq("authId", authId))
+		.unique();
 }
 
 async function resolveLatestValuationSnapshot(
@@ -584,6 +584,9 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 function buildSignatoryParticipants(
 	snapshot: ParticipantSnapshot
 ): SignatoryParticipant[] {
+	const lenderPrimary = projectionContact(snapshot.dealParticipants.buyer);
+	const borrowerPrimary = projectionContact(snapshot.dealParticipants.seller);
+	const lawyerPrimary = projectionContact(snapshot.dealParticipants.lawyer);
 	const primaryBorrower =
 		snapshot.borrowers.find((borrower) => borrower.role === "primary") ??
 		snapshot.borrowers[0];
@@ -592,19 +595,25 @@ function buildSignatoryParticipants(
 	);
 
 	return [
-		{
-			platformRole: "lender_primary",
-			name: snapshot.lender.fullName,
-			email: snapshot.lender.email,
-			userId: snapshot.lender.userId,
-		},
-		...(primaryBorrower
+		...(lenderPrimary
+			? [
+					{
+						platformRole: "lender_primary",
+						name: lenderPrimary.fullName,
+						email: lenderPrimary.email,
+						userId: snapshot.dealParticipants.buyer.userId ?? undefined,
+					},
+				]
+			: []),
+		...(borrowerPrimary
 			? [
 					{
 						platformRole: "borrower_primary",
-						name: primaryBorrower.fullName,
-						email: primaryBorrower.email,
-						userId: primaryBorrower.userId,
+						name: borrowerPrimary.fullName,
+						email: borrowerPrimary.email,
+						userId:
+							snapshot.dealParticipants.seller.userId ??
+							primaryBorrower?.userId,
 					},
 				]
 			: []),
@@ -644,13 +653,13 @@ function buildSignatoryParticipants(
 					},
 				]
 			: []),
-		...(snapshot.lawyerPrimary
+		...(lawyerPrimary
 			? [
 					{
 						platformRole: "lawyer_primary",
-						name: snapshot.lawyerPrimary.fullName,
-						email: snapshot.lawyerPrimary.email,
-						userId: snapshot.lawyerPrimary.userId,
+						name: lawyerPrimary.fullName,
+						email: lawyerPrimary.email,
+						userId: snapshot.dealParticipants.lawyer.userId ?? undefined,
 					},
 				]
 			: []),
