@@ -12,8 +12,8 @@ import { auditLog } from "../auditLog";
 import type { CommandSource } from "../engine/types";
 import { unixMsToBusinessDate } from "../lib/businessDates";
 import {
+	findCashAccount,
 	getOrCreateCashAccount,
-	requireCashAccount,
 } from "../payments/cashLedger/accounts";
 import { postCashEntryInternal } from "../payments/cashLedger/postEntry";
 import type { HealingCandidate, HealingResult } from "./selfHealingTypes";
@@ -44,6 +44,23 @@ const getJournalSettledAmountRef = makeInternalRef<
 	"payments/cashLedger/reconciliation:getJournalSettledAmountForObligationInternal"
 );
 
+type RetriggerDispersalResult =
+	| {
+			action: "skipped";
+			attemptCount: number;
+			reason: "already_escalated";
+	  }
+	| {
+			action: "retriggered";
+			attemptCount: number;
+			reason: "scheduled_retrigger";
+	  }
+	| {
+			action: "escalated";
+			attemptCount: number;
+			reason: "suspense_routed" | "missing_borrower_receivable_account";
+	  };
+
 const retriggerDispersalRef = makeInternalRef<
 	"mutation",
 	{
@@ -52,7 +69,7 @@ const retriggerDispersalRef = makeInternalRef<
 		settledAmount: number;
 		settledDate: string;
 	},
-	{ action: "skipped" | "escalated" | "retriggered"; attemptCount: number }
+	RetriggerDispersalResult
 >("dispersal/selfHealing:retriggerDispersal");
 
 const HEALING_SOURCE: CommandSource = {
@@ -133,6 +150,7 @@ export const retriggerDispersal = internalMutation({
 			return {
 				action: "skipped" as const,
 				attemptCount: existing.attemptCount,
+				reason: "already_escalated" as const,
 			};
 		}
 
@@ -158,21 +176,47 @@ export const retriggerDispersal = internalMutation({
 				});
 			}
 
+			const receivableAccount = await findCashAccount(ctx.db, {
+				family: "BORROWER_RECEIVABLE",
+				mortgageId: args.mortgageId,
+				obligationId: args.obligationId,
+			});
+			if (!receivableAccount) {
+				console.error(
+					"[DISPERSAL-HEALING] escalating obligation without borrower receivable account",
+					{
+						attemptCount,
+						mortgageId: `${args.mortgageId}`,
+						obligationId: `${args.obligationId}`,
+						reason: "missing_borrower_receivable_account",
+					}
+				);
+
+				await auditLog.log(ctx, {
+					action: "dispersal.self_healing_escalated",
+					actorId: "system",
+					resourceType: "obligation",
+					resourceId: args.obligationId,
+					severity: "error",
+					metadata: {
+						attemptCount,
+						mortgageId: args.mortgageId,
+						reason: "missing_borrower_receivable_account",
+					},
+				});
+
+				return {
+					action: "escalated" as const,
+					attemptCount,
+					reason: "missing_borrower_receivable_account" as const,
+				};
+			}
+
 			const suspenseAccount = await getOrCreateCashAccount(ctx, {
 				family: "SUSPENSE",
 				mortgageId: args.mortgageId,
 				obligationId: args.obligationId,
 			});
-
-			const receivableAccount = await requireCashAccount(
-				ctx.db,
-				{
-					family: "BORROWER_RECEIVABLE",
-					mortgageId: args.mortgageId,
-					obligationId: args.obligationId,
-				},
-				"dispersalSelfHealing:escalation"
-			);
 
 			await postCashEntryInternal(ctx, {
 				entryType: "SUSPENSE_ESCALATED",
@@ -197,10 +241,15 @@ export const retriggerDispersal = internalMutation({
 				metadata: {
 					attemptCount,
 					mortgageId: args.mortgageId,
+					reason: "suspense_routed",
 				},
 			});
 
-			return { action: "escalated" as const, attemptCount };
+			return {
+				action: "escalated" as const,
+				attemptCount,
+				reason: "suspense_routed" as const,
+			};
 		}
 
 		// ── Retry: schedule createDispersalEntries ──
@@ -233,7 +282,11 @@ export const retriggerDispersal = internalMutation({
 			}
 		);
 
-		return { action: "retriggered" as const, attemptCount };
+		return {
+			action: "retriggered" as const,
+			attemptCount,
+			reason: "scheduled_retrigger" as const,
+		};
 	},
 });
 

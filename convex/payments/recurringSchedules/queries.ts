@@ -1,5 +1,4 @@
 import { ConvexError, v } from "convex/values";
-import type { Doc } from "../../_generated/dataModel";
 import { convex } from "../../fluent";
 
 function toActivationEligibilityError(args: {
@@ -199,74 +198,24 @@ export const getExternalCollectionScheduleByProviderRef = convex
 	})
 	.internal();
 
-export const listSchedulesEligibleForPolling = convex
+export const listSchedulesEligibleForPollingPage = convex
 	.query()
 	.input({
 		asOf: v.number(),
+		cursor: v.optional(v.string()),
 		limit: v.optional(v.number()),
+		status: v.union(v.literal("active"), v.literal("sync_error")),
 	})
 	.handler(async (ctx, args) => {
-		const limit = normalizeIntegerLimit(args.limit);
-		const syncErrorBudget = Math.max(1, Math.ceil(limit / 4));
-
-		const collectEligibleSchedules = async (
-			status: "active" | "sync_error",
-			targetCount: number
-		) => {
-			const eligible: Doc<"externalCollectionSchedules">[] = [];
-			let cursor: string | null = null;
-			const pageSize = Math.max(25, Math.min(targetCount * 3, 100));
-
-			while (eligible.length < targetCount) {
-				const { continueCursor, isDone, page } = await ctx.db
-					.query("externalCollectionSchedules")
-					.withIndex("by_status_and_next_poll", (q) =>
-						q.eq("status", status).lte("nextPollAt", args.asOf)
-					)
-					.paginate({ cursor, numItems: pageSize });
-
-				for (const schedule of page) {
-					if (
-						schedule.syncLeaseExpiresAt !== undefined &&
-						schedule.syncLeaseExpiresAt > args.asOf
-					) {
-						continue;
-					}
-					eligible.push(schedule);
-					if (eligible.length === targetCount) {
-						return eligible;
-					}
-				}
-
-				if (isDone) {
-					return eligible;
-				}
-				cursor = continueCursor;
-			}
-
-			return eligible;
-		};
-
-		// Reserve some polling capacity for retrying sync_error schedules so they
-		// continue to make forward progress under sustained active backlog.
-		const reservedSyncError = await collectEligibleSchedules(
-			"sync_error",
-			Math.min(limit, syncErrorBudget)
-		);
-		const active = await collectEligibleSchedules(
-			"active",
-			Math.max(0, limit - reservedSyncError.length)
-		);
-		const extraSyncError =
-			active.length + reservedSyncError.length < limit
-				? (
-						await collectEligibleSchedules("sync_error", limit - active.length)
-					).slice(reservedSyncError.length)
-				: [];
-
-		return [...reservedSyncError, ...active, ...extraSyncError]
-			.sort((left, right) => (left.nextPollAt ?? 0) - (right.nextPollAt ?? 0))
-			.slice(0, limit);
+		return ctx.db
+			.query("externalCollectionSchedules")
+			.withIndex("by_status_and_next_poll", (q) =>
+				q.eq("status", args.status).lte("nextPollAt", args.asOf)
+			)
+			.paginate({
+				cursor: args.cursor ?? null,
+				numItems: normalizeIntegerLimit(args.limit),
+			});
 	})
 	.internal();
 

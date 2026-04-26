@@ -4,6 +4,33 @@ Proposed CLAUDE.md amendments from issues encountered during development. Review
 
 ---
 
+## Lesson 15: Authenticated suspense routes need a Convex auth layout guard
+**Date:** 2026-04-21
+**Context:** The `/listings` route threw repeated `Unauthorized: sign in required` Convex errors after sign-in even though the route itself was authenticated. The root cause was a race condition: a suspense query subscribed before the `ConvexProviderWithAuth` wrapper had finished establishing authenticated client state. Fixing token/bootstrap details did not solve the core issue. The reliable fix was a parent layout route that renders the outlet only inside `Authenticated` and shows a pending screen inside `AuthLoading`.
+**Root cause:** Mounted a suspense query screen directly under an authenticated route, which allowed query subscription to start before Convex client auth was ready.
+**Canonical pattern:**
+```tsx
+import { Authenticated, AuthLoading } from "convex/react";
+
+function AuthenticatedLayout() {
+	return (
+		<>
+			<Authenticated>
+				<Outlet />
+			</Authenticated>
+			<AuthLoading>
+				<AppRoutePendingScreen />
+			</AuthLoading>
+		</>
+	);
+}
+```
+**Reference implementation:** `src/routes/listings/route.tsx` + `src/routes/listings/index.tsx`
+**Proposed amendment:**
+> For every authenticated route tree that renders suspense-based Convex or React Query data, use a parent layout route with `Authenticated` and `AuthLoading` from `convex/react` to gate the child outlet. Do not render suspense query routes directly under an authenticated route without this wrapper. This should be the default pattern for all authenticated routes going forward.
+
+---
+
 ## Lesson 1: Read component docs before writing integration code
 **Date:** 2026-03-11
 **Context:** Implemented WorkOS AuthKit webhook handlers without reading the component docs. Missed that `additionalEventTypes` is a whitelist — only `user.created/updated/deleted` are handled by default. All other event types (org, membership, role, session) must be explicitly registered. This caused all webhook events to silently not reach our handlers.

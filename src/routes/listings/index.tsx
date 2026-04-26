@@ -7,10 +7,8 @@ import {
 	cleanMarketplaceListingsSearch,
 	parseMarketplaceListingsSearch,
 } from "#/components/listings/search";
-import { guardRouteAccess } from "#/lib/auth";
 
-export const Route = createFileRoute("/listings")({
-	beforeLoad: guardRouteAccess("listings"),
+export const Route = createFileRoute("/listings/")({
 	component: ListingsRoutePage,
 	loaderDeps: ({ search }) => ({ search }),
 	loader: async ({ context, deps: { search } }) => {
