@@ -18,6 +18,7 @@ import {
 	convex,
 	requirePermission,
 } from "../../fluent";
+import { findCanonicalUserByAuthId } from "../../users/byAuthId";
 import {
 	type AdminOriginationCasePatch,
 	adminOriginationCasePatchValidator,
@@ -113,10 +114,7 @@ function summarizeCase(
 }
 
 async function requireViewerUser(ctx: Pick<MutationCtx, "db">, authId: string) {
-	const user = await ctx.db
-		.query("users")
-		.withIndex("authId", (query) => query.eq("authId", authId))
-		.unique();
+	const { canonicalUser: user } = await findCanonicalUserByAuthId(ctx, authId);
 	if (!user) {
 		throw new ConvexError("User not found in database");
 	}
