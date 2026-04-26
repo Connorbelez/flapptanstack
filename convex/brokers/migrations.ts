@@ -327,7 +327,10 @@ export const getPortalRegistryBackfillStatus = adminQuery
 					(portal) =>
 						portal.portalType === "broker" && portal.brokerId !== undefined
 				)
-				.map((portal) => portal.brokerId as NonNullable<(typeof portal)["brokerId"]>)
+				.map(
+					(portal) =>
+						portal.brokerId as NonNullable<(typeof portal)["brokerId"]>
+				)
 		);
 
 		const fairLendStaffAdminAuthIds = new Set<string>();

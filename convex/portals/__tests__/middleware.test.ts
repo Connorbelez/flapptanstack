@@ -11,7 +11,7 @@ import {
 	FAIRLEND_ADMIN,
 	LENDER,
 } from "../../../src/test/auth/identities";
-import { api } from "../../_generated/api";
+import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 
 const NOW = Date.now();
@@ -337,7 +337,7 @@ describe("portal middleware proof consumers", () => {
 		const fixture = await seedPortalFixture(t);
 
 		const result = await t.query(
-			api.portals.proof.getPortalPublicContextProof,
+			internal.portals.proof.getPortalPublicContextProof,
 			{
 				portalId: fixture.portalAId,
 			}
@@ -352,13 +352,13 @@ describe("portal middleware proof consumers", () => {
 		const fixture = await seedPortalFixture(t);
 
 		await expect(
-			t.query(api.portals.proof.getPortalPublicContextProof, {
+			t.query(internal.portals.proof.getPortalPublicContextProof, {
 				portalId: fixture.suspendedPortalId,
 			})
 		).rejects.toThrow("Forbidden: portal unavailable");
 
 		await expect(
-			t.query(api.portals.proof.getPortalPublicContextProof, {
+			t.query(internal.portals.proof.getPortalPublicContextProof, {
 				portalId: fixture.unpublishedPortalId,
 			})
 		).rejects.toThrow("Forbidden: portal unavailable");
@@ -370,7 +370,7 @@ describe("portal middleware proof consumers", () => {
 
 		const result = await t
 			.withIdentity(BROKER)
-			.query(api.portals.proof.getPortalMortgageAccessProof, {
+			.query(internal.portals.proof.getPortalMortgageAccessProof, {
 				portalId: fixture.portalAId,
 				mortgageId: fixture.mortgageId,
 			});
@@ -388,7 +388,7 @@ describe("portal middleware proof consumers", () => {
 		await expect(
 			t
 				.withIdentity(BROKER)
-				.query(api.portals.proof.getPortalMortgageAccessProof, {
+				.query(internal.portals.proof.getPortalMortgageAccessProof, {
 					portalId: fixture.portalBId,
 					mortgageId: fixture.mortgageId,
 				})
@@ -401,7 +401,7 @@ describe("portal middleware proof consumers", () => {
 
 		const result = await t
 			.withIdentity(FAIRLEND_ADMIN)
-			.query(api.portals.proof.getPortalMortgageAccessProof, {
+			.query(internal.portals.proof.getPortalMortgageAccessProof, {
 				portalId: fixture.portalBId,
 				mortgageId: fixture.mortgageId,
 			});
@@ -416,7 +416,7 @@ describe("portal middleware proof consumers", () => {
 
 		const success = await t
 			.withIdentity(BORROWER)
-			.query(api.portals.proof.getPortalBorrowerContextProof, {
+			.query(internal.portals.proof.getPortalBorrowerContextProof, {
 				portalId: fixture.portalAId,
 			});
 
@@ -426,7 +426,7 @@ describe("portal middleware proof consumers", () => {
 		await expect(
 			t
 				.withIdentity(MISMATCHED_BORROWER)
-				.query(api.portals.proof.getPortalBorrowerContextProof, {
+				.query(internal.portals.proof.getPortalBorrowerContextProof, {
 					portalId: fixture.portalAId,
 				})
 		).rejects.toThrow("Forbidden: borrower does not belong to this portal");
@@ -439,7 +439,7 @@ describe("portal middleware proof consumers", () => {
 		await expect(
 			t
 				.withIdentity(MISSING_ORG_BORROWER)
-				.query(api.portals.proof.getPortalBorrowerContextProof, {
+				.query(internal.portals.proof.getPortalBorrowerContextProof, {
 					portalId: fixture.portalAId,
 				})
 		).rejects.toThrow("Forbidden: borrower does not belong to this portal");
@@ -447,7 +447,7 @@ describe("portal middleware proof consumers", () => {
 		await expect(
 			t
 				.withIdentity(UNMAPPED_ORG_BORROWER)
-				.query(api.portals.proof.getPortalBorrowerContextProof, {
+				.query(internal.portals.proof.getPortalBorrowerContextProof, {
 					portalId: fixture.portalAId,
 				})
 		).rejects.toThrow("Forbidden: borrower does not belong to this portal");
@@ -459,7 +459,7 @@ describe("portal middleware proof consumers", () => {
 
 		const success = await t
 			.withIdentity(LENDER)
-			.query(api.portals.proof.getPortalLenderContextProof, {
+			.query(internal.portals.proof.getPortalLenderContextProof, {
 				portalId: fixture.portalAId,
 			});
 
@@ -470,7 +470,7 @@ describe("portal middleware proof consumers", () => {
 		await expect(
 			t
 				.withIdentity(MISMATCHED_LENDER)
-				.query(api.portals.proof.getPortalLenderContextProof, {
+				.query(internal.portals.proof.getPortalLenderContextProof, {
 					portalId: fixture.portalAId,
 				})
 		).rejects.toThrow("Forbidden: lender does not belong to this portal");
@@ -483,7 +483,7 @@ describe("portal middleware proof consumers", () => {
 		await expect(
 			t
 				.withIdentity(SAME_ORG_WRONG_BROKER_LENDER)
-				.query(api.portals.proof.getPortalLenderContextProof, {
+				.query(internal.portals.proof.getPortalLenderContextProof, {
 					portalId: fixture.portalAId,
 				})
 		).rejects.toThrow("Forbidden: lender does not belong to this portal");

@@ -7,7 +7,7 @@ import {
 	getUserByAuthId,
 } from "../auth/actorResolution";
 import type { Viewer } from "../fluent";
-import type { PortalSummary } from "./validators";
+import type { PortalSummary, PublicPortalSummary } from "./validators";
 
 type PortalReaderCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
 interface PortalBaseContext {
@@ -21,7 +21,11 @@ export const portalArgsValidator = {
 
 export type PortalArgs = ObjectType<typeof portalArgsValidator>;
 
-export interface PortalResolvedContext {
+export interface PublicPortalResolvedContext {
+	portal: PublicPortalSummary;
+}
+
+export interface PortalResolvedContext extends PublicPortalResolvedContext {
 	portal: PortalSummary;
 }
 
@@ -80,6 +84,21 @@ export function buildPortalPricingProjection(
 	};
 }
 
+function toPublicPortalSummary(portal: Doc<"portals">): PublicPortalSummary {
+	return {
+		portalId: portal._id,
+		slug: portal.slug,
+		portalType: portal.portalType,
+		productionHost: portal.productionHost,
+		localHost: portal.localHost,
+		status: portal.status,
+		isPublished: portal.isPublished,
+		publicTeaserEnabled: portal.publicTeaserEnabled,
+		teaserListingLimit: portal.teaserListingLimit,
+		defaultPostAuthPath: portal.defaultPostAuthPath,
+	};
+}
+
 function toPortalSummary(portal: Doc<"portals">): PortalSummary {
 	return {
 		portalId: portal._id,
@@ -113,6 +132,15 @@ async function loadPortalOrThrow(
 	}
 
 	return portal;
+}
+
+export async function loadPublicPortalContext(
+	ctx: PortalReaderCtx,
+	portalId: Id<"portals">
+): Promise<PublicPortalResolvedContext> {
+	return {
+		portal: toPublicPortalSummary(await loadPortalOrThrow(ctx, portalId)),
+	};
 }
 
 export async function loadPortalContext(
@@ -183,6 +211,27 @@ export async function resolvePortalLender(
 	}
 
 	return lender;
+}
+
+export function withPublicPortalContext<
+	TContext extends PortalBaseContext,
+	TArgs extends PortalArgs,
+	TResult,
+>(
+	handler: (
+		context: TContext & PublicPortalResolvedContext,
+		args: TArgs
+	) => Promise<TResult>
+) {
+	return async (context: TContext, args: TArgs): Promise<TResult> => {
+		return handler(
+			{
+				...context,
+				...(await loadPublicPortalContext(context, args.portalId)),
+			},
+			args
+		);
+	};
 }
 
 export function withPortalContext<

@@ -29,15 +29,15 @@ import type {
 	PortalAccessContext,
 	PortalBorrowerContext,
 	PortalLenderContext,
-	PortalResolvedContext,
+	PublicPortalResolvedContext,
 } from "./portals/middleware";
 import {
 	type PortalArgs,
 	portalArgsValidator,
 	withPortalAccess,
 	withPortalBorrower,
-	withPortalContext,
 	withPortalLender,
+	withPublicPortalContext,
 } from "./portals/middleware";
 
 // ── Builder ─────────────────────────────────────────────────────────
@@ -612,7 +612,15 @@ export const lawyerMutation = authedMutation
 
 export const adminQuery = authedQuery.use(requireFairLendAdmin);
 
-function withPortalArgs<TInput extends PropertyValidators>(input?: TInput) {
+type WithoutPortalId<T extends PropertyValidators> = Omit<T, "portalId">;
+
+function withPortalArgs<TInput extends PropertyValidators>(
+	input?: WithoutPortalId<TInput>
+) {
+	if (input !== undefined && Object.hasOwn(input, "portalId")) {
+		throw new ConvexError("withPortalArgs does not allow overriding portalId");
+	}
+
 	return {
 		...portalArgsValidator,
 		...(input ?? {}),
@@ -651,12 +659,12 @@ export function portalPublicQuery<TInput extends PropertyValidators>(
 		BuilderContextOf<typeof builder>,
 		BuilderArgsOf<typeof builder>,
 		undefined,
-		PortalResolvedContext
+		PublicPortalResolvedContext
 	>(
 		builder,
-		withPortalContext as PortalHandlerWrapper<
+		withPublicPortalContext as PortalHandlerWrapper<
 			BuilderContextOf<typeof builder>,
-			PortalResolvedContext,
+			PublicPortalResolvedContext,
 			BuilderArgsOf<typeof builder>
 		>
 	);

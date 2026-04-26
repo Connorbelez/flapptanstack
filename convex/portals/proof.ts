@@ -15,7 +15,7 @@ export const getPortalPublicContextProof = portalPublicQuery()
 	.handler(async (ctx) => {
 		return { portal: ctx.portal };
 	})
-	.public();
+	.internal();
 
 export const getPortalMortgageAccessProof = portalAuthedQuery({
 	mortgageId: v.id("mortgages"),
@@ -33,7 +33,7 @@ export const getPortalMortgageAccessProof = portalAuthedQuery({
 			pricingProjection: buildPortalPricingProjection(ctx.portal),
 		};
 	})
-	.public();
+	.internal();
 
 export const getPortalBorrowerContextProof = portalBorrowerQuery()
 	.handler(async (ctx) => {
@@ -43,7 +43,7 @@ export const getPortalBorrowerContextProof = portalBorrowerQuery()
 			portalId: ctx.portal.portalId,
 		};
 	})
-	.public();
+	.internal();
 
 export const getPortalLenderContextProof = portalLenderQuery()
 	.handler(async (ctx) => {
@@ -55,4 +55,4 @@ export const getPortalLenderContextProof = portalLenderQuery()
 			pricingProjection: buildPortalPricingProjection(ctx.portal),
 		};
 	})
-	.public();
+	.internal();

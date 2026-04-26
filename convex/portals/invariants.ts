@@ -78,7 +78,9 @@ async function assertUniquePortalClaim(
 		.query("portals")
 		.withIndex(check.index, (query) => query.eq(check.field, check.value))
 		.take(2);
-	const conflictingPortal = rows.find((portal) => portal._id !== currentPortalId);
+	const conflictingPortal = rows.find(
+		(portal) => portal._id !== currentPortalId
+	);
 
 	if (conflictingPortal) {
 		throw new ConvexError(
