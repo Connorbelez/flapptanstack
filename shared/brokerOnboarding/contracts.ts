@@ -355,7 +355,7 @@ export function evaluateBrokerOnboardingRecommendation(
 		input.policy.enabledProvinces.map(normalizeBrokerOnboardingProvince)
 	);
 
-	if (!input.configAvailable) {
+	if (input.configAvailable === false) {
 		return {
 			recommendation: "provider_unavailable",
 			reasonCodes: ["missing_config"],
