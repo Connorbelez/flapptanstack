@@ -7,8 +7,15 @@ import { getAccountLenderId } from "../ledger/accountOwnership";
 import { getPostedBalance } from "../ledger/accounts";
 import { TOTAL_SUPPLY } from "../ledger/constants";
 import { unixMsToBusinessDate } from "../lib/businessDates";
-import { listMarketplaceListingsSnapshot } from "../listings/marketplace";
 import {
+	collectMarketplaceListingCandidates,
+	compareMarketplaceListings,
+	type listMarketplaceListingsSnapshot,
+	matchesMarketplaceFilters,
+} from "../listings/marketplace";
+import {
+	attachMarketplaceAvailabilityToListings,
+	buildLocationLabel,
 	deriveMarketplacePropertyType,
 	getHeroImageUrl,
 	lienPositionToMortgageType,
@@ -22,6 +29,7 @@ import type { PortalLenderContext } from "../portals/middleware";
 import {
 	loadPortalPricingSelection,
 	type PortalPricingPolicyDoc,
+	projectListingForPortal,
 } from "../portals/pricing";
 import type {
 	PortfolioActionItem,
@@ -38,10 +46,9 @@ import type {
 	PortfolioTimelineEvent,
 } from "./contracts";
 
-const DAYS_PER_MILLISECOND = 1000 * 60 * 60 * 24;
+const MILLISECONDS_PER_DAY = 1000 * 60 * 60 * 24;
 const POSITION_UNITS_PER_FRACTION = 1000;
 const SUGGESTED_OPPORTUNITY_LIMIT = 5;
-const SUGGESTED_OPPORTUNITY_PAGE_SIZE = 24;
 
 type PortfolioQueryContext = Pick<QueryCtx, "db" | "storage"> &
 	PortalLenderContext & { viewer: Pick<Viewer, "authId"> };
@@ -60,11 +67,6 @@ interface MortgagePaymentContext {
 	latestTransfer: Doc<"transferRequests"> | null;
 	obligation: Doc<"obligations">;
 	row: PortfolioPaymentRow;
-}
-
-interface SuggestedOpportunityCandidate {
-	listing: Doc<"listings">;
-	suggestion: MarketplaceSuggestionRow;
 }
 
 const PORTFOLIO_SOURCE_OF_TRUTH: PortfolioSourceOfTruth = {
@@ -112,7 +114,7 @@ function businessDateFromUnixMs(value: number | undefined | null) {
 function daysUntilBusinessDate(date: string) {
 	const now = Date.now();
 	const then = new Date(`${date}T00:00:00.000Z`).getTime();
-	return Math.floor((then - now) / DAYS_PER_MILLISECOND);
+	return Math.floor((then - now) / MILLISECONDS_PER_DAY);
 }
 
 function buildRenewalTimingLabel(maturityDate: string) {
@@ -250,14 +252,14 @@ async function listActiveLenderPositionAccounts(
 		.query("ledger_accounts")
 		.withIndex("by_lender", (query) => query.eq("lenderId", lenderAuthId))
 		.collect();
-	const legacyAccounts = (
-		await ctx.db.query("ledger_accounts").collect()
-	).filter(
-		(account) =>
-			account.type === "POSITION" &&
-			getAccountLenderId(account) === lenderAuthId
-	);
-
+	const legacyAccounts =
+		indexedAccounts.length === 0
+			? (await ctx.db.query("ledger_accounts").collect()).filter(
+					(account) =>
+						account.type === "POSITION" &&
+						getAccountLenderId(account) === lenderAuthId
+				)
+			: [];
 	const dedupedAccounts = new Map<string, Doc<"ledger_accounts">>();
 	for (const account of [...indexedAccounts, ...legacyAccounts]) {
 		dedupedAccounts.set(String(account._id), account);
@@ -397,22 +399,27 @@ async function loadPaymentContextsForMortgage(
 		}
 	}
 
-	const transferEntries = await Promise.all(
-		obligations.map(async (obligation) => {
-			const transfers = await ctx.db
-				.query("transferRequests")
-				.withIndex("by_obligation", (query) =>
-					query.eq("obligationId", obligation._id)
-				)
-				.collect();
-			const latestTransfer =
-				[...transfers].sort(
-					(left, right) => right.createdAt - left.createdAt
-				)[0] ?? null;
-			return [String(obligation._id), latestTransfer] as const;
-		})
-	);
-	const latestTransferByObligationId = new Map(transferEntries);
+	const transfers = await ctx.db
+		.query("transferRequests")
+		.withIndex("by_mortgage", (query) =>
+			query.eq("mortgageId", args.mortgage._id)
+		)
+		.collect();
+
+	const latestTransferByObligationId = new Map<
+		string,
+		Doc<"transferRequests">
+	>();
+	for (const transfer of transfers) {
+		if (!transfer.obligationId) {
+			continue;
+		}
+		const key = String(transfer.obligationId);
+		const current = latestTransferByObligationId.get(key);
+		if (!current || transfer.createdAt > current.createdAt) {
+			latestTransferByObligationId.set(key, transfer);
+		}
+	}
 
 	return obligations
 		.sort((left, right) => right.dueDate - left.dueDate)
@@ -455,53 +462,77 @@ async function loadSuggestedOpportunityCandidates(
 	}
 ): Promise<{
 	excludedOwnedMortgageCount: number;
-	rows: SuggestedOpportunityCandidate[];
+	rows: MarketplaceSuggestionRow[];
 }> {
-	let cursor: string | null = null;
-	let isDone = false;
+	const candidates = await collectMarketplaceListingCandidates(
+		ctx,
+		args.filters
+	);
+	const filtered = candidates
+		.filter((listing) => matchesMarketplaceFilters(listing, args.filters))
+		.sort(compareMarketplaceListings);
+
 	let excludedOwnedMortgageCount = 0;
-	const rows: SuggestedOpportunityCandidate[] = [];
+	const selectedListings: Doc<"listings">[] = [];
 
-	do {
-		const snapshot = await listMarketplaceListingsSnapshot(
-			ctx,
-			{
-				cursor,
-				filters: args.filters,
-				numItems: SUGGESTED_OPPORTUNITY_PAGE_SIZE,
-			},
-			{ pricingPolicy: args.pricingPolicy }
-		);
-		const pageCandidates = await Promise.all(
-			snapshot.page.map(async (suggestion) => {
-				const listingId = suggestion.id as Id<"listings">;
-				const listing = await ctx.db.get(listingId);
-				if (!listing) {
-					return null;
-				}
-				return { listing, suggestion };
-			})
-		);
-
-		for (const candidate of pageCandidates) {
-			if (!candidate) {
-				continue;
-			}
-			if (
-				candidate.listing.mortgageId &&
-				args.heldMortgageIds.has(String(candidate.listing.mortgageId))
-			) {
-				excludedOwnedMortgageCount += 1;
-				continue;
-			}
-			if (rows.length < SUGGESTED_OPPORTUNITY_LIMIT) {
-				rows.push(candidate);
-			}
+	for (const listing of filtered) {
+		if (
+			listing.mortgageId &&
+			args.heldMortgageIds.has(String(listing.mortgageId))
+		) {
+			excludedOwnedMortgageCount += 1;
+			continue;
 		}
+		selectedListings.push(listing);
+		if (selectedListings.length >= SUGGESTED_OPPORTUNITY_LIMIT) {
+			break;
+		}
+	}
 
-		cursor = snapshot.continueCursor;
-		isDone = snapshot.isDone;
-	} while (!isDone && rows.length < SUGGESTED_OPPORTUNITY_LIMIT);
+	const withAvailability = await attachMarketplaceAvailabilityToListings(
+		ctx,
+		selectedListings
+	);
+
+	const rows = await Promise.all(
+		withAvailability.map(async ({ availability, listing }) => {
+			const projectedListing = args.pricingPolicy
+				? projectListingForPortal(listing, args.pricingPolicy)
+				: listing;
+
+			return {
+				approximateLatitude: projectedListing.approximateLatitude ?? null,
+				approximateLongitude: projectedListing.approximateLongitude ?? null,
+				availability,
+				displayOrder: projectedListing.displayOrder ?? null,
+				featured: projectedListing.featured,
+				heroImageUrl: await getHeroImageUrl(
+					ctx,
+					projectedListing.heroImages[0]
+				),
+				id: String(projectedListing._id),
+				interestRate: projectedListing.interestRate,
+				locationLabel: buildLocationLabel(projectedListing) ?? "",
+				ltvRatio: projectedListing.ltvRatio,
+				marketplaceCopy:
+					projectedListing.marketplaceCopy ??
+					projectedListing.description ??
+					"",
+				maturityDate: projectedListing.maturityDate,
+				mortgageId: projectedListing.mortgageId
+					? String(projectedListing.mortgageId)
+					: null,
+				mortgageTypeLabel: lienPositionToMortgageType(
+					projectedListing.lienPosition
+				),
+				principal: projectedListing.principal,
+				propertyTypeLabel:
+					projectedListing.marketplacePropertyType ??
+					deriveMarketplacePropertyType(projectedListing.propertyType),
+				title: projectedListing.title ?? "Mortgage Listing",
+			};
+		})
+	);
 
 	return { excludedOwnedMortgageCount, rows };
 }
@@ -510,11 +541,13 @@ function buildSuggestionReasonTags(args: {
 	heldMortgageTypes: Set<string>;
 	heldPropertyTypes: Set<string>;
 	interestRateBenchmark: number;
-	listing: Doc<"listings">;
+	interestRate: number;
+	mortgageType: string;
+	propertyType: string | undefined;
 }) {
 	const tags: PortfolioSuggestionReasonTag[] = [];
 
-	if (args.heldPropertyTypes.has(args.listing.marketplacePropertyType)) {
+	if (args.propertyType && args.heldPropertyTypes.has(args.propertyType)) {
 		tags.push({
 			label: "Property fit",
 			reason:
@@ -522,15 +555,14 @@ function buildSuggestionReasonTags(args: {
 		});
 	}
 
-	const mortgageType = lienPositionToMortgageType(args.listing.lienPosition);
-	if (args.heldMortgageTypes.has(mortgageType)) {
+	if (args.heldMortgageTypes.has(args.mortgageType)) {
 		tags.push({
 			label: "Mortgage fit",
 			reason: "Aligns with the lien profile already held by the lender",
 		});
 	}
 
-	if (args.listing.interestRate >= args.interestRateBenchmark) {
+	if (args.interestRate >= args.interestRateBenchmark) {
 		tags.push({
 			label: "Yield",
 			reason: "Meets or exceeds the current portfolio weighted-rate benchmark",
@@ -1054,12 +1086,14 @@ export async function buildPortfolioCommandCenter(
 				);
 
 	const suggestedRows: PortfolioSuggestedOpportunity[] =
-		suggestedOpportunityCandidates.map(({ listing, suggestion }) => ({
+		suggestedOpportunityCandidates.map((suggestion) => ({
 			explanationTags: buildSuggestionReasonTags({
 				heldMortgageTypes,
 				heldPropertyTypes,
 				interestRateBenchmark: weightedAverageInterestRate,
-				listing,
+				interestRate: suggestion.interestRate,
+				mortgageType: suggestion.mortgageTypeLabel,
+				propertyType: suggestion.propertyTypeLabel,
 			}),
 			heroImageUrl: suggestion.heroImageUrl,
 			interestRate: suggestion.interestRate,
@@ -1068,7 +1102,7 @@ export async function buildPortfolioCommandCenter(
 			ltvRatio: suggestion.ltvRatio,
 			marketplaceCopy: suggestion.marketplaceCopy,
 			maturityDate: suggestion.maturityDate,
-			mortgageId: listing.mortgageId ? String(listing.mortgageId) : null,
+			mortgageId: suggestion.mortgageId,
 			mortgageTypeLabel: suggestion.mortgageTypeLabel,
 			principal: suggestion.principal,
 			propertyTypeLabel: suggestion.propertyTypeLabel,
@@ -1105,15 +1139,22 @@ export async function buildPortfolioCommandCenter(
 		},
 		cockpit: {
 			breakdowns: {
-				byMortgageStatus: [...mortgageMap.values()].reduce<
-					Array<{ count: number; key: string; positionUnits: number }>
-				>((rows, mortgage) => {
-					const positionUnits =
-						positions.find(
-							(position) => String(position.mortgageId) === String(mortgage._id)
-						)?.balanceUnits ?? 0;
-					return accumulateBreakdown(rows, mortgage.status, positionUnits);
-				}, []),
+				byMortgageStatus: (() => {
+					const positionBalanceByMortgageId = new Map<string, number>();
+					for (const position of positions) {
+						positionBalanceByMortgageId.set(
+							String(position.mortgageId),
+							position.balanceUnits
+						);
+					}
+					return [...mortgageMap.values()].reduce<
+						Array<{ count: number; key: string; positionUnits: number }>
+					>((rows, mortgage) => {
+						const positionUnits =
+							positionBalanceByMortgageId.get(String(mortgage._id)) ?? 0;
+						return accumulateBreakdown(rows, mortgage.status, positionUnits);
+					}, []);
+				})(),
 				byPropertyType: positions.reduce<
 					Array<{ count: number; key: string; positionUnits: number }>
 				>((rows, position) => {
