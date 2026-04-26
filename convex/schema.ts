@@ -121,6 +121,11 @@ import {
 	marketplaceListingPropertyTypeValidator,
 } from "./listings/validators";
 import {
+	micInvestorAccessRequestMachineContextValidator,
+	micInvestorAccessRequestProvisioningStateValidator,
+	micInvestorAccessRequestStatusValidator,
+} from "./micInvestorAccessRequests/validators";
+import {
 	brokerOnboardingApplicationMachineContextValidator,
 	brokerOnboardingApplicationStatusValidator,
 	brokerOnboardingApprovalRecommendationValidator,
@@ -865,6 +870,29 @@ export default defineSchema({
 		.index("by_portal_status", ["portalId", "status"])
 		.index("by_status", ["status"])
 		.index("by_user_and_status", ["userId", "status"]),
+
+	micInvestorAccessRequests: defineTable({
+		email: v.string(),
+		normalizedEmail: v.string(),
+		portalId: v.id("portals"),
+		status: micInvestorAccessRequestStatusValidator,
+		requestedAt: v.number(),
+		reviewedAt: v.optional(v.number()),
+		reviewedBy: v.optional(v.string()),
+		rejectionReason: v.optional(v.string()),
+		provisioningState: micInvestorAccessRequestProvisioningStateValidator,
+		provisioningError: v.optional(v.string()),
+		invitedUserWorkosId: v.optional(v.string()),
+		membershipWorkosId: v.optional(v.string()),
+		activeProvisioningJournalId: v.optional(v.string()),
+		processedProvisioningJournalIds: v.optional(v.array(v.string())),
+		lastTransitionAt: v.optional(v.number()),
+		machineContext: v.optional(micInvestorAccessRequestMachineContextValidator),
+	})
+		.index("by_portal_status", ["portalId", "status"])
+		.index("by_portal_email_status", ["portalId", "normalizedEmail", "status"])
+		.index("by_portal_provisioning_state", ["portalId", "provisioningState"])
+		.index("by_requested_at", ["requestedAt"]),
 
 	// ══════════════════════════════════════════════════════════
 	// CORE FINANCIAL ENTITIES

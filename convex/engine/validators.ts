@@ -22,6 +22,7 @@ export const actorTypeValidator = v.union(
 
 export const entityTypeValidator = v.union(
 	v.literal("brokerOnboardingApplication"),
+	v.literal("micInvestorAccessRequest"),
 	v.literal("onboardingRequest"),
 	v.literal("mortgage"),
 	v.literal("obligation"),
