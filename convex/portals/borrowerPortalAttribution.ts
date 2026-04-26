@@ -49,7 +49,10 @@ export function buildLatestOnboardingPortalIdByUserId(
 export async function getDeterministicPortalIdForOrgId(
 	ctx: PortalReaderCtx,
 	orgId: string
-) {
+): Promise<
+	| { portalId: Id<"portals"> }
+	| { portalId: undefined; activePublishedCount: number }
+> {
 	const livePublishedPortals = (
 		await ctx.db
 			.query("portals")
@@ -58,10 +61,13 @@ export async function getDeterministicPortalIdForOrgId(
 	).filter((portal) => portal.status === "active" && portal.isPublished);
 
 	if (livePublishedPortals.length !== 1) {
-		return undefined;
+		return {
+			portalId: undefined,
+			activePublishedCount: livePublishedPortals.length,
+		};
 	}
 
-	return livePublishedPortals[0]?._id;
+	return { portalId: livePublishedPortals[0]._id };
 }
 
 export async function getLatestOnboardingPortalIdForUser(
@@ -117,7 +123,8 @@ export async function resolveBorrowerPortalIdForWrite(
 	}
 
 	if (args.orgId) {
-		return getDeterministicPortalIdForOrgId(ctx, args.orgId);
+		const result = await getDeterministicPortalIdForOrgId(ctx, args.orgId);
+		return result.portalId;
 	}
 
 	return undefined;
@@ -135,10 +142,11 @@ export async function resolveOnboardingRequestPortalIdForBackfill(
 		return undefined;
 	}
 
-	return getDeterministicPortalIdForOrgId(
+	const result = await getDeterministicPortalIdForOrgId(
 		ctx,
 		onboardingRequest.targetOrganizationId
 	);
+	return result.portalId;
 }
 
 export async function resolveBorrowerPortalIdForBackfill(
@@ -161,7 +169,8 @@ export async function resolveBorrowerPortalIdForBackfill(
 		return undefined;
 	}
 
-	return getDeterministicPortalIdForOrgId(ctx, borrower.orgId);
+	const result = await getDeterministicPortalIdForOrgId(ctx, borrower.orgId);
+	return result.portalId;
 }
 
 export async function ensureBorrowerPortalAttribution(

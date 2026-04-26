@@ -148,12 +148,17 @@ export async function resolveUserHomePortalId(
 		return borrower.portalId;
 	}
 	if (borrower?.orgId) {
-		const borrowerPortalId = await getDeterministicPortalIdForOrgId(
+		const borrowerPortalResult = await getDeterministicPortalIdForOrgId(
 			ctx,
 			borrower.orgId
 		);
-		if (borrowerPortalId) {
-			return borrowerPortalId;
+		if (borrowerPortalResult.portalId) {
+			return borrowerPortalResult.portalId;
+		}
+		if (borrowerPortalResult.activePublishedCount > 1) {
+			console.warn(
+				`[portals] Multiple active+published portals found for org ${borrower.orgId} during home portal resolution. Count: ${borrowerPortalResult.activePublishedCount}. This may indicate registry corruption.`
+			);
 		}
 	}
 
