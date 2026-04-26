@@ -542,7 +542,8 @@ export const pollProviderManagedSchedules = convex
 		if (maxWavesReached) {
 			await ctx.scheduler.runAfter(
 				POLL_CONTINUATION_DELAY_MS,
-				internal.payments.recurringSchedules.poller.pollProviderManagedSchedules,
+				internal.payments.recurringSchedules.poller
+					.pollProviderManagedSchedules,
 				{ asOf, limit }
 			);
 		}

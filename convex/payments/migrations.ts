@@ -494,10 +494,13 @@ export const deleteMalformedMortgageCohorts = migrations.define({
 			return;
 		}
 
-		console.info("[malformed-mortgage-cleanup] deleting malformed cohort mortgage", {
-			mortgageId: mortgage._id,
-			orgId: mortgage.orgId,
-		});
+		console.info(
+			"[malformed-mortgage-cleanup] deleting malformed cohort mortgage",
+			{
+				mortgageId: mortgage._id,
+				orgId: mortgage.orgId,
+			}
+		);
 
 		await deleteByIds(
 			ctx,
