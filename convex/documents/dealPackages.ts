@@ -659,7 +659,6 @@ function buildSignatoryParticipants(
 						platformRole: "lawyer_primary",
 						name: lawyerPrimary.fullName,
 						email: lawyerPrimary.email,
-						userId: snapshot.dealParticipants.lawyer.userId ?? undefined,
 					},
 				]
 			: []),
