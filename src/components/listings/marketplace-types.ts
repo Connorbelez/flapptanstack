@@ -73,6 +73,8 @@ export interface MarketplaceListingCardItem {
 	address: string;
 	apr: number;
 	availablePercent: number;
+	/** Human summary from ledger (e.g. "4.2 / 10 fractions (10% each)"). */
+	fractionsSummary?: string;
 	id: string;
 	imageSrc?: string;
 	lat: number;

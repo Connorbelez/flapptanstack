@@ -117,13 +117,16 @@ export interface ListingDetailData {
 	investment: {
 		availabilityLabel: string;
 		availabilityValue: number;
+		/** Whole 10% slices available to buy (matches ledger, floor of balance ÷ 1,000 units). */
 		availableFractions: number;
 		investorCountLabel: string;
 		lockedPercent?: number;
 		minimumFractions?: number;
+		/** CAD per one 10% slice (principal ÷ total deciles). */
 		perFractionAmount?: number;
 		projectedYield: string;
 		soldPercent?: number;
+		/** Total 10% slices for the mortgage (ledger total supply ÷ 1,000 units). */
 		totalFractions: number;
 	};
 	keyFinancials: ListingKeyFinancialItem[];

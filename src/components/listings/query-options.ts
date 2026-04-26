@@ -1,6 +1,7 @@
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { principalDollarsToCents } from "./marketplace-adapters";
 import type { MarketplaceListingsSearchState } from "./marketplace-types";
 
 export function marketplaceListingsQueryOptions(
@@ -24,7 +25,16 @@ export function marketplaceListingsQueryOptions(
 			mortgageTypes: search.mortgageTypes,
 			principalAmount:
 				search.principalMin !== undefined || search.principalMax !== undefined
-					? { max: search.principalMax, min: search.principalMin }
+					? {
+							max:
+								search.principalMax !== undefined
+									? principalDollarsToCents(search.principalMax)
+									: undefined,
+							min:
+								search.principalMin !== undefined
+									? principalDollarsToCents(search.principalMin)
+									: undefined,
+						}
 					: undefined,
 			propertyTypes: search.propertyTypes,
 			searchQuery: search.q,

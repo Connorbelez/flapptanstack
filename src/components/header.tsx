@@ -73,7 +73,7 @@ const demoLinkClassName =
 
 export default function Header() {
 	return (
-		<header className="sticky top-0 z-50 border-(--line) border-b bg-(--header-bg) px-4 backdrop-blur-lg">
+		<header className="sticky top-0 z-50 shrink-0 border-(--line) border-b bg-(--header-bg) px-4 backdrop-blur-lg">
 			<nav className="page-wrap flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 py-3 sm:py-4">
 				<h2 className="m-0 shrink-0 font-semibold text-base tracking-tight">
 					<Link

@@ -50,8 +50,8 @@ function applyDemoFilters(
 
 			if (
 				item.principal !== undefined &&
-				(item.principal < filters.loanAmountRange[0] ||
-					item.principal > filters.loanAmountRange[1])
+				(item.principal < filters.principalRange[0] ||
+					item.principal > filters.principalRange[1])
 			) {
 				return false;
 			}

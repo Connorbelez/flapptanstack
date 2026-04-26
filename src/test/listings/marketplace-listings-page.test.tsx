@@ -94,7 +94,7 @@ describe("marketplace listings page", () => {
 	it("routes listing cards through the configured detail route", () => {
 		render(
 			<MarketplaceListingsPage
-				detailRoute="/lender/listings/$listingId"
+				detailRoute="/listings/$listingId"
 				search={{}}
 				setSearch={() => undefined}
 				snapshot={{
@@ -129,6 +129,6 @@ describe("marketplace listings page", () => {
 			screen.getByRole("link", { name: /king west bridge opportunity/i }).getAttribute(
 				"href"
 			)
-		).toBe("/lender/listings/listing_1");
+		).toBe("/listings/listing_1");
 	});
 });

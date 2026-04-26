@@ -21,6 +21,7 @@ export interface HorizontalProps {
 	address?: string;
 	apr?: number;
 	availablePercent?: number;
+	fractionsSummary?: string;
 	id?: string;
 	imageSrc?: string;
 	locked?: boolean;
@@ -46,6 +47,7 @@ export function Horizontal({
 	maturityDate = "01/01/2026",
 	locked = false,
 	availablePercent = 100,
+	fractionsSummary,
 	lockedPercent = 0,
 	soldPercent = 0,
 }: HorizontalProps = {}) {
@@ -100,7 +102,7 @@ export function Horizontal({
 							<span className="flex min-w-0 items-center">
 								<CirclePercent className="h-5 w-5 shrink-0" />
 								<span className="ml-1 flex min-w-0 flex-col justify-around py-1 align-middle sm:ml-2">
-									<CardDescription className="text-xs">APR</CardDescription>
+									<CardDescription className="text-xs">IR</CardDescription>
 									<span className="font-bold text-sm tabular-nums">{apr}</span>
 								</span>
 							</span>
@@ -135,22 +137,27 @@ export function Horizontal({
 								</span>
 							</span>
 						</div>
-						<CardFooter className="mt-auto flex w-full min-w-0 flex-row items-center justify-between gap-2 border-0 p-0">
-							<div className="flex min-w-0 shrink-0 flex-col">
-								<CardDescription className="flex items-center text-foreground/50">
-									<CalendarDays className="mr-1 h-4 w-4" />
+						<CardFooter className="mt-auto grid w-full min-w-0 grid-cols-1 gap-3 border-0 p-0 sm:grid-cols-[minmax(0,auto)_minmax(0,1fr)] sm:items-start sm:gap-x-6 sm:gap-y-0">
+							<div className="flex min-w-0 flex-col gap-1">
+								<CardDescription className="flex items-center gap-0 text-foreground/50">
+									<CalendarDays className="mr-1 h-4 w-4 shrink-0" />
 									Maturity
 								</CardDescription>
-								<span className="font-medium text-foreground/60 text-sm">
+								<span className="font-medium text-foreground/60 text-sm tabular-nums">
 									{maturityDate}
 								</span>
 							</div>
-							<div className="min-w-0 max-w-[55%] flex-1 sm:max-w-none">
+							<div className="min-w-0 space-y-1">
 								<OwnershipBar
 									availablePercent={availablePercent}
 									lockedPercent={lockedPercent}
 									soldPercent={soldPercent}
 								/>
+								{fractionsSummary ? (
+									<p className="text-[11px] text-muted-foreground tabular-nums">
+										{fractionsSummary}
+									</p>
+								) : null}
 							</div>
 						</CardFooter>
 					</div>

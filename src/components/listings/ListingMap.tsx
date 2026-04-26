@@ -76,6 +76,8 @@ export function ListingMap<T extends LatLng>({
 	const renderPopupRef = useRef(renderPopup);
 	const [isMapLoaded, setIsMapLoaded] = useState(false);
 	const hasSetInitialViewRef = useRef(false);
+	/** Ignore moveend until the first intentional camera + bounds emit (avoids filtering the grid to initialCenter/initialZoom before fitBounds). */
+	const suppressViewportMoveEndRef = useRef(true);
 
 	useEffect(() => {
 		onViewportChangeRef.current = onViewportChange;
@@ -101,11 +103,12 @@ export function ListingMap<T extends LatLng>({
 
 		map.on("load", () => {
 			setIsMapLoaded(true);
-
-			onViewportChangeRef.current?.(toBounds(map));
 		});
 
 		map.on("moveend", () => {
+			if (suppressViewportMoveEndRef.current) {
+				return;
+			}
 			onViewportChangeRef.current?.(toBounds(map));
 		});
 
@@ -124,6 +127,7 @@ export function ListingMap<T extends LatLng>({
 				mapRef.current.remove();
 				mapRef.current = null;
 			}
+			suppressViewportMoveEndRef.current = true;
 		};
 	}, [initialCenter.lat, initialCenter.lng, initialZoom]);
 
@@ -188,20 +192,43 @@ export function ListingMap<T extends LatLng>({
 		}
 
 		if (items.length > 0 && !hasSetInitialViewRef.current) {
-			const bounds = new mapboxgl.LngLatBounds();
+			const finite = items.filter(
+				(item) => Number.isFinite(item.lat) && Number.isFinite(item.lng)
+			) as Array<T & { lat: number; lng: number }>;
 
-			for (const item of items) {
-				if (Number.isFinite(item.lat) && Number.isFinite(item.lng)) {
-					bounds.extend([item.lng, item.lat]);
-				}
-			}
-
-			if (!bounds.isEmpty()) {
-				mapRef.current.fitBounds(bounds, {
-					duration: 2500,
-					maxZoom: 12,
+			if (finite.length === 1) {
+				const point = finite[0];
+				mapRef.current.jumpTo({
+					center: [point.lng, point.lat],
+					zoom: 11,
 				});
 				hasSetInitialViewRef.current = true;
+				suppressViewportMoveEndRef.current = false;
+				queueMicrotask(() => {
+					if (mapRef.current) {
+						onViewportChangeRef.current?.(toBounds(mapRef.current));
+					}
+				});
+			} else if (finite.length > 1) {
+				const bounds = new mapboxgl.LngLatBounds();
+				for (const item of finite) {
+					bounds.extend([item.lng, item.lat]);
+				}
+
+				if (!bounds.isEmpty()) {
+					mapRef.current.fitBounds(bounds, {
+						duration: 0,
+						maxZoom: 11,
+						padding: 48,
+					});
+					hasSetInitialViewRef.current = true;
+					suppressViewportMoveEndRef.current = false;
+					queueMicrotask(() => {
+						if (mapRef.current) {
+							onViewportChangeRef.current?.(toBounds(mapRef.current));
+						}
+					});
+				}
 			}
 		}
 	}, [items, isMapLoaded]);
@@ -228,10 +255,21 @@ export function ListingMap<T extends LatLng>({
 
 	return (
 		<div
-			className={cn("relative h-full w-full md:h-[80vh]", containerClassName)}
+			className={cn(
+				"relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-xl",
+				/* Mapbox canvas/compositor often ignores border-radius clipping; clip-path matches :root --radius + 4px (same as rounded-xl here). */
+				"[clip-path:inset(0_round_calc(var(--radius)+4px))]",
+				"[&_.mapboxgl-map]:h-full [&_.mapboxgl-map]:min-h-0 [&_.mapboxgl-map]:overflow-hidden [&_.mapboxgl-map]:rounded-xl",
+				"[&_.mapboxgl-canvas-container]:h-full [&_.mapboxgl-canvas-container]:min-h-0 [&_.mapboxgl-canvas-container]:overflow-hidden [&_.mapboxgl-canvas-container]:rounded-xl",
+				containerClassName
+			)}
 		>
 			<div
-				className={cn("h-full w-full rounded-xl", mapClassName, className)}
+				className={cn(
+					"flex min-h-0 min-w-0 flex-1 flex-col",
+					mapClassName,
+					className
+				)}
 				ref={mapContainerRef}
 				style={style}
 			/>

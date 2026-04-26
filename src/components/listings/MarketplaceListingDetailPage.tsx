@@ -18,14 +18,9 @@ export function MarketplaceListingDetailPage({
 
 	return (
 		<ListingDetailPage
-			backHref="/listings"
-			buildSimilarListingHref={(listingId) => `/listings/${listingId}`}
-			linkRenderer={({ children, className, href }) => (
-				<Link className={className} to={href}>
-					{children}
-				</Link>
-			)}
+
 			listing={listing}
+			listingsIndexTo="/listings"
 			mode="readOnly"
 		/>
 	);

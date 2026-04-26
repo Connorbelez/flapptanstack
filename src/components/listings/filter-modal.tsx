@@ -147,8 +147,8 @@ export default function FilterModal({
 		() =>
 			calculateHistogram(
 				"principal",
-				FILTER_BOUNDS.loanAmountRange[0],
-				FILTER_BOUNDS.loanAmountRange[1],
+				FILTER_BOUNDS.principalRange[0],
+				FILTER_BOUNDS.principalRange[1],
 				20
 			),
 		[calculateHistogram]
@@ -197,8 +197,8 @@ export default function FilterModal({
 		draftFilters.ltvRange[1] < FILTER_BOUNDS.ltvRange[1] ||
 		draftFilters.interestRateRange[0] > FILTER_BOUNDS.interestRateRange[0] ||
 		draftFilters.interestRateRange[1] < FILTER_BOUNDS.interestRateRange[1] ||
-		draftFilters.loanAmountRange[0] > FILTER_BOUNDS.loanAmountRange[0] ||
-		draftFilters.loanAmountRange[1] < FILTER_BOUNDS.loanAmountRange[1] ||
+		draftFilters.principalRange[0] > FILTER_BOUNDS.principalRange[0] ||
+		draftFilters.principalRange[1] < FILTER_BOUNDS.principalRange[1] ||
 		draftFilters.mortgageTypes.length > 0 ||
 		draftFilters.propertyTypes.length > 0 ||
 		draftFilters.maturityDate !== undefined;
@@ -242,8 +242,8 @@ export default function FilterModal({
 							Filters
 						</DialogTitle>
 						<DialogDescription className="sr-only">
-							Adjust investor listing filters by LTV, rate, loan amount,
-							mortgage type, property type, and maturity date.
+							Adjust investor listing filters by LTV, rate, principal, mortgage
+							type, property type, and maturity date.
 						</DialogDescription>
 					</DialogHeader>
 
@@ -313,20 +313,20 @@ export default function FilterModal({
 						<div className="space-y-2">
 							<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg sm:text-xl">
 								<DollarSign className="h-5 w-5" />
-								Loan Amount
+								Principal
 							</h2>
 							<div className="relative z-[105] w-full overflow-x-hidden">
 								<RangeSliderWithHistogram
 									className="w-full"
-									defaultValue={draftFilters.loanAmountRange}
+									defaultValue={draftFilters.principalRange}
 									formatValue={(value) => `$${value.toLocaleString()}`}
 									histogramData={principalHistogram}
-									max={FILTER_BOUNDS.loanAmountRange[1]}
-									min={FILTER_BOUNDS.loanAmountRange[0]}
+									max={FILTER_BOUNDS.principalRange[1]}
+									min={FILTER_BOUNDS.principalRange[0]}
 									onValueChange={(values) =>
 										setDraftFilters((current) => ({
 											...current,
-											loanAmountRange: values,
+											principalRange: values,
 										}))
 									}
 									showCard={false}
