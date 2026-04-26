@@ -34,17 +34,27 @@ describe("onboarding permission contract alignment", () => {
 
 	it("documents review and manage as distinct onboarding permissions", async () => {
 		const source = await readFile(RBAC_DOC_PATH, "utf8");
-		const contractSection = source.slice(
-			source.indexOf("## Onboarding Permission Contract"),
-			source.indexOf("## Additional WorkOS Permissions To Provision")
+		const contractHeading = source.indexOf("## Onboarding Permission Contract");
+		expect(contractHeading).toBeGreaterThanOrEqual(0);
+		const provisioningHeading = source.indexOf(
+			"## Additional WorkOS Permissions To Provision"
 		);
+		expect(provisioningHeading).toBeGreaterThanOrEqual(0);
+		const pendingHeading = source.indexOf(
+			"## Runtime Permissions Pending Disposition"
+		);
+		expect(pendingHeading).toBeGreaterThanOrEqual(0);
+		const deliveryHeading = source.indexOf("## Delivery Sequence");
+		expect(deliveryHeading).toBeGreaterThanOrEqual(0);
+
+		const contractSection = source.slice(contractHeading, provisioningHeading);
 		const workosProvisioningSection = source.slice(
-			source.indexOf("## Additional WorkOS Permissions To Provision"),
-			source.indexOf("## Runtime Permissions Pending Disposition")
+			provisioningHeading,
+			pendingHeading
 		);
 		const pendingDispositionSection = source.slice(
-			source.indexOf("## Runtime Permissions Pending Disposition"),
-			source.indexOf("## Delivery Sequence")
+			pendingHeading,
+			deliveryHeading
 		);
 
 		expect(source).toContain("## Onboarding Permission Contract");
