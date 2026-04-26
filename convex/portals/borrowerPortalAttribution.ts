@@ -74,19 +74,14 @@ export async function getLatestOnboardingPortalIdForUser(
 	ctx: PortalReaderCtx,
 	userId: Id<"users">
 ) {
-	const requests = await ctx.db
+	const request = await ctx.db
 		.query("onboardingRequests")
 		.withIndex("by_user_created_at", (query) => query.eq("userId", userId))
 		.order("desc")
-		.collect();
+		.filter((query) => query.neq(query.field("portalId"), undefined))
+		.first();
 
-	for (const request of requests) {
-		if (request.portalId) {
-			return request.portalId;
-		}
-	}
-
-	return undefined;
+	return request?.portalId;
 }
 
 export async function resolveBorrowerPortalIdForWrite(

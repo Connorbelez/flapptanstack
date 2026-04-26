@@ -155,7 +155,10 @@ export async function resolveUserHomePortalId(
 		if (borrowerPortalResult.portalId) {
 			return borrowerPortalResult.portalId;
 		}
-		if (borrowerPortalResult.activePublishedCount > 1) {
+		if (
+			"activePublishedCount" in borrowerPortalResult &&
+			borrowerPortalResult.activePublishedCount > 1
+		) {
 			console.warn(
 				`[portals] Multiple active+published portals found for org ${borrower.orgId} during home portal resolution. Count: ${borrowerPortalResult.activePublishedCount}. This may indicate registry corruption.`
 			);
