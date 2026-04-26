@@ -357,6 +357,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../engine/machines/deal.machine.ts"),
 	"/convex/engine/machines/lenderRenewalIntent.machine.ts": async () =>
 		await import("./../engine/machines/lenderRenewalIntent.machine.ts"),
+	"/convex/engine/machines/micInvestorAccessRequest.machine.ts": async () =>
+		await import("./../engine/machines/micInvestorAccessRequest.machine.ts"),
 	"/convex/engine/machines/mortgage.machine.ts": async () =>
 		await import("./../engine/machines/mortgage.machine.ts"),
 	"/convex/engine/machines/obligation.machine.ts": async () =>
@@ -540,6 +542,10 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../onboarding/verification/workosEmailVerification.ts"),
 	"/convex/onboarding/validators.ts": async () =>
 		await import("./../onboarding/validators.ts"),
+	"/convex/micInvestorAccessRequests/mutations.ts": async () =>
+		await import("./../micInvestorAccessRequests/mutations.ts"),
+	"/convex/micInvestorAccessRequests/validators.ts": async () =>
+		await import("./../micInvestorAccessRequests/validators.ts"),
 	"/convex/payments/bankAccounts/mutations.ts": async () =>
 		await import("./../payments/bankAccounts/mutations.ts"),
 	"/convex/payments/bankAccounts/queries.ts": async () =>
