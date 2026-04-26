@@ -225,6 +225,20 @@ export function CollectionsStep({
 	const executionIntent = resolveExecutionIntent(nextDraft);
 	const isAppOwned = executionIntent === "app_owned";
 	const isProviderManagedNow = executionIntent === "provider_managed_now";
+	const defaultProviderCode =
+		setupContext?.providerCode ?? COLLECTION_PROVIDER_OPTIONS[0].value;
+
+	useEffect(() => {
+		if (!isProviderManagedNow || nextDraft.providerCode !== undefined) {
+			return;
+		}
+
+		onChange(
+			buildProviderManagedDraft(nextDraft, {
+				providerCode: defaultProviderCode,
+			})
+		);
+	}, [defaultProviderCode, isProviderManagedNow, nextDraft, onChange]);
 	const [borrowerSearch, setBorrowerSearch] = useState("");
 	const [isCreateBorrowerOpen, setIsCreateBorrowerOpen] = useState(false);
 	const [createBorrowerForm, setCreateBorrowerForm] = useState(
@@ -651,11 +665,11 @@ export function CollectionsStep({
 				</div>
 			) : null}
 
-				{isProviderManagedNow ? (
-					<div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-						<div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 px-4 py-4 lg:col-span-2">
-							<div className="space-y-1">
-								<p className="font-medium text-sm">Provider configuration</p>
+			{isProviderManagedNow ? (
+				<div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+					<div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 px-4 py-4 lg:col-span-2">
+						<div className="space-y-1">
+							<p className="font-medium text-sm">Provider configuration</p>
 							<p className="text-muted-foreground text-sm leading-6">
 								This flow is currently constrained to Rotessa-backed PAD
 								schedules, but the provider selection stays explicit so the
@@ -672,7 +686,7 @@ export function CollectionsStep({
 										})
 									)
 								}
-								value={nextDraft.providerCode ?? ""}
+								value={nextDraft.providerCode ?? defaultProviderCode}
 							>
 								<SelectTrigger className="w-full" id="providerCode">
 									<SelectValue placeholder="Select provider" />
@@ -684,10 +698,10 @@ export function CollectionsStep({
 										</SelectItem>
 									))}
 								</SelectContent>
-								</Select>
-							</div>
+							</Select>
 						</div>
-						<div className="space-y-4 rounded-2xl border border-border/70 bg-background/80 px-4 py-4">
+					</div>
+					<div className="space-y-4 rounded-2xl border border-border/70 bg-background/80 px-4 py-4">
 						<div className="space-y-1">
 							<div className="flex items-center gap-2">
 								<p className="font-medium text-sm">1. Select borrower</p>
