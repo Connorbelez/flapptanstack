@@ -65,7 +65,7 @@ async function getVisibleLenderPortalListingDetail(
 		listingId,
 		portalId: ctx.portal.portalId,
 	});
-	if (!snapshot) {
+	if (!snapshot?.availability) {
 		return null;
 	}
 
