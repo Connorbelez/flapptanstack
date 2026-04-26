@@ -743,6 +743,10 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../payments/webhooks/utils.ts"),
 	"/convex/payments/webhooks/vopay.ts": async () =>
 		await import("./../payments/webhooks/vopay.ts"),
+	"/convex/micPortfolio/contracts.ts": async () =>
+		await import("./../micPortfolio/contracts.ts"),
+	"/convex/micPortfolio/queries.ts": async () =>
+		await import("./../micPortfolio/queries.ts"),
 	"/convex/platform/defaultOriginationOwner.ts": async () =>
 		await import("./../platform/defaultOriginationOwner.ts"),
 	"/convex/portfolio/contracts.ts": async () =>

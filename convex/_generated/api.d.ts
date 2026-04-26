@@ -239,6 +239,8 @@ import type * as micInvestorAccessRequests_internal from "../micInvestorAccessRe
 import type * as micInvestorAccessRequests_mutations from "../micInvestorAccessRequests/mutations.js";
 import type * as micInvestorAccessRequests_queries from "../micInvestorAccessRequests/queries.js";
 import type * as micInvestorAccessRequests_validators from "../micInvestorAccessRequests/validators.js";
+import type * as micPortfolio_contracts from "../micPortfolio/contracts.js";
+import type * as micPortfolio_queries from "../micPortfolio/queries.js";
 import type * as mortgages_activateMortgageAggregate from "../mortgages/activateMortgageAggregate.js";
 import type * as mortgages_nominalAnnualRate from "../mortgages/nominalAnnualRate.js";
 import type * as mortgages_paymentFrequency from "../mortgages/paymentFrequency.js";
@@ -686,6 +688,8 @@ declare const fullApi: ApiFromModules<{
   "micInvestorAccessRequests/mutations": typeof micInvestorAccessRequests_mutations;
   "micInvestorAccessRequests/queries": typeof micInvestorAccessRequests_queries;
   "micInvestorAccessRequests/validators": typeof micInvestorAccessRequests_validators;
+  "micPortfolio/contracts": typeof micPortfolio_contracts;
+  "micPortfolio/queries": typeof micPortfolio_queries;
   "mortgages/activateMortgageAggregate": typeof mortgages_activateMortgageAggregate;
   "mortgages/nominalAnnualRate": typeof mortgages_nominalAnnualRate;
   "mortgages/paymentFrequency": typeof mortgages_paymentFrequency;
