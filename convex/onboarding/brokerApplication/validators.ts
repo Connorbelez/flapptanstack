@@ -183,6 +183,7 @@ export const brokerOnboardingApplicationMachineContextValidator = v.object({
 });
 
 export const brokerOnboardingReviewEntryValidator = v.object({
+	applicationId: v.id("brokerOnboardingApplications"),
 	authorAuthId: v.optional(v.string()),
 	authorType: v.optional(actorTypeValidator),
 	body: v.string(),
