@@ -62,4 +62,29 @@ describe("WorkOS email verification contract", () => {
 			}),
 		]);
 	});
+
+	it("fails closed when emailVerified is null even when source is available", () => {
+		const normalized = contract.normalize({
+			authUserId: "user_123",
+			checkedAt: 1_700_000_000_000,
+			email: "broker@example.com",
+			emailVerified: null,
+			source: "workos_auth_state",
+		});
+
+		expect(normalized.status).toBe("provider_unavailable");
+		expect(normalized.verifiedAt).toBeNull();
+	});
+
+	it("fails closed when emailVerified is undefined", () => {
+		const normalized = contract.normalize({
+			authUserId: "user_123",
+			checkedAt: 1_700_000_000_000,
+			email: "broker@example.com",
+			source: "workos_session_claim",
+		});
+
+		expect(normalized.status).toBe("provider_unavailable");
+		expect(normalized.verifiedAt).toBeNull();
+	});
 });

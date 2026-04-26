@@ -67,6 +67,17 @@ export function createWorkosEmailVerificationContract(): EmailVerificationContra
 			};
 		}
 
+		if (input.emailVerified == null) {
+			return {
+				provider: "workos_authkit",
+				status: "provider_unavailable" as const,
+				email: input.email ?? null,
+				checkedAt: input.checkedAt,
+				verifiedAt: null,
+				evidenceReferences,
+			};
+		}
+
 		if (input.emailVerified) {
 			return {
 				provider: "workos_authkit",
