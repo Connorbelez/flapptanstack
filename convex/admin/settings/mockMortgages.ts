@@ -42,7 +42,7 @@ const MOCK_MORTGAGE_IMAGE_STORAGE_IDS = [
 	"kg287qhzvj5dfzj58r6xh0tkhd859w15",
 	"kg20er6058bm1ecwfsfyj7fw7d858pwx",
 	"kg2d6ht2tb9fr4pqh6pv5dfndn858a4h",
-	"kg2d6ht2tb9fr4pqh6pv5dfndn858a4h",
+	"kg2oxp1qhu4zroxiz5gukn662u0fsosrc",
 	"kg21wrr8kt5k6rg334zss6hwjx859vyq",
 	"kg2akvg7mkvdhnk7c8tjsr8g1n858mma",
 	"kg2css54zk1myxd0zej9aqbj4h859rn2",
