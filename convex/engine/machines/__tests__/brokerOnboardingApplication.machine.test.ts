@@ -23,6 +23,7 @@ describe("brokerOnboardingApplication machine", () => {
 		const current = snapshotAt("draft");
 		const next = getNextSnapshot(brokerOnboardingApplicationMachine, current, {
 			type: "SUBMIT",
+			submittedAt: 1000,
 		});
 		expect(next.value).toBe("submitted");
 		expect(next.context.submitCount).toBe(1);
@@ -32,6 +33,7 @@ describe("brokerOnboardingApplication machine", () => {
 		const current = snapshotAt("submitted");
 		const next = getNextSnapshot(brokerOnboardingApplicationMachine, current, {
 			type: "REQUEST_CHANGES",
+			requestedAt: 1000,
 		});
 		expect(next.value).toBe("changes_requested");
 	});
@@ -40,6 +42,7 @@ describe("brokerOnboardingApplication machine", () => {
 		const current = snapshotAt("submitted");
 		const next = getNextSnapshot(brokerOnboardingApplicationMachine, current, {
 			type: "APPROVE",
+			approvedAt: 1000,
 		});
 		expect(next.value).toBe("approved");
 	});
@@ -48,6 +51,7 @@ describe("brokerOnboardingApplication machine", () => {
 		const current = snapshotAt("submitted");
 		const next = getNextSnapshot(brokerOnboardingApplicationMachine, current, {
 			type: "REJECT",
+			rejectedAt: 1000,
 		});
 		expect(next.value).toBe("rejected");
 	});
@@ -56,6 +60,7 @@ describe("brokerOnboardingApplication machine", () => {
 		const current = snapshotAt("changes_requested");
 		const next = getNextSnapshot(brokerOnboardingApplicationMachine, current, {
 			type: "SUBMIT",
+			submittedAt: 1000,
 		});
 		expect(next.value).toBe("submitted");
 	});
@@ -64,6 +69,7 @@ describe("brokerOnboardingApplication machine", () => {
 		const current = snapshotAt("approved");
 		const next = getNextSnapshot(brokerOnboardingApplicationMachine, current, {
 			type: "MARK_ACTIVATED",
+			activatedAt: 1000,
 		});
 		expect(next.value).toBe("activated");
 	});
@@ -72,6 +78,7 @@ describe("brokerOnboardingApplication machine", () => {
 		const current = snapshotAt("draft");
 		const next = getNextSnapshot(brokerOnboardingApplicationMachine, current, {
 			type: "APPROVE",
+			approvedAt: 1000,
 		});
 		expect(next.value).toBe("draft");
 	});
@@ -80,6 +87,7 @@ describe("brokerOnboardingApplication machine", () => {
 		const current = snapshotAt("approved");
 		const next = getNextSnapshot(brokerOnboardingApplicationMachine, current, {
 			type: "SUBMIT",
+			submittedAt: 1000,
 		});
 		expect(next.value).toBe("approved");
 	});
@@ -88,6 +96,7 @@ describe("brokerOnboardingApplication machine", () => {
 		const current = snapshotAt("activated");
 		const next = getNextSnapshot(brokerOnboardingApplicationMachine, current, {
 			type: "MARK_ACTIVATED",
+			activatedAt: 1000,
 		});
 		expect(next.value).toBe("activated");
 	});
