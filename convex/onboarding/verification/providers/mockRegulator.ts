@@ -77,7 +77,10 @@ export function createMockRegulatorDirectoryProvider(
 		async lookupLicense(request: RegulatorDirectoryLookupRequest) {
 			const checkedAt = now();
 			const status = inferMockRegulatorStatus(request.licenseNumber);
-			const freshness = inferMockFreshness(request.licenseNumber);
+			const freshness =
+				status === "provider_unavailable"
+					? "unknown"
+					: inferMockFreshness(request.licenseNumber);
 			const evidenceReference = buildEvidenceReference(
 				request.licenseNumber,
 				checkedAt
