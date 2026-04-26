@@ -20,4 +20,4 @@
 - `bun check`
 - `bun typecheck`
 - Targeted Vitest suites for onboarding, origination, seeds, migrations, and portal middleware
-- `python3 /Users/connor/.codex/skills/linear-implement-v2/scripts/validate_execution_artifacts.py ENG-302 --repo-root $(pwd) --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`
+- `python3 "$LINEAR_IMPLEMENT_V2_ROOT/scripts/validate_execution_artifacts.py" ENG-302 --repo-root "$(pwd)" --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`
