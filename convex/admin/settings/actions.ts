@@ -370,27 +370,18 @@ export const ensureMockSeedBrokerPortal = convex
 			};
 		}
 
-		const now = Date.now();
-		let broker = await ctx.db
+		const broker = await ctx.db
 			.query("brokers")
 			.withIndex("by_org_status", (query) =>
 				query.eq("orgId", args.orgId).eq("status", "active")
 			)
 			.first();
 		if (!broker) {
-			const brokerId = await ctx.db.insert("brokers", {
-				createdAt: now,
-				lastTransitionAt: now,
-				onboardedAt: now,
-				orgId: args.orgId,
-				status: "active",
-				userId: args.viewerUserId,
-			});
-			broker = await ctx.db.get(brokerId);
+			throw new ConvexError(
+				"No active broker of record found for this org. Seed requires a pre-existing broker."
+			);
 		}
-		if (!broker) {
-			throw new ConvexError("Unable to ensure an active broker of record");
-		}
+		const now = Date.now();
 
 		const existingPortal = await ctx.db
 			.query("portals")
