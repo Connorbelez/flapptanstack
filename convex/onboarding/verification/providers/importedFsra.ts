@@ -37,14 +37,16 @@ export interface ImportedFsraRegulatorProviderOptions {
 
 function buildEvidenceReference(
 	licenseNumber: string,
-	capturedAt: number
+	capturedAt: number,
+	referenceType: VerificationEvidenceReference["referenceType"],
+	label: string
 ): VerificationEvidenceReference {
 	return {
 		provider: "imported_fsra",
 		referenceId: `imported-fsra:${licenseNumber.trim().toLowerCase()}`,
-		referenceType: "regulator_record",
+		referenceType,
 		capturedAt,
-		label: "Imported FSRA regulator record",
+		label,
 	};
 }
 
@@ -58,11 +60,6 @@ export function createImportedFsraRegulatorProvider(
 		providerKey: "imported_fsra",
 		async lookupLicense(request: RegulatorDirectoryLookupRequest) {
 			const checkedAt = now();
-			const evidenceReference = buildEvidenceReference(
-				request.licenseNumber,
-				checkedAt
-			);
-
 			if (!options.lookupRecord) {
 				return {
 					provider: "imported_fsra",
@@ -73,7 +70,14 @@ export function createImportedFsraRegulatorProvider(
 					legalName: null,
 					checkedAt,
 					dataAsOf: null,
-					evidenceReferences: [evidenceReference],
+					evidenceReferences: [
+						buildEvidenceReference(
+							request.licenseNumber,
+							checkedAt,
+							"provider_snapshot",
+							"Imported FSRA provider unavailable"
+						),
+					],
 				};
 			}
 
@@ -88,7 +92,14 @@ export function createImportedFsraRegulatorProvider(
 					legalName: null,
 					checkedAt,
 					dataAsOf: null,
-					evidenceReferences: [evidenceReference],
+					evidenceReferences: [
+						buildEvidenceReference(
+							request.licenseNumber,
+							checkedAt,
+							"regulator_record",
+							"Imported FSRA regulator record (not found)"
+						),
+					],
 				};
 			}
 
@@ -101,7 +112,14 @@ export function createImportedFsraRegulatorProvider(
 				legalName: normalizeBrokerOnboardingPersonName(record.legalName),
 				checkedAt,
 				dataAsOf: record.dataAsOf ?? null,
-				evidenceReferences: [evidenceReference],
+				evidenceReferences: [
+					buildEvidenceReference(
+						request.licenseNumber,
+						checkedAt,
+						"regulator_record",
+						"Imported FSRA regulator record"
+					),
+				],
 			};
 		},
 	};
