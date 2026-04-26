@@ -20,6 +20,11 @@ import {
 	syncUserHomePortalAssignmentByUserId,
 } from "../portals/homePortalAssignment";
 import { assertPortalRegistryInvariants } from "../portals/invariants";
+import {
+	ensureBrokerPortalPricingSetting,
+	ensurePortalSelectedPricingPolicy,
+	syncAllPortalPricingSelections,
+} from "../portals/pricing";
 
 const migrations = new Migrations<DataModel>(components.migrations);
 
@@ -199,6 +204,7 @@ export const backfillBrokerPortals = migrations.define({
 			return;
 		}
 
+		const setting = await ensureBrokerPortalPricingSetting(ctx);
 		const existingPortal = await getPortalByBrokerId(ctx, broker._id);
 		if (existingPortal) {
 			const normalizedPortal = await assertPortalRegistryInvariants(ctx, {
@@ -223,6 +229,10 @@ export const backfillBrokerPortals = migrations.define({
 					updatedAt: Date.now(),
 				});
 			}
+			await ensurePortalSelectedPricingPolicy(ctx, {
+				brokerSplitPercent: setting.brokerSplitPercent,
+				portalId: existingPortal._id,
+			});
 			return;
 		}
 
@@ -234,7 +244,7 @@ export const backfillBrokerPortals = migrations.define({
 			orgId: broker.orgId,
 			slug,
 		});
-		await ctx.db.insert("portals", {
+		const portalId = await ctx.db.insert("portals", {
 			...normalizedPortal,
 			portalType: "broker",
 			brokerId: broker._id,
@@ -245,6 +255,10 @@ export const backfillBrokerPortals = migrations.define({
 			defaultPostAuthPath: DEFAULT_PORTAL_POST_AUTH_PATH,
 			createdAt: now,
 			updatedAt: now,
+		});
+		await ensurePortalSelectedPricingPolicy(ctx, {
+			brokerSplitPercent: setting.brokerSplitPercent,
+			portalId,
 		});
 	},
 });
@@ -310,6 +324,9 @@ export const runPortalRegistryBackfill = adminMutation
 			ctx,
 			migrationRefs.brokers.migrations.backfillUserHomePortalId
 		);
+		await syncAllPortalPricingSelections(ctx, {
+			updatedByAuthId: ctx.viewer.authId,
+		});
 	})
 	.public();
 

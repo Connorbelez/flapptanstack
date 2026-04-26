@@ -23,6 +23,8 @@ import {
 	EmptyHeader,
 	EmptyTitle,
 } from "#/components/ui/empty";
+import { Input } from "#/components/ui/input";
+import { Label } from "#/components/ui/label";
 import { Separator } from "#/components/ui/separator";
 import {
 	Table,
@@ -38,11 +40,25 @@ import type {
 	AdminOrgSettingsSnapshot,
 } from "../../../../convex/admin/settings/queries";
 
-function getErrorMessage(error: unknown) {
+function getErrorMessage(
+	error: unknown,
+	fallbackMessage = "Something went wrong while bootstrapping CRM objects."
+) {
 	if (error instanceof Error && error.message.trim().length > 0) {
 		return error.message;
 	}
-	return "Something went wrong while bootstrapping CRM objects.";
+	return fallbackMessage;
+}
+
+function formatTimestamp(value: number | null) {
+	if (value === null) {
+		return "Not saved yet";
+	}
+
+	return new Intl.DateTimeFormat("en-CA", {
+		dateStyle: "medium",
+		timeStyle: "short",
+	}).format(value);
 }
 
 function formatMemberName(member: AdminOrgMemberSummary): string {
@@ -217,6 +233,151 @@ function MembersCard({
 	);
 }
 
+export function BrokerPortalPricingCard({
+	brokerPortalPricing,
+}: {
+	readonly brokerPortalPricing: AdminOrgSettingsSnapshot["brokerPortalPricing"];
+}) {
+	const saveBrokerPortalPricing = useMutation(
+		api.admin.settings.mutations.setBrokerPortalPricing
+	);
+	async function handleSave(formData: FormData, form: HTMLFormElement) {
+		const rawBrokerSplitPercent = String(
+			formData.get("brokerSplitPercent") ?? ""
+		).trim();
+		const parsedBrokerSplitPercent = Number(rawBrokerSplitPercent);
+		const isValidBrokerSplitPercent =
+			rawBrokerSplitPercent.length > 0 &&
+			Number.isFinite(parsedBrokerSplitPercent) &&
+			parsedBrokerSplitPercent >= 0 &&
+			parsedBrokerSplitPercent <= 100;
+
+		if (!isValidBrokerSplitPercent) {
+			toast.error("Broker portal pricing must be a number between 0 and 100.");
+			return;
+		}
+
+		const submitButton = form.querySelector<HTMLButtonElement>(
+			'button[type="submit"]'
+		);
+		if (form.dataset.saving === "true") {
+			return;
+		}
+
+		form.dataset.saving = "true";
+		submitButton?.setAttribute("disabled", "");
+		submitButton?.setAttribute("aria-busy", "true");
+		const previousLabel = submitButton?.textContent;
+		if (submitButton) {
+			submitButton.textContent = "Saving…";
+		}
+		try {
+			const result = await saveBrokerPortalPricing({
+				brokerSplitPercent: parsedBrokerSplitPercent,
+			});
+			toast.success(
+				`Broker portal pricing saved at ${result.brokerSplitPercent}% across ${result.brokerPortalCount} broker portals. ${result.brokerPortalsUpdated} broker portal policies were updated.`
+			);
+		} catch (error) {
+			toast.error(
+				getErrorMessage(
+					error,
+					"Unable to save broker portal pricing. Please try again."
+				)
+			);
+		} finally {
+			form.dataset.saving = "false";
+			submitButton?.removeAttribute("disabled");
+			submitButton?.removeAttribute("aria-busy");
+			if (submitButton && previousLabel !== null) {
+				submitButton.textContent = previousLabel;
+			}
+		}
+	}
+
+	return (
+		<Card>
+			<CardHeader>
+				<div className="flex items-start justify-between gap-3">
+					<div>
+						<CardTitle>Broker portal pricing</CardTitle>
+						<CardDescription>
+							Temporary global control for broker portals. FairLend&apos;s app
+							portal stays pinned to a persisted 0% adjustment.
+						</CardDescription>
+					</div>
+					<Badge variant="outline">
+						{brokerPortalPricing.brokerPortalCount} broker
+						{brokerPortalPricing.brokerPortalCount === 1 ? "" : "s"}
+					</Badge>
+				</div>
+			</CardHeader>
+			<CardContent className="space-y-4 text-sm">
+				<dl className="grid gap-3 sm:grid-cols-3">
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Current adjustment
+						</dt>
+						<dd>{brokerPortalPricing.brokerSplitPercent}%</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Drifted portals
+						</dt>
+						<dd>{brokerPortalPricing.driftedBrokerPortalCount}</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground text-xs uppercase tracking-wide">
+							Last updated
+						</dt>
+						<dd>{formatTimestamp(brokerPortalPricing.lastUpdatedAt)}</dd>
+					</div>
+				</dl>
+				<form
+					className="space-y-2 rounded-xl border border-border/70 bg-muted/20 p-4"
+					onSubmit={(event) => {
+						event.preventDefault();
+						void handleSave(
+							new FormData(event.currentTarget),
+							event.currentTarget
+						);
+					}}
+				>
+					<div className="space-y-1">
+						<Label htmlFor="broker-portal-pricing-percent">
+							Broker portal price adjustment (%)
+						</Label>
+						<Input
+							defaultValue={String(brokerPortalPricing.brokerSplitPercent)}
+							id="broker-portal-pricing-percent"
+							inputMode="decimal"
+							max={100}
+							min={0}
+							name="brokerSplitPercent"
+							placeholder="0"
+							step="0.01"
+							type="number"
+						/>
+						<p className="text-muted-foreground text-xs">
+							This value is materialized into selected active pricing policies
+							for every broker portal. A default 0% policy is persisted for new
+							and backfilled portals.
+						</p>
+					</div>
+					<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+						<p className="text-muted-foreground text-xs">
+							{brokerPortalPricing.updatedByAuthId
+								? `Last saved by ${brokerPortalPricing.updatedByAuthId}.`
+								: "No explicit save has been recorded yet."}
+						</p>
+						<Button type="submit">Save broker pricing</Button>
+					</div>
+				</form>
+			</CardContent>
+		</Card>
+	);
+}
+
 function BootstrapCard({
 	bootstrapStatus,
 }: {
@@ -355,11 +516,15 @@ export function AdminSettingsPage() {
 			<header className="space-y-1">
 				<h1 className="font-semibold text-2xl tracking-tight">Settings</h1>
 				<p className="text-muted-foreground text-sm">
-					Manage the active organization, members, and CRM bootstrap state.
+					Manage the active organization, members, broker portal pricing, and
+					CRM bootstrap state.
 				</p>
 			</header>
 			<OrganizationCard organization={snapshot.organization} />
 			<MembersCard members={snapshot.members} />
+			<BrokerPortalPricingCard
+				brokerPortalPricing={snapshot.brokerPortalPricing}
+			/>
 			<BootstrapCard bootstrapStatus={snapshot.bootstrapStatus} />
 		</div>
 	);

@@ -195,6 +195,45 @@ async function insertMortgageFixture(t: ReturnType<typeof createHarness>) {
 	});
 }
 
+async function insertBrokerPortalPricingFixture(
+	t: ReturnType<typeof createHarness>,
+	brokerSplitPercent = 12.5
+) {
+	return await t.run(async (ctx) => {
+		const portalId = await ctx.db.insert("portals", {
+			brokerId: undefined,
+			createdAt: 1_710_000_500_000,
+			defaultPostAuthPath: "/",
+			isPublished: true,
+			landingPageId: undefined,
+			localHost: "meridian.localhost:3000",
+			orgId: "org_meridian",
+			portalType: "broker",
+			pricingPolicyId: undefined,
+			productionHost: "meridian.fairlend.ca",
+			publicTeaserEnabled: true,
+			slug: "meridian",
+			status: "active",
+			teaserListingLimit: 12,
+			updatedAt: 1_710_000_500_000,
+		});
+		const policyId = await ctx.db.insert("portalPricingPolicies", {
+			brokerSplitPercent,
+			createdAt: 1_710_000_500_000,
+			effectiveFrom: 1_710_000_495_000,
+			effectiveTo: undefined,
+			portalId,
+			status: "active",
+			updatedAt: 1_710_000_500_000,
+		});
+		await ctx.db.patch(portalId, {
+			pricingPolicyId: policyId,
+			updatedAt: 1_710_000_500_000,
+		});
+		return portalId;
+	});
+}
+
 describe("listing queries", () => {
 	it("returns listing by id and by mortgage", async () => {
 		const t = createHarness();
@@ -544,5 +583,118 @@ describe("listing queries", () => {
 		expect(history[0]?.eventType).toBe("transfer");
 		expect(history[0]?.fromLenderId).toBe("investor-a");
 		expect(history[0]?.toLenderId).toBe("investor-b");
+	});
+
+	it("projects listing detail results through portal pricing when a portal is active", async () => {
+		const t = createHarness();
+		const auth = asAuthedUser(t);
+		const { mortgageId, propertyId } = await insertMortgageFixture(t);
+
+		let listingId!: Id<"listings">;
+		await t.run(async (ctx) => {
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					interestRate: 8.75,
+					monthlyPayment: 1633.335,
+					mortgageId,
+					propertyId,
+				})
+			);
+		});
+		const portalId = await insertBrokerPortalPricingFixture(t);
+
+		const canonicalDetail = await auth.query(
+			listingApi.getListingWithAvailability,
+			{
+				listingId,
+			}
+		);
+		const projectedDetail = await auth.query(
+			listingApi.getListingWithAvailability,
+			{
+				listingId,
+				portalId,
+			}
+		);
+
+		expect(canonicalDetail).not.toBeNull();
+		expect(projectedDetail).not.toBeNull();
+		if (!(canonicalDetail && projectedDetail)) {
+			throw new Error("Expected listing detail to exist");
+		}
+
+		expect(projectedDetail.listing.interestRate).toBe(7.66);
+		expect(projectedDetail.listing.monthlyPayment).toBe(1429.17);
+		expect(projectedDetail.listing.principal).toBe(
+			canonicalDetail.listing.principal
+		);
+		expect(projectedDetail.listing.ltvRatio).toBe(
+			canonicalDetail.listing.ltvRatio
+		);
+		expect(projectedDetail.availability).toEqual(canonicalDetail.availability);
+	});
+
+	it("projects published listing rows through portal pricing when a portal is active", async () => {
+		const t = createHarness();
+		const auth = asAuthedUser(t);
+
+		await t.run(async (ctx) => {
+			await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					interestRate: 8.75,
+					monthlyPayment: 1633.335,
+					publishedAt: 1_710_000_000_100,
+					title: "Projected Listing",
+				})
+			);
+			await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					interestRate: 6.5,
+					monthlyPayment: 980,
+					publishedAt: 1_710_000_000_200,
+					title: "Newest Listing",
+				})
+			);
+		});
+		const portalId = await insertBrokerPortalPricingFixture(t);
+
+		const canonicalPage = await auth.query(listingApi.listPublishedListings, {
+			cursor: null,
+			numItems: 10,
+			sort: {
+				direction: "desc",
+				field: "publishedAt",
+			},
+		});
+		const projectedPage = await auth.query(listingApi.listPublishedListings, {
+			cursor: null,
+			numItems: 10,
+			portalId,
+			sort: {
+				direction: "desc",
+				field: "publishedAt",
+			},
+		});
+
+		const canonicalProjectedListing = canonicalPage.page.find(
+			(listing) => listing.title === "Projected Listing"
+		);
+		const portalProjectedListing = projectedPage.page.find(
+			(listing) => listing.title === "Projected Listing"
+		);
+
+		expect(canonicalProjectedListing).toBeDefined();
+		expect(portalProjectedListing).toBeDefined();
+		expect(portalProjectedListing?.interestRate).toBe(7.66);
+		expect(portalProjectedListing?.monthlyPayment).toBe(1429.17);
+		expect(portalProjectedListing?.principal).toBe(
+			canonicalProjectedListing?.principal
+		);
+		expect(portalProjectedListing?.ltvRatio).toBe(
+			canonicalProjectedListing?.ltvRatio
+		);
 	});
 });

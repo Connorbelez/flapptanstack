@@ -121,6 +121,7 @@ import {
 } from "./payments/transfers/validators";
 import { normalizedEventTypeValidator } from "./payments/webhooks/types";
 import {
+	portalPricingPolicyStatusValidator,
 	portalStatusValidator,
 	portalTypeValidator,
 } from "./portals/validators";
@@ -196,15 +197,32 @@ export default defineSchema({
 		updatedAt: v.number(),
 	}).index("by_portal", ["portalId"]),
 
-	portalPricingPolicies: defineTable({
-		// Placeholder attachment point only.
-		// ENG-300 owns the concrete pricing-policy contract and projection logic.
-		portalId: v.id("portals"),
-		/** Flat percentage modifier representing the broker's cut in v1. */
-		brokerSplitPercent: v.optional(v.number()),
+	brokerPortalPricingSettings: defineTable({
+		// Singleton control-plane row for the temporary broker-global pricing UI.
+		brokerSplitPercent: v.number(),
 		createdAt: v.number(),
 		updatedAt: v.number(),
-	}).index("by_portal", ["portalId"]),
+		updatedByAuthId: v.optional(v.string()),
+	}),
+
+	portalPricingPolicies: defineTable({
+		// Explicit v1 pricing contract owned by ENG-300.
+		// Pricing stays portal-wide and minimal: one flat broker cut plus the
+		// lifecycle fields required to choose exactly one active policy.
+		portalId: v.id("portals"),
+		status: portalPricingPolicyStatusValidator,
+		/** Inclusive lower bound (epoch ms) for when this policy becomes active. */
+		effectiveFrom: v.number(),
+		/** Exclusive upper bound (epoch ms) for when this policy stops applying. */
+		effectiveTo: v.optional(v.number()),
+		/** Percent of the canonical listing return retained by the broker in v1. */
+		brokerSplitPercent: v.number(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_portal", ["portalId"])
+		.index("by_portal_status", ["portalId", "status"])
+		.index("by_portal_effective_from", ["portalId", "effectiveFrom"]),
 
 	portals: defineTable({
 		slug: v.string(),

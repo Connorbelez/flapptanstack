@@ -12,6 +12,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
+import { Route as RootRoute } from "#/routes/__root";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
@@ -42,8 +43,12 @@ interface LenderListingDetailPageProps {
 export function LenderListingDetailPage({
 	listingId,
 }: LenderListingDetailPageProps) {
+	const { portalContext } = RootRoute.useRouteContext();
+	const portalId =
+		portalContext.kind === "portal" ? portalContext.portal.portalId : undefined;
 	const detail = useQuery(api.listings.queries.getListingWithAvailability, {
 		listingId: listingId as Id<"listings">,
+		portalId,
 	});
 	const publicDocuments = useQuery(
 		api.listings.publicDocuments.listForListing,

@@ -8,6 +8,10 @@ import {
 	FAIRLEND_PORTAL_SLUG,
 	normalizePortalHost,
 } from "./helpers";
+import {
+	loadPortalPricingSelection,
+	resolvePublishedPortalAvailability,
+} from "./pricing";
 import type {
 	PortalSummary,
 	PublicPortalSummary,
@@ -96,6 +100,26 @@ function toPublicPortalSummary(portal: Doc<"portals">): PublicPortalSummary {
 	};
 }
 
+async function resolvePortalAvailability(
+	ctx: PortalReaderCtx,
+	portal: Doc<"portals">
+) {
+	const pricingSelection =
+		portal.isPublished && portal.status === "active"
+			? await loadPortalPricingSelection(ctx, {
+					atTime: Date.now(),
+					portal,
+					portalId: portal._id,
+				})
+			: undefined;
+
+	return resolvePublishedPortalAvailability({
+		isPublished: portal.isPublished,
+		portalStatus: portal.status,
+		pricingSelection,
+	});
+}
+
 export const getFairLendPortal = convex
 	.query()
 	.input({})
@@ -116,6 +140,7 @@ export const resolvePortalByHost = convex
 		);
 		if (productionPortal) {
 			return {
+				availability: await resolvePortalAvailability(ctx, productionPortal),
 				requestedHost,
 				canonicalHost: productionPortal.productionHost,
 				matchedHostType: "production" as const,
@@ -126,6 +151,7 @@ export const resolvePortalByHost = convex
 		const localPortal = await getPortalByLocalHost(ctx, requestedHost);
 		if (localPortal) {
 			return {
+				availability: await resolvePortalAvailability(ctx, localPortal),
 				requestedHost,
 				canonicalHost: localPortal.localHost,
 				matchedHostType: "local" as const,

@@ -26,6 +26,7 @@ import type * as admin_origination_postCommitCollectionsActivation from "../admi
 import type * as admin_origination_properties from "../admin/origination/properties.js";
 import type * as admin_origination_validators from "../admin/origination/validators.js";
 import type * as admin_queries from "../admin/queries.js";
+import type * as admin_settings_mutations from "../admin/settings/mutations.js";
 import type * as admin_settings_queries from "../admin/settings/queries.js";
 import type * as audit_queries from "../audit/queries.js";
 import type * as auditEvidence_services from "../auditEvidence/services.js";
@@ -199,6 +200,7 @@ import type * as listings_create from "../listings/create.js";
 import type * as listings_curation from "../listings/curation.js";
 import type * as listings_marketplace from "../listings/marketplace.js";
 import type * as listings_marketplaceShared from "../listings/marketplaceShared.js";
+import type * as listings_math from "../listings/math.js";
 import type * as listings_projection from "../listings/projection.js";
 import type * as listings_publicDocuments from "../listings/publicDocuments.js";
 import type * as listings_queries from "../listings/queries.js";
@@ -334,6 +336,7 @@ import type * as portals_homePortalAssignment from "../portals/homePortalAssignm
 import type * as portals_invariants from "../portals/invariants.js";
 import type * as portals_middleware from "../portals/middleware.js";
 import type * as portals_proof from "../portals/proof.js";
+import type * as portals_pricing from "../portals/pricing.js";
 import type * as portals_queries from "../portals/queries.js";
 import type * as portals_validators from "../portals/validators.js";
 import type * as prorateEntries_mutations from "../prorateEntries/mutations.js";
@@ -382,6 +385,7 @@ declare const fullApi: ApiFromModules<{
   "admin/origination/properties": typeof admin_origination_properties;
   "admin/origination/validators": typeof admin_origination_validators;
   "admin/queries": typeof admin_queries;
+  "admin/settings/mutations": typeof admin_settings_mutations;
   "admin/settings/queries": typeof admin_settings_queries;
   "audit/queries": typeof audit_queries;
   "auditEvidence/services": typeof auditEvidence_services;
@@ -555,6 +559,7 @@ declare const fullApi: ApiFromModules<{
   "listings/curation": typeof listings_curation;
   "listings/marketplace": typeof listings_marketplace;
   "listings/marketplaceShared": typeof listings_marketplaceShared;
+  "listings/math": typeof listings_math;
   "listings/projection": typeof listings_projection;
   "listings/publicDocuments": typeof listings_publicDocuments;
   "listings/queries": typeof listings_queries;
@@ -690,6 +695,7 @@ declare const fullApi: ApiFromModules<{
   "portals/invariants": typeof portals_invariants;
   "portals/middleware": typeof portals_middleware;
   "portals/proof": typeof portals_proof;
+  "portals/pricing": typeof portals_pricing;
   "portals/queries": typeof portals_queries;
   "portals/validators": typeof portals_validators;
   "prorateEntries/mutations": typeof prorateEntries_mutations;
