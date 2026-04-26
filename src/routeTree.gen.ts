@@ -25,8 +25,8 @@ import { Route as BorrowerRouteRouteImport } from './routes/borrower/route'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BrokerIndexRouteImport } from './routes/broker/index'
-import { Route as ListingsListingIdRouteImport } from './routes/listings.$listingId'
 import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
+import { Route as ListingsListingIdRouteImport } from './routes/listings.$listingId'
 import { Route as LenderListingsRouteImport } from './routes/lender.listings'
 import { Route as LenderDealsRouteImport } from './routes/lender.deals'
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
@@ -228,15 +228,15 @@ const BrokerIndexRoute = BrokerIndexRouteImport.update({
   path: '/',
   getParentRoute: () => BrokerRouteRoute,
 } as any)
-const ListingsListingIdRoute = ListingsListingIdRouteImport.update({
-  id: '/$listingId',
-  path: '/$listingId',
-  getParentRoute: () => ListingsRoute,
-} as any)
 const SignOutLocalRoute = SignOutLocalRouteImport.update({
   id: '/local',
   path: '/local',
   getParentRoute: () => SignOutRoute,
+} as any)
+const ListingsListingIdRoute = ListingsListingIdRouteImport.update({
+  id: '/$listingId',
+  path: '/$listingId',
+  getParentRoute: () => ListingsRoute,
 } as any)
 const LenderListingsRoute = LenderListingsRouteImport.update({
   id: '/listings',
@@ -951,8 +951,8 @@ export interface FileRoutesByFullPath {
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
-  '/broker/': typeof BrokerIndexRoute
   '/sign-out/local': typeof SignOutLocalRoute
+  '/broker/': typeof BrokerIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1080,8 +1080,8 @@ export interface FileRoutesByTo {
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
-  '/broker': typeof BrokerIndexRoute
   '/sign-out/local': typeof SignOutLocalRoute
+  '/broker': typeof BrokerIndexRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
   '/demo/rbac/broker': typeof DemoRbacBrokerRouteRoute
@@ -1220,8 +1220,8 @@ export interface FileRoutesById {
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/listings': typeof LenderListingsRouteWithChildren
   '/listings/$listingId': typeof ListingsListingIdRoute
-  '/broker/': typeof BrokerIndexRoute
   '/sign-out/local': typeof SignOutLocalRoute
+  '/broker/': typeof BrokerIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1362,8 +1362,8 @@ export interface FileRouteTypes {
     | '/lender/deals'
     | '/lender/listings'
     | '/listings/$listingId'
-    | '/broker/'
     | '/sign-out/local'
+    | '/broker/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1491,8 +1491,8 @@ export interface FileRouteTypes {
     | '/lender/deals'
     | '/lender/listings'
     | '/listings/$listingId'
-    | '/broker'
     | '/sign-out/local'
+    | '/broker'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
     | '/demo/rbac/broker'
@@ -1630,8 +1630,8 @@ export interface FileRouteTypes {
     | '/lender/deals'
     | '/lender/listings'
     | '/listings/$listingId'
-    | '/broker/'
     | '/sign-out/local'
+    | '/broker/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1871,19 +1871,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrokerIndexRouteImport
       parentRoute: typeof BrokerRouteRoute
     }
-    '/listings/$listingId': {
-      id: '/listings/$listingId'
-      path: '/$listingId'
-      fullPath: '/listings/$listingId'
-      preLoaderRoute: typeof ListingsListingIdRouteImport
-      parentRoute: typeof ListingsRoute
-    }
     '/sign-out/local': {
       id: '/sign-out/local'
       path: '/local'
       fullPath: '/sign-out/local'
       preLoaderRoute: typeof SignOutLocalRouteImport
       parentRoute: typeof SignOutRoute
+    }
+    '/listings/$listingId': {
+      id: '/listings/$listingId'
+      path: '/$listingId'
+      fullPath: '/listings/$listingId'
+      preLoaderRoute: typeof ListingsListingIdRouteImport
+      parentRoute: typeof ListingsRoute
     }
     '/lender/listings': {
       id: '/lender/listings'

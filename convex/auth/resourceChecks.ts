@@ -3,6 +3,11 @@ import type { QueryCtx } from "../_generated/server";
 import type { Viewer } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
 import { getPostedBalance } from "../ledger/accounts";
+import {
+	getBorrowerByAuthId,
+	getBrokerByAuthId,
+	getLenderByAuthId,
+} from "./actorResolution";
 import { hasPermissionGrant } from "./permissionCatalog";
 
 /** The 4 entity types that generatedDocuments can be linked to. */
@@ -15,55 +20,6 @@ type DocumentEntityType = Doc<"generatedDocuments">["entityType"];
 // - Admin shortcut: `viewer.isFairLendAdmin` checked first.
 // - Resource not found → false.
 // ═══════════════════════════════════════════════════════════════════
-
-// ── Identity resolution helpers ─────────────────────────────────────
-
-async function getUserByAuthId(ctx: { db: QueryCtx["db"] }, authId: string) {
-	return ctx.db
-		.query("users")
-		.withIndex("authId", (q) => q.eq("authId", authId))
-		.unique();
-}
-
-async function getBrokerByAuthId(ctx: { db: QueryCtx["db"] }, authId: string) {
-	const user = await getUserByAuthId(ctx, authId);
-	if (!user) {
-		return null;
-	}
-	return ctx.db
-		.query("brokers")
-		.withIndex("by_user", (q) => q.eq("userId", user._id))
-		.first();
-}
-
-async function getBorrowerByAuthId(
-	ctx: { db: QueryCtx["db"] },
-	authId: string
-) {
-	const user = await getUserByAuthId(ctx, authId);
-	if (!user) {
-		return null;
-	}
-	return ctx.db
-		.query("borrowers")
-		.withIndex("by_user", (q) => q.eq("userId", user._id))
-		.first();
-}
-
-/**
- * Resolve lender entity from a WorkOS auth ID.
- * Auth boundary note: `authId` is not a domain `Id<"lenders">`.
- */
-async function getLenderByAuthId(ctx: { db: QueryCtx["db"] }, authId: string) {
-	const user = await getUserByAuthId(ctx, authId);
-	if (!user) {
-		return null;
-	}
-	return ctx.db
-		.query("lenders")
-		.withIndex("by_user", (q) => q.eq("userId", user._id))
-		.first();
-}
 
 // ── T-002: getLenderMortgageIds ─────────────────────────────────────
 // Returns the set of mortgage IDs where the given lender holds a
