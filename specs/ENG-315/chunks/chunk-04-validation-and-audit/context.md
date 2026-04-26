@@ -18,7 +18,7 @@
 - GitNexus closeout requires a detect-changes pass before wrap-up or commit.
 
 ## Validation
-- `bun run test -- src/test/convex/onboarding/verification-contracts.test.ts src/test/convex/onboarding/workos-email-verification.test.ts <permission-alignment test>`
+- `bun run test -- src/test/convex/onboarding/verification-contracts.test.ts src/test/convex/onboarding/workos-email-verification.test.ts src/test/auth/permissions/onboarding-permission-contract.test.ts`
 - `bunx convex codegen`
 - `bun check`
 - `bun typecheck`
