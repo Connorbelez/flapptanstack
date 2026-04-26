@@ -74,6 +74,13 @@ describe("WorkOS email verification contract", () => {
 
 		expect(normalized.status).toBe("provider_unavailable");
 		expect(normalized.verifiedAt).toBeNull();
+		expect(normalized.evidenceReferences).toEqual([
+			expect.objectContaining({
+				provider: "workos_authkit",
+				referenceType: "provider_snapshot",
+				label: "WorkOS email verification state unavailable",
+			}),
+		]);
 	});
 
 	it("fails closed when emailVerified is undefined", () => {
@@ -86,5 +93,12 @@ describe("WorkOS email verification contract", () => {
 
 		expect(normalized.status).toBe("provider_unavailable");
 		expect(normalized.verifiedAt).toBeNull();
+		expect(normalized.evidenceReferences).toEqual([
+			expect.objectContaining({
+				provider: "workos_authkit",
+				referenceType: "provider_snapshot",
+				label: "WorkOS email verification state unavailable",
+			}),
+		]);
 	});
 });

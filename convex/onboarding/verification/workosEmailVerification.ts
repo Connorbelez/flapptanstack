@@ -11,14 +11,15 @@ import type {
 function buildEvidenceReferences(
 	input: EmailVerificationNormalizationInput
 ): VerificationEvidenceReference[] {
+	const isUnavailable =
+		input.sourceAvailable === false || input.emailVerified == null;
 	const referenceId =
 		input.evidenceReferenceId ??
 		[
 			input.source,
-			input.sourceAvailable === false ? "unavailable" : "state",
+			isUnavailable ? "unavailable" : "state",
 			input.authUserId ?? input.email ?? "anonymous",
 		].join(":");
-	const isUnavailable = input.sourceAvailable === false;
 
 	return [
 		{
