@@ -1,8 +1,26 @@
-import aggregateSchema from "../../../node_modules/@convex-dev/aggregate/dist/component/schema.js";
-import auditLogSchema from "../../../node_modules/convex-audit-log/dist/component/schema.js";
+import { createRequire } from "node:module";
+import { dirname } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { GenericSchema, SchemaDefinition } from "convex/server";
 import type { TestConvex } from "convex-test";
 import { loadModulesFromRoot } from "./moduleLoader";
+
+const require = createRequire(import.meta.url);
+
+const aggregateSchema = (
+	await import(
+		pathToFileURL(
+			`${dirname(require.resolve("@convex-dev/aggregate/package.json"))}/dist/component/schema.js`
+		).href
+	)
+).default;
+const auditLogSchema = (
+	await import(
+		pathToFileURL(
+			`${dirname(require.resolve("convex-audit-log/package.json"))}/dist/component/schema.js`
+		).href
+	)
+).default;
 
 function loadAuditLogModules() {
 	return loadModulesFromRoot(

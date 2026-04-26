@@ -1,10 +1,27 @@
 import { readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { convexTest } from "convex-test";
-import aggregateSchema from "../../../../../node_modules/@convex-dev/aggregate/dist/component/schema.js";
-import auditLogSchema from "../../../../../node_modules/convex-audit-log/dist/component/schema.js";
 import auditTrailSchema from "../../../../../convex/components/auditTrail/schema";
 import schema from "../../../../../convex/schema";
+
+const require = createRequire(import.meta.url);
+
+const aggregateSchema = (
+	await import(
+		pathToFileURL(
+			`${dirname(require.resolve("@convex-dev/aggregate/package.json"))}/dist/component/schema.js`
+		).href
+	)
+).default;
+const auditLogSchema = (
+	await import(
+		pathToFileURL(
+			`${dirname(require.resolve("convex-audit-log/package.json"))}/dist/component/schema.js`
+		).href
+	)
+).default;
 
 type ConvexModuleLoader = () => Promise<unknown>;
 

@@ -1,12 +1,36 @@
+import { createRequire } from "node:module";
+import { dirname } from "node:path";
+import { pathToFileURL } from "node:url";
 import { convexTest } from "convex-test";
 import auditTrailSchema from "../../../convex/components/auditTrail/schema";
 import schema from "../../../convex/schema";
 import { convexModules } from "../../../convex/test/moduleMaps";
-import migrationsSchema from "../../../node_modules/@convex-dev/migrations/dist/component/schema.js";
-import workflowSchema from "../../../node_modules/@convex-dev/workflow/dist/component/schema.js";
-import workpoolSchema from "../../../node_modules/@convex-dev/workpool/dist/component/schema.js";
 import { loadModulesFromRoot } from "./moduleLoader";
 import { registerAuditLogComponent } from "./registerAuditLogComponent";
+
+const require = createRequire(import.meta.url);
+
+const migrationsSchema = (
+	await import(
+		pathToFileURL(
+			`${dirname(require.resolve("@convex-dev/migrations/package.json"))}/dist/component/schema.js`
+		).href
+	)
+).default;
+const workflowSchema = (
+	await import(
+		pathToFileURL(
+			`${dirname(require.resolve("@convex-dev/workflow/package.json"))}/dist/component/schema.js`
+		).href
+	)
+).default;
+const workpoolSchema = (
+	await import(
+		pathToFileURL(
+			`${dirname(require.resolve("@convex-dev/workpool/package.json"))}/dist/component/schema.js`
+		).href
+	)
+).default;
 
 const auditTrailModules = loadModulesFromRoot(
 	new URL("../../../convex/components/auditTrail/", import.meta.url),
