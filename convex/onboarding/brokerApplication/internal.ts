@@ -214,6 +214,9 @@ export const approveApplication = convex
 				"Only submitted applications can transition to approved"
 			);
 		}
+		if (isBrokerOnboardingApplicationExpired(application, Date.now())) {
+			throw new ConvexError("Broker onboarding application has expired");
+		}
 
 		const now = Date.now();
 		const result = await executeTransition(ctx, {
@@ -285,6 +288,9 @@ export const rejectApplication = convex
 		const body = args.body.trim();
 		if (!body) {
 			throw new ConvexError("Rejection note cannot be empty");
+		}
+		if (isBrokerOnboardingApplicationExpired(application, Date.now())) {
+			throw new ConvexError("Broker onboarding application has expired");
 		}
 
 		const now = Date.now();
@@ -392,6 +398,16 @@ export const linkDownstreamOnboardingRequest = convex
 				"Broker onboarding application is already linked to a different onboarding request"
 			);
 		}
+		const targetHandoffStatus =
+			downstreamRequest.status === "role_assigned" ? "role_assigned" : "linked";
+		if (
+			application.downstreamOnboardingRequestId === args.onboardingRequestId &&
+			application.downstreamHandoffStatus === targetHandoffStatus &&
+			downstreamRequest.brokerOnboardingApplicationId === args.applicationId &&
+			downstreamRequest.portalId === application.portalId
+		) {
+			return buildBrokerOnboardingApplicationReadModel(ctx, application, now);
+		}
 		if (
 			downstreamRequest.portalId &&
 			downstreamRequest.portalId !== application.portalId
@@ -464,6 +480,9 @@ export const markDownstreamRoleAssigned = convex
 			throw new ConvexError(
 				"Broker onboarding application does not have a linked onboarding request"
 			);
+		}
+		if (application.downstreamHandoffStatus === "role_assigned") {
+			return buildBrokerOnboardingApplicationReadModel(ctx, application, now);
 		}
 
 		const downstreamRequest = await ctx.db.get(
