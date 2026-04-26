@@ -1798,9 +1798,15 @@ async function createRotessaScheduleForCaseRuntime(
 			providerScheduleId: committed.providerScheduleId,
 		};
 	} catch (error) {
-		await runRotessaRequestWithRetry("delete schedule rollback", () =>
-			client.transactionSchedules.delete(createdSchedule.id)
-		);
+		try {
+			await runRotessaRequestWithRetry("delete schedule rollback", () =>
+				client.transactionSchedules.delete(createdSchedule.id)
+			);
+		} catch (rollbackError) {
+			console.warn(
+				`[rotessa] rollback delete failed for schedule ${createdSchedule.id}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+			);
+		}
 		throw error;
 	}
 }
