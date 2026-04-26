@@ -16,7 +16,7 @@
 ## Existing code touchpoints
 - `convex/onboarding/mutations.ts` and `convex/onboarding/queries.ts` are the runtime consumers that prove the permission split already exists.
 - `convex/auth/permissionCatalog.ts` is the canonical runtime permission catalog.
-- `docs/architecture/rbac-and-permissions.md` is the canonical documentation source that currently leaves `onboarding:manage` under pending disposition.
+- `docs/architecture/rbac-and-permissions.md` is the canonical documentation source and now reflects the explicit `onboarding:review` / `onboarding:manage` split.
 - `src/test/auth/permissions/catalog-sync.test.ts` is the existing drift-check harness for permission catalog coverage.
 
 ## Validation
