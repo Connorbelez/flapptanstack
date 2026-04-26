@@ -29,37 +29,35 @@ export const brokerOnboardingApplicationMachine = setup({
 	types: {
 		context: {} as BrokerOnboardingApplicationMachineContext,
 		events: {} as
-			| { type: "SUBMIT"; submittedAt?: number }
-			| { type: "REQUEST_CHANGES"; requestedAt?: number }
-			| { type: "APPROVE"; approvedAt?: number }
-			| { type: "REJECT"; rejectedAt?: number }
-			| { type: "MARK_ACTIVATED"; activatedAt?: number },
+			| { type: "SUBMIT"; submittedAt: number }
+			| { type: "REQUEST_CHANGES"; requestedAt: number }
+			| { type: "APPROVE"; approvedAt: number }
+			| { type: "REJECT"; rejectedAt: number }
+			| { type: "MARK_ACTIVATED"; activatedAt: number },
 	},
 	actions: {
 		recordSubmission: assign({
 			currentStep: () => "submitted",
 			submittedAt: ({ event }) =>
-				("submittedAt" in event ? event.submittedAt : undefined) ?? Date.now(),
+				(event as { submittedAt: number }).submittedAt,
 			submitCount: ({ context }) => context.submitCount + 1,
 		}),
 		recordChangesRequested: assign({
 			changesRequestedAt: ({ event }) =>
-				("requestedAt" in event ? event.requestedAt : undefined) ?? Date.now(),
+				(event as { requestedAt: number }).requestedAt,
 			currentStep: () => "changes_requested",
 		}),
 		recordApproval: assign({
-			approvedAt: ({ event }) =>
-				("approvedAt" in event ? event.approvedAt : undefined) ?? Date.now(),
+			approvedAt: ({ event }) => (event as { approvedAt: number }).approvedAt,
 			currentStep: () => "approved",
 		}),
 		recordRejection: assign({
 			currentStep: () => "rejected",
-			rejectedAt: ({ event }) =>
-				("rejectedAt" in event ? event.rejectedAt : undefined) ?? Date.now(),
+			rejectedAt: ({ event }) => (event as { rejectedAt: number }).rejectedAt,
 		}),
 		recordActivation: assign({
 			activationCompletedAt: ({ event }) =>
-				("activatedAt" in event ? event.activatedAt : undefined) ?? Date.now(),
+				(event as { activatedAt: number }).activatedAt,
 			currentStep: () => "activated",
 		}),
 	},
