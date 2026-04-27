@@ -1,11 +1,13 @@
-import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Authenticated, Unauthenticated } from "convex/react";
-import { PortalLandingPage } from "#/components/portal/landing/PortalLandingPage";
+import type { ReactNode } from "react";
+import { Horizontal } from "#/components/listings/listing-card-horizontal";
+import { buildMarketplaceListingCardItems } from "#/components/listings/marketplace-adapters";
+import { publicPortalListingsQueryOptions } from "#/components/listings/portal-query-options";
+import { MicLandingPage } from "#/components/mic/MicLandingPage";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
-import { api } from "../../convex/_generated/api";
 import { Route as RootRoute } from "./__root";
 
 export const Route = createFileRoute("/")({
@@ -47,6 +49,14 @@ export function HomeContent() {
 		RootRoute.useRouteContext();
 
 	if (portalContext.kind === "portal") {
+		if (portalContext.portal.portalType === "mic") {
+			return (
+				<MicLandingPage
+					portalId={String(portalContext.portal.portalId)}
+					portalSlug={portalContext.portal.slug}
+				/>
+			);
+		}
 		return <PortalHomeContent portalContext={portalContext} />;
 	}
 
@@ -103,9 +113,9 @@ function PortalHomeContent({
 }: {
 	portalContext: ActivePortalContext;
 }) {
-	const landingQuery = useQuery(
-		convexQuery(api.portals.queries.getPublicPortalLandingPage, {
-			portalId: portalContext.portal.portalId,
+	const teaserQuery = useQuery(
+		publicPortalListingsQueryOptions(String(portalContext.portal.portalId), {
+			numItems: portalContext.portal.teaserListingLimit,
 		})
 	);
 	const teaserItems = teaserQuery.data
@@ -113,35 +123,140 @@ function PortalHomeContent({
 		: [];
 	let teaserContent: ReactNode;
 
-	if (landingQuery.isPending) {
-		return (
-			<main className="min-h-screen bg-[#f7f5ef] px-4 py-12">
-				<Card className="mx-auto max-w-2xl">
-					<CardContent className="py-10 text-center text-muted-foreground text-sm">
-						Loading broker portal...
-					</CardContent>
-				</Card>
-			</main>
+	if (teaserQuery.isPending) {
+		teaserContent = (
+			<Card>
+				<CardContent className="py-10 text-center text-muted-foreground text-sm">
+					Loading teaser listings...
+				</CardContent>
+			</Card>
+		);
+	} else if (teaserQuery.error) {
+		teaserContent = (
+			<Card>
+				<CardHeader>
+					<CardTitle>Unable to load teaser listings</CardTitle>
+				</CardHeader>
+				<CardContent className="text-muted-foreground text-sm">
+					This portal is active, but the teaser listings surface could not be
+					loaded.
+				</CardContent>
+			</Card>
+		);
+	} else if (teaserQuery.data?.teaserEnabled === false) {
+		teaserContent = (
+			<Card>
+				<CardHeader>
+					<CardTitle>Teaser listings unavailable</CardTitle>
+				</CardHeader>
+				<CardContent className="text-muted-foreground text-sm">
+					This portal does not currently publish public teaser listings.
+				</CardContent>
+			</Card>
+		);
+	} else if (teaserItems.length === 0) {
+		teaserContent = (
+			<Card>
+				<CardHeader>
+					<CardTitle>No teaser listings yet</CardTitle>
+				</CardHeader>
+				<CardContent className="text-muted-foreground text-sm">
+					This portal is active, but there are no teaser opportunities available
+					right now.
+				</CardContent>
+			</Card>
+		);
+	} else {
+		teaserContent = (
+			<section className="space-y-4">
+				<div className="space-y-2">
+					<p className="font-medium text-[11px] text-muted-foreground uppercase tracking-[0.24em]">
+						Public teaser
+					</p>
+					<h2 className="font-semibold text-2xl tracking-tight">
+						Featured mortgage opportunities
+					</h2>
+				</div>
+				<div className="grid gap-4 lg:grid-cols-2">
+					{teaserItems.map((listing) => (
+						<Horizontal
+							address={listing.address}
+							apr={listing.apr}
+							availablePercent={listing.availablePercent}
+							id={listing.id}
+							imageSrc={listing.imageSrc}
+							key={listing.id}
+							lockedPercent={listing.lockedPercent}
+							ltv={listing.ltv}
+							maturityDate={listing.maturityDate.toLocaleDateString("en-CA")}
+							principal={listing.principal}
+							propertyType={listing.propertyType}
+							soldPercent={listing.soldPercent}
+							title={listing.title}
+						/>
+					))}
+				</div>
+			</section>
 		);
 	}
 
-	if (landingQuery.error || !landingQuery.data) {
-		return (
-			<main className="min-h-screen bg-[#f7f5ef] px-4 py-12">
-				<Card className="mx-auto max-w-2xl">
-					<CardHeader>
-						<CardTitle>Portal landing page unavailable</CardTitle>
-					</CardHeader>
-					<CardContent className="text-muted-foreground text-sm">
-						This portal is active, but the landing-page contract could not be
-						loaded.
-					</CardContent>
-				</Card>
-			</main>
-		);
-	}
+	return (
+		<main className="page-wrap flex flex-col gap-8 px-4 py-10 sm:py-12">
+			<div className="space-y-3 text-center">
+				<h1 className="font-bold text-4xl tracking-tight">
+					{portalContext.portal.slug} portal
+				</h1>
+				<p className="mx-auto max-w-2xl text-muted-foreground">
+					Preview the current teaser opportunities for this portal. Sign in to
+					unlock protected lender listings and detail views.
+				</p>
+			</div>
 
-	return <PortalLandingPage landing={landingQuery.data} />;
+			<Authenticated>
+				<div className="flex justify-center">
+					<Button asChild>
+						<a href="/listings">Open marketplace</a>
+					</Button>
+				</div>
+			</Authenticated>
+			<Unauthenticated>
+				<div className="flex flex-wrap justify-center gap-3">
+					<Button asChild>
+						<a href="/sign-in?redirect=/listings">Sign in</a>
+					</Button>
+					<Button asChild variant="outline">
+						<a href="/sign-up?redirect=/listings">Sign up</a>
+					</Button>
+				</div>
+			</Unauthenticated>
+
+			{teaserContent}
+
+			<Card>
+				<CardHeader>
+					<CardTitle>Resolved host context</CardTitle>
+				</CardHeader>
+				<CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+					<div>
+						<p className="font-medium text-muted-foreground">Portal slug</p>
+						<p>{portalContext.portal.slug}</p>
+					</div>
+					<div>
+						<p className="font-medium text-muted-foreground">Canonical host</p>
+						<p>{portalContext.canonicalHost}</p>
+					</div>
+					<div>
+						<p className="font-medium text-muted-foreground">Availability</p>
+						<p>{portalContext.availability}</p>
+					</div>
+					<div>
+						<p className="font-medium text-muted-foreground">Teaser limit</p>
+						<p>{portalContext.portal.teaserListingLimit}</p>
+					</div>
+				</CardContent>
+			</Card>
+		</main>
+	);
 }
 
 function SignInForm() {

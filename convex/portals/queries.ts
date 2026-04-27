@@ -525,6 +525,10 @@ async function resolvePortalAvailability(
 	ctx: PortalReaderCtx,
 	portal: Doc<"portals">
 ) {
+	if (portal.portalType === "mic" && !portal.micLenderAuthId?.trim()) {
+		return "misconfigured";
+	}
+
 	const pricingSelection =
 		portal.isPublished && portal.status === "active"
 			? await loadPortalPricingSelection(ctx, {

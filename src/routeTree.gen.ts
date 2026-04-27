@@ -26,6 +26,8 @@ import { Route as BrokerRouteRouteImport } from './routes/broker/route'
 import { Route as BorrowerRouteRouteImport } from './routes/borrower/route'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BrokerIndexRouteImport } from './routes/broker/index'
+import { Route as PortalIndexRouteImport } from './routes/portal/index'
 import { Route as ListingsIndexRouteImport } from './routes/listings/index'
 import { Route as LawyerIndexRouteImport } from './routes/lawyer/index'
 import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
@@ -95,6 +97,7 @@ import { Route as DemoBrokerWhitelabelIndexRouteImport } from './routes/demo/bro
 import { Route as DemoAuditTraceabilityIndexRouteImport } from './routes/demo/audit-traceability/index'
 import { Route as DemoAmpsIndexRouteImport } from './routes/demo/amps/index'
 import { Route as AdminDocumentEngineIndexRouteImport } from './routes/admin.document-engine.index'
+import { Route as PortalPositionsMortgageIdRouteImport } from './routes/portal/positions.$mortgageId'
 import { Route as LenderDealsDealIdRouteImport } from './routes/lender.deals.$dealId'
 import { Route as LawyerDealsDealIdRouteImport } from './routes/lawyer/deals.$dealId'
 import { Route as DemoRbacAuthRolesRouteImport } from './routes/demo/rbac-auth/roles'
@@ -240,6 +243,16 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const BrokerIndexRoute = BrokerIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BrokerRouteRoute,
+} as any)
+const PortalIndexRoute = PortalIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PortalRoute,
 } as any)
 const ListingsIndexRoute = ListingsIndexRouteImport.update({
   id: '/',
@@ -599,6 +612,12 @@ const AdminDocumentEngineIndexRoute =
     path: '/',
     getParentRoute: () => AdminDocumentEngineRoute,
   } as any)
+const PortalPositionsMortgageIdRoute =
+  PortalPositionsMortgageIdRouteImport.update({
+    id: '/positions/$mortgageId',
+    path: '/positions/$mortgageId',
+    getParentRoute: () => PortalRoute,
+  } as any)
 const LenderDealsDealIdRoute = LenderDealsDealIdRouteImport.update({
   id: '/$dealId',
   path: '/$dealId',
@@ -944,7 +963,7 @@ export interface FileRoutesByFullPath {
   '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
   '/host-boundary': typeof HostBoundaryRoute
-  '/portal': typeof PortalRoute
+  '/portal': typeof PortalRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
@@ -1010,6 +1029,7 @@ export interface FileRoutesByFullPath {
   '/start-lending/complete': typeof StartLendingCompleteRoute
   '/lawyer/': typeof LawyerIndexRoute
   '/listings/': typeof ListingsIndexRoute
+  '/portal/': typeof PortalIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1062,6 +1082,7 @@ export interface FileRoutesByFullPath {
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
+  '/portal/positions/$mortgageId': typeof PortalPositionsMortgageIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
   '/demo/amps/': typeof DemoAmpsIndexRoute
   '/demo/audit-traceability/': typeof DemoAuditTraceabilityIndexRoute
@@ -1093,7 +1114,6 @@ export interface FileRoutesByTo {
   '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
   '/host-boundary': typeof HostBoundaryRoute
-  '/portal': typeof PortalRoute
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
@@ -1149,6 +1169,7 @@ export interface FileRoutesByTo {
   '/start-lending/complete': typeof StartLendingCompleteRoute
   '/lawyer': typeof LawyerIndexRoute
   '/listings': typeof ListingsIndexRoute
+  '/portal': typeof PortalIndexRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
   '/demo/rbac/broker': typeof DemoRbacBrokerRouteRoute
@@ -1200,6 +1221,7 @@ export interface FileRoutesByTo {
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
+  '/portal/positions/$mortgageId': typeof PortalPositionsMortgageIdRoute
   '/admin/document-engine': typeof AdminDocumentEngineIndexRoute
   '/demo/amps': typeof DemoAmpsIndexRoute
   '/demo/audit-traceability': typeof DemoAuditTraceabilityIndexRoute
@@ -1233,7 +1255,7 @@ export interface FileRoutesById {
   '/auth-complete': typeof AuthCompleteRoute
   '/callback': typeof CallbackRoute
   '/host-boundary': typeof HostBoundaryRoute
-  '/portal': typeof PortalRoute
+  '/portal': typeof PortalRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
@@ -1299,6 +1321,7 @@ export interface FileRoutesById {
   '/start-lending/complete': typeof StartLendingCompleteRoute
   '/lawyer/': typeof LawyerIndexRoute
   '/listings/': typeof ListingsIndexRoute
+  '/portal/': typeof PortalIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1351,6 +1374,7 @@ export interface FileRoutesById {
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
+  '/portal/positions/$mortgageId': typeof PortalPositionsMortgageIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
   '/demo/amps/': typeof DemoAmpsIndexRoute
   '/demo/audit-traceability/': typeof DemoAuditTraceabilityIndexRoute
@@ -1451,6 +1475,7 @@ export interface FileRouteTypes {
     | '/start-lending/complete'
     | '/lawyer/'
     | '/listings/'
+    | '/portal/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1503,6 +1528,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/roles'
     | '/lawyer/deals/$dealId'
     | '/lender/deals/$dealId'
+    | '/portal/positions/$mortgageId'
     | '/admin/document-engine/'
     | '/demo/amps/'
     | '/demo/audit-traceability/'
@@ -1533,7 +1559,6 @@ export interface FileRouteTypes {
     | '/auth-complete'
     | '/callback'
     | '/host-boundary'
-    | '/portal'
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
@@ -1589,6 +1614,7 @@ export interface FileRouteTypes {
     | '/start-lending/complete'
     | '/lawyer'
     | '/listings'
+    | '/portal'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
     | '/demo/rbac/broker'
@@ -1640,6 +1666,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/roles'
     | '/lawyer/deals/$dealId'
     | '/lender/deals/$dealId'
+    | '/portal/positions/$mortgageId'
     | '/admin/document-engine'
     | '/demo/amps'
     | '/demo/audit-traceability'
@@ -1738,6 +1765,7 @@ export interface FileRouteTypes {
     | '/start-lending/complete'
     | '/lawyer/'
     | '/listings/'
+    | '/portal/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1790,6 +1818,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/roles'
     | '/lawyer/deals/$dealId'
     | '/lender/deals/$dealId'
+    | '/portal/positions/$mortgageId'
     | '/admin/document-engine/'
     | '/demo/amps/'
     | '/demo/audit-traceability/'
@@ -1823,7 +1852,7 @@ export interface RootRouteChildren {
   AuthCompleteRoute: typeof AuthCompleteRoute
   CallbackRoute: typeof CallbackRoute
   HostBoundaryRoute: typeof HostBoundaryRoute
-  PortalRoute: typeof PortalRoute
+  PortalRoute: typeof PortalRouteWithChildren
   SignInRoute: typeof SignInRoute
   SignOutRoute: typeof SignOutRouteWithChildren
   SignUpRoute: typeof SignUpRoute
@@ -1990,6 +2019,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/broker/': {
+      id: '/broker/'
+      path: '/'
+      fullPath: '/broker/'
+      preLoaderRoute: typeof BrokerIndexRouteImport
+      parentRoute: typeof BrokerRouteRoute
+    }
+    '/portal/': {
+      id: '/portal/'
+      path: '/'
+      fullPath: '/portal/'
+      preLoaderRoute: typeof PortalIndexRouteImport
+      parentRoute: typeof PortalRoute
     }
     '/listings/': {
       id: '/listings/'
@@ -2473,6 +2516,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/document-engine/'
       preLoaderRoute: typeof AdminDocumentEngineIndexRouteImport
       parentRoute: typeof AdminDocumentEngineRoute
+    }
+    '/portal/positions/$mortgageId': {
+      id: '/portal/positions/$mortgageId'
+      path: '/positions/$mortgageId'
+      fullPath: '/portal/positions/$mortgageId'
+      preLoaderRoute: typeof PortalPositionsMortgageIdRouteImport
+      parentRoute: typeof PortalRoute
     }
     '/lender/deals/$dealId': {
       id: '/lender/deals/$dealId'
@@ -3154,6 +3204,19 @@ const ListingsRouteRouteWithChildren = ListingsRouteRoute._addFileChildren(
   ListingsRouteRouteChildren,
 )
 
+interface PortalRouteChildren {
+  PortalIndexRoute: typeof PortalIndexRoute
+  PortalPositionsMortgageIdRoute: typeof PortalPositionsMortgageIdRoute
+}
+
+const PortalRouteChildren: PortalRouteChildren = {
+  PortalIndexRoute: PortalIndexRoute,
+  PortalPositionsMortgageIdRoute: PortalPositionsMortgageIdRoute,
+}
+
+const PortalRouteWithChildren =
+  PortalRoute._addFileChildren(PortalRouteChildren)
+
 interface SignOutRouteChildren {
   SignOutLocalRoute: typeof SignOutLocalRoute
 }
@@ -3393,7 +3456,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthCompleteRoute: AuthCompleteRoute,
   CallbackRoute: CallbackRoute,
   HostBoundaryRoute: HostBoundaryRoute,
-  PortalRoute: PortalRoute,
+  PortalRoute: PortalRouteWithChildren,
   SignInRoute: SignInRoute,
   SignOutRoute: SignOutRouteWithChildren,
   SignUpRoute: SignUpRoute,
@@ -3443,3 +3506,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
