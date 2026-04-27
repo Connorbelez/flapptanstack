@@ -1,5 +1,6 @@
 import type { AnyStateMachine } from "xstate";
 import type { GovernedEntityType } from "../types";
+import { brokerOnboardingApplicationMachine } from "./brokerOnboardingApplication.machine";
 import { collectionAttemptMachine } from "./collectionAttempt.machine";
 import { dealMachine } from "./deal.machine";
 import { mortgageMachine } from "./mortgage.machine";
@@ -13,6 +14,7 @@ import { transferMachine } from "./transfer.machine";
  * enforces completeness via the Record key type.
  */
 export const machineRegistry: Record<GovernedEntityType, AnyStateMachine> = {
+	brokerOnboardingApplication: brokerOnboardingApplicationMachine,
 	collectionAttempt: collectionAttemptMachine,
 	deal: dealMachine,
 	mortgage: mortgageMachine,

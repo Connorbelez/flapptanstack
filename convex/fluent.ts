@@ -54,10 +54,31 @@ export interface Viewer {
 	permissions: Set<string>;
 	role: string | undefined;
 	roles: Set<string>;
+	verifiedEmail: string | undefined;
 }
 
 function stringClaim(value: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
+}
+
+function booleanClaim(value: unknown): boolean {
+	return value === true || value === "true" || value === "1";
+}
+
+function resolveVerifiedEmailFromIdentity(identity: {
+	user_email?: unknown;
+	email?: unknown;
+	user_email_verified?: unknown;
+	email_verified?: unknown;
+}): string | undefined {
+	const email = stringClaim(identity.user_email) ?? stringClaim(identity.email);
+	if (!email) {
+		return undefined;
+	}
+	const isVerified =
+		booleanClaim(identity.user_email_verified) ||
+		booleanClaim(identity.email_verified);
+	return isVerified ? email.toLowerCase() : undefined;
 }
 // ── Auth Middleware (context enrichment) ─────────────────────────────
 // Uses $context so it works with queries AND mutations (both have auth + db).
@@ -115,6 +136,13 @@ export const authMiddleware = convex
 					permissions: normalizedPermissions,
 					role: viewerRole,
 					roles: normalizedRoles,
+				}),
+				verifiedEmail: resolveVerifiedEmailFromIdentity({
+					user_email,
+					email: (identity as Record<string, unknown>).email,
+					user_email_verified: (identity as Record<string, unknown>)
+						.user_email_verified,
+					email_verified: (identity as Record<string, unknown>).email_verified,
 				}),
 			} as Viewer,
 		});
@@ -546,6 +574,13 @@ export const actionAuthMiddleware = convex
 					permissions: normalizedPermissions,
 					role: viewerRole,
 					roles: normalizedRoles,
+				}),
+				verifiedEmail: resolveVerifiedEmailFromIdentity({
+					user_email,
+					email: (identity as Record<string, unknown>).email,
+					user_email_verified: (identity as Record<string, unknown>)
+						.user_email_verified,
+					email_verified: (identity as Record<string, unknown>).email_verified,
 				}),
 			} as Viewer,
 		});

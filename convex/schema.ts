@@ -89,6 +89,17 @@ import {
 	marketplaceListingPropertyTypeValidator,
 } from "./listings/validators";
 import {
+	brokerOnboardingApplicationMachineContextValidator,
+	brokerOnboardingApplicationStatusValidator,
+	brokerOnboardingApprovalRecommendationValidator,
+	brokerOnboardingDownstreamHandoffStatusValidator,
+	brokerOnboardingDraftDataValidator,
+	brokerOnboardingReopenedFieldValidator,
+	brokerOnboardingReviewEntryTypeValidator,
+	brokerOnboardingVerificationReasonCodeValidator,
+	brokerOnboardingVerificationSnapshotValidator,
+} from "./onboarding/brokerApplication/validators";
+import {
 	balancePreCheckDecisionValidator,
 	balancePreCheckReasonCodeValidator,
 	balancePreCheckSignalSourceValidator,
@@ -560,6 +571,84 @@ export default defineSchema({
 	// ONBOARDING & GT (Governed Transitions)
 	// ══════════════════════════════════════════════════════════
 
+	brokerOnboardingApplications: defineTable({
+		// ─── GT fields ───
+		status: brokerOnboardingApplicationStatusValidator,
+		machineContext: brokerOnboardingApplicationMachineContextValidator,
+		lastTransitionAt: v.optional(v.number()),
+
+		// ─── Identity and attribution ───
+		userId: v.id("users"),
+		authUserId: v.string(),
+		verifiedEmail: v.optional(v.string()),
+		portalId: v.id("portals"),
+
+		// ─── Draft and verification state ───
+		draftData: brokerOnboardingDraftDataValidator,
+		verificationSnapshot: v.optional(
+			brokerOnboardingVerificationSnapshotValidator
+		),
+		verificationRecommendation: v.optional(
+			brokerOnboardingApprovalRecommendationValidator
+		),
+		verificationReasonCodes: v.optional(
+			v.array(brokerOnboardingVerificationReasonCodeValidator)
+		),
+		reopenedFields: v.array(brokerOnboardingReopenedFieldValidator),
+
+		// ─── Resumability ───
+		startedAt: v.number(),
+		lastActivityAt: v.number(),
+		expiresAt: v.number(),
+		expiredAt: v.optional(v.number()),
+
+		// ─── Lifecycle timestamps ───
+		submittedAt: v.optional(v.number()),
+		changesRequestedAt: v.optional(v.number()),
+		approvedAt: v.optional(v.number()),
+		rejectedAt: v.optional(v.number()),
+		activatedAt: v.optional(v.number()),
+
+		// ─── Downstream onboarding-request contract ───
+		downstreamOnboardingRequestId: v.optional(v.id("onboardingRequests")),
+		downstreamHandoffStatus: brokerOnboardingDownstreamHandoffStatusValidator,
+		downstreamLinkedAt: v.optional(v.number()),
+		downstreamRoleAssignedAt: v.optional(v.number()),
+		downstreamActivatedAt: v.optional(v.number()),
+		activatedPortalId: v.optional(v.id("portals")),
+		activatedHomePortalId: v.optional(v.id("portals")),
+
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_user", ["userId"])
+		.index("by_auth_user", ["authUserId"])
+		.index("by_auth_user_created_at", ["authUserId", "createdAt"])
+		.index("by_verified_email", ["verifiedEmail"])
+		.index("by_verified_email_created_at", ["verifiedEmail", "createdAt"])
+		.index("by_portal", ["portalId"])
+		.index("by_portal_status", ["portalId", "status"])
+		.index("by_status", ["status"])
+		.index("by_expires_at", ["expiresAt"])
+		.index("by_downstream_onboarding_request", [
+			"downstreamOnboardingRequestId",
+		]),
+
+	brokerOnboardingReviewEntries: defineTable({
+		applicationId: v.id("brokerOnboardingApplications"),
+		entryType: brokerOnboardingReviewEntryTypeValidator,
+		body: v.string(),
+		authorAuthId: v.optional(v.string()),
+		authorType: v.optional(actorTypeValidator),
+		systemEventType: v.optional(v.string()),
+		reopenedFields: v.optional(v.array(brokerOnboardingReopenedFieldValidator)),
+		metadata: v.optional(v.record(v.string(), v.any())),
+		createdAt: v.number(),
+	})
+		.index("by_application", ["applicationId"])
+		.index("by_application_created_at", ["applicationId", "createdAt"])
+		.index("by_application_entry_type", ["applicationId", "entryType"]),
+
 	onboardingRequests: defineTable({
 		userId: v.id("users"),
 		requestedRole: v.union(
@@ -582,6 +671,9 @@ export default defineSchema({
 			v.literal("broker_invite")
 		),
 		invitedByBrokerId: v.optional(v.string()),
+		brokerOnboardingApplicationId: v.optional(
+			v.id("brokerOnboardingApplications")
+		),
 		targetOrganizationId: v.optional(v.string()),
 		/** Explicit portal attribution for portal-aware onboarding requests. */
 		portalId: v.optional(v.id("portals")),
@@ -592,6 +684,9 @@ export default defineSchema({
 	})
 		.index("by_user", ["userId"])
 		.index("by_user_created_at", ["userId", "createdAt"])
+		.index("by_broker_onboarding_application", [
+			"brokerOnboardingApplicationId",
+		])
 		.index("by_portal", ["portalId"])
 		.index("by_portal_status", ["portalId", "status"])
 		.index("by_status", ["status"])

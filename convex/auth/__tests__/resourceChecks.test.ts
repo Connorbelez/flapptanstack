@@ -38,6 +38,7 @@ function makeViewer(overrides: Partial<Viewer> = {}): Viewer {
 		permissions: new Set<string>(),
 		role: undefined,
 		roles: new Set<string>(),
+		verifiedEmail: undefined,
 		...overrides,
 	};
 }
