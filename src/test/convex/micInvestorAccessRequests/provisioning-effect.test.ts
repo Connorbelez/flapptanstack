@@ -8,6 +8,10 @@ import {
 import { FAIRLEND_ADMIN } from "../../auth/identities";
 import { ensureSeededIdentity } from "../../auth/helpers";
 import {
+	MIC_SCENARIO_ORG_ID,
+	seedMicPortfolioScenario,
+} from "../mic/seedMicScenario";
+import {
 	createMicRequestTestConvex,
 	getAuditJournalRows,
 	getAuditLogEvents,
@@ -274,6 +278,77 @@ describe("MIC investor access provisioning effect", () => {
 
 		const user = await t.run(async (ctx) => await ctx.db.get(userId));
 		expect(user?.homePortalId).toBe(portalId);
+	});
+
+	it("provisions a public request against the realistic MIC scenario portal", async () => {
+		const scenario = await seedMicPortfolioScenario();
+		await scenario.t.mutation(
+			api.micInvestorAccessRequests.mutations.submitPublicRequest,
+			{
+				email: scenario.identities.investor.user_email,
+				portalId: scenario.ids.portalId,
+			}
+		);
+		const request = await scenario.t.run(async (ctx) => {
+			return await ctx.db
+				.query("micInvestorAccessRequests")
+				.withIndex("by_portal_status", (query) =>
+					query.eq("portalId", scenario.ids.portalId).eq("status", "pending_review")
+				)
+				.unique();
+		});
+		expect(request).toBeDefined();
+		if (!request) {
+			throw new Error("Expected pending MIC access request");
+		}
+
+		const approveJournal = await approveMicAccessRequest(scenario.t, request._id);
+		const provisioning = createProvisioningMock({
+			listUsers: vi.fn().mockResolvedValue([
+				{
+					email: scenario.identities.investor.user_email,
+					id: scenario.identities.investor.subject,
+				},
+			]),
+		});
+		setWorkosProvisioningForTests(provisioning);
+
+		await runProvisioningAction(scenario.t, {
+			entityId: request._id,
+			journalEntryId: approveJournal._id,
+		});
+
+		expect(provisioning.createUser).not.toHaveBeenCalled();
+		expect(provisioning.createOrganizationMembership).toHaveBeenCalledWith({
+			organizationId: MIC_SCENARIO_ORG_ID,
+			roleSlug: "micinvestor",
+			userId: scenario.identities.investor.subject,
+		});
+
+		const completedRequest = await scenario.t.run(
+			async (ctx) => await ctx.db.get(request._id)
+		);
+		expect(completedRequest).toMatchObject({
+			invitedUserWorkosId: scenario.identities.investor.subject,
+			provisioningState: "completed",
+			status: "approved",
+		});
+		const syncedUser = await scenario.t.run(async (ctx) => {
+			return await ctx.db
+				.query("users")
+				.withIndex("authId", (query) =>
+					query.eq("authId", scenario.identities.investor.subject)
+				)
+				.unique();
+		});
+		expect(syncedUser?.homePortalId).toBe(scenario.ids.portalId);
+
+		const dashboard = await scenario.t
+			.withIdentity(scenario.identities.investor)
+			.query(api.micPortfolio.queries.getMicDashboardSnapshot, {
+				portalId: scenario.ids.portalId,
+			});
+		expect(dashboard.metrics.activePositionCount).toBe(2);
 	});
 
 	it("fails visibly when the MIC portal is unavailable", async () => {

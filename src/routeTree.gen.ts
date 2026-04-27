@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UnauthorizedRouteImport } from './routes/unauthorized'
+import { Route as StartLendingRouteImport } from './routes/start-lending'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignOutRouteImport } from './routes/sign-out'
 import { Route as SignInRouteImport } from './routes/sign-in'
@@ -26,14 +27,17 @@ import { Route as BrokerRouteRouteImport } from './routes/broker/route'
 import { Route as BorrowerRouteRouteImport } from './routes/borrower/route'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as BrokerIndexRouteImport } from './routes/broker/index'
 import { Route as PortalIndexRouteImport } from './routes/portal/index'
 import { Route as ListingsIndexRouteImport } from './routes/listings/index'
 import { Route as LawyerIndexRouteImport } from './routes/lawyer/index'
+import { Route as BrokerIndexRouteImport } from './routes/broker/index'
+import { Route as StartLendingCompleteRouteImport } from './routes/start-lending.complete'
 import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
 import { Route as ListingsListingIdRouteImport } from './routes/listings/$listingId'
 import { Route as LenderPortfolioRouteImport } from './routes/lender.portfolio'
 import { Route as LenderDealsRouteImport } from './routes/lender.deals'
+import { Route as FinancingStartRouteImport } from './routes/financing.start'
+import { Route as FinancingPreApprovalRouteImport } from './routes/financing.pre-approval'
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
 import { Route as E2eSessionRouteImport } from './routes/e2e/session'
 import { Route as E2eMarketplacePublicDocumentsRouteImport } from './routes/e2e/marketplace-public-documents'
@@ -63,6 +67,7 @@ import { Route as DemoConvexApiCredentialsRouteImport } from './routes/demo/conv
 import { Route as DemoConvexAggregateRouteImport } from './routes/demo/convex-aggregate'
 import { Route as DemoConvexActionCacheRouteImport } from './routes/demo/convex-action-cache'
 import { Route as DemoConvexRouteImport } from './routes/demo/convex'
+import { Route as BrokerDealsRouteImport } from './routes/broker.deals'
 import { Route as BorrowerDealsRouteImport } from './routes/borrower.deals'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminRotessaReconciliationRouteImport } from './routes/admin/rotessa-reconciliation'
@@ -164,6 +169,11 @@ const UnauthorizedRoute = UnauthorizedRouteImport.update({
   path: '/unauthorized',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StartLendingRoute = StartLendingRouteImport.update({
+  id: '/start-lending',
+  path: '/start-lending',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
   path: '/sign-up',
@@ -244,11 +254,6 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BrokerIndexRoute = BrokerIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => BrokerRouteRoute,
-} as any)
 const PortalIndexRoute = PortalIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -263,6 +268,16 @@ const LawyerIndexRoute = LawyerIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => LawyerRouteRoute,
+} as any)
+const BrokerIndexRoute = BrokerIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BrokerRouteRoute,
+} as any)
+const StartLendingCompleteRoute = StartLendingCompleteRouteImport.update({
+  id: '/complete',
+  path: '/complete',
+  getParentRoute: () => StartLendingRoute,
 } as any)
 const SignOutLocalRoute = SignOutLocalRouteImport.update({
   id: '/local',
@@ -283,6 +298,16 @@ const LenderDealsRoute = LenderDealsRouteImport.update({
   id: '/deals',
   path: '/deals',
   getParentRoute: () => LenderRouteRoute,
+} as any)
+const FinancingStartRoute = FinancingStartRouteImport.update({
+  id: '/financing/start',
+  path: '/financing/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinancingPreApprovalRoute = FinancingPreApprovalRouteImport.update({
+  id: '/financing/pre-approval',
+  path: '/financing/pre-approval',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const E2eSwitchOrgRoute = E2eSwitchOrgRouteImport.update({
   id: '/e2e/switch-org',
@@ -432,6 +457,11 @@ const DemoConvexRoute = DemoConvexRouteImport.update({
   id: '/demo/convex',
   path: '/demo/convex',
   getParentRoute: () => rootRouteImport,
+} as any)
+const BrokerDealsRoute = BrokerDealsRouteImport.update({
+  id: '/deals',
+  path: '/deals',
+  getParentRoute: () => BrokerRouteRoute,
 } as any)
 const BorrowerDealsRoute = BorrowerDealsRouteImport.update({
   id: '/deals',
@@ -784,11 +814,6 @@ const BrokerDealsDealIdRoute = BrokerDealsDealIdRouteImport.update({
   path: '/$dealId',
   getParentRoute: () => BrokerDealsRoute,
 } as any)
-const BorrowerDealsDealIdRoute = BorrowerDealsDealIdRouteImport.update({
-  id: '/$dealId',
-  path: '/$dealId',
-  getParentRoute: () => BorrowerDealsRoute,
-} as any)
 const BorrowerFinancingStartRoute = BorrowerFinancingStartRouteImport.update({
   id: '/financing/start',
   path: '/financing/start',
@@ -800,6 +825,11 @@ const BorrowerFinancingPreApprovalRoute =
     path: '/financing/pre-approval',
     getParentRoute: () => BorrowerRouteRoute,
   } as any)
+const BorrowerDealsDealIdRoute = BorrowerDealsDealIdRouteImport.update({
+  id: '/$dealId',
+  path: '/$dealId',
+  getParentRoute: () => BorrowerDealsRoute,
+} as any)
 const AdminPropertiesRecordidRoute = AdminPropertiesRecordidRouteImport.update({
   id: '/$recordid',
   path: '/$recordid',
@@ -967,6 +997,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
+  '/start-lending': typeof StartLendingRouteWithChildren
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
@@ -992,6 +1023,7 @@ export interface FileRoutesByFullPath {
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/borrower/deals': typeof BorrowerDealsRouteWithChildren
+  '/broker/deals': typeof BrokerDealsRouteWithChildren
   '/demo/convex': typeof DemoConvexRoute
   '/demo/convex-action-cache': typeof DemoConvexActionCacheRoute
   '/demo/convex-aggregate': typeof DemoConvexAggregateRoute
@@ -1021,12 +1053,14 @@ export interface FileRoutesByFullPath {
   '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
+  '/financing/pre-approval': typeof FinancingPreApprovalRoute
+  '/financing/start': typeof FinancingStartRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/portfolio': typeof LenderPortfolioRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
-  '/broker/': typeof BrokerIndexRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
+  '/broker/': typeof BrokerIndexRoute
   '/lawyer/': typeof LawyerIndexRoute
   '/listings/': typeof ListingsIndexRoute
   '/portal/': typeof PortalIndexRoute
@@ -1049,10 +1083,10 @@ export interface FileRoutesByFullPath {
   '/admin/originations/$caseId': typeof AdminOriginationsCaseIdRoute
   '/admin/originations/new': typeof AdminOriginationsNewRoute
   '/admin/properties/$recordid': typeof AdminPropertiesRecordidRoute
+  '/borrower/deals/$dealId': typeof BorrowerDealsDealIdRoute
   '/borrower/financing/pre-approval': typeof BorrowerFinancingPreApprovalRoute
   '/borrower/financing/start': typeof BorrowerFinancingStartRoute
   '/broker/deals/$dealId': typeof BrokerDealsDealIdRoute
-  '/borrower/deals/$dealId': typeof BorrowerDealsDealIdRoute
   '/demo/amps/collection-attempts': typeof DemoAmpsCollectionAttemptsRoute
   '/demo/amps/collection-plan': typeof DemoAmpsCollectionPlanRoute
   '/demo/amps/e2e-payments': typeof DemoAmpsE2ePaymentsRoute
@@ -1106,8 +1140,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/borrower': typeof BorrowerRouteRouteWithChildren
-  '/lawyer': typeof LawyerRouteRouteWithChildren
-  '/broker': typeof BrokerRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
@@ -1117,6 +1149,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
+  '/start-lending': typeof StartLendingRouteWithChildren
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
@@ -1133,6 +1166,7 @@ export interface FileRoutesByTo {
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/borrower/deals': typeof BorrowerDealsRouteWithChildren
+  '/broker/deals': typeof BrokerDealsRouteWithChildren
   '/demo/convex': typeof DemoConvexRoute
   '/demo/convex-action-cache': typeof DemoConvexActionCacheRoute
   '/demo/convex-aggregate': typeof DemoConvexAggregateRoute
@@ -1161,12 +1195,14 @@ export interface FileRoutesByTo {
   '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
+  '/financing/pre-approval': typeof FinancingPreApprovalRoute
+  '/financing/start': typeof FinancingStartRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/portfolio': typeof LenderPortfolioRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
-  '/broker': typeof BrokerIndexRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
+  '/broker': typeof BrokerIndexRoute
   '/lawyer': typeof LawyerIndexRoute
   '/listings': typeof ListingsIndexRoute
   '/portal': typeof PortalIndexRoute
@@ -1188,10 +1224,10 @@ export interface FileRoutesByTo {
   '/admin/originations/$caseId': typeof AdminOriginationsCaseIdRoute
   '/admin/originations/new': typeof AdminOriginationsNewRoute
   '/admin/properties/$recordid': typeof AdminPropertiesRecordidRoute
+  '/borrower/deals/$dealId': typeof BorrowerDealsDealIdRoute
   '/borrower/financing/pre-approval': typeof BorrowerFinancingPreApprovalRoute
   '/borrower/financing/start': typeof BorrowerFinancingStartRoute
   '/broker/deals/$dealId': typeof BrokerDealsDealIdRoute
-  '/borrower/deals/$dealId': typeof BorrowerDealsDealIdRoute
   '/demo/amps/collection-attempts': typeof DemoAmpsCollectionAttemptsRoute
   '/demo/amps/collection-plan': typeof DemoAmpsCollectionPlanRoute
   '/demo/amps/e2e-payments': typeof DemoAmpsE2ePaymentsRoute
@@ -1259,6 +1295,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
+  '/start-lending': typeof StartLendingRouteWithChildren
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
@@ -1284,6 +1321,7 @@ export interface FileRoutesById {
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/borrower/deals': typeof BorrowerDealsRouteWithChildren
+  '/broker/deals': typeof BrokerDealsRouteWithChildren
   '/demo/convex': typeof DemoConvexRoute
   '/demo/convex-action-cache': typeof DemoConvexActionCacheRoute
   '/demo/convex-aggregate': typeof DemoConvexAggregateRoute
@@ -1313,12 +1351,14 @@ export interface FileRoutesById {
   '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
+  '/financing/pre-approval': typeof FinancingPreApprovalRoute
+  '/financing/start': typeof FinancingStartRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
   '/lender/portfolio': typeof LenderPortfolioRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
-  '/broker/': typeof BrokerIndexRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
+  '/broker/': typeof BrokerIndexRoute
   '/lawyer/': typeof LawyerIndexRoute
   '/listings/': typeof ListingsIndexRoute
   '/portal/': typeof PortalIndexRoute
@@ -1341,10 +1381,10 @@ export interface FileRoutesById {
   '/admin/originations/$caseId': typeof AdminOriginationsCaseIdRoute
   '/admin/originations/new': typeof AdminOriginationsNewRoute
   '/admin/properties/$recordid': typeof AdminPropertiesRecordidRoute
+  '/borrower/deals/$dealId': typeof BorrowerDealsDealIdRoute
   '/borrower/financing/pre-approval': typeof BorrowerFinancingPreApprovalRoute
   '/borrower/financing/start': typeof BorrowerFinancingStartRoute
   '/broker/deals/$dealId': typeof BrokerDealsDealIdRoute
-  '/borrower/deals/$dealId': typeof BorrowerDealsDealIdRoute
   '/demo/amps/collection-attempts': typeof DemoAmpsCollectionAttemptsRoute
   '/demo/amps/collection-plan': typeof DemoAmpsCollectionPlanRoute
   '/demo/amps/e2e-payments': typeof DemoAmpsE2ePaymentsRoute
@@ -1413,6 +1453,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
+    | '/start-lending'
     | '/unauthorized'
     | '/admin/borrowers'
     | '/admin/deals'
@@ -1438,6 +1479,7 @@ export interface FileRouteTypes {
     | '/admin/rotessa-reconciliation'
     | '/admin/settings'
     | '/borrower/deals'
+    | '/broker/deals'
     | '/demo/convex'
     | '/demo/convex-action-cache'
     | '/demo/convex-aggregate'
@@ -1467,12 +1509,14 @@ export interface FileRouteTypes {
     | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
+    | '/financing/pre-approval'
+    | '/financing/start'
     | '/lender/deals'
     | '/lender/portfolio'
     | '/listings/$listingId'
     | '/sign-out/local'
-    | '/broker/'
     | '/start-lending/complete'
+    | '/broker/'
     | '/lawyer/'
     | '/listings/'
     | '/portal/'
@@ -1495,10 +1539,10 @@ export interface FileRouteTypes {
     | '/admin/originations/$caseId'
     | '/admin/originations/new'
     | '/admin/properties/$recordid'
+    | '/borrower/deals/$dealId'
     | '/borrower/financing/pre-approval'
     | '/borrower/financing/start'
     | '/broker/deals/$dealId'
-    | '/borrower/deals/$dealId'
     | '/demo/amps/collection-attempts'
     | '/demo/amps/collection-plan'
     | '/demo/amps/e2e-payments'
@@ -1552,7 +1596,6 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/borrower'
-    | '/broker'
     | '/lender'
     | '/onboard'
     | '/about'
@@ -1562,6 +1605,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
+    | '/start-lending'
     | '/unauthorized'
     | '/admin/borrowers'
     | '/admin/deals'
@@ -1578,6 +1622,7 @@ export interface FileRouteTypes {
     | '/admin/rotessa-reconciliation'
     | '/admin/settings'
     | '/borrower/deals'
+    | '/broker/deals'
     | '/demo/convex'
     | '/demo/convex-action-cache'
     | '/demo/convex-aggregate'
@@ -1606,12 +1651,14 @@ export interface FileRouteTypes {
     | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
+    | '/financing/pre-approval'
+    | '/financing/start'
     | '/lender/deals'
     | '/lender/portfolio'
     | '/listings/$listingId'
     | '/sign-out/local'
-    | '/broker'
     | '/start-lending/complete'
+    | '/broker'
     | '/lawyer'
     | '/listings'
     | '/portal'
@@ -1633,10 +1680,10 @@ export interface FileRouteTypes {
     | '/admin/originations/$caseId'
     | '/admin/originations/new'
     | '/admin/properties/$recordid'
+    | '/borrower/deals/$dealId'
     | '/borrower/financing/pre-approval'
     | '/borrower/financing/start'
     | '/broker/deals/$dealId'
-    | '/borrower/deals/$dealId'
     | '/demo/amps/collection-attempts'
     | '/demo/amps/collection-plan'
     | '/demo/amps/e2e-payments'
@@ -1703,6 +1750,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
+    | '/start-lending'
     | '/unauthorized'
     | '/admin/borrowers'
     | '/admin/deals'
@@ -1728,6 +1776,7 @@ export interface FileRouteTypes {
     | '/admin/rotessa-reconciliation'
     | '/admin/settings'
     | '/borrower/deals'
+    | '/broker/deals'
     | '/demo/convex'
     | '/demo/convex-action-cache'
     | '/demo/convex-aggregate'
@@ -1757,12 +1806,14 @@ export interface FileRouteTypes {
     | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
+    | '/financing/pre-approval'
+    | '/financing/start'
     | '/lender/deals'
     | '/lender/portfolio'
     | '/listings/$listingId'
     | '/sign-out/local'
-    | '/broker/'
     | '/start-lending/complete'
+    | '/broker/'
     | '/lawyer/'
     | '/listings/'
     | '/portal/'
@@ -1785,10 +1836,10 @@ export interface FileRouteTypes {
     | '/admin/originations/$caseId'
     | '/admin/originations/new'
     | '/admin/properties/$recordid'
+    | '/borrower/deals/$dealId'
     | '/borrower/financing/pre-approval'
     | '/borrower/financing/start'
     | '/broker/deals/$dealId'
-    | '/borrower/deals/$dealId'
     | '/demo/amps/collection-attempts'
     | '/demo/amps/collection-plan'
     | '/demo/amps/e2e-payments'
@@ -1856,6 +1907,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SignOutRoute: typeof SignOutRouteWithChildren
   SignUpRoute: typeof SignUpRoute
+  StartLendingRoute: typeof StartLendingRouteWithChildren
   UnauthorizedRoute: typeof UnauthorizedRoute
   DemoAmpsRouteRoute: typeof DemoAmpsRouteRouteWithChildren
   DemoAuditTraceabilityRouteRoute: typeof DemoAuditTraceabilityRouteRouteWithChildren
@@ -1895,6 +1947,8 @@ export interface RootRouteChildren {
   E2eMarketplacePublicDocumentsRoute: typeof E2eMarketplacePublicDocumentsRoute
   E2eSessionRoute: typeof E2eSessionRoute
   E2eSwitchOrgRoute: typeof E2eSwitchOrgRoute
+  FinancingPreApprovalRoute: typeof FinancingPreApprovalRoute
+  FinancingStartRoute: typeof FinancingStartRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
   DemoFormSimpleRoute: typeof DemoFormSimpleRoute
 }
@@ -1906,6 +1960,13 @@ declare module '@tanstack/react-router' {
       path: '/unauthorized'
       fullPath: '/unauthorized'
       preLoaderRoute: typeof UnauthorizedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/start-lending': {
+      id: '/start-lending'
+      path: '/start-lending'
+      fullPath: '/start-lending'
+      preLoaderRoute: typeof StartLendingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-up': {
@@ -2020,13 +2081,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/broker/': {
-      id: '/broker/'
-      path: '/'
-      fullPath: '/broker/'
-      preLoaderRoute: typeof BrokerIndexRouteImport
-      parentRoute: typeof BrokerRouteRoute
-    }
     '/portal/': {
       id: '/portal/'
       path: '/'
@@ -2047,6 +2101,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/lawyer/'
       preLoaderRoute: typeof LawyerIndexRouteImport
       parentRoute: typeof LawyerRouteRoute
+    }
+    '/broker/': {
+      id: '/broker/'
+      path: '/'
+      fullPath: '/broker/'
+      preLoaderRoute: typeof BrokerIndexRouteImport
+      parentRoute: typeof BrokerRouteRoute
+    }
+    '/start-lending/complete': {
+      id: '/start-lending/complete'
+      path: '/complete'
+      fullPath: '/start-lending/complete'
+      preLoaderRoute: typeof StartLendingCompleteRouteImport
+      parentRoute: typeof StartLendingRoute
     }
     '/sign-out/local': {
       id: '/sign-out/local'
@@ -2075,6 +2143,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/lender/deals'
       preLoaderRoute: typeof LenderDealsRouteImport
       parentRoute: typeof LenderRouteRoute
+    }
+    '/financing/start': {
+      id: '/financing/start'
+      path: '/financing/start'
+      fullPath: '/financing/start'
+      preLoaderRoute: typeof FinancingStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/financing/pre-approval': {
+      id: '/financing/pre-approval'
+      path: '/financing/pre-approval'
+      fullPath: '/financing/pre-approval'
+      preLoaderRoute: typeof FinancingPreApprovalRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/e2e/switch-org': {
       id: '/e2e/switch-org'
@@ -2278,6 +2360,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/demo/convex'
       preLoaderRoute: typeof DemoConvexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/broker/deals': {
+      id: '/broker/deals'
+      path: '/deals'
+      fullPath: '/broker/deals'
+      preLoaderRoute: typeof BrokerDealsRouteImport
+      parentRoute: typeof BrokerRouteRoute
     }
     '/borrower/deals': {
       id: '/borrower/deals'
@@ -2727,12 +2816,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoAmpsCollectionAttemptsRouteImport
       parentRoute: typeof DemoAmpsRouteRoute
     }
-    '/borrower/deals/$dealId': {
-      id: '/borrower/deals/$dealId'
+    '/broker/deals/$dealId': {
+      id: '/broker/deals/$dealId'
       path: '/$dealId'
-      fullPath: '/borrower/deals/$dealId'
-      preLoaderRoute: typeof BorrowerDealsDealIdRouteImport
-      parentRoute: typeof BorrowerDealsRoute
+      fullPath: '/broker/deals/$dealId'
+      preLoaderRoute: typeof BrokerDealsDealIdRouteImport
+      parentRoute: typeof BrokerDealsRoute
     }
     '/borrower/financing/start': {
       id: '/borrower/financing/start'
@@ -2747,6 +2836,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/borrower/financing/pre-approval'
       preLoaderRoute: typeof BorrowerFinancingPreApprovalRouteImport
       parentRoute: typeof BorrowerRouteRoute
+    }
+    '/borrower/deals/$dealId': {
+      id: '/borrower/deals/$dealId'
+      path: '/$dealId'
+      fullPath: '/borrower/deals/$dealId'
+      preLoaderRoute: typeof BorrowerDealsDealIdRouteImport
+      parentRoute: typeof BorrowerDealsRoute
     }
     '/admin/properties/$recordid': {
       id: '/admin/properties/$recordid'
@@ -3228,6 +3324,18 @@ const SignOutRouteChildren: SignOutRouteChildren = {
 const SignOutRouteWithChildren =
   SignOutRoute._addFileChildren(SignOutRouteChildren)
 
+interface StartLendingRouteChildren {
+  StartLendingCompleteRoute: typeof StartLendingCompleteRoute
+}
+
+const StartLendingRouteChildren: StartLendingRouteChildren = {
+  StartLendingCompleteRoute: StartLendingCompleteRoute,
+}
+
+const StartLendingRouteWithChildren = StartLendingRoute._addFileChildren(
+  StartLendingRouteChildren,
+)
+
 interface DemoAmpsRouteRouteChildren {
   DemoAmpsCollectionAttemptsRoute: typeof DemoAmpsCollectionAttemptsRoute
   DemoAmpsCollectionPlanRoute: typeof DemoAmpsCollectionPlanRoute
@@ -3460,6 +3568,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignOutRoute: SignOutRouteWithChildren,
   SignUpRoute: SignUpRoute,
+  StartLendingRoute: StartLendingRouteWithChildren,
   UnauthorizedRoute: UnauthorizedRoute,
   DemoAmpsRouteRoute: DemoAmpsRouteRouteWithChildren,
   DemoAuditTraceabilityRouteRoute: DemoAuditTraceabilityRouteRouteWithChildren,
@@ -3500,19 +3609,11 @@ const rootRouteChildren: RootRouteChildren = {
   E2eMarketplacePublicDocumentsRoute: E2eMarketplacePublicDocumentsRoute,
   E2eSessionRoute: E2eSessionRoute,
   E2eSwitchOrgRoute: E2eSwitchOrgRoute,
+  FinancingPreApprovalRoute: FinancingPreApprovalRoute,
+  FinancingStartRoute: FinancingStartRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,
   DemoFormSimpleRoute: DemoFormSimpleRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
