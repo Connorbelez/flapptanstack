@@ -472,7 +472,7 @@ describe("portal middleware proof consumers", () => {
 
 		const success = await t
 			.withIdentity(MULTI_PORTAL_BORROWER)
-			.query(api.portals.proof.getPortalBorrowerContextProof, {
+			.query(internal.portals.proof.getPortalBorrowerContextProof, {
 				portalId: fixture.portalAId,
 			});
 

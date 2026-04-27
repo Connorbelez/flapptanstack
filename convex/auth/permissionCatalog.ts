@@ -49,12 +49,14 @@ export const PERMISSION_DISPLAY_METADATA = {
 	},
 	"onboarding:review": {
 		name: "Review Onboarding",
-		description: "Review onboarding requests",
+		description:
+			"Approve or reject individual onboarding reviews and later verification decisions",
 		domain: "onboarding",
 	},
 	"onboarding:manage": {
 		name: "Manage Onboarding",
-		description: "Manage onboarding workflows",
+		description:
+			"Access onboarding queues, history, and operational repair workflows",
 		domain: "onboarding",
 	},
 	"role:assign": {
@@ -365,6 +367,21 @@ export const PERMISSION_DISPLAY_METADATA = {
 } as const satisfies Record<string, PermissionDisplayMeta>;
 
 export type PermissionSlug = keyof typeof PERMISSION_DISPLAY_METADATA;
+
+export const ONBOARDING_PERMISSION_CONTRACT = Object.freeze({
+	review: {
+		permission: "onboarding:review",
+		responsibility:
+			"Reviewer decisions on individual onboarding requests and later broker-onboarding verification decisions.",
+		runtimeConsumers: ["convex/onboarding/mutations.ts"],
+	},
+	manage: {
+		permission: "onboarding:manage",
+		responsibility:
+			"Operational queue, history, bulk-admin, and repair surfaces for onboarding workflows.",
+		runtimeConsumers: ["convex/onboarding/queries.ts"],
+	},
+} as const);
 
 export const ROLE_PERMISSIONS = {
 	admin: [

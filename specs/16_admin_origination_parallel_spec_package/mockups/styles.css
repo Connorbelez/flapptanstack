@@ -89,6 +89,12 @@ a {
 	border-bottom: 1px solid #3f3f46;
 }
 
+.radio-card strong {
+	display: block;
+	margin-bottom: 6px;
+	font-size: 13px;
+}
+
 .mock-screen > header.meta strong {
 	font-weight: 600;
 	letter-spacing: 0.02em;
@@ -533,12 +539,6 @@ table.data tbody tr:hover td {
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
 	border-radius: var(--radius);
-}
-
-.radio-card strong {
-	display: block;
-	margin-bottom: 6px;
-	font-size: 13px;
 }
 
 .radio-card p {

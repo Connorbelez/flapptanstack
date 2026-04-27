@@ -316,7 +316,6 @@ export async function getListingByIdOrNull(
 	return await ctx.db.get(listingId);
 }
 
-
 async function collectPublishedListingCandidates(
 	ctx: { db: Pick<DatabaseReader, "query"> },
 	filters: PublishedListingFilters | undefined

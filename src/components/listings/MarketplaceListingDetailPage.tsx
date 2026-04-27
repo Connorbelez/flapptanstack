@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { ListingDetailPage } from "./ListingDetailPage";
 import { buildMarketplaceListingDetailModel } from "./marketplace-detail-adapter";
@@ -18,7 +17,6 @@ export function MarketplaceListingDetailPage({
 
 	return (
 		<ListingDetailPage
-
 			listing={listing}
 			listingsIndexTo="/listings"
 			mode="readOnly"
