@@ -49,14 +49,16 @@ export const listAdminRequests = micInvestorAccessRequestAdminQuery
 			.filter((request) =>
 				args.requestedAtFrom === undefined
 					? true
-					: request.requestedAt >= args.requestedAtFrom
+					: (request.requestedAt ?? 0) >= args.requestedAtFrom
 			)
 			.filter((request) =>
 				args.requestedAtTo === undefined
 					? true
-					: request.requestedAt <= args.requestedAtTo
+					: (request.requestedAt ?? 0) <= args.requestedAtTo
 			)
-			.sort((left, right) => right.requestedAt - left.requestedAt);
+			.sort(
+				(left, right) => (right.requestedAt ?? 0) - (left.requestedAt ?? 0)
+			);
 
 		return await Promise.all(
 			filteredRequests.map(async (request) => {
