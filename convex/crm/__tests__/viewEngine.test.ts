@@ -251,6 +251,118 @@ async function seedMortgageViewFixture(t: CrmTestHarness) {
 	};
 }
 
+async function seedDealViewFixture(t: CrmTestHarness) {
+	const orgId = CRM_ADMIN_IDENTITY.org_id;
+	const lockedAt = Date.parse("2026-04-20T15:30:00.000Z");
+
+	await t.mutation(
+		internal.crm.systemAdapters.bootstrap.bootstrapSystemObjects,
+		{ orgId }
+	);
+
+	return t.run(async (ctx) => {
+		const brokerUserId = await ctx.db.insert("users", {
+			authId: "test-deal-principal-broker",
+			email: "principal-broker+deal@test.fairlend.ca",
+			firstName: "Bryn",
+			lastName: "Broker",
+		});
+		const borrowerUserId = await ctx.db.insert("users", {
+			authId: "test-deal-borrower",
+			email: "borrower+deal@test.fairlend.ca",
+			firstName: "Ada",
+			lastName: "Borrower",
+		});
+		const lenderUserId = await ctx.db.insert("users", {
+			authId: "test-deal-lender",
+			email: "lender+deal@test.fairlend.ca",
+			firstName: "Lena",
+			lastName: "Lender",
+		});
+		const brokerId = await ctx.db.insert("brokers", {
+			status: "active",
+			userId: brokerUserId,
+			orgId,
+			brokerageName: "Northline Capital",
+			createdAt: Date.now(),
+		});
+		const borrowerId = await ctx.db.insert("borrowers", {
+			status: "active",
+			orgId,
+			userId: borrowerUserId,
+			createdAt: Date.now(),
+		});
+		const lenderId = await ctx.db.insert("lenders", {
+			userId: lenderUserId,
+			orgId,
+			brokerId,
+			accreditationStatus: "accredited",
+			onboardingEntryPath: "broker_invite",
+			status: "active",
+			createdAt: Date.now(),
+		});
+		const propertyId = await ctx.db.insert("properties", {
+			streetAddress: "123 Deal Ave",
+			city: "Toronto",
+			province: "ON",
+			postalCode: "M5V2T6",
+			propertyType: "residential",
+			createdAt: Date.now(),
+		});
+		const mortgageId = await ctx.db.insert("mortgages", {
+			orgId,
+			status: "active",
+			propertyId,
+			principal: 800_000,
+			interestRate: 5.25,
+			rateType: "fixed",
+			termMonths: 60,
+			amortizationMonths: 300,
+			paymentAmount: 4200,
+			paymentFrequency: "monthly",
+			loanType: "conventional",
+			lienPosition: 1,
+			interestAdjustmentDate: "2026-05-01",
+			termStartDate: "2026-05-01",
+			maturityDate: "2031-05-01",
+			firstPaymentDate: "2026-06-01",
+			brokerOfRecordId: brokerId,
+			createdAt: Date.now(),
+		});
+
+		await ctx.db.insert("mortgageBorrowers", {
+			mortgageId,
+			borrowerId,
+			role: "primary",
+			addedAt: Date.now(),
+		});
+
+		const dealId = await ctx.db.insert("deals", {
+			orgId,
+			status: "initiated",
+			mortgageId,
+			buyerId: "test-deal-lender",
+			sellerId: "test-deal-borrower",
+			fractionalShare: 2500,
+			closingDate: lockedAt,
+			lockingFeeAmount: 5000,
+			lenderId,
+			createdAt: lockedAt,
+			createdBy: CRM_ADMIN_IDENTITY.subject,
+		});
+
+		const objectDef = await ctx.db
+			.query("objectDefs")
+			.withIndex("by_org_name", (q) => q.eq("orgId", orgId).eq("name", "deal"))
+			.first();
+		if (!objectDef) {
+			throw new Error("Deal system object not found");
+		}
+
+		return { dealId, lockedAt, objectDef };
+	});
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // View Engine
 // ═══════════════════════════════════════════════════════════════════════
@@ -384,6 +496,54 @@ describe("View Engine", () => {
 			);
 			expect(mortgageRow?.record.fields.borrowerSummary).toBe("Avery Borrower");
 			expect(mortgageRow?.record.fields).not.toHaveProperty("listingSummary");
+		});
+
+		it("returns requested admin deal table columns with hydrated relationship values", async () => {
+			const fixture = await seedDealViewFixture(t);
+			const tableViewId = await asAdmin(t).mutation(
+				api.crm.viewDefs.createView,
+				{
+					objectDefId: fixture.objectDef._id,
+					name: "Deal Table",
+					viewType: "table",
+				}
+			);
+
+			const result = await asAdmin(t).query(
+				api.crm.viewQueries.queryViewRecords,
+				{
+					viewDefId: tableViewId,
+					limit: 25,
+				}
+			);
+
+			const visibleColumnNames = result.columns
+				.filter((column) => column.isVisible)
+				.map((column) => column.name);
+			expect(visibleColumnNames).toEqual(
+				expect.arrayContaining([
+					"fractionAmount",
+					"loanAmount",
+					"mortgageSummary",
+					"lenderSummary",
+					"brokerSummary",
+					"borrowerSummary",
+					"lockingDate",
+				])
+			);
+
+			const dealRow = result.rows.find(
+				(row) => row._id === String(fixture.dealId)
+			);
+			expect(dealRow?.fields).toMatchObject({
+				fractionAmount: 200_000,
+				loanAmount: 800_000,
+				lenderSummary: "Lena Lender",
+				brokerSummary: "Bryn Broker • Northline Capital",
+				borrowerSummary: "Ada Borrower",
+				lockingDate: fixture.lockedAt,
+			});
+			expect(dealRow?.fields.mortgageSummary).toContain("123 Deal Ave");
 		});
 
 		it("pagination with cursor returns next page", async () => {

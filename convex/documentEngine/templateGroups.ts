@@ -1,5 +1,13 @@
 import { ConvexError, v } from "convex/values";
+import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { adminMutation, documentQuery } from "../fluent";
+
+interface GroupRef {
+	order: number;
+	pinnedVersion?: number;
+	templateId: Id<"documentTemplates">;
+}
 
 export const create = adminMutation
 	.input({
@@ -252,9 +260,151 @@ export const pinVersion = adminMutation
 	})
 	.public();
 
+export const publish = adminMutation
+	.input({
+		groupId: v.id("documentTemplateGroups"),
+		publishedBy: v.optional(v.string()),
+	})
+	.handler(async (ctx, args) => {
+		const group = await ctx.db.get(args.groupId);
+		if (!group) {
+			throw new ConvexError("Group not found");
+		}
+		if (group.templateRefs.length === 0) {
+			throw new ConvexError("Cannot publish a group with no templates");
+		}
+
+		const resolvedRefs = await Promise.all(
+			group.templateRefs.map((ref) => resolvePublishedTemplateRef(ctx, ref))
+		);
+		const sortedRefs = resolvedRefs.sort(
+			(left, right) => left.order - right.order
+		);
+		const requiredVariableKeys = new Set<string>();
+		const requiredPlatformRoles = new Set<string>();
+
+		for (const ref of sortedRefs) {
+			for (const field of ref.version.snapshot.fields) {
+				if (field.type === "interpolable" && field.variableKey) {
+					requiredVariableKeys.add(field.variableKey);
+				}
+				if (field.type === "signable" && field.signatoryPlatformRole) {
+					requiredPlatformRoles.add(field.signatoryPlatformRole);
+				}
+			}
+			for (const signatory of ref.version.snapshot.signatories) {
+				requiredPlatformRoles.add(signatory.platformRole);
+			}
+		}
+
+		const latestVersion = await ctx.db
+			.query("documentGroupVersions")
+			.withIndex("by_group", (q) => q.eq("groupId", args.groupId))
+			.order("desc")
+			.first();
+		const version = (latestVersion?.version ?? 0) + 1;
+
+		await ctx.db.insert("documentGroupVersions", {
+			groupId: args.groupId,
+			publishedAt: Date.now(),
+			publishedBy: args.publishedBy,
+			snapshot: {
+				description: group.description,
+				name: group.name,
+				requiredPlatformRoles: [...requiredPlatformRoles].sort(),
+				requiredVariableKeys: [...requiredVariableKeys].sort(),
+				signatories: group.signatories,
+				templateRefs: sortedRefs.map((ref) => ({
+					order: ref.order,
+					pinnedVersion: ref.version.version,
+					templateId: ref.templateId,
+				})),
+			},
+			version,
+		});
+
+		return version;
+	})
+	.public();
+
+export const listVersions = documentQuery
+	.input({ groupId: v.id("documentTemplateGroups") })
+	.handler(async (ctx, args) => {
+		return await ctx.db
+			.query("documentGroupVersions")
+			.withIndex("by_group", (q) => q.eq("groupId", args.groupId))
+			.order("desc")
+			.collect();
+	})
+	.public();
+
+export const listAllVersions = documentQuery
+	.input({})
+	.handler(async (ctx) => {
+		const versions = await ctx.db
+			.query("documentGroupVersions")
+			.order("desc")
+			.collect();
+		return await Promise.all(
+			versions.map(async (version) => {
+				const group = await ctx.db.get(version.groupId);
+				return {
+					...version,
+					groupName: group?.name ?? version.snapshot.name,
+				};
+			})
+		);
+	})
+	.public();
+
+export const getVersion = documentQuery
+	.input({
+		groupId: v.id("documentTemplateGroups"),
+		version: v.number(),
+	})
+	.handler(async (ctx, args) => {
+		return await ctx.db
+			.query("documentGroupVersions")
+			.withIndex("by_group", (q) =>
+				q.eq("groupId", args.groupId).eq("version", args.version)
+			)
+			.first();
+	})
+	.public();
+
 export const remove = adminMutation
 	.input({ id: v.id("documentTemplateGroups") })
 	.handler(async (ctx, args) => {
 		await ctx.db.delete(args.id);
 	})
 	.public();
+
+async function resolvePublishedTemplateRef(ctx: MutationCtx, ref: GroupRef) {
+	const version =
+		ref.pinnedVersion === undefined
+			? await ctx.db
+					.query("documentTemplateVersions")
+					.withIndex("by_template", (q) => q.eq("templateId", ref.templateId))
+					.order("desc")
+					.first()
+			: await getPinnedTemplateVersion(ctx, ref.templateId, ref.pinnedVersion);
+
+	if (!version) {
+		throw new ConvexError("Every group template must have a published version");
+	}
+
+	return { ...ref, pinnedVersion: version.version, version };
+}
+
+function getPinnedTemplateVersion(
+	ctx: MutationCtx,
+	templateId: Id<"documentTemplates">,
+	version: number
+) {
+	return ctx.db
+		.query("documentTemplateVersions")
+		.withIndex("by_template", (q) =>
+			q.eq("templateId", templateId).eq("version", version)
+		)
+		.first();
+}

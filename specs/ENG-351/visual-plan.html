@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ENG-351 Checkout Hardening Plan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      --bg: #f6f1e8;
+      --surface: #fffaf1;
+      --surface-elevated: #fffdf8;
+      --surface-recessed: #eee3d1;
+      --border: rgba(61, 45, 31, .16);
+      --border-strong: rgba(61, 45, 31, .26);
+      --text: #251b14;
+      --muted: #6f5e4f;
+      --teal: #0f766e;
+      --terracotta: #c2410c;
+      --amber: #b45309;
+      --cranberry: #9f1239;
+      --blue: #1d4ed8;
+      --green: #15803d;
+      --ink: #3d2d1f;
+      --shadow: rgba(61, 45, 31, .12);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #17130f;
+        --surface: #211a14;
+        --surface-elevated: #2a2119;
+        --surface-recessed: #16110d;
+        --border: rgba(255, 236, 209, .12);
+        --border-strong: rgba(255, 236, 209, .22);
+        --text: #f4eadc;
+        --muted: #b9aa98;
+        --teal: #5eead4;
+        --terracotta: #fb923c;
+        --amber: #fbbf24;
+        --cranberry: #fb7185;
+        --blue: #93c5fd;
+        --green: #86efac;
+        --ink: #f4eadc;
+        --shadow: rgba(0, 0, 0, .38);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(circle at 16% 8%, color-mix(in srgb, var(--teal) 16%, transparent), transparent 24rem),
+        radial-gradient(circle at 78% 16%, color-mix(in srgb, var(--amber) 12%, transparent), transparent 24rem),
+        linear-gradient(135deg, var(--bg), color-mix(in srgb, var(--bg) 88%, var(--surface) 12%) 54%, color-mix(in srgb, var(--bg) 86%, var(--terracotta) 14%));
+      color: var(--text);
+      font-family: var(--font-body);
+    }
+
+    .wrap {
+      max-width: 1360px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 178px minmax(0, 1fr);
+      gap: 0 34px;
+      padding: 36px 24px 72px;
+    }
+
+    .main { min-width: 0; }
+
+    .toc {
+      position: sticky;
+      top: 24px;
+      align-self: start;
+      grid-row: 1 / -1;
+      max-height: calc(100dvh - 48px);
+      overflow-y: auto;
+      padding: 12px 0;
+    }
+
+    .toc-title,
+    .eyebrow,
+    code,
+    .badge,
+    .task-chip,
+    .gate-label,
+    .chunk-label {
+      font-family: var(--font-mono);
+    }
+
+    .toc-title {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .16em;
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .toc a {
+      display: block;
+      border-left: 2px solid transparent;
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      margin-bottom: 2px;
+      padding: 7px 9px;
+      text-decoration: none;
+    }
+
+    .toc a:hover {
+      background: color-mix(in srgb, var(--surface) 70%, transparent);
+      color: var(--text);
+    }
+
+    .toc a.active {
+      border-left-color: var(--teal);
+      color: var(--text);
+    }
+
+    .hero {
+      background: color-mix(in srgb, var(--surface-elevated) 86%, transparent);
+      border: 1px solid var(--border);
+      border-radius: 30px;
+      box-shadow: 0 24px 80px var(--shadow);
+      overflow: hidden;
+      padding: clamp(26px, 4vw, 42px);
+      position: relative;
+    }
+
+    .hero:after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 7px;
+      background: linear-gradient(90deg, var(--teal), var(--terracotta), var(--amber), var(--cranberry), var(--blue));
+    }
+
+    .eyebrow {
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      font-size: clamp(38px, 6vw, 76px);
+      letter-spacing: -.055em;
+      line-height: .94;
+      margin: 14px 0 18px;
+      max-width: 980px;
+    }
+
+    .summary {
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.62;
+      margin: 0;
+      max-width: 890px;
+    }
+
+    .metrics {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 30px;
+    }
+
+    .metric {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      min-width: 0;
+      padding: 18px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 34px;
+      letter-spacing: -.04em;
+      line-height: 1;
+    }
+
+    .metric span {
+      color: var(--muted);
+      display: block;
+      font-size: 13px;
+      line-height: 1.35;
+      margin-top: 7px;
+    }
+
+    .section-head {
+      align-items: end;
+      display: flex;
+      gap: 18px;
+      justify-content: space-between;
+      margin: 42px 0 16px;
+      scroll-margin-top: 24px;
+    }
+
+    .section-head h2 {
+      font-size: clamp(26px, 3vw, 42px);
+      letter-spacing: -.035em;
+      line-height: 1;
+      margin: 0;
+    }
+
+    .section-head p {
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+      max-width: 520px;
+    }
+
+    .plan-flow {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      position: relative;
+    }
+
+    .plan-flow:before {
+      content: "";
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      top: 39px;
+      border-top: 2px dashed var(--border-strong);
+      z-index: 0;
+    }
+
+    .ve-card {
+      background: color-mix(in srgb, var(--surface) 82%, transparent);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      min-width: 0;
+      padding: 19px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .chunk-card {
+      display: flex;
+      flex-direction: column;
+      min-height: 410px;
+    }
+
+    .chunk-card:before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 22px;
+      border-top: 5px solid var(--accent);
+      pointer-events: none;
+    }
+
+    .chunk-top {
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .chunk-index {
+      align-items: center;
+      background: var(--surface-elevated);
+      border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+      border-radius: 999px;
+      color: var(--accent);
+      display: inline-flex;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      height: 42px;
+      justify-content: center;
+      width: 42px;
+    }
+
+    .count {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 36%, transparent);
+      border-radius: 999px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 9px;
+      white-space: nowrap;
+    }
+
+    .chunk-label {
+      color: var(--accent);
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .09em;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .chunk-card h3 {
+      font-size: 20px;
+      letter-spacing: -.02em;
+      line-height: 1.1;
+      margin: 0 0 11px;
+    }
+
+    .chunk-card p {
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0 0 14px;
+    }
+
+    .task-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: auto 0 14px;
+    }
+
+    .task-chip {
+      background: var(--surface-recessed);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text);
+      font-size: 11px;
+      padding: 5px 7px;
+    }
+
+    .depends {
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+      padding-top: 13px;
+    }
+
+    .depends strong {
+      color: var(--text);
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .chunk-1 { --accent: var(--teal); }
+    .chunk-2 { --accent: var(--terracotta); }
+    .chunk-3 { --accent: var(--amber); }
+    .chunk-4 { --accent: var(--cranberry); }
+    .chunk-5 { --accent: var(--blue); }
+
+    .gate-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+    }
+
+    .approval {
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--cranberry) 10%, transparent), transparent 68%),
+        var(--surface);
+      border-color: color-mix(in srgb, var(--cranberry) 30%, var(--border));
+      min-height: 235px;
+    }
+
+    .gate-label {
+      color: var(--cranberry);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .approval h3,
+    .validation h3,
+    .matrix h3 {
+      font-size: 26px;
+      letter-spacing: -.03em;
+      margin: 10px 0 10px;
+    }
+
+    .approval p,
+    .validation p,
+    .matrix p {
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    .validation ul,
+    .matrix ul {
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 14px 0 0;
+      padding-left: 19px;
+    }
+
+    .validation li + li { margin-top: 7px; }
+
+    .gate-strip {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      margin-top: 16px;
+    }
+
+    .gate {
+      background: var(--surface-recessed);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      min-width: 0;
+      padding: 12px;
+    }
+
+    .gate code {
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .gate span {
+      color: var(--muted);
+      display: block;
+      font-size: 12px;
+      line-height: 1.35;
+      margin-top: 6px;
+    }
+
+    .matrix {
+      margin-top: 16px;
+    }
+
+    .matrix-table {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      margin-top: 14px;
+      overflow-x: auto;
+    }
+
+    table {
+      border-collapse: collapse;
+      min-width: 780px;
+      width: 100%;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--border);
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--surface-recessed);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    td {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .badge {
+      background: color-mix(in srgb, var(--accent, var(--teal)) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent, var(--teal)) 34%, transparent);
+      border-radius: 999px;
+      color: var(--accent, var(--teal));
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 8px;
+      white-space: nowrap;
+    }
+
+    .notes {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 16px;
+    }
+
+    .note {
+      background: color-mix(in srgb, var(--surface) 78%, transparent);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+    }
+
+    .note h3 {
+      font-size: 17px;
+      margin: 0 0 8px;
+    }
+
+    .note p {
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    @media (max-width: 1180px) {
+      .plan-flow,
+      .gate-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .plan-flow:before { display: none; }
+      .chunk-card { min-height: 0; }
+    }
+
+    @media (max-width: 920px) {
+      .wrap {
+        display: block;
+        padding: 0 18px 52px;
+      }
+
+      .toc {
+        background: color-mix(in srgb, var(--bg) 92%, transparent);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        gap: 5px;
+        margin: 0 -18px 22px;
+        max-height: none;
+        overflow-x: auto;
+        padding: 10px 18px;
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+
+      .toc-title { display: none; }
+
+      .toc a {
+        border-left: 0;
+        border-bottom: 2px solid transparent;
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+
+      .toc a.active { border-bottom-color: var(--teal); }
+
+      .metrics,
+      .gate-grid,
+      .notes {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        align-items: start;
+        display: block;
+      }
+
+      .section-head p { margin-top: 10px; }
+    }
+
+    @media (max-width: 620px) {
+      .plan-flow,
+      .gate-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .hero { border-radius: 24px; }
+      .metric strong { font-size: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav class="toc" id="toc" aria-label="Visual plan sections">
+      <div class="toc-title">Contents</div>
+      <a class="active" href="#overview">Overview</a>
+      <a href="#chunks">Five Chunks</a>
+      <a href="#gates">Gates</a>
+      <a href="#coverage">Coverage Matrix</a>
+      <a href="#operating-notes">Operating Notes</a>
+    </nav>
+
+    <main class="main">
+      <section class="hero" id="overview">
+        <div class="eyebrow">ENG-351 visual implementation plan</div>
+        <h1>Checkout hardening runs as one ordered test-first chain.</h1>
+        <p class="summary">The plan keeps implementation paused until approval, then moves through five dependent chunks: traceability and fixtures, checkout start/expiry/race tests, reconciliation and refund hardening, deal/package/access handoff, and UI/E2E validation. The final chunk closes the loop with repo-wide gates and AC4.x audit notes.</p>
+        <div class="metrics" aria-label="Plan metrics">
+          <div class="metric"><strong>5</strong><span>ordered execution chunks from the manifest</span></div>
+          <div class="metric"><strong>34</strong><span>pending chunk tasks, excluding completed context gathering</span></div>
+          <div class="metric"><strong>6</strong><span>final validation gates in T-900 through T-905</span></div>
+          <div class="metric"><strong>1</strong><span>approval gate before any implementation starts</span></div>
+        </div>
+      </section>
+
+      <section id="chunks" aria-labelledby="chunks-title">
+        <div class="section-head">
+          <h2 id="chunks-title">Five chunks, one dependency line</h2>
+          <p>Each chunk consumes the previous chunk's evidence. Fix tasks stay inside their chunk and are only triggered by failing coverage, keeping the blast radius legible.</p>
+        </div>
+
+        <div class="plan-flow">
+          <article class="ve-card chunk-card chunk-1">
+            <div class="chunk-top">
+              <span class="chunk-index">01</span>
+              <span class="count">6 tasks</span>
+            </div>
+            <span class="chunk-label">chunk-01-fixtures-and-traceability</span>
+            <h3>Fixtures and Traceability</h3>
+            <p>Build the AC4.x matrix and deterministic setup surface before any behavior tests depend on it.</p>
+            <div class="task-list" aria-label="Chunk 1 tasks">
+              <span class="task-chip">T-003</span><span class="task-chip">T-004</span><span class="task-chip">T-010</span><span class="task-chip">T-011</span><span class="task-chip">T-012</span><span class="task-chip">T-013</span>
+            </div>
+            <div class="depends"><strong>Unlocks</strong>Every later chunk relies on shared Convex fixtures, Stripe builders, checkout states, and audit assertions.</div>
+          </article>
+
+          <article class="ve-card chunk-card chunk-2">
+            <div class="chunk-top">
+              <span class="chunk-index">02</span>
+              <span class="count">5 tasks</span>
+            </div>
+            <span class="chunk-label">chunk-02-start-expiry-and-races</span>
+            <h3>Start, Expiry, Races</h3>
+            <p>Prove checkout launch, reservation expiry, duplicate sweeps, auth/tampering, and final-fractions races.</p>
+            <div class="task-list" aria-label="Chunk 2 tasks">
+              <span class="task-chip">T-020</span><span class="task-chip">T-021</span><span class="task-chip">T-022</span><span class="task-chip">T-023</span><span class="task-chip">T-024</span>
+            </div>
+            <div class="depends"><strong>Depends on 01</strong>Uses fixture states and audit helpers; any discovered checkout start, expiry, ledger, visibility, or audit defects are fixed in T-024.</div>
+          </article>
+
+          <article class="ve-card chunk-card chunk-3">
+            <div class="chunk-top">
+              <span class="chunk-index">03</span>
+              <span class="count">6 tasks</span>
+            </div>
+            <span class="chunk-label">chunk-03-reconciliation-and-refunds</span>
+            <h3>Reconciliation and Refunds</h3>
+            <p>Close replay, polling, success-before-timeout, failure-within-TTL, late-success refund, and metadata-conflict paths.</p>
+            <div class="task-list" aria-label="Chunk 3 tasks">
+              <span class="task-chip">T-030</span><span class="task-chip">T-031</span><span class="task-chip">T-032</span><span class="task-chip">T-033</span><span class="task-chip">T-034</span><span class="task-chip">T-035</span>
+            </div>
+            <div class="depends"><strong>Depends on 02</strong>Builds on validated checkout states; reconciliation, transfer, refund, webhook idempotency, or audit fixes land in T-035.</div>
+          </article>
+
+          <article class="ve-card chunk-card chunk-4">
+            <div class="chunk-top">
+              <span class="chunk-index">04</span>
+              <span class="count">6 tasks</span>
+            </div>
+            <span class="chunk-label">chunk-04-deal-package-and-audit</span>
+            <h3>Deal, Package, Access</h3>
+            <p>Verify paid checkout creates exactly one deal handoff, package snapshot, access set, and audit trail.</p>
+            <div class="task-list" aria-label="Chunk 4 tasks">
+              <span class="task-chip">T-040</span><span class="task-chip">T-041</span><span class="task-chip">T-042</span><span class="task-chip">T-043</span><span class="task-chip">T-044</span><span class="task-chip">T-045</span>
+            </div>
+            <div class="depends"><strong>Depends on 03</strong>Requires payment completion and replay behavior to be stable; handoff, access, package, reservation, and audit fixes land in T-045.</div>
+          </article>
+
+          <article class="ve-card chunk-card chunk-5">
+            <div class="chunk-top">
+              <span class="chunk-index">05</span>
+              <span class="count">11 tasks</span>
+            </div>
+            <span class="chunk-label">chunk-05-ui-e2e-and-validation</span>
+            <h3>UI, E2E, Validation</h3>
+            <p>Exercise listing launcher states, route auth wrappers, browser smoke, and the final repository validation gates.</p>
+            <div class="task-list" aria-label="Chunk 5 tasks">
+              <span class="task-chip">T-050</span><span class="task-chip">T-051</span><span class="task-chip">T-052</span><span class="task-chip">T-053</span><span class="task-chip">T-054</span><span class="task-chip">T-900</span><span class="task-chip">T-901</span><span class="task-chip">T-902</span><span class="task-chip">T-903</span><span class="task-chip">T-904</span><span class="task-chip">T-905</span>
+            </div>
+            <div class="depends"><strong>Depends on 04</strong>Confirms the backend contract through UI routes and ends with codegen, lint, typecheck, targeted tests, full test runs, and traceability notes.</div>
+          </article>
+        </div>
+      </section>
+
+      <section id="gates" aria-labelledby="gates-title">
+        <div class="section-head">
+          <h2 id="gates-title">Approval and validation gates</h2>
+          <p>The page separates the human decision gate from the automated completion gates so implementation cannot accidentally start from the artifact alone.</p>
+        </div>
+
+        <div class="gate-grid">
+          <article class="ve-card approval">
+            <span class="gate-label">approval gate</span>
+            <h3>Stop here until the plan is approved.</h3>
+            <p>No ENG-351 implementation chunks should run from this visual review. After approval, work begins at chunk 01 and proceeds in order. Before symbol edits, retry GitNexus impact analysis or record the unavailable-tool fallback required by the task status rules.</p>
+          </article>
+
+          <article class="ve-card validation">
+            <span class="gate-label" style="color: var(--green)">validation gates</span>
+            <h3>Completion is evidence-based.</h3>
+            <p>Chunk 05 owns the final gates and should not mark ENG-351 complete until every required check has either passed or has an explicit blocker.</p>
+            <ul>
+              <li>Generated Convex artifacts stay current.</li>
+              <li>Formatting, lint, and TypeScript checks pass.</li>
+              <li>Targeted checkout/webhook/deal/listing tests run.</li>
+              <li>Full unit and E2E suites run when browser coverage is included.</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="gate-strip" aria-label="Final validation tasks">
+          <div class="gate"><code>T-900</code><span>Run Convex codegen and keep generated output aligned.</span></div>
+          <div class="gate"><code>T-901</code><span>Run `bun check`; address formatting and lint failures normally.</span></div>
+          <div class="gate"><code>T-902</code><span>Run `bun typecheck`; fix all TypeScript errors.</span></div>
+          <div class="gate"><code>T-903</code><span>Run targeted checkout, webhook, deal, listing, and E2E tests.</span></div>
+          <div class="gate"><code>T-904</code><span>Run full unit tests and E2E when browser coverage is included.</span></div>
+          <div class="gate"><code>T-905</code><span>Finalize AC4.x traceability and human audit notes.</span></div>
+        </div>
+      </section>
+
+      <section id="coverage" aria-labelledby="coverage-title">
+        <div class="section-head">
+          <h2 id="coverage-title">Chunk coverage matrix</h2>
+          <p>This compact table ties each manifest chunk to its task count, core evidence, and handoff dependency.</p>
+        </div>
+
+        <div class="matrix-table">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Order</th>
+                <th scope="col">Chunk</th>
+                <th scope="col">Tasks</th>
+                <th scope="col">Core evidence</th>
+                <th scope="col">Handoff rule</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="--accent: var(--teal)">
+                <td><span class="badge">01</span></td>
+                <td>Fixtures and traceability</td>
+                <td>6</td>
+                <td>AC4.x matrix, reusable fixture inventory, Stripe builders, checkout states, audit helpers.</td>
+                <td>Must complete before behavior tests depend on shared setup.</td>
+              </tr>
+              <tr style="--accent: var(--terracotta)">
+                <td><span class="badge">02</span></td>
+                <td>Start, expiry, and races</td>
+                <td>5</td>
+                <td>Race, provider failure, expiry, abandon, auth, portal visibility, and tampering coverage.</td>
+                <td>Feeds stable checkout state into reconciliation tests.</td>
+              </tr>
+              <tr style="--accent: var(--amber)">
+                <td><span class="badge">03</span></td>
+                <td>Reconciliation and refunds</td>
+                <td>6</td>
+                <td>Webhook replay, return polling, timeout, refund, transfer, and metadata-conflict evidence.</td>
+                <td>Must prove idempotent payment outcomes before deal handoff tests.</td>
+              </tr>
+              <tr style="--accent: var(--cranberry)">
+                <td><span class="badge">04</span></td>
+                <td>Deal, package, access, audit</td>
+                <td>6</td>
+                <td>Exactly-one deal/package/access, participant signatories, retry repair, access boundaries, rejected transitions.</td>
+                <td>Backend handoff contract must be settled before UI and browser smoke.</td>
+              </tr>
+              <tr style="--accent: var(--blue)">
+                <td><span class="badge">05</span></td>
+                <td>UI, E2E, validation</td>
+                <td>11</td>
+                <td>RTL launcher states, route auth wrappers, Playwright positive/negative smoke, codegen, check, typecheck, tests, audit notes.</td>
+                <td>Final gate closes only after targeted and repo-wide validation evidence is collected.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="operating-notes" aria-labelledby="notes-title">
+        <div class="section-head">
+          <h2 id="notes-title">Operating notes</h2>
+          <p>These guardrails come directly from the task file and keep the visual plan aligned with the implementation workflow.</p>
+        </div>
+
+        <div class="notes">
+          <article class="note">
+            <h3>Stable task IDs</h3>
+            <p>Task IDs remain stable. Newly discovered defect-fix tasks should be added before editing implementation code.</p>
+          </article>
+          <article class="note">
+            <h3>Tests lead fixes</h3>
+            <p>Do not weaken tests to match broken behavior. Fix implementation or record a blocker with the failing evidence.</p>
+          </article>
+          <article class="note">
+            <h3>Traceability closes the PR</h3>
+            <p>T-003 starts the AC4.x matrix and T-905 finalizes it with human audit notes after validation.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      const toc = document.getElementById("toc");
+      const links = Array.from(toc.querySelectorAll("a"));
+      const sections = links
+        .map((link) => {
+          const id = link.getAttribute("href").slice(1);
+          const section = document.getElementById(id);
+          return section ? { id, link, section } : null;
+        })
+        .filter(Boolean);
+
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          links.forEach((link) => link.classList.remove("active"));
+          const match = sections.find((item) => item.section === entry.target);
+          if (match) {
+            match.link.classList.add("active");
+          }
+        });
+      }, { rootMargin: "-18% 0px -70% 0px", threshold: 0 });
+
+      sections.forEach((item) => observer.observe(item.section));
+    })();
+  </script>
+</body>
+</html>

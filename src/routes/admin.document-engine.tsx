@@ -16,6 +16,10 @@ function AdminDocumentEngineLayout() {
 				dashboard: "/admin/document-engine",
 				groups: "/admin/document-engine/groups",
 				library: "/admin/document-engine/library",
+				packages: "/admin/document-engine/packages",
+				publishedDealDocuments:
+					"/admin/document-engine/published-deal-documents",
+				publishedTemplates: "/admin/document-engine/published-templates",
 				templates: "/admin/document-engine/templates",
 				variables: "/admin/document-engine/variables",
 			}}

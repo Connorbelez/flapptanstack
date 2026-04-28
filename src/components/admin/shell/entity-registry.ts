@@ -191,6 +191,13 @@ export const STATIC_ADMIN_NAV_ITEMS = [
 	},
 	{
 		kind: "route",
+		label: "Document Engine",
+		route: "/admin/document-engine",
+		domain: "system",
+		iconName: "file-text",
+	},
+	{
+		kind: "route",
 		label: "Rotessa Reconciliation",
 		route: "/admin/rotessa-reconciliation",
 		domain: "payments",

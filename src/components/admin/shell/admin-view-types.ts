@@ -7,6 +7,7 @@ import type {
 	EntityViewPageResult,
 	EntityViewRow,
 	FieldLayoutEligibility,
+	FieldReferenceId,
 	FieldRendererHint,
 	NormalizedFieldDefinition,
 	NormalizedFieldKind,
@@ -20,7 +21,7 @@ import type {
 
 export interface AdminViewColumn {
 	displayOrder: number;
-	fieldDefId: Id<"fieldDefs">;
+	fieldDefId: FieldReferenceId;
 	fieldType: Doc<"fieldDefs">["fieldType"];
 	isVisible: boolean;
 	label: string;

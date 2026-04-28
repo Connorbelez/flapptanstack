@@ -1,7 +1,13 @@
 "use client";
 
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Building2, CheckCircle2, LoaderCircle, Sparkles } from "lucide-react";
+import {
+	Building2,
+	CheckCircle2,
+	LoaderCircle,
+	ShieldCheck,
+	Sparkles,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -289,7 +295,7 @@ export function BrokerPortalPricingCard({
 		form.dataset.saving = "true";
 		submitButton?.setAttribute("disabled", "");
 		submitButton?.setAttribute("aria-busy", "true");
-		const previousLabel = submitButton?.textContent;
+		const previousLabel = submitButton?.textContent ?? null;
 		if (submitButton) {
 			submitButton.textContent = "Saving…";
 		}
@@ -503,6 +509,88 @@ function BootstrapCard({
 						</Button>
 					</div>
 				) : null}
+			</CardContent>
+		</Card>
+	);
+}
+
+export function FairLendMicPortalCard() {
+	const ensureFairLendMicPortal = useMutation(
+		api.seed.seedPlatformOwnership.ensureFairLendMicPortal
+	);
+
+	async function handleRepair(button: HTMLButtonElement) {
+		if (button.dataset.repairing === "true") {
+			return;
+		}
+
+		button.dataset.repairing = "true";
+		button.disabled = true;
+		button.setAttribute("aria-busy", "true");
+		const previousContent = button.innerHTML;
+		button.textContent = "Repairing...";
+		try {
+			const result = await ensureFairLendMicPortal({});
+			toast.success(
+				`MIC portal ready at mic.localhost:3000 with lender mapping ${result.micLenderAuthId}.`
+			);
+		} catch (error) {
+			toast.error(
+				getErrorMessage(
+					error,
+					"Unable to repair the FairLend MIC portal configuration."
+				)
+			);
+		} finally {
+			button.dataset.repairing = "false";
+			button.disabled = false;
+			button.removeAttribute("aria-busy");
+			button.innerHTML = previousContent;
+		}
+	}
+
+	return (
+		<Card>
+			<CardHeader>
+				<div className="flex items-start justify-between gap-3">
+					<div className="flex items-start gap-3">
+						<div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+							<ShieldCheck className="size-5" />
+						</div>
+						<div>
+							<CardTitle>FairLend MIC portal</CardTitle>
+							<CardDescription>
+								Repair or create the universal MIC portal host and canonical
+								FairLend MIC lender mapping.
+							</CardDescription>
+						</div>
+					</div>
+					<Badge variant="outline">mic.localhost:3000</Badge>
+				</div>
+			</CardHeader>
+			<CardContent className="space-y-4 text-sm">
+				<div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+					<p className="text-muted-foreground text-sm">
+						This ensures the mic portal is active, published, pointed at
+						mic.fairlend.ca and mic.localhost:3000, and mapped to the canonical
+						FairLend MIC pooled lender account.
+					</p>
+				</div>
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<p className="text-muted-foreground text-xs">
+						Use this after local seed resets or when the MIC host is blocked as
+						misconfigured.
+					</p>
+					<Button
+						onClick={(event) => {
+							void handleRepair(event.currentTarget);
+						}}
+						type="button"
+					>
+						<ShieldCheck className="size-4" />
+						Repair MIC portal
+					</Button>
+				</div>
 			</CardContent>
 		</Card>
 	);
@@ -726,7 +814,7 @@ export function AdminSettingsPage() {
 				<h1 className="font-semibold text-2xl tracking-tight">Settings</h1>
 				<p className="text-muted-foreground text-sm">
 					Manage the active organization, members, broker portal pricing, CRM
-					bootstrap state, and mock mortgage QA data.
+					bootstrap state, MIC portal configuration, and mock mortgage QA data.
 				</p>
 			</header>
 			<OrganizationCard organization={snapshot.organization} />
@@ -735,6 +823,7 @@ export function AdminSettingsPage() {
 				brokerPortalPricing={snapshot.brokerPortalPricing}
 			/>
 			<BootstrapCard bootstrapStatus={snapshot.bootstrapStatus} />
+			<FairLendMicPortalCard />
 			<MockMortgagesCard status={mockMortgageBatchStatus} />
 		</div>
 	);

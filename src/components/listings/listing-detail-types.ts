@@ -72,6 +72,8 @@ export interface ListingDocumentItem {
 
 export interface ListingLawyerOption {
 	detail: string;
+	email?: string | null;
+	firm?: string | null;
 	id: string;
 	label: string;
 	type: "guest_lawyer" | "platform_lawyer";
@@ -103,13 +105,18 @@ export interface ListingDetailData {
 		subtitle: string;
 	};
 	checkout?: {
-		cardCtaLabel: string;
 		defaultFractions: number;
+		disabledReason?: string | null;
+		isEligible: boolean;
 		lawyers: ListingLawyerOption[];
-		lockFee: string;
+		lockFee: {
+			amountCents: number;
+			currency: string;
+			display: string;
+		};
+		maximumFractions: number;
 		minimumFractions: number;
 		perFractionAmount: number;
-		poweredBy: string;
 	};
 	comparables: {
 		asIf: ListingComparable[];
@@ -155,3 +162,45 @@ export interface ListingDetailData {
 }
 
 export type ListingDetailMock = ListingDetailData;
+
+export type ListingCheckoutReturnState =
+	| "abandoned"
+	| "error"
+	| "expired"
+	| "provider_start_failed"
+	| "success_pending";
+
+export type ListingCheckoutSelectedLawyer =
+	| {
+			email: string;
+			firm?: string;
+			lawyerId?: string;
+			name: string;
+			type: "platform_lawyer";
+	  }
+	| {
+			email: string;
+			firm?: string;
+			name: string;
+			type: "guest_lawyer";
+	  };
+
+export interface ListingCheckoutStartInput {
+	listingId: string;
+	portalId: string;
+	requestedFractions: number;
+	selectedLawyer: ListingCheckoutSelectedLawyer;
+}
+
+export type ListingCheckoutStartResult =
+	| {
+			checkoutSessionId: string;
+			expiresAt: number;
+			ok: true;
+			stripeCheckoutUrl: string;
+	  }
+	| {
+			code: string;
+			message: string;
+			ok: false;
+	  };

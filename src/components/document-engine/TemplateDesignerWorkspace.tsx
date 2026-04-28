@@ -12,6 +12,7 @@ import {
 	Undo2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
@@ -258,9 +259,10 @@ export function TemplateDesignerWorkspace({
 					signatories,
 				},
 			});
-			await publishTemplate({
+			const version = await publishTemplate({
 				id: templateId as Id<"documentTemplates">,
 			});
+			toast.success(`Template published v${version}`);
 		} catch (publishError) {
 			setError(
 				publishError instanceof Error ? publishError.message : "Publish failed"

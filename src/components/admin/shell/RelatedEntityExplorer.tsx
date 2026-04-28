@@ -102,9 +102,9 @@ function RelatedEntityGroupSection({
 
 	return (
 		<Collapsible onOpenChange={setOpen} open={open}>
-			<div className="rounded-xl border border-border/70 bg-background/80">
+			<div className="border-border/70 border-t">
 				<CollapsibleTrigger className="w-full" type="button">
-					<div className="flex items-start justify-between gap-3 px-4 py-4 text-left">
+					<div className="flex items-start justify-between gap-3 py-4 text-left">
 						<div className="space-y-1">
 							<div className="flex flex-wrap items-center gap-2">
 								<h4 className="font-medium text-sm">{group.title}</h4>
@@ -126,7 +126,7 @@ function RelatedEntityGroupSection({
 					</div>
 				</CollapsibleTrigger>
 				<CollapsibleContent>
-					<div className="space-y-3 border-border/70 border-t px-4 py-4">
+					<div className="space-y-3 border-border/70 border-t py-4">
 						<div className="relative">
 							<Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 							<Input
@@ -142,8 +142,8 @@ function RelatedEntityGroupSection({
 						</div>
 
 						{visibleItems.length > 0 ? (
-							<ScrollArea className="max-h-72 rounded-lg border border-border/60">
-								<div className="space-y-2 p-3">
+							<ScrollArea className="max-h-72 border-border/60 border-y">
+								<div className="divide-y divide-border/60">
 									{visibleItems.map((item) => {
 										const navigationTarget = resolveNavigationTarget({
 											item,
@@ -154,9 +154,8 @@ function RelatedEntityGroupSection({
 										return (
 											<button
 												className={cn(
-													"w-full rounded-lg border border-border/60 bg-background px-3 py-3 text-left transition-colors",
-													isInteractive &&
-														"hover:border-primary/40 hover:bg-muted/30",
+													"w-full px-1 py-3 text-left transition-colors",
+													isInteractive && "hover:bg-muted/30",
 													!isInteractive && "cursor-default"
 												)}
 												disabled={!isInteractive}
@@ -215,7 +214,7 @@ function RelatedEntityGroupSection({
 								</div>
 							</ScrollArea>
 						) : (
-							<div className="rounded-lg border border-border/70 border-dashed px-4 py-6 text-center">
+							<div className="border-border/70 border-y px-4 py-6 text-center">
 								<p className="text-muted-foreground text-sm">
 									{normalizedQuery.length > 0
 										? `No ${group.title.toLowerCase()} match "${query.trim()}".`

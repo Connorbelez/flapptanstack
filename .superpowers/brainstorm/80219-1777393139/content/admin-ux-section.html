@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; padding: 32px; background: #f8fafc; color: #0f172a; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { margin: 0 0 16px; color: #475569; }
+    .layout { display: grid; grid-template-columns: 220px 1fr; gap: 18px; }
+    .side, .main, .panel { background: white; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06); }
+    .side { padding: 12px; }
+    .main { padding: 18px; }
+    .nav { padding: 9px 10px; border-radius: 7px; margin: 3px 0; color: #334155; }
+    .active { background: #e0f2fe; color: #075985; font-weight: 700; }
+    .tabs { display: flex; gap: 6px; border-bottom: 1px solid #e2e8f0; margin-bottom: 14px; overflow-x: auto; }
+    .tab { padding: 8px 10px; font-weight: 600; color: #475569; white-space: nowrap; }
+    .tab.active { border-bottom: 2px solid #0284c7; background: transparent; border-radius: 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .panel { padding: 14px; }
+    .label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; margin-bottom: 6px; }
+    .title { font-weight: 700; margin-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 9px 10px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+    th { color: #64748b; font-size: 12px; background: #f8fafc; }
+    .button { display: inline-block; padding: 7px 10px; border-radius: 7px; background: #0284c7; color: white; font-weight: 700; font-size: 12px; }
+    .outline { background: white; color: #0369a1; border: 1px solid #bae6fd; }
+    code { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Admin UX Section</h1>
+  <p>The document engine becomes a first-class admin workspace and keeps operational inspection separate from authoring.</p>
+
+  <div class="layout">
+    <div class="side">
+      <div class="label">Admin Nav</div>
+      <div class="nav">Dashboard</div>
+      <div class="nav">Originations</div>
+      <div class="nav">Mortgages</div>
+      <div class="nav">Deals</div>
+      <div class="nav active">Document Engine</div>
+      <div class="nav">Settings</div>
+    </div>
+    <div class="main">
+      <div class="tabs">
+        <div class="tab">Dashboard</div>
+        <div class="tab">Library</div>
+        <div class="tab">Variables</div>
+        <div class="tab">Templates</div>
+        <div class="tab">Groups</div>
+        <div class="tab active">Packages</div>
+        <div class="tab">Published Templates</div>
+        <div class="tab">Published Deal Documents</div>
+      </div>
+
+      <div class="grid">
+        <div class="panel">
+          <div class="label">Package Builder</div>
+          <div class="title">Standard Closing Package</div>
+          <p>Select published groups and standalone documents. Publish creates an immutable package version.</p>
+          <span class="button">Publish package</span>
+          <span class="button outline">Preview variables</span>
+        </div>
+        <div class="panel">
+          <div class="label">Publish Feedback</div>
+          <div class="title">Success state</div>
+          <p>After template/group/package publish, show toast plus persistent version badge and version history row.</p>
+          <code>Published v4 at 2:41 PM</code>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr><th>Locked Deal Document</th><th>Package</th><th>Deal</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td>Funding Agreement</td><td>Standard Closing v3</td><td><code>deal_123</code></td><td>Ready</td><td><span class="button outline">Open deal</span></td></tr>
+          <tr><td>Lender Envelope</td><td>Standard Closing v3</td><td><code>deal_124</code></td><td>Signature sent</td><td><span class="button outline">Open deal</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

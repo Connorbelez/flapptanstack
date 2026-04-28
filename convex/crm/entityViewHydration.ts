@@ -14,6 +14,7 @@ type MortgageBorrowerDoc = Doc<"mortgageBorrowers">;
 type PropertyDoc = Doc<"properties">;
 type ListingDoc = Doc<"listings">;
 
+const FRACTIONAL_SHARE_UNITS_PER_WHOLE = 10_000;
 const DISPLAY_LABEL_SEPARATOR_REGEX = /[\s._-]+/;
 
 interface EntityViewHydrationArgs {
@@ -111,6 +112,20 @@ function buildBrokerRollupSummary(
 		.join(" • ");
 }
 
+function buildBrokerPersonSummary(args: {
+	broker: BrokerDoc | null | undefined;
+	user: UserDoc | null | undefined;
+}): string | undefined {
+	const brokerName = buildUserDisplayName(args.user);
+	const brokerageName =
+		typeof args.broker?.brokerageName === "string" &&
+		args.broker.brokerageName.trim().length > 0
+			? args.broker.brokerageName.trim()
+			: undefined;
+
+	return [brokerName, brokerageName].filter(Boolean).join(" • ");
+}
+
 function buildListingSummary(
 	listing: ListingDoc | null | undefined
 ): string | undefined {
@@ -181,6 +196,35 @@ async function loadUsersById(
 			const user = await ctx.db.get(normalizedId);
 			if (user) {
 				users.set(String(user._id), user);
+			}
+		})
+	);
+
+	return users;
+}
+
+async function loadUsersByAuthId(
+	ctx: QueryCtx,
+	authIds: Iterable<string>
+): Promise<Map<string, UserDoc>> {
+	const users = new Map<string, UserDoc>();
+	const uniqueAuthIds = [
+		...new Set(
+			[...authIds].filter(
+				(authId): authId is string =>
+					typeof authId === "string" && authId.trim().length > 0
+			)
+		),
+	];
+
+	await Promise.all(
+		uniqueAuthIds.map(async (authId) => {
+			const user = await ctx.db
+				.query("users")
+				.withIndex("authId", (query) => query.eq("authId", authId))
+				.unique();
+			if (user) {
+				users.set(authId, user);
 			}
 		})
 	);
@@ -337,6 +381,75 @@ async function loadMortgagesById(args: {
 	return mortgages;
 }
 
+async function loadLinkedMortgagesById(
+	ctx: QueryCtx,
+	recordIds: Iterable<string>
+): Promise<Map<string, MortgageDoc>> {
+	const mortgages = new Map<string, MortgageDoc>();
+
+	await Promise.all(
+		[...new Set([...recordIds])].map(async (recordId) => {
+			const normalizedId = ctx.db.normalizeId("mortgages", recordId);
+			if (!normalizedId) {
+				return;
+			}
+
+			const mortgage = await ctx.db.get(normalizedId);
+			if (mortgage) {
+				mortgages.set(String(mortgage._id), mortgage);
+			}
+		})
+	);
+
+	return mortgages;
+}
+
+async function loadLinkedBorrowersById(
+	ctx: QueryCtx,
+	recordIds: Iterable<string>
+): Promise<Map<string, BorrowerDoc>> {
+	const borrowers = new Map<string, BorrowerDoc>();
+
+	await Promise.all(
+		[...new Set([...recordIds])].map(async (recordId) => {
+			const normalizedId = ctx.db.normalizeId("borrowers", recordId);
+			if (!normalizedId) {
+				return;
+			}
+
+			const borrower = await ctx.db.get(normalizedId);
+			if (borrower) {
+				borrowers.set(String(borrower._id), borrower);
+			}
+		})
+	);
+
+	return borrowers;
+}
+
+async function loadLinkedBrokersById(
+	ctx: QueryCtx,
+	recordIds: Iterable<string>
+): Promise<Map<string, BrokerDoc>> {
+	const brokers = new Map<string, BrokerDoc>();
+
+	await Promise.all(
+		[...new Set([...recordIds])].map(async (recordId) => {
+			const normalizedId = ctx.db.normalizeId("brokers", recordId);
+			if (!normalizedId) {
+				return;
+			}
+
+			const broker = await ctx.db.get(normalizedId);
+			if (broker) {
+				brokers.set(String(broker._id), broker);
+			}
+		})
+	);
+
+	return brokers;
+}
+
 async function loadPropertiesById(
 	ctx: QueryCtx,
 	recordIds: Iterable<string>
@@ -405,6 +518,36 @@ function shouldHydrateField(
 	fieldName: string
 ): boolean {
 	return args.requestedFieldNames?.has(fieldName) ?? true;
+}
+
+async function loadMortgageBorrowerLinksByMortgageId(
+	ctx: QueryCtx,
+	mortgageIds: Iterable<string>
+): Promise<Map<string, MortgageBorrowerDoc[]>> {
+	const entries = await Promise.all(
+		[...new Set([...mortgageIds])].map(
+			async (mortgageId): Promise<readonly [string, MortgageBorrowerDoc[]]> => {
+				const normalizedMortgageId = ctx.db.normalizeId(
+					"mortgages",
+					mortgageId
+				);
+				if (!normalizedMortgageId) {
+					return [mortgageId, []];
+				}
+
+				const links = await ctx.db
+					.query("mortgageBorrowers")
+					.withIndex("by_mortgage", (query) =>
+						query.eq("mortgageId", normalizedMortgageId)
+					)
+					.collect();
+
+				return [mortgageId, links];
+			}
+		)
+	);
+
+	return new Map<string, MortgageBorrowerDoc[]>(entries);
 }
 
 async function hydrateListingRecords(
@@ -676,6 +819,369 @@ async function hydrateObligationRecords(
 	});
 }
 
+interface DealHydrationFlags {
+	readonly shouldHydrateBorrowerSummary: boolean;
+	readonly shouldHydrateBrokerSummary: boolean;
+	readonly shouldHydrateFractionAmount: boolean;
+	readonly shouldHydrateLenderSummary: boolean;
+	readonly shouldHydrateLoanAmount: boolean;
+	readonly shouldHydrateMortgageSummary: boolean;
+}
+
+interface DealHydrationMaps {
+	readonly borrowerLinksByMortgageId: ReadonlyMap<
+		string,
+		readonly MortgageBorrowerDoc[]
+	>;
+	readonly borrowersById: ReadonlyMap<string, BorrowerDoc>;
+	readonly borrowerUsersById: ReadonlyMap<string, UserDoc>;
+	readonly brokersById: ReadonlyMap<string, BrokerDoc>;
+	readonly brokerUsersById: ReadonlyMap<string, UserDoc>;
+	readonly buyerUsersByAuthId: ReadonlyMap<string, UserDoc>;
+	readonly lendersById: ReadonlyMap<string, LenderDoc>;
+	readonly lenderUsersById: ReadonlyMap<string, UserDoc>;
+	readonly mortgagesById: ReadonlyMap<string, MortgageDoc>;
+	readonly propertiesById: ReadonlyMap<string, PropertyDoc>;
+}
+
+function getStringField(
+	fields: Record<string, unknown>,
+	fieldName: string
+): string | undefined {
+	const value = fields[fieldName];
+	return typeof value === "string" ? value : undefined;
+}
+
+function getNumberField(
+	fields: Record<string, unknown>,
+	fieldName: string
+): number | undefined {
+	const value = fields[fieldName];
+	return typeof value === "number" ? value : undefined;
+}
+
+function resolveDealLenderUser(args: {
+	buyerAuthId?: string;
+	lender?: LenderDoc;
+	maps: Pick<DealHydrationMaps, "buyerUsersByAuthId" | "lenderUsersById">;
+}): UserDoc | undefined {
+	if (args.lender) {
+		return args.maps.lenderUsersById.get(String(args.lender.userId));
+	}
+	if (args.buyerAuthId) {
+		return args.maps.buyerUsersByAuthId.get(args.buyerAuthId);
+	}
+	return undefined;
+}
+
+function orderMortgageBorrowerLinks(
+	links: readonly MortgageBorrowerDoc[]
+): MortgageBorrowerDoc[] {
+	return [...links].sort((left, right) => {
+		if (left.role === right.role) {
+			return 0;
+		}
+		return left.role === "primary" ? -1 : 1;
+	});
+}
+
+function resolveDealBorrowerFields(args: {
+	links: readonly MortgageBorrowerDoc[];
+	maps: Pick<DealHydrationMaps, "borrowersById" | "borrowerUsersById">;
+}): { borrowerId?: string; borrowerSummary?: string } {
+	const borrowerNames = args.links.flatMap((link) => {
+		const borrower = args.maps.borrowersById.get(String(link.borrowerId));
+		const user = borrower
+			? args.maps.borrowerUsersById.get(String(borrower.userId))
+			: null;
+		const name = buildUserDisplayName(user);
+		return name ? [name] : [];
+	});
+	const primaryBorrowerId = args.links[0]?.borrowerId;
+
+	return {
+		borrowerId: primaryBorrowerId ? String(primaryBorrowerId) : undefined,
+		borrowerSummary: buildBorrowerSummary(borrowerNames),
+	};
+}
+
+interface DealRecordHydrationContext {
+	readonly buyerAuthId?: string;
+	readonly fractionalShare?: number;
+	readonly lender?: LenderDoc;
+	readonly mortgage?: MortgageDoc;
+	readonly mortgageId?: string;
+}
+
+function resolveDealRecordHydrationContext(args: {
+	maps: DealHydrationMaps;
+	record: UnifiedRecord;
+}): DealRecordHydrationContext {
+	const mortgageId = getStringField(args.record.fields, "mortgageId");
+	const lenderId = getStringField(args.record.fields, "lenderId");
+
+	return {
+		buyerAuthId: getStringField(args.record.fields, "buyerId"),
+		fractionalShare: getNumberField(args.record.fields, "fractionalShare"),
+		lender: lenderId ? args.maps.lendersById.get(lenderId) : undefined,
+		mortgage: mortgageId ? args.maps.mortgagesById.get(mortgageId) : undefined,
+		mortgageId,
+	};
+}
+
+function applyDealMortgageAmountFields(args: {
+	context: DealRecordHydrationContext;
+	flags: Pick<
+		DealHydrationFlags,
+		| "shouldHydrateFractionAmount"
+		| "shouldHydrateLoanAmount"
+		| "shouldHydrateMortgageSummary"
+	>;
+	hydratedFields: Record<string, unknown>;
+	maps: Pick<DealHydrationMaps, "propertiesById">;
+}): void {
+	const { fractionalShare, mortgage } = args.context;
+	if (args.flags.shouldHydrateMortgageSummary) {
+		args.hydratedFields.mortgageSummary = buildMortgageSummary({
+			mortgage,
+			property: mortgage
+				? args.maps.propertiesById.get(String(mortgage.propertyId))
+				: undefined,
+		});
+	}
+	if (args.flags.shouldHydrateLoanAmount) {
+		args.hydratedFields.loanAmount = mortgage?.principal;
+	}
+	if (args.flags.shouldHydrateFractionAmount) {
+		args.hydratedFields.fractionAmount =
+			mortgage && fractionalShare !== undefined
+				? (mortgage.principal * fractionalShare) /
+					FRACTIONAL_SHARE_UNITS_PER_WHOLE
+				: undefined;
+	}
+}
+
+function applyDealLenderField(args: {
+	context: DealRecordHydrationContext;
+	flags: Pick<DealHydrationFlags, "shouldHydrateLenderSummary">;
+	hydratedFields: Record<string, unknown>;
+	maps: DealHydrationMaps;
+}): void {
+	if (args.flags.shouldHydrateLenderSummary) {
+		args.hydratedFields.lenderSummary = buildUserDisplayName(
+			resolveDealLenderUser({
+				buyerAuthId: args.context.buyerAuthId,
+				lender: args.context.lender,
+				maps: args.maps,
+			})
+		);
+	}
+}
+
+function applyDealBrokerFields(args: {
+	context: DealRecordHydrationContext;
+	flags: Pick<DealHydrationFlags, "shouldHydrateBrokerSummary">;
+	hydratedFields: Record<string, unknown>;
+	maps: DealHydrationMaps;
+}): void {
+	if (args.flags.shouldHydrateBrokerSummary) {
+		const broker = args.context.mortgage
+			? args.maps.brokersById.get(
+					String(args.context.mortgage.brokerOfRecordId)
+				)
+			: undefined;
+		args.hydratedFields.brokerId = args.context.mortgage
+			? String(args.context.mortgage.brokerOfRecordId)
+			: undefined;
+		args.hydratedFields.brokerSummary = buildBrokerPersonSummary({
+			broker,
+			user: broker
+				? args.maps.brokerUsersById.get(String(broker.userId))
+				: null,
+		});
+	}
+}
+
+function applyDealBorrowerFields(args: {
+	context: DealRecordHydrationContext;
+	flags: Pick<DealHydrationFlags, "shouldHydrateBorrowerSummary">;
+	hydratedFields: Record<string, unknown>;
+	maps: DealHydrationMaps;
+}): void {
+	if (args.flags.shouldHydrateBorrowerSummary) {
+		const borrowerFields = resolveDealBorrowerFields({
+			links: orderMortgageBorrowerLinks(
+				args.context.mortgageId
+					? (args.maps.borrowerLinksByMortgageId.get(args.context.mortgageId) ??
+							[])
+					: []
+			),
+			maps: args.maps,
+		});
+		Object.assign(args.hydratedFields, borrowerFields);
+	}
+}
+
+function buildDealHydratedFields(args: {
+	flags: DealHydrationFlags;
+	maps: DealHydrationMaps;
+	record: UnifiedRecord;
+}): Record<string, unknown> {
+	const context = resolveDealRecordHydrationContext({
+		maps: args.maps,
+		record: args.record,
+	});
+	const hydratedFields: Record<string, unknown> = {};
+
+	applyDealMortgageAmountFields({ ...args, context, hydratedFields });
+	applyDealLenderField({ ...args, context, hydratedFields });
+	applyDealBrokerFields({ ...args, context, hydratedFields });
+	applyDealBorrowerFields({ ...args, context, hydratedFields });
+
+	return hydratedFields;
+}
+
+async function hydrateDealRecords(
+	args: EntityViewHydrationArgs
+): Promise<UnifiedRecord[]> {
+	const shouldHydrateMortgageSummary = shouldHydrateField(
+		args,
+		"mortgageSummary"
+	);
+	const shouldHydrateLoanAmount = shouldHydrateField(args, "loanAmount");
+	const shouldHydrateFractionAmount = shouldHydrateField(
+		args,
+		"fractionAmount"
+	);
+	const shouldHydrateLenderSummary = shouldHydrateField(args, "lenderSummary");
+	const shouldHydrateBrokerSummary = shouldHydrateField(args, "brokerSummary");
+	const shouldHydrateBorrowerSummary = shouldHydrateField(
+		args,
+		"borrowerSummary"
+	);
+	const flags: DealHydrationFlags = {
+		shouldHydrateBorrowerSummary,
+		shouldHydrateBrokerSummary,
+		shouldHydrateFractionAmount,
+		shouldHydrateLenderSummary,
+		shouldHydrateLoanAmount,
+		shouldHydrateMortgageSummary,
+	};
+	const shouldLoadMortgage =
+		shouldHydrateMortgageSummary ||
+		shouldHydrateLoanAmount ||
+		shouldHydrateFractionAmount ||
+		shouldHydrateBrokerSummary ||
+		shouldHydrateBorrowerSummary;
+	const mortgageIds = shouldLoadMortgage
+		? args.records.flatMap((record) =>
+				typeof record.fields.mortgageId === "string"
+					? [record.fields.mortgageId]
+					: []
+			)
+		: [];
+	const lenderIds = shouldHydrateLenderSummary
+		? args.records.flatMap((record) =>
+				typeof record.fields.lenderId === "string"
+					? [record.fields.lenderId]
+					: []
+			)
+		: [];
+	const buyerAuthIds = shouldHydrateLenderSummary
+		? args.records.flatMap((record) =>
+				typeof record.fields.buyerId === "string" ? [record.fields.buyerId] : []
+			)
+		: [];
+
+	const [mortgagesById, lendersById, buyerUsersByAuthId] = await Promise.all([
+		shouldLoadMortgage
+			? loadLinkedMortgagesById(args.ctx, mortgageIds)
+			: Promise.resolve(new Map<string, MortgageDoc>()),
+		shouldHydrateLenderSummary
+			? loadLenderDocsByRecordIds(args.ctx, lenderIds)
+			: Promise.resolve(new Map<string, LenderDoc>()),
+		shouldHydrateLenderSummary
+			? loadUsersByAuthId(args.ctx, buyerAuthIds)
+			: Promise.resolve(new Map<string, UserDoc>()),
+	]);
+	const propertiesById = shouldHydrateMortgageSummary
+		? await loadPropertiesById(
+				args.ctx,
+				[...mortgagesById.values()].map((mortgage) =>
+					String(mortgage.propertyId)
+				)
+			)
+		: new Map<string, PropertyDoc>();
+	const borrowerLinksByMortgageId = shouldHydrateBorrowerSummary
+		? await loadMortgageBorrowerLinksByMortgageId(args.ctx, mortgageIds)
+		: new Map<string, MortgageBorrowerDoc[]>();
+	const borrowerIds = shouldHydrateBorrowerSummary
+		? [...borrowerLinksByMortgageId.values()].flatMap((links) =>
+				links.map((link) => String(link.borrowerId))
+			)
+		: [];
+	const brokerIds = shouldHydrateBrokerSummary
+		? [...mortgagesById.values()].map((mortgage) =>
+				String(mortgage.brokerOfRecordId)
+			)
+		: [];
+	const [borrowersById, brokersById] = await Promise.all([
+		shouldHydrateBorrowerSummary
+			? loadLinkedBorrowersById(args.ctx, borrowerIds)
+			: Promise.resolve(new Map<string, BorrowerDoc>()),
+		shouldHydrateBrokerSummary
+			? loadLinkedBrokersById(args.ctx, brokerIds)
+			: Promise.resolve(new Map<string, BrokerDoc>()),
+	]);
+	const [borrowerUsersById, brokerUsersById, lenderUsersById] =
+		await Promise.all([
+			shouldHydrateBorrowerSummary
+				? loadUsersById(
+						args.ctx,
+						[...borrowersById.values()].map((borrower) =>
+							String(borrower.userId)
+						)
+					)
+				: Promise.resolve(new Map<string, UserDoc>()),
+			shouldHydrateBrokerSummary
+				? loadUsersById(
+						args.ctx,
+						[...brokersById.values()].map((broker) => String(broker.userId))
+					)
+				: Promise.resolve(new Map<string, UserDoc>()),
+			shouldHydrateLenderSummary
+				? loadUsersById(
+						args.ctx,
+						[...lendersById.values()].map((lender) => String(lender.userId))
+					)
+				: Promise.resolve(new Map<string, UserDoc>()),
+		]);
+
+	const maps: DealHydrationMaps = {
+		borrowerLinksByMortgageId,
+		borrowersById,
+		borrowerUsersById,
+		brokersById,
+		brokerUsersById,
+		buyerUsersByAuthId,
+		lendersById,
+		lenderUsersById,
+		mortgagesById,
+		propertiesById,
+	};
+
+	return args.records.map((record) =>
+		mergeHydratedFields(
+			record,
+			buildDealHydratedFields({
+				flags,
+				maps,
+				record,
+			})
+		)
+	);
+}
+
 async function hydrateBorrowerRecords(
 	args: EntityViewHydrationArgs
 ): Promise<UnifiedRecord[]> {
@@ -836,6 +1342,8 @@ async function hydrateRecordsForEntity(
 			return hydrateMortgageRecords(args);
 		case "obligations":
 			return hydrateObligationRecords(args);
+		case "deals":
+			return hydrateDealRecords(args);
 		case "borrowers":
 			return hydrateBorrowerRecords(args);
 		case "lenders":

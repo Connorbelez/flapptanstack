@@ -28,7 +28,7 @@ export const Route = createFileRoute("/portal/positions/$mortgageId")({
 	notFoundComponent: MicPositionNotFoundComponent,
 });
 
-export function MicPositionDetailRoutePage() {
+function MicPositionDetailRoutePage() {
 	const { mortgageId } = Route.useLoaderData();
 	const { portalContext } = RootRoute.useRouteContext();
 	const portalId = assertActivePortalId(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { FolderOpen, Plus, Trash2, X } from "lucide-react";
+import { FolderOpen, History, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { SignatoryPanel } from "#/components/document-engine/signatory-panel";
@@ -17,6 +17,7 @@ import {
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
@@ -53,6 +54,7 @@ export function DocumentEngineGroupsPage({
 		api.documentEngine.templateGroups.removeTemplate
 	);
 	const pinVersion = useMutation(api.documentEngine.templateGroups.pinVersion);
+	const publishGroup = useMutation(api.documentEngine.templateGroups.publish);
 
 	const [createOpen, setCreateOpen] = useState(false);
 	const [name, setName] = useState("");
@@ -101,9 +103,9 @@ export function DocumentEngineGroupsPage({
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h2 className="font-semibold text-lg">Template Groups</h2>
+					<h2 className="font-semibold text-lg">Signing Envelope Groups</h2>
 					<p className="text-muted-foreground text-sm">
-						Group templates for multi-document generation with shared
+						Group templates into Documenso envelope definitions with shared
 						signatories.
 					</p>
 				</div>
@@ -117,6 +119,10 @@ export function DocumentEngineGroupsPage({
 					<DialogContent>
 						<DialogHeader>
 							<DialogTitle>Create Template Group</DialogTitle>
+							<DialogDescription>
+								Bundle related templates so they can be generated together with
+								shared signatories.
+							</DialogDescription>
 						</DialogHeader>
 						<div className="space-y-4">
 							<div>
@@ -322,12 +328,69 @@ export function DocumentEngineGroupsPage({
 											templates={templates}
 										/>
 									) : null}
+
+									<GroupVersionsPanel
+										groupId={group._id}
+										onPublish={async () => {
+											try {
+												const version = await publishGroup({
+													groupId: group._id,
+												});
+												toast.success(`Group published v${version}`);
+											} catch (error) {
+												toast.error(
+													error instanceof Error
+														? error.message
+														: "Failed to publish group"
+												);
+											}
+										}}
+									/>
 								</CardContent>
 							) : null}
 						</Card>
 					);
 				})}
 			</div>
+		</div>
+	);
+}
+
+function GroupVersionsPanel({
+	groupId,
+	onPublish,
+}: {
+	groupId: Id<"documentTemplateGroups">;
+	onPublish: () => Promise<void>;
+}) {
+	const versions = useQuery(api.documentEngine.templateGroups.listVersions, {
+		groupId,
+	});
+
+	return (
+		<div className="rounded-md border bg-muted/20 p-3">
+			<div className="mb-2 flex items-center justify-between gap-3">
+				<div className="flex items-center gap-2">
+					<History className="size-4 text-muted-foreground" />
+					<h4 className="font-medium text-sm">Published Versions</h4>
+				</div>
+				<Button onClick={onPublish} size="sm">
+					Publish
+				</Button>
+			</div>
+			{versions && versions.length > 0 ? (
+				<div className="flex flex-wrap gap-2">
+					{versions.map((version) => (
+						<Badge key={version._id} variant="outline">
+							v{version.version}
+						</Badge>
+					))}
+				</div>
+			) : (
+				<p className="text-muted-foreground text-xs">
+					No published envelope versions yet.
+				</p>
+			)}
 		</div>
 	);
 }

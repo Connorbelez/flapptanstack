@@ -3,9 +3,11 @@
 import { Link } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import type { FormEvent, ReactNode } from "react";
+import type { Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { DealPortalLinks } from "#/components/admin/deals/DealPortalLinks";
+import { MortgagePackageApplyButton } from "#/components/admin/mortgages/MortgagePackageApplyButton";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
@@ -113,7 +115,7 @@ function DetailSectionShell({
 	readonly title: string;
 }) {
 	return (
-		<section className="space-y-3 rounded-xl border border-border/70 bg-muted/10 p-4">
+		<section className="space-y-4 border-border/70 border-t pt-5">
 			<div className="space-y-1">
 				<h3 className="font-medium text-sm tracking-[0.02em]">{title}</h3>
 				{description ? (
@@ -135,10 +137,10 @@ function MetricGrid({
 	readonly items: ReadonlyArray<{ label: string; value: ReactNode }>;
 }) {
 	return (
-		<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+		<div className="grid gap-x-6 md:grid-cols-2 xl:grid-cols-3">
 			{items.map((item) => (
 				<div
-					className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
+					className="min-w-0 border-border/60 border-t py-3"
 					key={item.label}
 				>
 					<p className="text-muted-foreground text-xs uppercase tracking-[0.08em]">
@@ -164,7 +166,57 @@ function CompactList({
 		return <EmptyContext message={emptyMessage} />;
 	}
 
-	return <div className="space-y-2">{items.map(renderItem)}</div>;
+	return (
+		<div className="divide-y divide-border/60">{items.map(renderItem)}</div>
+	);
+}
+
+function ListingDetailSection({
+	children,
+	description,
+	title,
+}: {
+	readonly children: ReactNode;
+	readonly description?: string;
+	readonly title: string;
+}) {
+	return (
+		<section className="space-y-4 border-border/70 border-t pt-6">
+			<div className="space-y-1">
+				<h3 className="font-medium text-base">{title}</h3>
+				{description ? (
+					<p className="max-w-[68ch] text-muted-foreground text-sm leading-6">
+						{description}
+					</p>
+				) : null}
+			</div>
+			{children}
+		</section>
+	);
+}
+
+function ListingFactList({
+	items,
+}: {
+	readonly items: ReadonlyArray<{ label: string; value: ReactNode }>;
+}) {
+	return (
+		<dl className="divide-y divide-border/60 border-border/70 border-y">
+			{items.map((item) => (
+				<div
+					className="grid gap-2 py-3 sm:grid-cols-[11rem_minmax(0,1fr)]"
+					key={item.label}
+				>
+					<dt className="text-muted-foreground text-xs uppercase tracking-[0.1em]">
+						{item.label}
+					</dt>
+					<dd className="min-w-0 break-words font-medium text-sm leading-6">
+						{item.value}
+					</dd>
+				</div>
+			))}
+		</dl>
+	);
 }
 
 const retryingDealPackageIds = new Set<string>();
@@ -375,6 +427,14 @@ type MortgageDetailContext = FunctionReturnType<
 	typeof api.crm.detailContextQueries.getMortgageDetailContext
 >;
 
+type ListingDetailContext = FunctionReturnType<
+	typeof api.crm.detailContextQueries.getListingDetailContext
+>;
+
+type ListingCurationFormState = ReturnType<
+	typeof buildListingCurationFormState
+>;
+
 type DealDetailContext = FunctionReturnType<
 	typeof api.crm.detailContextQueries.getDealDetailContext
 >;
@@ -393,6 +453,10 @@ type MortgageHistoryEntry = FunctionReturnType<
 
 type DealDocumentInstanceListItem = NonNullable<
 	NonNullable<DealDetailContext>["documentInstances"]
+>[number];
+
+type ListingPublicDocumentListItem = NonNullable<
+	NonNullable<ListingDetailContext>["publicDocuments"]
 >[number];
 
 function groupDealDocumentInstances(
@@ -674,6 +738,439 @@ function MortgageBlueprintReplaceDialog({
 	);
 }
 
+function ListingProjectionSourceSection({
+	detailContext,
+	isRefreshingProjection,
+	listingId,
+	onRefreshProjection,
+}: {
+	readonly detailContext: ListingDetailContext | undefined;
+	readonly isRefreshingProjection: boolean;
+	readonly listingId: Id<"listings">;
+	readonly onRefreshProjection: () => void;
+}) {
+	return (
+		<ListingDetailSection
+			description="Mortgage-backed listings are projector-owned for economics, property facts, appraisal summary, and public document compatibility. Only curated marketplace fields are editable here."
+			title="Projection Source"
+		>
+			<div className="space-y-5">
+				<div className="flex flex-wrap items-center gap-2">
+					<Badge variant="outline">
+						{detailContext?.listing?.status ?? "draft"}
+					</Badge>
+					<Badge variant="outline">
+						{detailContext?.listing?.dataSource === "mortgage_pipeline"
+							? "Mortgage-backed projection"
+							: "Listing record"}
+					</Badge>
+				</div>
+				<ListingFactList
+					items={[
+						{
+							label: "Linked Mortgage",
+							value: detailContext?.mortgage ? (
+								<Link
+									className="text-primary underline-offset-4 hover:underline"
+									params={{
+										recordid: String(detailContext.mortgage.mortgageId),
+									}}
+									search={EMPTY_ADMIN_DETAIL_SEARCH}
+									to="/admin/mortgages/$recordid"
+								>
+									{String(detailContext.mortgage.mortgageId)}
+								</Link>
+							) : (
+								"Not linked"
+							),
+						},
+						{
+							label: "Projection Refreshed",
+							value:
+								formatDateTime(detailContext?.listing?.updatedAt) ??
+								"Unavailable",
+						},
+						{
+							label: "Linked Property",
+							value: detailContext?.property ? (
+								<Link
+									className="text-primary underline-offset-4 hover:underline"
+									params={{
+										recordid: String(detailContext.property.propertyId),
+									}}
+									search={EMPTY_ADMIN_DETAIL_SEARCH}
+									to="/admin/properties/$recordid"
+								>
+									{detailContext.property.streetAddress}
+								</Link>
+							) : (
+								"Unavailable"
+							),
+						},
+						{
+							label: "Location",
+							value: detailContext?.property
+								? `${detailContext.property.city}, ${detailContext.property.province}`
+								: "Unavailable",
+						},
+						{
+							label: "Draft Title",
+							value:
+								detailContext?.listing?.title ??
+								`${String(listingId)} (untitled listing)`,
+						},
+					]}
+				/>
+				<div className="flex flex-wrap gap-3">
+					<Button
+						disabled={
+							isRefreshingProjection ||
+							detailContext?.listing?.dataSource !== "mortgage_pipeline"
+						}
+						onClick={onRefreshProjection}
+						type="button"
+						variant="outline"
+					>
+						{isRefreshingProjection
+							? "Refreshing projection"
+							: "Refresh projection"}
+					</Button>
+				</div>
+			</div>
+		</ListingDetailSection>
+	);
+}
+
+function ListingProjectedFactsSections({
+	detailContext,
+	record,
+}: {
+	readonly detailContext: ListingDetailContext | undefined;
+	readonly record: UnifiedRecord;
+}) {
+	return (
+		<div className="space-y-8">
+			<ListingDetailSection
+				description="Canonical mortgage economics projected onto the listing. These values refresh from the mortgage aggregate."
+				title="Economics"
+			>
+				<ListingFactList
+					items={[
+						{
+							label: "Principal",
+							value: detailContext?.mortgage
+								? formatCurrency(detailContext.mortgage.principal)
+								: "Unavailable",
+						},
+						{
+							label: "Interest Rate",
+							value:
+								typeof detailContext?.mortgage?.interestRate === "number"
+									? `${detailContext.mortgage.interestRate}%`
+									: "Unavailable",
+						},
+						{
+							label: "LTV",
+							value:
+								typeof record.fields.ltvRatio === "number"
+									? `${record.fields.ltvRatio}%`
+									: "Unavailable",
+						},
+						{
+							label: "Payment Amount",
+							value: detailContext?.mortgage
+								? formatCurrency(detailContext.mortgage.paymentAmount)
+								: "Unavailable",
+						},
+						{
+							label: "Payment Cadence",
+							value: detailContext?.mortgage?.paymentFrequency
+								? formatEnumLabel(detailContext.mortgage.paymentFrequency)
+								: "Unavailable",
+						},
+						{
+							label: "Maturity",
+							value:
+								formatDate(detailContext?.mortgage?.maturityDate) ??
+								"Unavailable",
+						},
+					]}
+				/>
+			</ListingDetailSection>
+
+			<ListingDetailSection
+				description="Property facts are projection-owned and refresh from the canonical property record."
+				title="Property Facts"
+			>
+				<ListingFactList
+					items={[
+						{
+							label: "Address",
+							value: detailContext?.property
+								? `${detailContext.property.streetAddress}${detailContext.property.unit ? `, Unit ${detailContext.property.unit}` : ""}`
+								: "Unavailable",
+						},
+						{
+							label: "City",
+							value: detailContext?.property?.city ?? "Unavailable",
+						},
+						{
+							label: "Province",
+							value: detailContext?.property?.province ?? "Unavailable",
+						},
+						{
+							label: "Postal Code",
+							value: detailContext?.property?.postalCode ?? "Unavailable",
+						},
+						{
+							label: "Property Type",
+							value: detailContext?.property?.propertyType
+								? formatEnumLabel(detailContext.property.propertyType)
+								: "Unavailable",
+						},
+						{
+							label: "Coordinates",
+							value:
+								detailContext?.property?.latitude != null &&
+								detailContext.property.longitude != null
+									? `${detailContext.property.latitude}, ${detailContext.property.longitude}`
+									: "Unavailable",
+						},
+					]}
+				/>
+			</ListingDetailSection>
+
+			<ListingDetailSection
+				description="Appraisal summary always comes from the latest canonical valuation snapshot."
+				title="Appraisal Summary"
+			>
+				<ListingFactList
+					items={[
+						{
+							label: "As-Is Value",
+							value: detailContext?.latestValuationSnapshot
+								? formatCurrency(
+										detailContext.latestValuationSnapshot.valueAsIs
+									)
+								: "Unavailable",
+						},
+						{
+							label: "Valuation Date",
+							value:
+								detailContext?.latestValuationSnapshot?.valuationDate ??
+								"Unavailable",
+						},
+						{
+							label: "Source",
+							value: detailContext?.latestValuationSnapshot?.source
+								? formatEnumLabel(detailContext.latestValuationSnapshot.source)
+								: "Unavailable",
+						},
+						{
+							label: "Related Document Asset",
+							value:
+								detailContext?.latestValuationSnapshot
+									?.relatedDocumentAssetId ?? "Not attached",
+						},
+					]}
+				/>
+			</ListingDetailSection>
+
+			<ListingDetailSection
+				description="Active public mortgage blueprints projected onto this listing for authenticated lender-facing reads."
+				title="Public Documents"
+			>
+				{detailContext?.publicDocuments?.length ? (
+					<CompactList
+						emptyMessage="No public origination docs projected yet."
+						items={detailContext.publicDocuments}
+						renderItem={(item) => {
+							const document = item as ListingPublicDocumentListItem;
+							return (
+								<div className="py-3" key={String(document.blueprintId)}>
+									<div className="flex flex-wrap items-center justify-between gap-3">
+										<div className="space-y-1">
+											<p className="font-medium text-sm">
+												{document.displayName}
+											</p>
+											<p className="text-muted-foreground text-sm">
+												{document.description ?? "Public mortgage document"}
+											</p>
+										</div>
+										{document.url ? (
+											<Button asChild size="sm" type="button" variant="outline">
+												<a href={document.url} rel="noreferrer" target="_blank">
+													Open PDF
+												</a>
+											</Button>
+										) : null}
+									</div>
+								</div>
+							);
+						}}
+					/>
+				) : (
+					<EmptyContext message="No public origination docs projected yet." />
+				)}
+			</ListingDetailSection>
+		</div>
+	);
+}
+
+function ListingCurationFieldsSection({
+	curationForm,
+	isSavingCuration,
+	onCurationFormChange,
+	onSaveCuration,
+}: {
+	readonly curationForm: ListingCurationFormState;
+	readonly isSavingCuration: boolean;
+	readonly onCurationFormChange: Dispatch<
+		SetStateAction<ListingCurationFormState>
+	>;
+	readonly onSaveCuration: () => void;
+}) {
+	return (
+		<ListingDetailSection
+			description="These marketplace fields remain listing-owned. Saving here never edits projected economics, property facts, appraisal summary, or public document compatibility."
+			title="Curated Fields"
+		>
+			<div className="space-y-4">
+				<div className="space-y-2">
+					<Label htmlFor="listing-curation-title">Title</Label>
+					<Input
+						id="listing-curation-title"
+						onChange={(event) =>
+							onCurationFormChange((current) => ({
+								...current,
+								title: event.target.value,
+							}))
+						}
+						value={curationForm.title}
+					/>
+				</div>
+				<div className="space-y-2">
+					<Label htmlFor="listing-curation-description">Description</Label>
+					<Textarea
+						id="listing-curation-description"
+						onChange={(event) =>
+							onCurationFormChange((current) => ({
+								...current,
+								description: event.target.value,
+							}))
+						}
+						rows={4}
+						value={curationForm.description}
+					/>
+				</div>
+				<div className="space-y-2">
+					<Label htmlFor="listing-curation-marketplace-copy">
+						Marketplace copy
+					</Label>
+					<Textarea
+						id="listing-curation-marketplace-copy"
+						onChange={(event) =>
+							onCurationFormChange((current) => ({
+								...current,
+								marketplaceCopy: event.target.value,
+							}))
+						}
+						rows={5}
+						value={curationForm.marketplaceCopy}
+					/>
+				</div>
+				<div className="space-y-2">
+					<Label htmlFor="listing-curation-hero-images">
+						Hero image storage IDs
+					</Label>
+					<Textarea
+						id="listing-curation-hero-images"
+						onChange={(event) =>
+							onCurationFormChange((current) => ({
+								...current,
+								heroImages: event.target.value,
+							}))
+						}
+						placeholder="One _storage id per line"
+						rows={4}
+						value={curationForm.heroImages}
+					/>
+				</div>
+				<div className="grid gap-4 md:grid-cols-2">
+					<div className="space-y-2">
+						<Label htmlFor="listing-curation-display-order">
+							Display order
+						</Label>
+						<Input
+							id="listing-curation-display-order"
+							onChange={(event) =>
+								onCurationFormChange((current) => ({
+									...current,
+									displayOrder: event.target.value,
+								}))
+							}
+							type="number"
+							value={curationForm.displayOrder}
+						/>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor="listing-curation-seo-slug">SEO slug</Label>
+						<Input
+							id="listing-curation-seo-slug"
+							onChange={(event) =>
+								onCurationFormChange((current) => ({
+									...current,
+									seoSlug: event.target.value,
+								}))
+							}
+							value={curationForm.seoSlug}
+						/>
+					</div>
+				</div>
+				<div className="flex items-center gap-3 border-border/60 border-y py-3">
+					<Checkbox
+						checked={curationForm.featured}
+						id="listing-curation-featured"
+						onCheckedChange={(checked) =>
+							onCurationFormChange((current) => ({
+								...current,
+								featured: checked === true,
+							}))
+						}
+					/>
+					<div className="space-y-1">
+						<Label htmlFor="listing-curation-featured">Featured listing</Label>
+						<p className="text-muted-foreground text-sm">
+							Merchandising only. Projection refreshes preserve this flag.
+						</p>
+					</div>
+				</div>
+				<div className="space-y-2">
+					<Label htmlFor="listing-curation-admin-notes">Admin notes</Label>
+					<Textarea
+						id="listing-curation-admin-notes"
+						onChange={(event) =>
+							onCurationFormChange((current) => ({
+								...current,
+								adminNotes: event.target.value,
+							}))
+						}
+						rows={4}
+						value={curationForm.adminNotes}
+					/>
+				</div>
+				<Button
+					disabled={isSavingCuration}
+					onClick={onSaveCuration}
+					type="button"
+				>
+					{isSavingCuration ? "Saving curated fields" : "Save curated fields"}
+				</Button>
+			</div>
+		</ListingDetailSection>
+	);
+}
+
 export function ListingsDedicatedDetails({
 	fields: _fields,
 	objectDefs: _objectDefs,
@@ -783,421 +1280,25 @@ export function ListingsDedicatedDetails({
 	}
 
 	return (
-		<div className="space-y-6">
-			<DetailSectionShell
-				description="Mortgage-backed listings are projector-owned for economics, property facts, appraisal summary, and public document compatibility. Only curated marketplace fields are editable here."
-				title="Projection Source"
-			>
-				<div className="space-y-4">
-					<div className="flex flex-wrap items-center gap-2">
-						<Badge variant="outline">
-							{detailContext?.listing?.status ?? "draft"}
-						</Badge>
-						<Badge variant="outline">
-							{detailContext?.listing?.dataSource === "mortgage_pipeline"
-								? "Mortgage-backed projection"
-								: "Listing record"}
-						</Badge>
-					</div>
-					<MetricGrid
-						items={[
-							{
-								label: "Linked Mortgage",
-								value: detailContext?.mortgage ? (
-									<Link
-										className="text-primary underline-offset-4 hover:underline"
-										params={{
-											recordid: String(detailContext.mortgage.mortgageId),
-										}}
-										search={EMPTY_ADMIN_DETAIL_SEARCH}
-										to="/admin/mortgages/$recordid"
-									>
-										{String(detailContext.mortgage.mortgageId)}
-									</Link>
-								) : (
-									"Not linked"
-								),
-							},
-							{
-								label: "Projection Refreshed",
-								value:
-									formatDateTime(detailContext?.listing?.updatedAt) ??
-									"Unavailable",
-							},
-							{
-								label: "Linked Property",
-								value: detailContext?.property ? (
-									<Link
-										className="text-primary underline-offset-4 hover:underline"
-										params={{
-											recordid: String(detailContext.property.propertyId),
-										}}
-										search={EMPTY_ADMIN_DETAIL_SEARCH}
-										to="/admin/properties/$recordid"
-									>
-										{detailContext.property.streetAddress}
-									</Link>
-								) : (
-									"Unavailable"
-								),
-							},
-							{
-								label: "Location",
-								value: detailContext?.property
-									? `${detailContext.property.city}, ${detailContext.property.province}`
-									: "Unavailable",
-							},
-							{
-								label: "Draft Title",
-								value:
-									detailContext?.listing?.title ??
-									`${String(listingId)} (untitled listing)`,
-							},
-						]}
-					/>
-					<div className="flex flex-wrap gap-3">
-						<Button
-							disabled={
-								isRefreshingProjection ||
-								detailContext?.listing?.dataSource !== "mortgage_pipeline"
-							}
-							onClick={() => void handleRefreshProjection()}
-							type="button"
-							variant="outline"
-						>
-							{isRefreshingProjection
-								? "Refreshing projection"
-								: "Refresh projection"}
-						</Button>
-					</div>
-				</div>
-			</DetailSectionShell>
+		<div className="space-y-8">
+			<ListingProjectionSourceSection
+				detailContext={detailContext}
+				isRefreshingProjection={isRefreshingProjection}
+				listingId={listingId}
+				onRefreshProjection={() => void handleRefreshProjection()}
+			/>
 
-			<div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.95fr)]">
-				<div className="space-y-6">
-					<DetailSectionShell
-						description="Canonical mortgage economics projected onto the listing. These values refresh from the mortgage aggregate."
-						title="Economics"
-					>
-						<MetricGrid
-							items={[
-								{
-									label: "Principal",
-									value: detailContext?.mortgage
-										? formatCurrency(detailContext.mortgage.principal)
-										: "Unavailable",
-								},
-								{
-									label: "Interest Rate",
-									value:
-										typeof detailContext?.mortgage?.interestRate === "number"
-											? `${detailContext.mortgage.interestRate}%`
-											: "Unavailable",
-								},
-								{
-									label: "LTV",
-									value:
-										typeof record.fields.ltvRatio === "number"
-											? `${record.fields.ltvRatio}%`
-											: "Unavailable",
-								},
-								{
-									label: "Payment Amount",
-									value: detailContext?.mortgage
-										? formatCurrency(detailContext.mortgage.paymentAmount)
-										: "Unavailable",
-								},
-								{
-									label: "Payment Cadence",
-									value: detailContext?.mortgage?.paymentFrequency
-										? formatEnumLabel(detailContext.mortgage.paymentFrequency)
-										: "Unavailable",
-								},
-								{
-									label: "Maturity",
-									value:
-										formatDate(detailContext?.mortgage?.maturityDate) ??
-										"Unavailable",
-								},
-							]}
-						/>
-					</DetailSectionShell>
+			<ListingCurationFieldsSection
+				curationForm={curationForm}
+				isSavingCuration={isSavingCuration}
+				onCurationFormChange={setCurationForm}
+				onSaveCuration={() => void handleSaveCuration()}
+			/>
 
-					<DetailSectionShell
-						description="Property facts are projection-owned and refresh from the canonical property record."
-						title="Property Facts"
-					>
-						<MetricGrid
-							items={[
-								{
-									label: "Address",
-									value: detailContext?.property
-										? `${detailContext.property.streetAddress}${detailContext.property.unit ? `, Unit ${detailContext.property.unit}` : ""}`
-										: "Unavailable",
-								},
-								{
-									label: "City",
-									value: detailContext?.property?.city ?? "Unavailable",
-								},
-								{
-									label: "Province",
-									value: detailContext?.property?.province ?? "Unavailable",
-								},
-								{
-									label: "Postal Code",
-									value: detailContext?.property?.postalCode ?? "Unavailable",
-								},
-								{
-									label: "Property Type",
-									value: detailContext?.property?.propertyType
-										? formatEnumLabel(detailContext.property.propertyType)
-										: "Unavailable",
-								},
-								{
-									label: "Coordinates",
-									value:
-										detailContext?.property?.latitude != null &&
-										detailContext.property.longitude != null
-											? `${detailContext.property.latitude}, ${detailContext.property.longitude}`
-											: "Unavailable",
-								},
-							]}
-						/>
-					</DetailSectionShell>
-
-					<DetailSectionShell
-						description="Appraisal summary always comes from the latest canonical valuation snapshot."
-						title="Appraisal Summary"
-					>
-						<MetricGrid
-							items={[
-								{
-									label: "As-Is Value",
-									value: detailContext?.latestValuationSnapshot
-										? formatCurrency(
-												detailContext.latestValuationSnapshot.valueAsIs
-											)
-										: "Unavailable",
-								},
-								{
-									label: "Valuation Date",
-									value:
-										detailContext?.latestValuationSnapshot?.valuationDate ??
-										"Unavailable",
-								},
-								{
-									label: "Source",
-									value: detailContext?.latestValuationSnapshot?.source
-										? formatEnumLabel(
-												detailContext.latestValuationSnapshot.source
-											)
-										: "Unavailable",
-								},
-								{
-									label: "Related Document Asset",
-									value:
-										detailContext?.latestValuationSnapshot
-											?.relatedDocumentAssetId ?? "Not attached",
-								},
-							]}
-						/>
-					</DetailSectionShell>
-
-					<DetailSectionShell
-						description="Active public mortgage blueprints projected onto this listing for authenticated lender-facing reads."
-						title="Public Documents"
-					>
-						{detailContext?.publicDocuments?.length ? (
-							<CompactList
-								emptyMessage="No public origination docs projected yet."
-								items={detailContext.publicDocuments}
-								renderItem={(item) => {
-									const document = item as NonNullable<
-										typeof detailContext
-									>["publicDocuments"][number];
-									return (
-										<div
-											className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-											key={String(document.blueprintId)}
-										>
-											<div className="flex flex-wrap items-center justify-between gap-3">
-												<div className="space-y-1">
-													<p className="font-medium text-sm">
-														{document.displayName}
-													</p>
-													<p className="text-muted-foreground text-sm">
-														{document.description ?? "Public mortgage document"}
-													</p>
-												</div>
-												{document.url ? (
-													<Button
-														asChild
-														size="sm"
-														type="button"
-														variant="outline"
-													>
-														<a
-															href={document.url}
-															rel="noreferrer"
-															target="_blank"
-														>
-															Open PDF
-														</a>
-													</Button>
-												) : null}
-											</div>
-										</div>
-									);
-								}}
-							/>
-						) : (
-							<EmptyContext message="No public origination docs projected yet." />
-						)}
-					</DetailSectionShell>
-				</div>
-
-				<DetailSectionShell
-					description="These marketplace fields remain listing-owned. Saving here never edits projected economics, property facts, appraisal summary, or public document compatibility."
-					title="Curated Fields"
-				>
-					<div className="space-y-4">
-						<div className="space-y-2">
-							<Label htmlFor="listing-curation-title">Title</Label>
-							<Input
-								id="listing-curation-title"
-								onChange={(event) =>
-									setCurationForm((current) => ({
-										...current,
-										title: event.target.value,
-									}))
-								}
-								value={curationForm.title}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="listing-curation-description">Description</Label>
-							<Textarea
-								id="listing-curation-description"
-								onChange={(event) =>
-									setCurationForm((current) => ({
-										...current,
-										description: event.target.value,
-									}))
-								}
-								rows={4}
-								value={curationForm.description}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="listing-curation-marketplace-copy">
-								Marketplace copy
-							</Label>
-							<Textarea
-								id="listing-curation-marketplace-copy"
-								onChange={(event) =>
-									setCurationForm((current) => ({
-										...current,
-										marketplaceCopy: event.target.value,
-									}))
-								}
-								rows={5}
-								value={curationForm.marketplaceCopy}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="listing-curation-hero-images">
-								Hero image storage IDs
-							</Label>
-							<Textarea
-								id="listing-curation-hero-images"
-								onChange={(event) =>
-									setCurationForm((current) => ({
-										...current,
-										heroImages: event.target.value,
-									}))
-								}
-								placeholder="One _storage id per line"
-								rows={4}
-								value={curationForm.heroImages}
-							/>
-						</div>
-						<div className="grid gap-4 md:grid-cols-2">
-							<div className="space-y-2">
-								<Label htmlFor="listing-curation-display-order">
-									Display order
-								</Label>
-								<Input
-									id="listing-curation-display-order"
-									onChange={(event) =>
-										setCurationForm((current) => ({
-											...current,
-											displayOrder: event.target.value,
-										}))
-									}
-									type="number"
-									value={curationForm.displayOrder}
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor="listing-curation-seo-slug">SEO slug</Label>
-								<Input
-									id="listing-curation-seo-slug"
-									onChange={(event) =>
-										setCurationForm((current) => ({
-											...current,
-											seoSlug: event.target.value,
-										}))
-									}
-									value={curationForm.seoSlug}
-								/>
-							</div>
-						</div>
-						<div className="flex items-center gap-3 rounded-lg border border-border/60 bg-background/80 px-3 py-3">
-							<Checkbox
-								checked={curationForm.featured}
-								id="listing-curation-featured"
-								onCheckedChange={(checked) =>
-									setCurationForm((current) => ({
-										...current,
-										featured: checked === true,
-									}))
-								}
-							/>
-							<div className="space-y-1">
-								<Label htmlFor="listing-curation-featured">
-									Featured listing
-								</Label>
-								<p className="text-muted-foreground text-sm">
-									Merchandising only. Projection refreshes preserve this flag.
-								</p>
-							</div>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="listing-curation-admin-notes">Admin notes</Label>
-							<Textarea
-								id="listing-curation-admin-notes"
-								onChange={(event) =>
-									setCurationForm((current) => ({
-										...current,
-										adminNotes: event.target.value,
-									}))
-								}
-								rows={4}
-								value={curationForm.adminNotes}
-							/>
-						</div>
-						<Button
-							disabled={isSavingCuration}
-							onClick={() => void handleSaveCuration()}
-							type="button"
-						>
-							{isSavingCuration
-								? "Saving curated fields"
-								: "Save curated fields"}
-						</Button>
-					</div>
-				</DetailSectionShell>
-			</div>
+			<ListingProjectedFactsSections
+				detailContext={detailContext}
+				record={record}
+			/>
 		</div>
 	);
 }
@@ -1307,6 +1408,8 @@ export function DealsDedicatedDetails({
 				]}
 			/>
 
+			<DealPortalLinks dealId={dealId} />
+
 			<DetailSectionShell
 				description="The package is created once on DEAL_LOCKED and retains immutable document-instance rows for deal-time distribution."
 				title="Deal Package"
@@ -1388,7 +1491,7 @@ export function DealsDedicatedDetails({
 						]}
 					/>
 					{groupedDocumentInstances.archivedSignableDocuments.length > 0 ? (
-						<div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
+						<div className="border-emerald-500/30 border-y bg-emerald-500/5 py-3">
 							<p className="font-medium text-emerald-900 text-sm dark:text-emerald-100">
 								Signed archive captured
 							</p>
@@ -1420,10 +1523,7 @@ export function DealsDedicatedDetails({
 					renderItem={(item) => {
 						const document = item as DealDocumentInstanceListItem;
 						return (
-							<div
-								className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-								key={document.instanceId}
-							>
+							<div className="py-3" key={document.instanceId}>
 								<div className="flex flex-wrap items-start justify-between gap-3">
 									<div className="space-y-1">
 										<p className="font-medium text-sm">
@@ -1463,10 +1563,7 @@ export function DealsDedicatedDetails({
 					renderItem={(item) => {
 						const document = item as DealDocumentInstanceListItem;
 						return (
-							<div
-								className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-								key={document.instanceId}
-							>
+							<div className="py-3" key={document.instanceId}>
 								<div className="flex flex-wrap items-start justify-between gap-3">
 									<div className="space-y-1">
 										<p className="font-medium text-sm">
@@ -1508,10 +1605,7 @@ export function DealsDedicatedDetails({
 						renderItem={(item) => {
 							const document = item as DealDocumentInstanceListItem;
 							return (
-								<div
-									className="space-y-3 rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-									key={document.instanceId}
-								>
+								<div className="space-y-3 py-3" key={document.instanceId}>
 									<div className="flex flex-wrap items-start justify-between gap-3">
 										<div className="space-y-2">
 											<div className="space-y-1">
@@ -1633,10 +1727,7 @@ export function DealsDedicatedDetails({
 						renderItem={(item) => {
 							const document = item as DealDocumentInstanceListItem;
 							return (
-								<div
-									className="space-y-3 rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-									key={document.instanceId}
-								>
+								<div className="space-y-3 py-3" key={document.instanceId}>
 									<div className="flex flex-wrap items-start justify-between gap-3">
 										<div className="space-y-2">
 											<div className="space-y-1">
@@ -1761,10 +1852,7 @@ export function DealsDedicatedDetails({
 						const event =
 							item as NonNullable<DealDetailContext>["recentAuditEvents"][number];
 						return (
-							<div
-								className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-								key={event.eventId}
-							>
+							<div className="py-3" key={event.eventId}>
 								<p className="font-medium text-sm">{event.eventType}</p>
 								<p className="text-muted-foreground text-sm">
 									{event.previousState ?? "unknown"} →{" "}
@@ -1951,10 +2039,7 @@ export function MortgagesDedicatedDetailsContent({
 							const borrower =
 								item as NonNullable<MortgageDetailContext>["borrowers"][number];
 							return (
-								<div
-									className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-									key={String(borrower.borrowerId)}
-								>
+								<div className="py-3" key={String(borrower.borrowerId)}>
 									<Link
 										className="font-medium text-primary text-sm underline-offset-4 hover:underline"
 										params={{
@@ -1994,7 +2079,7 @@ export function MortgagesDedicatedDetailsContent({
 						) : null}
 					</div>
 					{paymentSetup?.activationStatus === "failed" ? (
-						<div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-4 text-sm">
+						<div className="border-destructive/30 border-y bg-destructive/5 py-4 text-sm">
 							<p className="font-medium text-destructive">
 								Immediate Rotessa activation failed
 							</p>
@@ -2021,7 +2106,7 @@ export function MortgagesDedicatedDetailsContent({
 						</div>
 					) : null}
 					{paymentSetup?.activationStatus === "activating" ? (
-						<div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-4 text-sm">
+						<div className="border-sky-500/30 border-y bg-sky-500/10 py-4 text-sm">
 							<p className="font-medium text-sky-900">
 								Immediate Rotessa activation is in progress
 							</p>
@@ -2126,7 +2211,7 @@ export function MortgagesDedicatedDetailsContent({
 						]}
 					/>
 					{paymentSetup?.externalSchedule ? (
-						<div className="rounded-lg border border-border/60 bg-background/80 px-4 py-4">
+						<div className="py-4">
 							<div className="flex flex-wrap items-center gap-2">
 								<p className="font-medium text-sm">
 									External schedule{" "}
@@ -2178,7 +2263,7 @@ export function MortgagesDedicatedDetailsContent({
 						</div>
 					) : null}
 					{detailContext?.paymentSetup?.scheduleRuleMissing ? (
-						<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-sm">
+						<div className="border-amber-500/30 border-y bg-amber-500/10 py-4 text-sm">
 							<p className="font-medium text-amber-900">
 								Schedule rule fallback applied
 							</p>
@@ -2194,7 +2279,7 @@ export function MortgagesDedicatedDetailsContent({
 							Obligations
 						</p>
 						{detailContext?.paymentSetup?.obligations?.length ? (
-							<div className="overflow-x-auto rounded-lg border border-border/60 bg-background/80">
+							<div className="overflow-x-auto border-border/60 border-y">
 								<table className="min-w-full text-left text-sm">
 									<thead className="bg-muted/40 text-muted-foreground text-xs uppercase tracking-[0.08em]">
 										<tr>
@@ -2260,7 +2345,7 @@ export function MortgagesDedicatedDetailsContent({
 							Plan Entries
 						</p>
 						{detailContext?.paymentSetup?.collectionPlanEntries?.length ? (
-							<div className="overflow-x-auto rounded-lg border border-border/60 bg-background/80">
+							<div className="overflow-x-auto border-border/60 border-y">
 								<table className="min-w-full text-left text-sm">
 									<thead className="bg-muted/40 text-muted-foreground text-xs uppercase tracking-[0.08em]">
 										<tr>
@@ -2329,7 +2414,7 @@ export function MortgagesDedicatedDetailsContent({
 			>
 				<div className="space-y-4">
 					{detailContext?.listing ? (
-						<div className="rounded-lg border border-border/60 bg-background/80 px-4 py-4">
+						<div className="py-4">
 							<div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
 								<div className="space-y-2">
 									<div className="flex flex-wrap items-center gap-2">
@@ -2439,6 +2524,12 @@ export function MortgagesDedicatedDetailsContent({
 				description="Mortgage-owned blueprint rows created during origination. Public static docs project onto the listing; private classes remain mortgage-owned until later deal-package phases."
 				title="Documents"
 			>
+				<div className="mb-4 flex justify-end">
+					<MortgagePackageApplyButton
+						disabled={!canManageMortgageDocuments}
+						mortgageId={record._id as Id<"mortgages">}
+					/>
+				</div>
 				<CompactList
 					emptyMessage="No mortgage document blueprints have been staged yet."
 					items={detailContext?.documents ?? []}
@@ -2446,10 +2537,7 @@ export function MortgagesDedicatedDetailsContent({
 						const document =
 							item as NonNullable<MortgageDetailContext>["documents"][number];
 						return (
-							<div
-								className="rounded-lg border border-border/60 bg-background/80 px-4 py-4"
-								key={String(document.blueprintId)}
-							>
+							<div className="py-4" key={String(document.blueprintId)}>
 								<div className="flex flex-wrap items-start justify-between gap-3">
 									<div className="space-y-1">
 										<div className="flex flex-wrap items-center gap-2">
@@ -2571,10 +2659,7 @@ export function MortgagesDedicatedDetailsContent({
 							timestamp: number;
 						};
 						return (
-							<div
-								className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-								key={`${event.eventId}-${String(index)}`}
-							>
+							<div className="py-3" key={`${event.eventId}-${String(index)}`}>
 								<p className="font-medium text-sm">{event.eventType}</p>
 								<p className="text-muted-foreground text-sm">
 									{new Date(event.timestamp).toLocaleString()}
@@ -2705,7 +2790,7 @@ export function ObligationsDedicatedDetails({
 								>["correctiveObligations"][number];
 								return (
 									<div
-										className="flex items-center justify-between rounded-lg border border-border/60 bg-background/80 px-3 py-3"
+										className="flex items-center justify-between py-3"
 										key={String(corrective.obligationId)}
 									>
 										<div>
@@ -2750,10 +2835,7 @@ export function ObligationsDedicatedDetails({
 							subtitle: string;
 						};
 						return (
-							<div
-								className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-								key={`${activity.id}-${String(index)}`}
-							>
+							<div className="py-3" key={`${activity.id}-${String(index)}`}>
 								<p className="font-medium text-sm">{activity.title}</p>
 								<p className="text-muted-foreground text-sm">
 									{activity.subtitle}
@@ -2958,10 +3040,7 @@ export function BorrowersDedicatedDetails({
 							typeof detailContext
 						>["recentAuditEvents"][number];
 						return (
-							<div
-								className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-								key={event.eventId}
-							>
+							<div className="py-3" key={event.eventId}>
 								<p className="font-medium text-sm">{event.eventType}</p>
 								<p className="text-muted-foreground text-sm">
 									{new Date(event.timestamp).toLocaleString()} • {event.outcome}
@@ -3209,10 +3288,7 @@ export function LendersDedicatedDetails({
 						const event =
 							item as NonNullable<LenderDetailContext>["recentAuditEvents"][number];
 						return (
-							<div
-								className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-								key={event.eventId}
-							>
+							<div className="py-3" key={event.eventId}>
 								<p className="font-medium text-sm">{event.eventType}</p>
 								<p className="text-muted-foreground text-sm">
 									{new Date(event.timestamp).toLocaleString()} • {event.outcome}
@@ -3462,10 +3538,7 @@ export function BrokersDedicatedDetails({
 						const event =
 							item as NonNullable<BrokerDetailContext>["recentAuditEvents"][number];
 						return (
-							<div
-								className="rounded-lg border border-border/60 bg-background/80 px-3 py-3"
-								key={event.eventId}
-							>
+							<div className="py-3" key={event.eventId}>
 								<p className="font-medium text-sm">{event.eventType}</p>
 								<p className="text-muted-foreground text-sm">
 									{new Date(event.timestamp).toLocaleString()} • {event.outcome}

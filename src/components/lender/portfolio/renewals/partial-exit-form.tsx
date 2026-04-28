@@ -33,8 +33,8 @@ export function PartialExitForm({
 		<div
 			className={
 				variant === "compact"
-					? "space-y-3 rounded-lg border border-border/70 p-3"
-					: "space-y-3 rounded-xl border border-border/70 p-4"
+					? "space-y-3 border-border/70 border-y py-3"
+					: "space-y-3 border-border/70 border-y py-4"
 			}
 			data-testid={`renewal-partial-exit-form-${mortgageId}`}
 		>

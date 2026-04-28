@@ -162,12 +162,13 @@ export function ListingDetailPage({
 	const firstHeroImageId = listing.heroImages[0]?.id;
 	const firstDocumentId = listing.documents[0]?.id;
 	const firstLawyerId = checkout?.lawyers[0]?.id;
+	const hasFirstLawyer = firstLawyerId !== undefined;
 
 	useEffect(() => {
 		setSelectedImageId(firstHeroImageId);
 		setSelectedDocumentId(firstDocumentId);
 		setSelectedLawyerId(firstLawyerId);
-		setLawyerMode(firstLawyerId ? "platform" : "guest");
+		setLawyerMode(hasFirstLawyer ? "platform" : "guest");
 		setGuestLawyerName("");
 		setGuestLawyerEmail("");
 		setGuestLawyerFirm("");
@@ -175,7 +176,13 @@ export function ListingDetailPage({
 		setCheckoutError(null);
 		setIsCheckoutPending(false);
 		setShowMobileMap(false);
-	}, [defaultFractions, firstDocumentId, firstHeroImageId, firstLawyerId]);
+	}, [
+		defaultFractions,
+		firstDocumentId,
+		firstHeroImageId,
+		firstLawyerId,
+		hasFirstLawyer,
+	]);
 
 	const selectedImageIndex = selectedImageId
 		? listing.heroImages.findIndex((image) => image.id === selectedImageId)
@@ -1097,7 +1104,7 @@ function DesktopDocuments({
 						selectedDocumentId={selectedDocument?.id}
 					/>
 				</div>
-				<div className="h-[358px] min-h-0 flex-1 overflow-hidden bg-muted/25 p-4">
+				<div className="h-[min(78vh,920px)] min-h-[680px] flex-1 overflow-hidden bg-muted/25 p-4">
 					<ListingDocumentViewer
 						document={selectedDocument}
 						listingId={listingId}

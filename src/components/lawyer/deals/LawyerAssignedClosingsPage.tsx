@@ -9,6 +9,7 @@ import {
 	Scale,
 	UsersRound,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -87,9 +88,14 @@ function statusLabel(status: string) {
 
 interface LawyerAssignedClosingsPageProps {
 	matters: AssignedClosings;
+	renderMatterLink?: (
+		matter: AssignedClosing,
+		children: ReactNode
+	) => ReactNode;
 }
 
 export function LawyerAssignedClosingsPage({
+	renderMatterLink,
 	matters,
 }: LawyerAssignedClosingsPageProps) {
 	const grouped = groupLawyerMatters(matters);
@@ -130,6 +136,7 @@ export function LawyerAssignedClosingsPage({
 								key={bucket.key}
 								label={bucket.label}
 								matters={grouped[bucket.key] as AssignedClosing[]}
+								renderMatterLink={renderMatterLink}
 							/>
 						))}
 					</div>
@@ -166,10 +173,15 @@ function QueueSection({
 	bucket,
 	label,
 	matters,
+	renderMatterLink,
 }: {
 	bucket: LawyerMatterQueueBucket;
 	label: string;
 	matters: AssignedClosing[];
+	renderMatterLink?: (
+		matter: AssignedClosing,
+		children: ReactNode
+	) => ReactNode;
 }) {
 	const meta = BUCKET_META[bucket];
 	const Icon = meta.icon;
@@ -199,7 +211,11 @@ function QueueSection({
 					</p>
 				) : (
 					matters.map((matter) => (
-						<MatterRow key={matter.dealId} matter={matter} />
+						<MatterRow
+							key={matter.dealId}
+							matter={matter}
+							renderMatterLink={renderMatterLink}
+						/>
 					))
 				)}
 			</div>
@@ -207,7 +223,22 @@ function QueueSection({
 	);
 }
 
-function MatterRow({ matter }: { matter: AssignedClosing }) {
+function MatterRow({
+	matter,
+	renderMatterLink,
+}: {
+	matter: AssignedClosing;
+	renderMatterLink?: (
+		matter: AssignedClosing,
+		children: ReactNode
+	) => ReactNode;
+}) {
+	const linkChildren = (
+		<>
+			Open <ArrowRight className="size-4" />
+		</>
+	);
+
 	return (
 		<div className="grid gap-3 px-4 py-4 md:grid-cols-[1fr_auto] md:items-center">
 			<div className="min-w-0 space-y-2">
@@ -229,9 +260,13 @@ function MatterRow({ matter }: { matter: AssignedClosing }) {
 				</div>
 			</div>
 			<Button asChild size="sm" variant="outline">
-				<Link params={{ dealId: matter.dealId }} to="/lawyer/deals/$dealId">
-					Open <ArrowRight className="size-4" />
-				</Link>
+				{renderMatterLink ? (
+					renderMatterLink(matter, linkChildren)
+				) : (
+					<Link params={{ dealId: matter.dealId }} to="/lawyer/deals/$dealId">
+						{linkChildren}
+					</Link>
+				)}
 			</Button>
 		</div>
 	);

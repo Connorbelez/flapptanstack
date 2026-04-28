@@ -110,3 +110,98 @@ export const draftStateValidator = v.object({
 	signatories: v.array(signatoryConfigValidator),
 	pdfmeSchema: v.optional(v.any()),
 });
+
+export const documentGroupVersionSnapshotValidator = v.object({
+	description: v.optional(v.string()),
+	name: v.string(),
+	requiredPlatformRoles: v.array(v.string()),
+	requiredVariableKeys: v.array(v.string()),
+	signatories: v.array(signatoryConfigValidator),
+	templateRefs: v.array(
+		v.object({
+			order: v.number(),
+			pinnedVersion: v.number(),
+			templateId: v.id("documentTemplates"),
+		})
+	),
+});
+
+export const documentPackageDraftItemValidator = v.union(
+	v.object({
+		groupVersionId: v.id("documentGroupVersions"),
+		kind: v.literal("group"),
+		label: v.optional(v.string()),
+		order: v.number(),
+	}),
+	v.object({
+		kind: v.literal("standalone_template"),
+		label: v.optional(v.string()),
+		order: v.number(),
+		pinnedVersion: v.optional(v.number()),
+		templateId: v.id("documentTemplates"),
+	}),
+	v.object({
+		assetId: v.id("documentAssets"),
+		kind: v.literal("static_asset"),
+		label: v.optional(v.string()),
+		order: v.number(),
+	})
+);
+
+export const documentPackageDraftValidator = v.object({
+	items: v.array(documentPackageDraftItemValidator),
+});
+
+export const documentPackageEnvelopeBoundaryValidator = v.object({
+	itemIndex: v.number(),
+	kind: v.union(v.literal("group"), v.literal("standalone_signable")),
+});
+
+export const documentPackageSnapshotItemValidator = v.union(
+	v.object({
+		groupId: v.id("documentTemplateGroups"),
+		groupVersion: v.number(),
+		groupVersionId: v.id("documentGroupVersions"),
+		kind: v.literal("group"),
+		label: v.optional(v.string()),
+		name: v.string(),
+		order: v.number(),
+		requiredPlatformRoles: v.array(v.string()),
+		requiredVariableKeys: v.array(v.string()),
+		signatories: v.array(signatoryConfigValidator),
+		templateRefs: v.array(
+			v.object({
+				order: v.number(),
+				pinnedVersion: v.number(),
+				templateId: v.id("documentTemplates"),
+			})
+		),
+	}),
+	v.object({
+		containsSignableFields: v.boolean(),
+		kind: v.literal("standalone_template"),
+		label: v.optional(v.string()),
+		order: v.number(),
+		requiredPlatformRoles: v.array(v.string()),
+		requiredVariableKeys: v.array(v.string()),
+		templateId: v.id("documentTemplates"),
+		templateName: v.string(),
+		templateVersion: v.number(),
+	}),
+	v.object({
+		assetId: v.id("documentAssets"),
+		assetName: v.string(),
+		kind: v.literal("static_asset"),
+		label: v.optional(v.string()),
+		order: v.number(),
+	})
+);
+
+export const documentPackageSnapshotValidator = v.object({
+	description: v.optional(v.string()),
+	envelopeBoundaries: v.array(documentPackageEnvelopeBoundaryValidator),
+	items: v.array(documentPackageSnapshotItemValidator),
+	name: v.string(),
+	requiredPlatformRoles: v.array(v.string()),
+	requiredVariableKeys: v.array(v.string()),
+});

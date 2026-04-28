@@ -136,7 +136,7 @@ export function PortfolioKeyValueGrid({
 	className?: string;
 }) {
 	return (
-		<dl className={cn("grid gap-4 sm:grid-cols-2", className)}>{children}</dl>
+		<dl className={cn("grid gap-x-6 sm:grid-cols-2", className)}>{children}</dl>
 	);
 }
 
@@ -148,7 +148,7 @@ export function PortfolioKeyValueRow({
 	value: ReactNode;
 }) {
 	return (
-		<div className="space-y-1">
+		<div className="space-y-1 border-border/60 border-t py-3">
 			<dt className="text-[11px] text-muted-foreground uppercase tracking-[0.16em]">
 				{label}
 			</dt>

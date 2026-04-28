@@ -10,6 +10,14 @@ import {
 	FAIRLEND_MIC_LENDER_EMAIL,
 } from "../platform/defaultOriginationOwnerContract";
 import {
+	MIC_PORTAL_DEFAULT_POST_AUTH_PATH,
+	MIC_PORTAL_LOCAL_HOST,
+	MIC_PORTAL_PRODUCTION_HOST,
+	MIC_PORTAL_SLUG,
+	micPortalFields,
+} from "../portals/helpers";
+import {
+	ensureOrganization,
 	ensureUserByEmail,
 	findLenderByUserId,
 	SEED_SOURCE,
@@ -38,6 +46,14 @@ export interface SeedPlatformOwnershipResult {
 		platformSettings: number;
 	};
 	settingsId?: Id<"platformSettings">;
+}
+
+export interface EnsureFairLendMicPortalResult {
+	lenderId: Id<"lenders">;
+	micLenderAuthId: string;
+	orgId: string;
+	portalId: Id<"portals">;
+	wasCreated: boolean;
 }
 
 async function upsertFairLendMicLender(
@@ -74,6 +90,168 @@ async function upsertFairLendMicLender(
 	});
 
 	return { lenderId, wasCreated: true };
+}
+
+async function resolveFairLendBrokerId(
+	ctx: MutationCtx,
+	brokerId: Id<"brokers"> | undefined
+) {
+	if (brokerId) {
+		const broker = await ctx.db.get(brokerId);
+		if (!broker || broker.orgId !== FAIRLEND_BROKERAGE_ORG_ID) {
+			throw new ConvexError(
+				"FairLend MIC ownership seeding requires a FairLend brokerage broker"
+			);
+		}
+		return brokerId;
+	}
+
+	const existingBroker = await ctx.db
+		.query("brokers")
+		.withIndex("by_org", (q) => q.eq("orgId", FAIRLEND_BROKERAGE_ORG_ID))
+		.first();
+	if (existingBroker) {
+		return existingBroker._id;
+	}
+
+	await ensureOrganization(ctx, {
+		allowProfilesOutsideOrganization: true,
+		externalId: "seed_fairlend_capital",
+		name: "FairLend Capital",
+		workosId: FAIRLEND_BROKERAGE_ORG_ID,
+	});
+	const { userId } = await ensureUserByEmail(ctx, {
+		address: {
+			city: "Toronto",
+			postalCode: "M5H1J9",
+			streetAddress: "120 King St W",
+			unit: "Suite 800",
+		},
+		authId: seedAuthIdFromEmail("amelia.chan+broker@fairlend.ca"),
+		email: "amelia.chan+broker@fairlend.ca",
+		firstName: "Amelia",
+		lastName: "Chan",
+		phoneNumber: "+1-416-555-0101",
+	});
+	const createdAt = seedTimestamp();
+	const createdBrokerId = await ctx.db.insert("brokers", {
+		brokerageName: "FairLend Capital",
+		createdAt,
+		lastTransitionAt: createdAt + 300_000,
+		licenseId: "M08001234",
+		licenseProvince: "ON",
+		onboardedAt: createdAt + 300_000,
+		orgId: FAIRLEND_BROKERAGE_ORG_ID,
+		status: "active",
+		userId,
+	});
+
+	await writeCreationJournalEntry(ctx, {
+		entityId: createdBrokerId,
+		entityType: "broker",
+		initialState: "active",
+		organizationId: FAIRLEND_BROKERAGE_ORG_ID,
+		payload: {
+			brokerageName: "FairLend Capital",
+			licenseId: "M08001234",
+			userId,
+		},
+		source: SEED_SOURCE,
+		timestamp: createdAt,
+	});
+
+	return createdBrokerId;
+}
+
+async function ensureFairLendMicLender(
+	ctx: MutationCtx,
+	args: { brokerId?: Id<"brokers">; createdAt: number }
+) {
+	const { userId } = await ensureUserByEmail(ctx, {
+		authId: seedAuthIdFromEmail(FAIRLEND_MIC_LENDER_EMAIL),
+		email: FAIRLEND_MIC_LENDER_EMAIL,
+		firstName: "FairLend",
+		lastName: "MIC",
+		phoneNumber: "+1-416-555-0199",
+	});
+	const resolvedBrokerId = await resolveFairLendBrokerId(ctx, args.brokerId);
+	const lender = await upsertFairLendMicLender(ctx, {
+		brokerId: resolvedBrokerId,
+		createdAt: args.createdAt,
+		userId,
+	});
+
+	return {
+		...lender,
+		micLenderAuthId: seedAuthIdFromEmail(FAIRLEND_MIC_LENDER_EMAIL),
+	};
+}
+
+async function upsertFairLendMicPortal(
+	ctx: MutationCtx,
+	args: {
+		createdAt: number;
+		lenderId: Id<"lenders">;
+		micLenderAuthId: string;
+		orgId?: string;
+	}
+): Promise<EnsureFairLendMicPortalResult> {
+	const existingMicPortals = await ctx.db
+		.query("portals")
+		.withIndex("by_slug", (q) => q.eq("slug", MIC_PORTAL_SLUG))
+		.collect();
+	const existingPortal =
+		existingMicPortals.find(
+			(portal) =>
+				portal.localHost === MIC_PORTAL_LOCAL_HOST ||
+				portal.productionHost === MIC_PORTAL_PRODUCTION_HOST
+		) ??
+		existingMicPortals.find((portal) => portal.status === "active") ??
+		existingMicPortals[0];
+	const orgId =
+		args.orgId ?? existingPortal?.orgId ?? FAIRLEND_BROKERAGE_ORG_ID;
+	const fields = {
+		...micPortalFields({
+			micLenderAuthId: args.micLenderAuthId,
+			now: args.createdAt,
+			orgId,
+		}),
+		lenderId: args.lenderId,
+	};
+
+	if (existingPortal) {
+		await ctx.db.patch(existingPortal._id, {
+			defaultPostAuthPath: MIC_PORTAL_DEFAULT_POST_AUTH_PATH,
+			isPublished: fields.isPublished,
+			lenderId: fields.lenderId,
+			localHost: fields.localHost,
+			micLenderAuthId: fields.micLenderAuthId,
+			orgId: fields.orgId,
+			portalType: fields.portalType,
+			productionHost: fields.productionHost,
+			publicTeaserEnabled: fields.publicTeaserEnabled,
+			slug: fields.slug,
+			status: fields.status,
+			teaserListingLimit: fields.teaserListingLimit,
+			updatedAt: Date.now(),
+		});
+		return {
+			lenderId: args.lenderId,
+			micLenderAuthId: args.micLenderAuthId,
+			orgId,
+			portalId: existingPortal._id,
+			wasCreated: false,
+		};
+	}
+
+	const portalId = await ctx.db.insert("portals", fields);
+	return {
+		lenderId: args.lenderId,
+		micLenderAuthId: args.micLenderAuthId,
+		orgId,
+		portalId,
+		wasCreated: true,
+	};
 }
 
 async function upsertFairLendMicVehicle(
@@ -223,40 +401,9 @@ export const seedPlatformOwnership = adminMutation
 	})
 	.handler(async (ctx, args): Promise<SeedPlatformOwnershipResult> => {
 		const createdAt = seedTimestamp(18_000_000);
-		const { userId } = await ensureUserByEmail(ctx, {
-			authId: seedAuthIdFromEmail(FAIRLEND_MIC_LENDER_EMAIL),
-			email: FAIRLEND_MIC_LENDER_EMAIL,
-			firstName: "FairLend",
-			lastName: "MIC",
-			phoneNumber: "+1-416-555-0199",
-		});
-
-		const resolvedBrokerId =
-			args.brokerId ??
-			(
-				await ctx.db
-					.query("brokers")
-					.withIndex("by_org", (q) => q.eq("orgId", FAIRLEND_BROKERAGE_ORG_ID))
-					.first()
-			)?._id;
-
-		if (!resolvedBrokerId) {
-			throw new ConvexError(
-				"FairLend broker must exist before seedPlatformOwnership runs"
-			);
-		}
-
-		const broker = await ctx.db.get(resolvedBrokerId);
-		if (!broker || broker.orgId !== FAIRLEND_BROKERAGE_ORG_ID) {
-			throw new ConvexError(
-				"seedPlatformOwnership requires a FairLend brokerage broker"
-			);
-		}
-
-		const lender = await upsertFairLendMicLender(ctx, {
-			brokerId: resolvedBrokerId,
+		const lender = await ensureFairLendMicLender(ctx, {
+			brokerId: args.brokerId,
 			createdAt,
-			userId,
 		});
 		const investmentVehicle = await upsertFairLendMicVehicle(ctx, {
 			createdAt,
@@ -312,5 +459,25 @@ export const seedPlatformOwnership = adminMutation
 			},
 			settingsId: settings.settings._id,
 		};
+	})
+	.public();
+
+export const ensureFairLendMicPortal = adminMutation
+	.input({
+		brokerId: v.optional(v.id("brokers")),
+		orgId: v.optional(v.string()),
+	})
+	.handler(async (ctx, args): Promise<EnsureFairLendMicPortalResult> => {
+		const createdAt = seedTimestamp(18_000_000);
+		const lender = await ensureFairLendMicLender(ctx, {
+			brokerId: args.brokerId,
+			createdAt,
+		});
+		return await upsertFairLendMicPortal(ctx, {
+			createdAt,
+			lenderId: lender.lenderId,
+			micLenderAuthId: lender.micLenderAuthId,
+			orgId: args.orgId,
+		});
 	})
 	.public();

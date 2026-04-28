@@ -276,7 +276,7 @@ async function getSimilarMarketplaceListings(
 ) {
 	// TODO: Add an index ordered for featured/displayOrder/publishedAt so this
 	// detail hot path can read the top 3 similar listings without JS sorting.
-	const candidates = await ctx.db
+	const samePropertyTypeCandidates = await ctx.db
 		.query("listings")
 		.withIndex("by_marketplace_property_type_and_status", (q) =>
 			q
@@ -285,28 +285,45 @@ async function getSimilarMarketplaceListings(
 		)
 		.take(SIMILAR_LISTING_CANDIDATE_LIMIT);
 
-	return await Promise.all(
-		candidates
-			.filter((candidate) => candidate._id !== listing._id)
-			.sort(compareMarketplaceListings)
-			.slice(0, 3)
-			.map(async (candidate) => {
-				const projectedCandidate = pricingPolicy
-					? projectListingForPortal(candidate, pricingPolicy)
-					: candidate;
+	const candidatesById = new Map<string, ListingDoc>();
+	for (const candidate of samePropertyTypeCandidates) {
+		candidatesById.set(String(candidate._id), candidate);
+	}
 
-				return {
-					heroImageUrl: await getHeroImageUrl(ctx, candidate.heroImages[0]),
-					id: String(candidate._id),
-					interestRate: projectedCandidate.interestRate,
-					locationLabel: buildLocationLabel(candidate) ?? "",
-					ltvRatio: candidate.ltvRatio,
-					mortgageTypeLabel: lienPositionToMortgageType(candidate.lienPosition),
-					principal: candidate.principal,
-					propertyTypeLabel: candidate.marketplacePropertyType,
-					title: candidate.title ?? "Mortgage Listing",
-				};
-			})
+	if (candidatesById.size < 4) {
+		const fallbackCandidates = await ctx.db
+			.query("listings")
+			.withIndex("by_status", (q) => q.eq("status", "published"))
+			.take(SIMILAR_LISTING_CANDIDATE_LIMIT);
+
+		for (const candidate of fallbackCandidates) {
+			candidatesById.set(String(candidate._id), candidate);
+		}
+	}
+
+	const similarListings = Array.from(candidatesById.values())
+		.filter((candidate) => candidate._id !== listing._id)
+		.sort(compareMarketplaceListings)
+		.slice(0, 3);
+
+	return await Promise.all(
+		similarListings.map(async (candidate) => {
+			const projectedCandidate = pricingPolicy
+				? projectListingForPortal(candidate, pricingPolicy)
+				: candidate;
+
+			return {
+				heroImageUrl: await getHeroImageUrl(ctx, candidate.heroImages[0]),
+				id: String(candidate._id),
+				interestRate: projectedCandidate.interestRate,
+				locationLabel: buildLocationLabel(candidate) ?? "",
+				ltvRatio: candidate.ltvRatio,
+				mortgageTypeLabel: lienPositionToMortgageType(candidate.lienPosition),
+				principal: projectedCandidate.principal,
+				propertyTypeLabel: getMarketplacePropertyType(candidate),
+				title: candidate.title ?? "Mortgage Listing",
+			};
+		})
 	);
 }
 

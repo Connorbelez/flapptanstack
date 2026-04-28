@@ -12,6 +12,25 @@ export const listByTemplate = documentQuery
 	})
 	.public();
 
+export const listAll = documentQuery
+	.input({})
+	.handler(async (ctx) => {
+		const versions = await ctx.db
+			.query("documentTemplateVersions")
+			.order("desc")
+			.collect();
+		return await Promise.all(
+			versions.map(async (version) => {
+				const template = await ctx.db.get(version.templateId);
+				return {
+					...version,
+					templateName: template?.name ?? "Deleted template",
+				};
+			})
+		);
+	})
+	.public();
+
 export const get = documentQuery
 	.input({
 		templateId: v.id("documentTemplates"),

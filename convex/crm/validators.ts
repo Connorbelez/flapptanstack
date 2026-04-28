@@ -48,6 +48,8 @@ export const viewLayoutMessagesValidator = v.object({
 	calendar: v.optional(v.string()),
 });
 
+export const fieldReferenceIdValidator = v.string();
+
 // ── Normalized Field Contracts ──
 export const normalizedFieldKindValidator = v.union(
 	v.literal("primitive"),

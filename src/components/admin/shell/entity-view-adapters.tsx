@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { MortgageFilesDocumentAttachButton } from "#/components/admin/mortgages/MortgageFilesDocumentAttachButton";
 import type { AdminRelationNavigationTarget } from "#/lib/admin-relation-navigation";
 import type { Doc } from "../../../../convex/_generated/dataModel";
 import type {
@@ -340,6 +341,23 @@ const ROLLOUT_DETAIL_ADAPTERS: Partial<
 				record={record}
 			/>
 		),
+		renderFilesTab: ({ objectDef, record, reference }) => {
+			if (!(objectDef && record)) {
+				return null;
+			}
+			return (
+				<RecordAttachmentsPanel
+					headerAction={
+						<MortgageFilesDocumentAttachButton
+							mortgageId={reference.recordId}
+						/>
+					}
+					objectDefId={objectDef._id}
+					recordId={reference.recordId}
+					recordKind={record._kind}
+				/>
+			);
+		},
 	},
 	deals: {
 		renderDetailsTab: ({ fields, objectDefs, onNavigateRelation, record }) => (

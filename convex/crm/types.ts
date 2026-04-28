@@ -156,7 +156,7 @@ export interface NormalizedFieldDefinition {
 	description?: string;
 	displayOrder: number;
 	editability: EditabilityMetadata;
-	fieldDefId?: Id<"fieldDefs">;
+	fieldDefId?: FieldReferenceId;
 	fieldSource: "persisted" | "adapter_computed";
 	fieldType: Doc<"fieldDefs">["fieldType"];
 	isActive: boolean;
@@ -175,6 +175,8 @@ export interface NormalizedFieldDefinition {
 	rendererHint: FieldRendererHint;
 }
 
+export type FieldReferenceId = string;
+
 export interface SystemViewDefinition {
 	aggregatePresets: AggregatePreset[];
 	boundFieldId?: Id<"fieldDefs">;
@@ -183,7 +185,7 @@ export interface SystemViewDefinition {
 		kanban?: string;
 		table?: string;
 	};
-	fieldOrder: Id<"fieldDefs">[];
+	fieldOrder: FieldReferenceId[];
 	filters: RecordFilter[];
 	groupByFieldId?: Id<"fieldDefs">;
 	isDefault: boolean;
@@ -192,12 +194,12 @@ export interface SystemViewDefinition {
 	needsRepair: boolean;
 	objectDefId: Id<"objectDefs">;
 	viewDefId: Id<"viewDefs">;
-	visibleFieldIds: Id<"fieldDefs">[];
+	visibleFieldIds: FieldReferenceId[];
 }
 
 export interface UserSavedViewDefinition {
 	aggregatePresets: AggregatePreset[];
-	fieldOrder: Id<"fieldDefs">[];
+	fieldOrder: FieldReferenceId[];
 	filters: SavedViewFilterDefinition[];
 	groupByFieldId?: Id<"fieldDefs">;
 	isDefault: boolean;
@@ -208,7 +210,7 @@ export interface UserSavedViewDefinition {
 	sourceViewDefId?: Id<"viewDefs">;
 	userSavedViewId: Id<"userSavedViews">;
 	viewType: ViewLayout;
-	visibleFieldIds: Id<"fieldDefs">[];
+	visibleFieldIds: FieldReferenceId[];
 }
 
 export interface EffectiveViewDefinition {
@@ -216,7 +218,7 @@ export interface EffectiveViewDefinition {
 	aggregatePresets: AggregatePreset[];
 	boundFieldId?: Id<"fieldDefs">;
 	disabledLayoutMessages?: SystemViewDefinition["disabledLayoutMessages"];
-	fieldOrder: Id<"fieldDefs">[];
+	fieldOrder: FieldReferenceId[];
 	filters: RecordFilter[];
 	groupByFieldId?: Id<"fieldDefs">;
 	isDefault: boolean;
@@ -225,7 +227,7 @@ export interface EffectiveViewDefinition {
 	sort?: RecordSort;
 	sourceViewDefId: Id<"viewDefs">;
 	viewType: ViewLayout;
-	visibleFieldIds: Id<"fieldDefs">[];
+	visibleFieldIds: FieldReferenceId[];
 }
 
 export interface EntityViewAdapterContract {
@@ -266,7 +268,7 @@ export type EntityViewCellDisplayValue =
 
 export interface EntityViewCell {
 	displayValue?: EntityViewCellDisplayValue;
-	fieldDefId: Id<"fieldDefs">;
+	fieldDefId: FieldReferenceId;
 	fieldName: string;
 	label: string;
 	value: unknown;
@@ -286,7 +288,7 @@ export interface ViewAggregateResult {
 }
 
 export interface TableFooterAggregateResult {
-	fieldDefId: Id<"fieldDefs">;
+	fieldDefId: FieldReferenceId;
 	fieldName: string;
 	label: string;
 	summary: number | string | null;
