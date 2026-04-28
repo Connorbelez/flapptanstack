@@ -55,6 +55,14 @@ function resolveMockBrokerageAssociation(
 		return null;
 	}
 
+	if (!(actualBrokerageNumber || actualBrokerageName)) {
+		return {
+			matched: null,
+			requestedBrokerageName,
+			requestedBrokerageNumber: normalizedRequestedBrokerageNumber,
+		};
+	}
+
 	const normalizedActualBrokerageNumber = normalizeOptionalFsraIdentifier(
 		actualBrokerageNumber
 	);

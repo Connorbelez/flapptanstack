@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../../../../convex/_generated/api";
-import { buildDefaultFsraSourceRecords } from "../../../../convex/onboarding/verification/fsraFixtures";
+import {
+	buildDefaultFsraSourceRecords,
+	findFsraSourceRecordsByBrokerageNumber,
+	selectPrimaryBrokerageRecord,
+} from "../../../../convex/onboarding/verification/fsraFixtures";
 import { createImportedFsraProviderBindings } from "../../../../convex/onboarding/verification/fsraImport";
 import { createBrokerOnboardingVerificationRegistry } from "../../../../convex/onboarding/verification/registry";
 import { createTestConvex } from "../../auth/helpers";
@@ -158,6 +162,9 @@ describe("regulator providers", () => {
 				? { ...record, brokerageNumber: null }
 				: record
 		);
+		const mockPrimaryRecord = selectPrimaryBrokerageRecord(
+			findFsraSourceRecordsByBrokerageNumber(records, "BR-001", "ON")
+		);
 		await t.action(internal.onboarding.verification.fsraImport.runFsraImportRefresh, {
 			records,
 			trigger: "manual",
@@ -174,6 +181,9 @@ describe("regulator providers", () => {
 
 		expect(result.status).toBe("active");
 		expect(result.brokerageNumber).toBe("BR-001");
+		expect(mockPrimaryRecord?.licenseType).toBe("brokerage");
+		expect(mockPrimaryRecord?.licenseNumber).toBe("BR-001");
+		expect(mockPrimaryRecord?.brokerageNumber).toBeNull();
 	});
 
 	it("keeps imported and mock providers aligned on active, stale, and brokerage-mismatch outcomes", async () => {
@@ -239,6 +249,20 @@ describe("regulator providers", () => {
 					selfReportedName: { fullName: "Stale Broker" },
 					expectedBrokerageNumber: "BR-001",
 				}),
+				importedMissing: await importedRegistry.regulatorDirectory.lookupLicense({
+					licenseNumber: "ON-MISSING-1",
+					province: "ON",
+					requestedAt: NOW,
+					selfReportedName: { fullName: "Missing Agent" },
+					expectedBrokerageNumber: "BR-001",
+				}),
+				mockMissing: await mockRegistry.regulatorDirectory.lookupLicense({
+					licenseNumber: "ON-MISSING-1",
+					province: "ON",
+					requestedAt: NOW,
+					selfReportedName: { fullName: "Missing Agent" },
+					expectedBrokerageNumber: "BR-001",
+				}),
 			};
 		});
 
@@ -261,5 +285,12 @@ describe("regulator providers", () => {
 			comparison.mockStale.freshness
 		);
 		expect(comparison.importedStale.status).toBe(comparison.mockStale.status);
+
+		expect(comparison.importedMissing.status).toBe("not_found");
+		expect(comparison.mockMissing.status).toBe("not_found");
+		expect(comparison.importedMissing.brokerageAssociation).toEqual(
+			comparison.mockMissing.brokerageAssociation
+		);
+		expect(comparison.mockMissing.brokerageAssociation?.matched).toBeNull();
 	});
 });
