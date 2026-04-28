@@ -1,4 +1,8 @@
 import { v } from "convex/values";
+import {
+	type LsoLawyerMetadata,
+	lsoLawyerMetadataValidator,
+} from "../legalRepresentation/validators";
 import type { CheckoutStatus } from "./status";
 import { CHECKOUT_STATUSES } from "./status";
 
@@ -29,6 +33,7 @@ export const checkoutPlatformLawyerSnapshotValidator = v.object({
 	name: v.string(),
 	email: v.string(),
 	firm: v.optional(v.string()),
+	lso: v.optional(lsoLawyerMetadataValidator),
 });
 
 export const checkoutGuestLawyerSnapshotValidator = v.object({
@@ -36,6 +41,7 @@ export const checkoutGuestLawyerSnapshotValidator = v.object({
 	name: v.string(),
 	email: v.string(),
 	firm: v.optional(v.string()),
+	lso: v.optional(lsoLawyerMetadataValidator),
 });
 
 export const selectedLawyerSnapshotValidator = v.union(
@@ -47,6 +53,7 @@ export interface PlatformLawyerSnapshot {
 	readonly email: string;
 	readonly firm?: string;
 	readonly lawyerId?: string;
+	readonly lso?: LsoLawyerMetadata;
 	readonly name: string;
 	readonly type: "platform_lawyer";
 }
@@ -54,6 +61,7 @@ export interface PlatformLawyerSnapshot {
 export interface GuestLawyerSnapshot {
 	readonly email: string;
 	readonly firm?: string;
+	readonly lso?: LsoLawyerMetadata;
 	readonly name: string;
 	readonly type: "guest_lawyer";
 }
@@ -96,6 +104,64 @@ function readOptionalString(
 	return value;
 }
 
+function readOptionalLsoMetadata(
+	input: Record<string, unknown>
+): LsoLawyerMetadata | undefined {
+	const value = input.lso;
+	if (value === undefined) {
+		return undefined;
+	}
+	const lso = asRecord(value);
+	if (!lso) {
+		throw new Error("selectedLawyer.lso must be an object when present");
+	}
+	for (const fieldName of [
+		"barNumber",
+		"jurisdiction",
+		"restrictionSummary",
+		"source",
+	] as const) {
+		if (lso[fieldName] !== undefined && typeof lso[fieldName] !== "string") {
+			throw new Error(`selectedLawyer.lso.${fieldName} must be a string`);
+		}
+	}
+	if (
+		lso.sourceFetchedAt !== undefined &&
+		typeof lso.sourceFetchedAt !== "number"
+	) {
+		throw new Error("selectedLawyer.lso.sourceFetchedAt must be a number");
+	}
+	if (lso.lsoLawyerId !== undefined && typeof lso.lsoLawyerId !== "string") {
+		throw new Error("selectedLawyer.lso.lsoLawyerId must be a string");
+	}
+	if (
+		lso.licensingStatus !== undefined &&
+		![
+			"licensed",
+			"administratively_suspended",
+			"suspended",
+			"revoked",
+			"retired",
+			"unknown",
+		].includes(String(lso.licensingStatus))
+	) {
+		throw new Error("selectedLawyer.lso.licensingStatus is not supported");
+	}
+	if (
+		lso.restrictionStatus !== undefined &&
+		![
+			"clear",
+			"restricted",
+			"suspended",
+			"requires_review",
+			"unknown",
+		].includes(String(lso.restrictionStatus))
+	) {
+		throw new Error("selectedLawyer.lso.restrictionStatus is not supported");
+	}
+	return value as LsoLawyerMetadata;
+}
+
 export function isCheckoutStatusValue(value: string): value is CheckoutStatus {
 	return (CHECKOUT_STATUSES as readonly string[]).includes(value);
 }
@@ -118,6 +184,7 @@ export function parseSelectedLawyerSnapshot(
 	const name = readRequiredString(input, "name");
 	const email = readRequiredString(input, "email");
 	const firm = readOptionalString(input, "firm");
+	const lso = readOptionalLsoMetadata(input);
 
 	if (type === "platform_lawyer") {
 		const lawyerId = readOptionalString(input, "lawyerId");
@@ -127,6 +194,7 @@ export function parseSelectedLawyerSnapshot(
 			name,
 			email,
 			...(firm === undefined ? {} : { firm }),
+			...(lso === undefined ? {} : { lso }),
 		};
 	}
 
@@ -139,5 +207,6 @@ export function parseSelectedLawyerSnapshot(
 		name,
 		email,
 		...(firm === undefined ? {} : { firm }),
+		...(lso === undefined ? {} : { lso }),
 	};
 }

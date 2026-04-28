@@ -11,6 +11,7 @@ import schema from "../../schema";
 import { seedAuthIdFromEmail } from "../../seed/seedHelpers";
 import { convexModules } from "../../test/moduleMaps";
 import { buildCheckoutStripeMetadata } from "../metadata";
+import type { SelectedLawyerSnapshot } from "../validators";
 
 const BUYER_AUTH_ID = "checkout-buyer-auth";
 const CANONICAL_MIC_LENDER_AUTH_ID = seedAuthIdFromEmail(
@@ -279,7 +280,7 @@ async function prepare(
 		listingId: Id<"listings">;
 		portalId: Id<"portals">;
 		requestedFractions?: number;
-		selectedLawyer?: ReturnType<typeof selectedLawyer>;
+		selectedLawyer?: SelectedLawyerSnapshot;
 		viewerAuthId?: string;
 	}
 ) {
@@ -588,6 +589,48 @@ describe("checkout start internal mutations", () => {
 		expect(second.ok).toBe(true);
 		if (!(first.ok && second.ok)) {
 			throw new Error("expected successful prepares");
+		}
+		expect(second.checkoutSessionId).not.toBe(first.checkoutSessionId);
+		const counts = await t.run(async (ctx) => ({
+			reservations: (await ctx.db.query("ledger_reservations").collect())
+				.length,
+			checkouts: (await ctx.db.query("checkoutSessions").collect()).length,
+		}));
+		expect(counts).toEqual({ reservations: 2, checkouts: 2 });
+	});
+
+	it("does not replay a duplicate start with different LSO metadata", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const firstLawyer: SelectedLawyerSnapshot = {
+			...selectedLawyer(),
+			lso: {
+				barNumber: "LSO123",
+				jurisdiction: "ON",
+				licensingStatus: "licensed",
+				restrictionStatus: "clear",
+			},
+		};
+		const secondLawyer: SelectedLawyerSnapshot = {
+			...selectedLawyer(),
+			lso: {
+				barNumber: "LSO123",
+				jurisdiction: "ON",
+				licensingStatus: "licensed",
+				restrictionStatus: "restricted",
+			},
+		};
+
+		const first = await prepare(t, { ...fixture, selectedLawyer: firstLawyer });
+		const second = await prepare(t, {
+			...fixture,
+			selectedLawyer: secondLawyer,
+		});
+
+		expect(first.ok).toBe(true);
+		expect(second.ok).toBe(true);
+		if (!(first.ok && second.ok)) {
+			throw new Error("expected successful LSO-different prepares");
 		}
 		expect(second.checkoutSessionId).not.toBe(first.checkoutSessionId);
 		const counts = await t.run(async (ctx) => ({

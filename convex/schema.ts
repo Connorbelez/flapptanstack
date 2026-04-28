@@ -115,6 +115,20 @@ import {
 	feeSurfaceValidator,
 } from "./fees/validators";
 import {
+	lawyerInvitationStatusValidator,
+	lawyerVerificationCheckTypeValidator,
+	lawyerVerificationOutcomeValidator,
+	lawyerVerificationProviderValidator,
+	lawyerVerificationReasonCodeValidator,
+	legalRepresentationPlatformStatusValidator,
+	legalRepresentationProfileKindValidator,
+	legalSourceSnapshotValidator,
+	lsoLicensingStatusValidator,
+	lsoRestrictionStatusValidator,
+	representationEngagementProviderValidator,
+	representationEngagementStatusValidator,
+} from "./legalRepresentation/validators";
+import {
 	listingDataSourceValidator,
 	listingDelistReasonValidator,
 	listingHeroImageValidator,
@@ -2584,6 +2598,124 @@ export default defineSchema({
 		.index("by_deal_effect", ["dealId", "effectName", "startedAt"])
 		.index("by_idempotency", ["idempotencyKey"])
 		.index("by_status", ["status", "startedAt"]),
+
+	lsoLawyers: defineTable({
+		normalizedName: v.string(),
+		displayName: v.string(),
+		barNumber: v.string(),
+		jurisdiction: v.string(),
+		licensingStatus: lsoLicensingStatusValidator,
+		restrictionStatus: lsoRestrictionStatusValidator,
+		restrictionSummary: v.optional(v.string()),
+		primaryEmail: v.optional(v.string()),
+		firmName: v.optional(v.string()),
+		source: v.string(),
+		sourceSnapshot: legalSourceSnapshotValidator,
+		sourceFetchedAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_normalized_name", ["normalizedName"])
+		.index("by_bar_jurisdiction", ["barNumber", "jurisdiction"])
+		.index("by_restriction_status", ["restrictionStatus"]),
+
+	lawyerProfiles: defineTable({
+		authId: v.optional(v.string()),
+		email: v.string(),
+		normalizedEmail: v.string(),
+		displayName: v.string(),
+		firmName: v.optional(v.string()),
+		barNumber: v.optional(v.string()),
+		jurisdiction: v.optional(v.string()),
+		profileKind: legalRepresentationProfileKindValidator,
+		platformStatus: v.optional(legalRepresentationPlatformStatusValidator),
+		latestVerificationId: v.optional(v.id("lawyerVerifications")),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_auth_id", ["authId"])
+		.index("by_normalized_email", ["normalizedEmail"])
+		.index("by_bar_jurisdiction", ["barNumber", "jurisdiction"])
+		.index("by_platform_status", ["platformStatus"]),
+
+	lawyerVerifications: defineTable({
+		lawyerProfileId: v.optional(v.id("lawyerProfiles")),
+		dealId: v.optional(v.id("deals")),
+		lsoLawyerId: v.optional(v.id("lsoLawyers")),
+		authId: v.optional(v.string()),
+		normalizedEmail: v.optional(v.string()),
+		barNumber: v.optional(v.string()),
+		jurisdiction: v.optional(v.string()),
+		checkType: lawyerVerificationCheckTypeValidator,
+		outcome: lawyerVerificationOutcomeValidator,
+		reasonCodes: v.array(lawyerVerificationReasonCodeValidator),
+		sourceSnapshot: legalSourceSnapshotValidator,
+		provider: lawyerVerificationProviderValidator,
+		evidenceHash: v.optional(v.string()),
+		expiresAt: v.optional(v.number()),
+		providerStatus: v.optional(
+			v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"))
+		),
+		providerCompletedAt: v.optional(v.number()),
+		providerReferenceId: v.optional(v.string()),
+		createdAt: v.number(),
+		createdBy: v.string(),
+	})
+		.index("by_deal_created", ["dealId", "createdAt"])
+		.index("by_deal_check_created", ["dealId", "checkType", "createdAt"])
+		.index("by_profile_check_created", [
+			"lawyerProfileId",
+			"checkType",
+			"createdAt",
+		])
+		.index("by_auth_check_created", ["authId", "checkType", "createdAt"])
+		.index("by_bar_jurisdiction_check_created", [
+			"barNumber",
+			"jurisdiction",
+			"checkType",
+			"createdAt",
+		])
+		.index("by_check_expires_at", ["checkType", "expiresAt"])
+		.index("by_lso_lawyer", ["lsoLawyerId", "createdAt"]),
+
+	lawyerInvitations: defineTable({
+		dealId: v.id("deals"),
+		selectedLawyerSnapshot: selectedLawyerSnapshotValidator,
+		lsoLawyerId: v.optional(v.id("lsoLawyers")),
+		targetEmail: v.string(),
+		normalizedTargetEmail: v.string(),
+		tokenHash: v.string(),
+		status: lawyerInvitationStatusValidator,
+		expiresAt: v.number(),
+		acceptedAt: v.optional(v.number()),
+		verifiedAt: v.optional(v.number()),
+		resolvedAuthId: v.optional(v.string()),
+		verificationId: v.optional(v.id("lawyerVerifications")),
+		createdBy: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_token_hash", ["tokenHash"])
+		.index("by_deal", ["dealId"])
+		.index("by_target_email_status", ["normalizedTargetEmail", "status"])
+		.index("by_status_expires_at", ["status", "expiresAt"]),
+
+	representationEngagements: defineTable({
+		dealId: v.id("deals"),
+		lawyerAuthId: v.string(),
+		lawyerProfileId: v.optional(v.id("lawyerProfiles")),
+		status: representationEngagementStatusValidator,
+		provider: representationEngagementProviderValidator,
+		documentPackageId: v.optional(v.string()),
+		dealDocumentInstanceId: v.optional(v.id("dealDocumentInstances")),
+		providerEnvelopeId: v.optional(v.string()),
+		signedAt: v.optional(v.number()),
+		evidenceHash: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_deal", ["dealId"])
+		.index("by_lawyer", ["lawyerAuthId"])
+		.index("by_deal_status", ["dealId", "status"]),
 
 	dealAccess: defineTable({
 		userId: v.string(),
