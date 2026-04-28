@@ -248,14 +248,27 @@ describe("broker onboarding application aggregate", () => {
 				provider: "mock_regulator",
 				status: "active",
 				freshness: "fresh",
+				brokerageAssociation: {
+					matched: true,
+					requestedBrokerageName: "FairLend Brokerage",
+					requestedBrokerageNumber: "BR-001",
+				},
+				brokerageName: "FairLend Brokerage",
+				brokerageNumber: "BR-001",
 				licenseNumber: "ON-12345",
 				licenseProvince: "ON",
 				legalName: {
 					fullName: "Francois Smith",
 				},
+				licenseType: "broker",
 				checkedAt: 1_700_000_000_000,
 				dataAsOf: 1_700_000_000_000,
 				evidenceReferences: [],
+				sourceSnapshot: {
+					brokerage_number: "BR-001",
+					license_number: "ON-12345",
+					optional_field: null,
+				},
 			},
 			identityVerification: {
 				provider: "mock_identity",
@@ -300,6 +313,23 @@ describe("broker onboarding application aggregate", () => {
 			"auto_approve_candidate"
 		);
 		expect(application?.verificationReasonCodes).toEqual([]);
+		expect(
+			application?.verificationSnapshot?.regulator.brokerageAssociation
+		).toEqual({
+			matched: true,
+			requestedBrokerageName: "FairLend Brokerage",
+			requestedBrokerageNumber: "BR-001",
+		});
+		expect(application?.verificationSnapshot?.regulator.licenseType).toBe(
+			"broker"
+		);
+		expect(application?.verificationSnapshot?.regulator.sourceSnapshot).toEqual(
+			{
+				brokerage_number: "BR-001",
+				license_number: "ON-12345",
+				optional_field: null,
+			}
+		);
 		expect(
 			entries.some(
 				(entry) => entry.systemEventType === "verification_snapshot_updated"
