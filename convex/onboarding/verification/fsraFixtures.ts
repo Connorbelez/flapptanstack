@@ -215,7 +215,9 @@ export function findFsraSourceRecordsByBrokerageNumber(
 	return records.filter(
 		(record) =>
 			record.province === normalizedProvince &&
-			record.brokerageNumber === normalizedBrokerageNumber
+			(record.brokerageNumber ??
+				(record.licenseType === "brokerage" ? record.licenseNumber : null)) ===
+				normalizedBrokerageNumber
 	);
 }
 
