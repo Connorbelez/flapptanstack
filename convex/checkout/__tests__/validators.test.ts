@@ -77,6 +77,60 @@ describe("parseSelectedLawyerSnapshot", () => {
 		});
 	});
 
+	it("accepts an LSO-enriched guest lawyer snapshot", () => {
+		expect(
+			parseSelectedLawyerSnapshot({
+				type: "guest_lawyer",
+				name: "Guest Counsel",
+				email: "guest@example.com",
+				lso: {
+					barNumber: "LSO123",
+					jurisdiction: "ON",
+					licensingStatus: "licensed",
+					restrictionStatus: "clear",
+					source: "test",
+					sourceFetchedAt: 123,
+				},
+			})
+		).toEqual({
+			type: "guest_lawyer",
+			name: "Guest Counsel",
+			email: "guest@example.com",
+			lso: {
+				barNumber: "LSO123",
+				jurisdiction: "ON",
+				licensingStatus: "licensed",
+				restrictionStatus: "clear",
+				source: "test",
+				sourceFetchedAt: 123,
+			},
+		});
+	});
+
+	it("accepts an LSO-enriched platform lawyer snapshot", () => {
+		expect(
+			parseSelectedLawyerSnapshot({
+				type: "platform_lawyer",
+				lawyerId: "lawyer_123",
+				name: "Pat Lawyer",
+				email: "pat@example.com",
+				lso: {
+					barNumber: "LSO123",
+					jurisdiction: "ON",
+					licensingStatus: "licensed",
+					restrictionStatus: "clear",
+				},
+			})
+		).toMatchObject({
+			type: "platform_lawyer",
+			lawyerId: "lawyer_123",
+			lso: {
+				barNumber: "LSO123",
+				jurisdiction: "ON",
+			},
+		});
+	});
+
 	it("rejects missing name or email", () => {
 		expect(() =>
 			parseSelectedLawyerSnapshot({

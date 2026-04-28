@@ -145,9 +145,29 @@ function sameSelectedLawyer(
 		left.name === right.name &&
 		left.email === right.email &&
 		left.firm === right.firm &&
+		selectedLawyerLsoPart(left) === selectedLawyerLsoPart(right) &&
 		(left.type === "platform_lawyer" ? left.lawyerId : undefined) ===
 			(right.type === "platform_lawyer" ? right.lawyerId : undefined)
 	);
+}
+
+function selectedLawyerLsoPart(
+	selectedLawyer: CheckoutSessionDoc["selectedLawyer"]
+): string {
+	const lso = selectedLawyer.lso;
+	if (!lso) {
+		return "";
+	}
+	return JSON.stringify({
+		barNumber: lso.barNumber ?? "",
+		jurisdiction: lso.jurisdiction ?? "",
+		licensingStatus: lso.licensingStatus ?? "",
+		lsoLawyerId: lso.lsoLawyerId ?? "",
+		restrictionStatus: lso.restrictionStatus ?? "",
+		restrictionSummary: lso.restrictionSummary ?? "",
+		source: lso.source ?? "",
+		sourceFetchedAt: lso.sourceFetchedAt ?? "",
+	});
 }
 
 function selectedLawyerIdempotencyPart(
@@ -159,6 +179,7 @@ function selectedLawyerIdempotencyPart(
 		selectedLawyer.email,
 		selectedLawyer.name,
 		selectedLawyer.firm ?? "",
+		selectedLawyerLsoPart(selectedLawyer),
 	].join(":");
 }
 
