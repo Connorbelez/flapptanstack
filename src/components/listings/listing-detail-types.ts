@@ -58,6 +58,13 @@ export interface ListingPaymentHistoryMonth {
 	status: "late" | "missed" | "onTime";
 }
 
+export interface ListingUpcomingPayment {
+	amount: string;
+	date: string;
+	status: "due" | "executing" | "none" | "overdue" | "planned";
+	statusLabel: string;
+}
+
 export interface ListingDocumentItem {
 	assetId: string;
 	contentType?: string | null;
@@ -154,6 +161,7 @@ export interface ListingDetailData {
 		missedCount: number;
 		months: ListingPaymentHistoryMonth[];
 		onTimeRate: string;
+		nextUpcoming: ListingUpcomingPayment;
 	};
 	referenceLabel?: string;
 	similarListings: ListingSimilarCard[];

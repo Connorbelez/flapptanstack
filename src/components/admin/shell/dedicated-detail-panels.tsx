@@ -35,6 +35,11 @@ import {
 	defaultDocumentAssetName,
 	uploadDocumentAsset,
 } from "#/lib/documents/uploadDocumentAsset";
+import {
+	formatDecileCountForDisplay,
+	LEDGER_UNITS_PER_DECILE,
+	ledgerUnitsToDecilesExact,
+} from "#/lib/mortgage-ownership-display";
 import { api } from "../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type {
@@ -369,6 +374,18 @@ function parseDisplayOrder(value: string) {
 
 	const parsed = Number.parseInt(value, 10);
 	return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function formatLedgerUnitsAsMarketplaceFractions(
+	units: number | null | undefined
+) {
+	if (typeof units !== "number") {
+		return "Uncapped";
+	}
+
+	return `${formatDecileCountForDisplay(
+		ledgerUnitsToDecilesExact(units)
+	)} / 10`;
 }
 
 function buildListingCurationFormState(listing: {
@@ -735,6 +752,324 @@ function MortgageBlueprintReplaceDialog({
 				</form>
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+function MortgageOwnershipOverrideSection({
+	canManageOwnershipOverrides,
+	mortgageId,
+}: {
+	readonly canManageOwnershipOverrides: boolean;
+	readonly mortgageId: Id<"mortgages">;
+}) {
+	const assignMortgageFractionsToFairLendMic = useMutation(
+		api.admin.mortgages.ownership.assignMortgageFractionsToFairLendMic
+	);
+
+	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		if (!canManageOwnershipOverrides) {
+			return;
+		}
+
+		const form = event.currentTarget;
+		const formData = new FormData(form);
+		const rawTargetUnits = String(formData.get("targetUnits") ?? "").trim();
+		const targetUnits = rawTargetUnits ? Number(rawTargetUnits) : undefined;
+		const reason = String(formData.get("reason") ?? "").trim();
+
+		if (targetUnits !== undefined && !Number.isSafeInteger(targetUnits)) {
+			toast.error("Target fractions must be a whole number.");
+			return;
+		}
+		if (reason.length < 12) {
+			toast.error("Provide an override reason with at least 12 characters.");
+			return;
+		}
+
+		try {
+			const result = await assignMortgageFractionsToFairLendMic({
+				mortgageId,
+				reason,
+				targetUnits,
+			});
+			toast.success(
+				`MIC ownership set to ${result.micPositionUnits.toLocaleString("en-CA")} fractions across ${result.entriesPosted} ledger correction${result.entriesPosted === 1 ? "" : "s"}.`
+			);
+			form.reset();
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Unable to assign mortgage ownership to the FairLend MIC."
+			);
+		}
+	}
+
+	return (
+		<DetailSectionShell
+			description="Admin-only ownership correction. Posts auditable mortgage ledger entries instead of patching balances directly."
+			title="Ownership Override"
+		>
+			<form
+				className="space-y-4"
+				onSubmit={(event) => void handleSubmit(event)}
+			>
+				<div className="grid gap-4 md:grid-cols-[180px_1fr]">
+					<div className="space-y-2">
+						<Label htmlFor="mortgage-ownership-target-units">
+							Target MIC fractions
+						</Label>
+						<Input
+							defaultValue="10000"
+							disabled={!canManageOwnershipOverrides}
+							id="mortgage-ownership-target-units"
+							inputMode="numeric"
+							max={10_000}
+							min={0}
+							name="targetUnits"
+							step={1}
+							type="number"
+						/>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor="mortgage-ownership-reason">Reason</Label>
+						<Textarea
+							disabled={!canManageOwnershipOverrides}
+							id="mortgage-ownership-reason"
+							name="reason"
+							placeholder="Explain why this ownership correction is required."
+							rows={3}
+						/>
+					</div>
+				</div>
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<p className="text-muted-foreground text-xs">
+						Assigns fractions to the configured FairLend MIC owner and records
+						the correction in both the ownership ledger and audit journal.
+					</p>
+					<Button
+						disabled={!canManageOwnershipOverrides}
+						type="submit"
+						variant="outline"
+					>
+						Assign to FairLend MIC
+					</Button>
+				</div>
+			</form>
+		</DetailSectionShell>
+	);
+}
+
+function MortgageMicSaleAvailabilitySection({
+	canManageOwnershipOverrides,
+	micSaleAvailability,
+	mortgageId,
+}: {
+	readonly canManageOwnershipOverrides: boolean;
+	readonly micSaleAvailability:
+		| NonNullable<MortgageDetailContext>["micSaleAvailability"]
+		| undefined;
+	readonly mortgageId: Id<"mortgages">;
+}) {
+	const setMicSaleAvailabilityOverride = useMutation(
+		api.admin.mortgages.ownership.setMicSaleAvailabilityOverride
+	);
+	const clearMicSaleAvailabilityOverride = useMutation(
+		api.admin.mortgages.ownership.clearMicSaleAvailabilityOverride
+	);
+
+	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		if (!canManageOwnershipOverrides) {
+			return;
+		}
+
+		const form = event.currentTarget;
+		const formData = new FormData(form);
+		const submitter = (event.nativeEvent as SubmitEvent).submitter;
+		const intent =
+			submitter instanceof HTMLButtonElement && submitter.value === "clear"
+				? "clear"
+				: "set";
+		const reason = String(formData.get("reason") ?? "").trim();
+		if (reason.length < 12) {
+			toast.error(
+				"Provide a sale availability reason with at least 12 characters."
+			);
+			return;
+		}
+
+		if (intent === "clear") {
+			try {
+				await clearMicSaleAvailabilityOverride({
+					mortgageId,
+					reason,
+				});
+				toast.success("MIC sale availability cap cleared.");
+				form.reset();
+			} catch (error) {
+				toast.error(
+					error instanceof Error
+						? error.message
+						: "Unable to clear MIC sale availability."
+				);
+			}
+			return;
+		}
+
+		const rawFractions = String(
+			formData.get("availableFractions") ?? ""
+		).trim();
+		const parsedFractions = Number(rawFractions);
+		const availableLedgerUnits = Math.round(
+			parsedFractions * LEDGER_UNITS_PER_DECILE
+		);
+
+		if (
+			!Number.isFinite(parsedFractions) ||
+			parsedFractions < 0 ||
+			parsedFractions > 10 ||
+			!Number.isSafeInteger(availableLedgerUnits)
+		) {
+			toast.error("Available sale fractions must be a number from 0 to 10.");
+			return;
+		}
+
+		try {
+			const result = await setMicSaleAvailabilityOverride({
+				availableLedgerUnits,
+				mortgageId,
+				reason,
+			});
+			toast.success(
+				`MIC sale availability capped at ${formatLedgerUnitsAsMarketplaceFractions(result.capLedgerUnits)} fractions.`
+			);
+			form.reset();
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Unable to update MIC sale availability."
+			);
+		}
+	}
+
+	return (
+		<DetailSectionShell
+			description="Controls how many MIC-owned fractions are offered for sale without changing ownership ledger balances."
+			title="MIC Sale Availability"
+		>
+			<div className="space-y-5">
+				<MetricGrid
+					items={[
+						{
+							label: "MIC Owned",
+							value: formatLedgerUnitsAsMarketplaceFractions(
+								micSaleAvailability?.micOwnedLedgerUnits
+							),
+						},
+						{
+							label: "Locked",
+							value: formatLedgerUnitsAsMarketplaceFractions(
+								micSaleAvailability?.lockedLedgerUnits
+							),
+						},
+						{
+							label: "Sold",
+							value: formatLedgerUnitsAsMarketplaceFractions(
+								micSaleAvailability?.soldLedgerUnits
+							),
+						},
+						{
+							label: "Available For Sale",
+							value: formatLedgerUnitsAsMarketplaceFractions(
+								micSaleAvailability?.availableForSaleLedgerUnits
+							),
+						},
+						{
+							label: "Sale Cap",
+							value: formatLedgerUnitsAsMarketplaceFractions(
+								micSaleAvailability?.capLedgerUnits
+							),
+						},
+						{
+							label: "Canonical MIC Owner",
+							value:
+								micSaleAvailability?.canonicalMicLenderAuthId ?? "Unavailable",
+						},
+					]}
+				/>
+				<form
+					className="space-y-4"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<div className="grid gap-4 md:grid-cols-[180px_1fr]">
+						<div className="space-y-2">
+							<Label htmlFor="mortgage-mic-sale-available-fractions">
+								Available for sale
+							</Label>
+							<Input
+								defaultValue={
+									micSaleAvailability?.capLedgerUnits == null
+										? "10"
+										: String(
+												ledgerUnitsToDecilesExact(
+													micSaleAvailability.capLedgerUnits
+												)
+											)
+								}
+								disabled={!canManageOwnershipOverrides}
+								id="mortgage-mic-sale-available-fractions"
+								inputMode="decimal"
+								max={10}
+								min={0}
+								name="availableFractions"
+								step={0.1}
+								type="number"
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="mortgage-mic-sale-reason">Reason</Label>
+							<Textarea
+								disabled={!canManageOwnershipOverrides}
+								id="mortgage-mic-sale-reason"
+								name="reason"
+								placeholder="Explain why MIC sale availability is being changed."
+								rows={3}
+							/>
+						</div>
+					</div>
+					<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+						<p className="text-muted-foreground text-xs">
+							Caps are checked again when a lender starts checkout.
+						</p>
+						<div className="flex gap-2">
+							<Button
+								disabled={
+									!canManageOwnershipOverrides ||
+									micSaleAvailability?.capLedgerUnits == null
+								}
+								name="intent"
+								type="submit"
+								value="clear"
+								variant="outline"
+							>
+								Clear cap
+							</Button>
+							<Button
+								disabled={!canManageOwnershipOverrides}
+								name="intent"
+								type="submit"
+								value="set"
+							>
+								Save sale cap
+							</Button>
+						</div>
+					</div>
+				</form>
+			</div>
+		</DetailSectionShell>
 	);
 }
 
@@ -1890,6 +2225,10 @@ export function MortgagesDedicatedDetails({
 		kind: "permission",
 		permission: "payment:manage",
 	}).allowed;
+	const canManageOwnershipOverrides = useAuthorization({
+		kind: "permission",
+		permission: "admin:access",
+	}).allowed;
 	const detailContext = useQuery(
 		api.crm.detailContextQueries.getMortgageDetailContext,
 		{
@@ -1967,6 +2306,7 @@ export function MortgagesDedicatedDetails({
 			/>
 			<MortgagesDedicatedDetailsContent
 				canManageMortgageDocuments={canManageMortgageDocuments}
+				canManageOwnershipOverrides={canManageOwnershipOverrides}
 				canRetryCollectionsActivation={canRetryCollectionsActivation}
 				detailContext={detailContext}
 				detailFields={detailFields}
@@ -1985,6 +2325,7 @@ export function MortgagesDedicatedDetails({
 
 export function MortgagesDedicatedDetailsContent({
 	canManageMortgageDocuments,
+	canManageOwnershipOverrides,
 	canRetryCollectionsActivation,
 	detailContext,
 	detailFields,
@@ -1998,6 +2339,7 @@ export function MortgagesDedicatedDetailsContent({
 	record,
 }: {
 	readonly canManageMortgageDocuments: boolean;
+	readonly canManageOwnershipOverrides: boolean;
 	readonly canRetryCollectionsActivation: boolean;
 	readonly detailContext: MortgageDetailContext | undefined;
 	readonly detailFields: readonly NormalizedFieldDefinition[];
@@ -2026,6 +2368,17 @@ export function MortgagesDedicatedDetailsContent({
 			/>
 
 			<PaymentSnapshotSection snapshot={detailContext?.paymentSnapshot} />
+
+			<MortgageMicSaleAvailabilitySection
+				canManageOwnershipOverrides={canManageOwnershipOverrides}
+				micSaleAvailability={detailContext?.micSaleAvailability}
+				mortgageId={record._id as Id<"mortgages">}
+			/>
+
+			<MortgageOwnershipOverrideSection
+				canManageOwnershipOverrides={canManageOwnershipOverrides}
+				mortgageId={record._id as Id<"mortgages">}
+			/>
 
 			<DetailSectionShell
 				description="Canonical borrower relationships attached to this mortgage."

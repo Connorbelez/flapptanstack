@@ -153,7 +153,7 @@ function describeCollectionRuleScope(scope: CollectionRuleScope) {
 function describeCollectionRuleConfig(config: CollectionRuleConfig) {
 	switch (config.kind) {
 		case "schedule":
-			return `Schedule ${config.delayDays} day(s) after due date`;
+			return `Prepare draws up to ${config.delayDays} day(s) before due date`;
 		case "retry":
 			return `Retry up to ${config.maxRetries} time(s) with ${config.backoffBaseDays} day(s) between attempts`;
 		case "late_fee":

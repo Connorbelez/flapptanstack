@@ -1,9 +1,9 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader } from "../_generated/server";
-import { FAIRLEND_MIC_POOL_LENDER_ID } from "../constants";
 import { adminQuery, authedQuery } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
+import { buildMortgageMicSaleAvailabilitySummary } from "../mortgages/micSaleAvailability";
 import { projectListingForPortal } from "../portals/pricing";
 import {
 	buildMarketplaceAvailabilitySummary,
@@ -185,10 +185,6 @@ function amountToNumber(value: number | bigint, label: string): number {
 	}
 
 	return value;
-}
-
-function isMicLenderId(lenderId: string): boolean {
-	return lenderId === FAIRLEND_MIC_POOL_LENDER_ID;
 }
 
 function compareMaybeNumber(
@@ -441,14 +437,14 @@ async function paginateListingsBySortField(
 }
 
 async function buildListingAvailability(
-	ctx: { db: Pick<DatabaseReader, "query"> },
+	ctx: { db: Pick<DatabaseReader, "get" | "query"> },
 	mortgageId: Id<"mortgages"> | undefined
 ): Promise<ListingAvailability | null> {
 	if (!mortgageId) {
 		return null;
 	}
 
-	const [accounts, summary] = await Promise.all([
+	const [accounts, summary, micSummary] = await Promise.all([
 		ctx.db
 			.query("ledger_accounts")
 			.withIndex("by_type_and_mortgage", (q) =>
@@ -456,6 +452,7 @@ async function buildListingAvailability(
 			)
 			.collect(),
 		buildMarketplaceAvailabilitySummary(ctx, mortgageId),
+		buildMortgageMicSaleAvailabilitySummary(ctx, mortgageId),
 	]);
 
 	const positions = accounts
@@ -474,19 +471,15 @@ async function buildListingAvailability(
 			} => position.balance > 0n && position.lenderId !== undefined
 		);
 
-	const micPositions = positions.filter((position) =>
-		isMicLenderId(position.lenderId)
-	);
-	const inferredMicPosition = micPositions[0] ?? null;
-	const micBalance = toSafeNumber(
-		micPositions.reduce((total, position) => total + position.balance, 0n),
-		"micPosition.balance"
-	);
+	const inferredMicPosition =
+		positions.find(
+			(position) => position.lenderId === micSummary.canonicalMicLenderAuthId
+		) ?? null;
 
 	return {
 		availableFractions: summary.availableFractions,
 		micPosition: {
-			balance: micBalance,
+			balance: micSummary.micOwnedLedgerUnits,
 			hasPosition: inferredMicPosition !== null,
 			inferred: inferredMicPosition !== null,
 			lenderId: inferredMicPosition?.lenderId ?? null,

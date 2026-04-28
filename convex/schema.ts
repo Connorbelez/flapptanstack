@@ -1613,6 +1613,15 @@ export default defineSchema({
 			"status",
 		]),
 
+	mortgageMicSaleAvailabilityOverrides: defineTable({
+		mortgageId: v.id("mortgages"),
+		availableLedgerUnits: v.optional(v.number()),
+		reason: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		updatedBy: v.string(),
+	}).index("by_mortgage", ["mortgageId"]),
+
 	mortgageBorrowers: defineTable({
 		mortgageId: v.id("mortgages"),
 		borrowerId: v.id("borrowers"),

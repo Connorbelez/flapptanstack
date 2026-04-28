@@ -130,34 +130,20 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 		],
 		investment: {
 			availableFractions: 4200,
+			checkoutReady: true,
 			investorCount: 3,
 			lockedPercent: 12,
 			soldPercent: 28,
 			totalFractions: 10_000,
 		},
-		checkout: {
-			defaultFractions: 1,
-			disabledReason: null,
-			isEligible: true,
-			lawyers: [
-				{
-					detail: "FairLend closing counsel coordination",
-					email: "closing@fairlend.local",
-					firm: "FairLend Closing Network",
-					id: "fairlend-closing-network",
-					label: "FairLend Closing Network",
-					type: "platform_lawyer",
-				},
-			],
-			lockFee: {
-				amountCents: 25_000,
-				currency: "CAD",
-				display: "CAD 250",
+		lawyers: [
+			{
+				authId: "fairlend-closing-network",
+				displayName: "FairLend Closing Network",
+				email: "closing@fairlend.local",
+				role: "lawyer",
 			},
-			maximumFractions: 420,
-			minimumFractions: 1,
-			perFractionAmount: 450,
-		},
+		],
 		listing: {
 			approximateLatitude: 43.645,
 			approximateLongitude: -79.395,
@@ -203,6 +189,19 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 					{ label: "Mar", status: "failed" },
 				],
 				totalObligations: 12,
+			},
+			paymentSnapshot: {
+				mostRecentPaymentAmount: 318_700,
+				mostRecentPaymentDate: Date.parse("2026-03-15T00:00:00.000Z"),
+				mostRecentPaymentStatus: "settled",
+				nextUpcomingPaymentAmount: 318_700,
+				nextUpcomingPaymentDate: Date.parse("2026-04-26T00:00:00.000Z"),
+				nextUpcomingPaymentStatus: "provider_scheduled",
+			},
+			nextPaymentDue: {
+				amount: 318_700,
+				date: Date.parse("2026-05-01T00:00:00.000Z"),
+				status: "planned",
 			},
 			principal: 45_000_000,
 			propertyTypeLabel: "Detached Home",
@@ -257,6 +256,12 @@ describe("marketplace listing detail adapter", () => {
 		expect(model.paymentHistory).toMatchObject({
 			lateCount: 1,
 			missedCount: 1,
+			nextUpcoming: {
+				amount: "$3,187",
+				date: "May 1, 2026",
+				status: "planned",
+				statusLabel: "Planned",
+			},
 			onTimeRate: "80%",
 		});
 		expect(model.paymentHistory.months).toEqual([
@@ -286,7 +291,6 @@ describe("marketplace listing detail page", () => {
 			"success_pending"
 		);
 		expect(rendered.getAttribute("data-portal-id")).toBe("portal_meridian");
-		expect(rendered.getAttribute("data-listings-index-to")).toBe("/listings");
 		expect(rendered.getAttribute("data-title")).toBe(
 			"King West Bridge Opportunity"
 		);
@@ -318,7 +322,7 @@ describe("marketplace listing detail page", () => {
 			expect(startMarketplaceCheckout).toHaveBeenCalledWith({
 				listingId: "listing_123456",
 				portalId: "portal_meridian",
-				requestedFractions: 2,
+				requestedFractions: 2000,
 				selectedLawyer: {
 					type: "guest_lawyer",
 					name: "Jordan Counsel",

@@ -5,8 +5,6 @@ import { internalMutation, internalQuery } from "../_generated/server";
 import { grantDealAccess } from "../deals/mutations";
 import { executeTransition } from "../engine/transition";
 import type { CommandSource } from "../engine/types";
-import { getAccountLenderId } from "../ledger/accountOwnership";
-import { getAvailableBalance, getPostedBalance } from "../ledger/accounts";
 import {
 	reserveSharesHandler,
 	voidReservationHandler,
@@ -17,6 +15,7 @@ import {
 	clampMarketplaceFiltersToLenderConstraints,
 	resolveViewerLenderConstraintForPortal,
 } from "../listings/portalVisibility";
+import { getCanonicalMicSellerAccountForSale } from "../mortgages/micSaleAvailability";
 import {
 	DEAL_LOCK_CHECKOUT_TIMEOUT_MS,
 	DEAL_LOCK_FEE_AMOUNT_CENTS,
@@ -24,12 +23,7 @@ import {
 	dealLockSelectedLawyerTypeValidator,
 } from "./validators";
 
-const MIC_LENDER_ID_PATTERN = /(^|[_@.+-])mic([_@.+-]|$)/i;
 const DEFAULT_EXPIRE_STALE_LIMIT = 50;
-
-function isMicLenderId(lenderId: string): boolean {
-	return MIC_LENDER_ID_PATTERN.test(lenderId);
-}
 
 function ensureSafeFractionUnits(units: number) {
 	if (!(Number.isSafeInteger(units) && units > 0 && units <= 10_000)) {
@@ -334,37 +328,14 @@ export const prepareCheckoutSession = internalMutation({
 			return existing;
 		}
 
-		const positionAccounts = await ctx.db
-			.query("ledger_accounts")
-			.withIndex("by_type_and_mortgage", (q) =>
-				q.eq("type", "POSITION").eq("mortgageId", String(listing.mortgageId))
-			)
-			.collect();
-		const sellerPosition = positionAccounts.find((account) => {
-			const lenderId = getAccountLenderId(account);
-			return (
-				lenderId !== undefined &&
-				isMicLenderId(lenderId) &&
-				getPostedBalance(account) > 0n
-			);
+		const seller = await getCanonicalMicSellerAccountForSale(ctx, {
+			mortgageId: listing.mortgageId,
+			requestedLedgerUnits: args.fractionalShareUnits,
 		});
-		const sellerLenderId = sellerPosition
-			? getAccountLenderId(sellerPosition)
-			: undefined;
-		if (!(sellerPosition && sellerLenderId)) {
+		if (!seller) {
 			throw new ConvexError({
 				code: "SELLER_POSITION_NOT_FOUND" as const,
 				message: "Listing does not have a seller position available to reserve",
-			});
-		}
-
-		const availableUnits = Number(getAvailableBalance(sellerPosition));
-		if (args.fractionalShareUnits > availableUnits) {
-			throw new ConvexError({
-				code: "FRACTIONS_UNAVAILABLE" as const,
-				message: "Requested fractions exceed listing availability",
-				availableUnits,
-				requestedUnits: args.fractionalShareUnits,
 			});
 		}
 
@@ -383,7 +354,7 @@ export const prepareCheckoutSession = internalMutation({
 				selectedLawyerType: args.selectedLawyerType,
 			},
 			mortgageId: String(listing.mortgageId),
-			sellerLenderId,
+			sellerLenderId: seller.lenderId,
 			source: {
 				actor: args.buyerAuthId,
 				channel: "marketplace_listing_lock",
@@ -405,7 +376,7 @@ export const prepareCheckoutSession = internalMutation({
 			reservationId: reservation.reservationId,
 			selectedLawyerAuthId,
 			selectedLawyerType: args.selectedLawyerType,
-			sellerAuthId: sellerLenderId,
+			sellerAuthId: seller.lenderId,
 			status: "created",
 			updatedAt: now,
 		});

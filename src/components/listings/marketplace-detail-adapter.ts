@@ -13,6 +13,7 @@ import type {
 	ListingHeroImage,
 	ListingPaymentHistoryMonth,
 	ListingSimilarCard,
+	ListingUpcomingPayment,
 } from "./listing-detail-types";
 import type { MarketplaceListingDetailSnapshot } from "./marketplace-types";
 
@@ -26,6 +27,14 @@ const HERO_TONES: readonly ListingHeroImage["tone"][] = [
 ];
 const WORD_BOUNDARY_PATTERN = /[_\s-]+/g;
 const CENTS_PER_DOLLAR = 100;
+
+type MarketplaceListingDetail = NonNullable<MarketplaceListingDetailSnapshot>;
+type MarketplacePaymentSnapshot =
+	MarketplaceListingDetail["listing"]["paymentSnapshot"];
+type MarketplaceNextPaymentDue =
+	MarketplaceListingDetail["listing"]["nextPaymentDue"];
+type MarketplaceUpcomingPaymentStatus =
+	NonNullable<MarketplacePaymentSnapshot>["nextUpcomingPaymentStatus"];
 
 function pickHeroTone(index: number): ListingHeroImage["tone"] {
 	return HERO_TONES[index % HERO_TONES.length] ?? "stone";
@@ -78,6 +87,15 @@ function formatDate(value: string) {
 		timeZone: "UTC",
 		year: "numeric",
 	}).format(parsed);
+}
+
+function formatTimestamp(value: number) {
+	return new Intl.DateTimeFormat("en-CA", {
+		day: "numeric",
+		month: "short",
+		timeZone: "UTC",
+		year: "numeric",
+	}).format(new Date(value));
 }
 
 function titleCase(value: string) {
@@ -287,8 +305,55 @@ function buildBorrowerSignals(
 	};
 }
 
+function formatUpcomingPaymentAmount(
+	nextPaymentDue: MarketplaceNextPaymentDue,
+	paymentSnapshot: MarketplacePaymentSnapshot
+) {
+	if (nextPaymentDue?.amount !== null && nextPaymentDue?.amount !== undefined) {
+		return formatCentsAsCurrency(nextPaymentDue.amount);
+	}
+	if (
+		paymentSnapshot?.nextUpcomingPaymentAmount !== null &&
+		paymentSnapshot?.nextUpcomingPaymentAmount !== undefined
+	) {
+		return formatCentsAsCurrency(paymentSnapshot.nextUpcomingPaymentAmount);
+	}
+	return "Not scheduled";
+}
+
+function formatUpcomingPaymentDate(
+	nextPaymentDue: MarketplaceNextPaymentDue,
+	paymentSnapshot: MarketplacePaymentSnapshot
+) {
+	if (nextPaymentDue?.date !== null && nextPaymentDue?.date !== undefined) {
+		return formatTimestamp(nextPaymentDue.date);
+	}
+	if (
+		paymentSnapshot?.nextUpcomingPaymentDate !== null &&
+		paymentSnapshot?.nextUpcomingPaymentDate !== undefined
+	) {
+		return formatTimestamp(paymentSnapshot.nextUpcomingPaymentDate);
+	}
+	return "No upcoming payment";
+}
+
+function buildNextUpcomingPayment(
+	detail: MarketplaceListingDetail
+): ListingUpcomingPayment {
+	const { nextPaymentDue, paymentSnapshot } = detail.listing;
+	const status =
+		nextPaymentDue?.status ?? paymentSnapshot?.nextUpcomingPaymentStatus;
+
+	return {
+		amount: formatUpcomingPaymentAmount(nextPaymentDue, paymentSnapshot),
+		date: formatUpcomingPaymentDate(nextPaymentDue, paymentSnapshot),
+		status: normalizeUpcomingPaymentStatus(status),
+		statusLabel: formatUpcomingPaymentStatus(status),
+	};
+}
+
 function buildPaymentHistory(
-	detail: NonNullable<MarketplaceListingDetailSnapshot>
+	detail: MarketplaceListingDetail
 ): ListingDetailData["paymentHistory"] {
 	const paymentHistory = asRecord(detail.listing.paymentHistory);
 	const byStatus = asRecord(paymentHistory?.byStatus) ?? {};
@@ -308,19 +373,49 @@ function buildPaymentHistory(
 		completedObligations - lateCount - missedCount
 	);
 
-	const onTimeRate =
-		completedObligations > 0
-			? `${Math.round((onTimeCount / completedObligations) * 100)}%`
-			: "N/A";
-
-	const months = buildPaymentHistoryMonths(paymentHistory);
-
 	return {
 		lateCount,
 		missedCount,
-		months,
-		onTimeRate,
+		months: buildPaymentHistoryMonths(paymentHistory),
+		nextUpcoming: buildNextUpcomingPayment(detail),
+		onTimeRate:
+			completedObligations > 0
+				? `${Math.round((onTimeCount / completedObligations) * 100)}%`
+				: "N/A",
 	};
+}
+
+function normalizeUpcomingPaymentStatus(
+	status: MarketplaceUpcomingPaymentStatus | null | undefined
+): ListingDetailData["paymentHistory"]["nextUpcoming"]["status"] {
+	if (status === "due" || status === "overdue" || status === "executing") {
+		return status;
+	}
+
+	if (status === "planned" || status === "provider_scheduled") {
+		return "planned";
+	}
+
+	return "none";
+}
+
+function formatUpcomingPaymentStatus(
+	status: MarketplaceUpcomingPaymentStatus | null | undefined
+) {
+	switch (status) {
+		case "provider_scheduled":
+			return "Provider scheduled";
+		case "executing":
+			return "Collection running";
+		case "due":
+			return "Due now";
+		case "overdue":
+			return "Overdue";
+		case "planned":
+			return "Planned";
+		default:
+			return "No upcoming payment";
+	}
 }
 
 function buildPaymentHistoryMonths(

@@ -92,6 +92,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../admin/origination/commit.ts"),
 	"/convex/admin/origination/validators.ts": async () =>
 		await import("./../admin/origination/validators.ts"),
+	"/convex/admin/mortgages/ownership.ts": async () =>
+		await import("./../admin/mortgages/ownership.ts"),
 	"/convex/admin/settings/actions.ts": async () =>
 		await import("./../admin/settings/actions.ts"),
 	"/convex/admin/settings/mutations.ts": async () =>
@@ -483,6 +485,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../portals/validators.ts"),
 	"/convex/mortgages/activateMortgageAggregate.ts": async () =>
 		await import("./../mortgages/activateMortgageAggregate.ts"),
+	"/convex/mortgages/micSaleAvailability.ts": async () =>
+		await import("./../mortgages/micSaleAvailability.ts"),
 	"/convex/mortgages/paymentFrequency.ts": async () =>
 		await import("./../mortgages/paymentFrequency.ts"),
 	"/convex/mortgages/nominalAnnualRate.ts": async () =>

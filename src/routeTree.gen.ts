@@ -48,6 +48,7 @@ import { Route as DemoStorybookRouteImport } from './routes/demo/storybook'
 import { Route as DemoSimulationRouteImport } from './routes/demo/simulation'
 import { Route as DemoProdLedgerRouteImport } from './routes/demo/prod-ledger'
 import { Route as DemoListingsRouteImport } from './routes/demo.listings'
+import { Route as DemoDealClosingPipelineRouteImport } from './routes/demo/deal-closing-pipeline'
 import { Route as DemoConvexWorkflowRouteImport } from './routes/demo/convex-workflow'
 import { Route as DemoConvexTriggersRouteImport } from './routes/demo/convex-triggers'
 import { Route as DemoConvexTracerRouteImport } from './routes/demo/convex-tracer'
@@ -361,6 +362,11 @@ const DemoProdLedgerRoute = DemoProdLedgerRouteImport.update({
 const DemoListingsRoute = DemoListingsRouteImport.update({
   id: '/demo/listings',
   path: '/demo/listings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoDealClosingPipelineRoute = DemoDealClosingPipelineRouteImport.update({
+  id: '/demo/deal-closing-pipeline',
+  path: '/demo/deal-closing-pipeline',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoConvexWorkflowRoute = DemoConvexWorkflowRouteImport.update({
@@ -1064,6 +1070,7 @@ export interface FileRoutesByFullPath {
   '/demo/convex-tracer': typeof DemoConvexTracerRoute
   '/demo/convex-triggers': typeof DemoConvexTriggersRoute
   '/demo/convex-workflow': typeof DemoConvexWorkflowRoute
+  '/demo/deal-closing-pipeline': typeof DemoDealClosingPipelineRoute
   '/demo/listings': typeof DemoListingsRouteWithChildren
   '/demo/prod-ledger': typeof DemoProdLedgerRoute
   '/demo/simulation': typeof DemoSimulationRoute
@@ -1210,6 +1217,7 @@ export interface FileRoutesByTo {
   '/demo/convex-tracer': typeof DemoConvexTracerRoute
   '/demo/convex-triggers': typeof DemoConvexTriggersRoute
   '/demo/convex-workflow': typeof DemoConvexWorkflowRoute
+  '/demo/deal-closing-pipeline': typeof DemoDealClosingPipelineRoute
   '/demo/prod-ledger': typeof DemoProdLedgerRoute
   '/demo/simulation': typeof DemoSimulationRoute
   '/demo/storybook': typeof DemoStorybookRoute
@@ -1368,6 +1376,7 @@ export interface FileRoutesById {
   '/demo/convex-tracer': typeof DemoConvexTracerRoute
   '/demo/convex-triggers': typeof DemoConvexTriggersRoute
   '/demo/convex-workflow': typeof DemoConvexWorkflowRoute
+  '/demo/deal-closing-pipeline': typeof DemoDealClosingPipelineRoute
   '/demo/listings': typeof DemoListingsRouteWithChildren
   '/demo/prod-ledger': typeof DemoProdLedgerRoute
   '/demo/simulation': typeof DemoSimulationRoute
@@ -1529,6 +1538,7 @@ export interface FileRouteTypes {
     | '/demo/convex-tracer'
     | '/demo/convex-triggers'
     | '/demo/convex-workflow'
+    | '/demo/deal-closing-pipeline'
     | '/demo/listings'
     | '/demo/prod-ledger'
     | '/demo/simulation'
@@ -1675,6 +1685,7 @@ export interface FileRouteTypes {
     | '/demo/convex-tracer'
     | '/demo/convex-triggers'
     | '/demo/convex-workflow'
+    | '/demo/deal-closing-pipeline'
     | '/demo/prod-ledger'
     | '/demo/simulation'
     | '/demo/storybook'
@@ -1832,6 +1843,7 @@ export interface FileRouteTypes {
     | '/demo/convex-tracer'
     | '/demo/convex-triggers'
     | '/demo/convex-workflow'
+    | '/demo/deal-closing-pipeline'
     | '/demo/listings'
     | '/demo/prod-ledger'
     | '/demo/simulation'
@@ -1976,6 +1988,7 @@ export interface RootRouteChildren {
   DemoConvexTracerRoute: typeof DemoConvexTracerRoute
   DemoConvexTriggersRoute: typeof DemoConvexTriggersRoute
   DemoConvexWorkflowRoute: typeof DemoConvexWorkflowRoute
+  DemoDealClosingPipelineRoute: typeof DemoDealClosingPipelineRoute
   DemoListingsRoute: typeof DemoListingsRouteWithChildren
   DemoProdLedgerRoute: typeof DemoProdLedgerRoute
   DemoSimulationRoute: typeof DemoSimulationRoute
@@ -2265,6 +2278,13 @@ declare module '@tanstack/react-router' {
       path: '/demo/listings'
       fullPath: '/demo/listings'
       preLoaderRoute: typeof DemoListingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/deal-closing-pipeline': {
+      id: '/demo/deal-closing-pipeline'
+      path: '/demo/deal-closing-pipeline'
+      fullPath: '/demo/deal-closing-pipeline'
+      preLoaderRoute: typeof DemoDealClosingPipelineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/convex-workflow': {
@@ -3667,6 +3687,7 @@ const rootRouteChildren: RootRouteChildren = {
   DemoConvexTracerRoute: DemoConvexTracerRoute,
   DemoConvexTriggersRoute: DemoConvexTriggersRoute,
   DemoConvexWorkflowRoute: DemoConvexWorkflowRoute,
+  DemoDealClosingPipelineRoute: DemoDealClosingPipelineRoute,
   DemoListingsRoute: DemoListingsRouteWithChildren,
   DemoProdLedgerRoute: DemoProdLedgerRoute,
   DemoSimulationRoute: DemoSimulationRoute,

@@ -4,7 +4,9 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../_generated/dataModel";
 import { auditLog } from "../../auditLog";
+import { FAIRLEND_MIC_LENDER_EMAIL } from "../../platform/defaultOriginationOwnerContract";
 import schema from "../../schema";
+import { seedAuthIdFromEmail } from "../../seed/seedHelpers";
 import { convexModules } from "../../test/moduleMaps";
 import { DEAL_LOCK_FEE_AMOUNT_CENTS } from "../validators";
 
@@ -12,6 +14,10 @@ process.env.DISABLE_GT_HASHCHAIN = "true";
 
 const modules = convexModules;
 const api = anyApi.dealLocks.mutations;
+const CANONICAL_MIC_LENDER_AUTH_ID = seedAuthIdFromEmail(
+	FAIRLEND_MIC_LENDER_EMAIL
+);
+const NON_CANONICAL_MIC_PATTERN_LENDER_ID = "seed_maple_mic_lender_fairlend_ca";
 
 function createHarness() {
 	return convexTest(schema, modules);
@@ -122,7 +128,7 @@ async function seedCheckoutFixture(t: ReturnType<typeof createHarness>) {
 			createdAt: now,
 			cumulativeCredits: 0n,
 			cumulativeDebits: 10_000n,
-			lenderId: "seed_maple_mic_lender_fairlend_ca",
+			lenderId: CANONICAL_MIC_LENDER_AUTH_ID,
 			mortgageId: String(mortgageId),
 			pendingCredits: 0n,
 			pendingDebits: 0n,
@@ -194,7 +200,7 @@ describe("deal lock checkout start", () => {
 			mortgageId: fixture.mortgageId,
 			selectedLawyerAuthId: "lawyer-auth",
 			selectedLawyerType: "platform_lawyer",
-			sellerAuthId: "seed_maple_mic_lender_fairlend_ca",
+			sellerAuthId: CANONICAL_MIC_LENDER_AUTH_ID,
 			status: "created",
 		});
 		expect(session.reservationId).toBeDefined();
@@ -250,6 +256,27 @@ describe("deal lock checkout start", () => {
 		await t.run(async (ctx) => {
 			await ctx.db.patch(fixture.sellerAccountId, {
 				pendingCredits: 9000n,
+			});
+		});
+
+		await expect(
+			prepareCheckout(t, {
+				fractionalShareUnits: 2500,
+				listingId: fixture.listingId,
+			})
+		).rejects.toThrow(ConvexError);
+
+		const sessions = await t.run(async (ctx) =>
+			ctx.db.query("dealLockCheckoutSessions").collect()
+		);
+		expect(sessions).toHaveLength(0);
+	});
+
+	it("rejects non-canonical MIC-pattern seller accounts", async () => {
+		const fixture = await seedCheckoutFixture(t);
+		await t.run(async (ctx) => {
+			await ctx.db.patch(fixture.sellerAccountId, {
+				lenderId: NON_CANONICAL_MIC_PATTERN_LENDER_ID,
 			});
 		});
 
@@ -418,7 +445,7 @@ describe("deal lock checkout start", () => {
 			lockFeeCollectionStatus: "collected",
 			lockingFeeAmount: DEAL_LOCK_FEE_AMOUNT_CENTS,
 			reservationId: session.reservationId,
-			sellerId: "seed_maple_mic_lender_fairlend_ca",
+			sellerId: CANONICAL_MIC_LENDER_AUTH_ID,
 			status: "lawyerOnboarding.pending",
 			stripeCheckoutSessionId: "cs_test_listing_lock",
 		});
@@ -428,7 +455,7 @@ describe("deal lock checkout start", () => {
 				expect.objectContaining({ role: "lender", userId: "buyer-auth" }),
 				expect.objectContaining({
 					role: "borrower",
-					userId: "seed_maple_mic_lender_fairlend_ca",
+					userId: CANONICAL_MIC_LENDER_AUTH_ID,
 				}),
 				expect.objectContaining({
 					role: "platform_lawyer",

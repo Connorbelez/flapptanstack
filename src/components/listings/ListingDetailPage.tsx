@@ -423,7 +423,7 @@ export function ListingDetailPage({
 						</div>
 					</div>
 
-					<WhiteSurface className="w-[340px] shrink-0 self-start px-6 py-6">
+					<WhiteSurface className="ml-auto w-[340px] shrink-0 self-start px-6 py-6">
 						<SectionLabel className="mb-5">At a Glance</SectionLabel>
 						<div className="space-y-4">
 							{listing.atAGlance.map((item) => (
@@ -670,6 +670,7 @@ export function ListingDetailPage({
 				<ListingScrollReveal className="px-5 pt-6">
 					<WhiteSurface className="px-5 py-5">
 						<SectionLabel>Payment History</SectionLabel>
+						<UpcomingPaymentCallout listing={listing} />
 						<div className="mt-4 flex gap-6">
 							<MetricSummary
 								label="On-time"
@@ -1024,6 +1025,7 @@ function DesktopBorrowerAndHistory({
 
 				<WhiteSurface className="px-7 py-7">
 					<SectionLabel>Payment History</SectionLabel>
+					<UpcomingPaymentCallout listing={listing} />
 					<div className="mt-6 flex gap-8">
 						<MetricSummary
 							label="On-time"
@@ -2173,6 +2175,34 @@ function MetricSummary({ label, value }: { label: string; value: string }) {
 	);
 }
 
+function UpcomingPaymentCallout({ listing }: { listing: ListingDetailData }) {
+	const nextPayment = listing.paymentHistory.nextUpcoming;
+
+	return (
+		<div className="mt-5 rounded-lg border border-border/70 bg-muted/35 px-4 py-4">
+			<div className="flex items-start justify-between gap-4">
+				<div>
+					<p className="font-medium text-[13px] text-muted-foreground">
+						Next Upcoming Payment
+					</p>
+					<p className="mt-2 font-semibold text-[26px] leading-none tracking-[-0.03em]">
+						{nextPayment.amount}
+					</p>
+				</div>
+				<span
+					className={cn(
+						"rounded-full px-3 py-1 font-semibold text-[10px] uppercase tracking-[0.16em]",
+						upcomingPaymentStatusClass(nextPayment.status)
+					)}
+				>
+					{nextPayment.statusLabel}
+				</span>
+			</div>
+			<p className="mt-3 text-muted-foreground text-sm">{nextPayment.date}</p>
+		</div>
+	);
+}
+
 function MiniMetric({
 	label,
 	tone = "default",
@@ -2253,6 +2283,22 @@ function monthStatusClass(
 			return "bg-[#22C55E] text-white";
 		default:
 			return "bg-muted text-foreground";
+	}
+}
+
+function upcomingPaymentStatusClass(
+	status: ListingDetailData["paymentHistory"]["nextUpcoming"]["status"]
+) {
+	switch (status) {
+		case "overdue":
+			return "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-200";
+		case "due":
+		case "executing":
+			return "bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200";
+		case "planned":
+			return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200";
+		default:
+			return "bg-muted text-muted-foreground";
 	}
 }
 

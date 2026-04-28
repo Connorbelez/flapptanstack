@@ -3,8 +3,6 @@ import { internal } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { createTestConvex } from "../../auth/helpers";
 
-const MS_PER_DAY = 86_400_000;
-
 function addDays(date: Date, days: number): string {
 	const copy = new Date(date);
 	copy.setUTCDate(copy.getUTCDate() + days);
@@ -206,8 +204,6 @@ describe("seedPaymentDataInternal", () => {
 			delayDays: 9,
 		});
 		expect(state.entry?.createdByRuleId).toBe(customScheduleRuleId);
-		expect(state.entry?.scheduledDate).toBe(
-			(state.obligation?.dueDate ?? 0) - 9 * MS_PER_DAY
-		);
+		expect(state.entry?.scheduledDate).toBe(state.obligation?.dueDate ?? 0);
 	});
 });
