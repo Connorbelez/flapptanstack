@@ -1,0 +1,22 @@
+# Chunk: chunk-04-tests-validation
+
+- [x] T-410: Add or update React Testing Library coverage.
+- [x] T-420: Add or update e2e coverage.
+  - Spec updated; execution blocked by missing `TEST_ACCOUNT_EMAIL`.
+- [x] T-430: Record Storybook decision or add stories.
+- [x] T-900: Run `bunx convex codegen`.
+  - Passed after preserving canonical document variable literal key types.
+- [x] T-901: Run `bun check`.
+- [x] T-902: Run `bun typecheck`.
+  - Passed after preserving canonical document variable literal key types.
+- [x] T-903: Run targeted tests.
+- [ ] T-904: Run `bun run test`.
+  - Full suite has unrelated failures; focused ENG-346 tests pass.
+- [ ] T-905: Run `bun run test:e2e` or record blocker.
+  - Blocked by missing `TEST_ACCOUNT_EMAIL`.
+- [ ] T-906: Run `bun run review`.
+  - Blocked by CodeRabbit file-count limit.
+- [x] T-910: Run `$linear-pr-spec-audit`.
+- [x] T-920: Resolve audit findings or record blockers.
+- [x] T-930: Run final execution artifact validation and GitNexus change detection.
+  - Artifact validation passed; GitNexus fallback scope check completed.

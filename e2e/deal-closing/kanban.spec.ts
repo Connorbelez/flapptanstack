@@ -5,12 +5,16 @@ const DATA_LOAD_TIMEOUT = 15_000;
 
 /**
  * Locate a kanban column by its header title.
- * Columns are `w-80` divs containing the title in an `h3`.
+ * Columns are `w-80` divs containing the title in an `h2`.
  */
 function getColumn(page: import("@playwright/test").Page, title: string) {
 	return page.locator(".w-80").filter({
-		has: page.locator("h3", { hasText: title }),
+		has: page.locator("h2", { hasText: title }),
 	});
+}
+
+function shareText(shareUnits: number) {
+	return `Share ${shareUnits / 100}%`;
 }
 
 /**
@@ -21,7 +25,7 @@ function getColumn(page: import("@playwright/test").Page, title: string) {
 function getDealCard(page: import("@playwright/test").Page, share: number) {
 	return page
 		.locator("[data-slot='card']")
-		.filter({ hasText: `Share: ${share}%` });
+		.filter({ hasText: shareText(share) });
 }
 
 // ── Board Rendering ──────────────────────────────────────────────
@@ -41,7 +45,7 @@ test.describe("Deal Closing Kanban — Board Rendering", () => {
 
 		for (const title of columnTitles) {
 			await expect(
-				getColumn(page, title).locator("h3", { hasText: title }),
+				getColumn(page, title).locator("h2", { hasText: title }),
 			).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 		}
 	});
@@ -56,17 +60,17 @@ test.describe("Deal Closing Kanban — Board Rendering", () => {
 
 		// Deal 1 (3000 share, initiated) → Initiated column
 		await expect(
-			getColumn(page, "Initiated").getByText("Share: 3000%"),
+			getColumn(page, "Initiated").getByText(shareText(3000)),
 		).toBeVisible();
 
 		// Deal 2 (5000 share, lawyerOnboarding.verified) → Lawyer Onboarding column
 		await expect(
-			getColumn(page, "Lawyer Onboarding").getByText("Share: 5000%"),
+			getColumn(page, "Lawyer Onboarding").getByText(shareText(5000)),
 		).toBeVisible();
 
 		// Deal 3 (2000 share, documentReview.signed) → Document Review column
 		await expect(
-			getColumn(page, "Document Review").getByText("Share: 2000%"),
+			getColumn(page, "Document Review").getByText(shareText(2000)),
 		).toBeVisible();
 	});
 
@@ -77,19 +81,19 @@ test.describe("Deal Closing Kanban — Board Rendering", () => {
 			timeout: DATA_LOAD_TIMEOUT,
 		});
 
-		// Deal 1: initiated → "Initiated — Pending"
+		// Deal 1: initiated → "Initiated - Pending"
 		await expect(
-			getDealCard(page, 3000).getByText("Initiated — Pending"),
+			getDealCard(page, 3000).getByText("Initiated - Pending"),
 		).toBeVisible();
 
-		// Deal 2: lawyerOnboarding.verified → "Lawyer Onboarding — Verified"
+		// Deal 2: lawyerOnboarding.verified → "Lawyer Onboarding - Verified"
 		await expect(
-			getDealCard(page, 5000).getByText("Lawyer Onboarding — Verified"),
+			getDealCard(page, 5000).getByText("Lawyer Onboarding - Verified"),
 		).toBeVisible();
 
-		// Deal 3: documentReview.signed → "Document Review — Signed"
+		// Deal 3: documentReview.signed → "Document Review - Signed"
 		await expect(
-			getDealCard(page, 2000).getByText("Document Review — Signed"),
+			getDealCard(page, 2000).getByText("Document Review - Signed"),
 		).toBeVisible();
 	});
 
@@ -102,9 +106,9 @@ test.describe("Deal Closing Kanban — Board Rendering", () => {
 			timeout: DATA_LOAD_TIMEOUT,
 		});
 
-		// Deal 1 (initiated): no completed phases → current bar is amber, rest are slate
+		// Deal 1 (initiated): no completed phases → current bar is blue, rest are muted
 		const deal1 = getDealCard(page, 3000);
-		await expect(deal1.locator(".bg-amber-500")).toBeVisible();
+		await expect(deal1.locator(".bg-blue-500")).toBeVisible();
 		// No green bars (no completed phases)
 		await expect(deal1.locator(".bg-emerald-500")).toHaveCount(0);
 
@@ -207,7 +211,7 @@ test.describe.serial(
 			const deal = getDealCard(page, 5000);
 			await expect(deal).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 			await expect(
-				deal.getByText("Lawyer Onboarding — Verified"),
+				deal.getByText("Lawyer Onboarding - Verified"),
 			).toBeVisible();
 
 			// Click "Confirm Representation" (no payload needed)
@@ -216,18 +220,18 @@ test.describe.serial(
 				.click();
 
 			// Success toast
-			await expect(page.getByText("Moved to next phase")).toBeVisible({
+			await expect(page.getByText("Confirm Representation submitted")).toBeVisible({
 				timeout: DATA_LOAD_TIMEOUT,
 			});
 
 			// Convex reactivity: deal moves to Document Review column without refresh
 			await expect(
-				getColumn(page, "Document Review").getByText("Share: 5000%"),
+				getColumn(page, "Document Review").getByText(shareText(5000)),
 			).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-			// Badge updates to "Document Review — Pending"
+			// Badge updates to "Document Review - Pending"
 			await expect(
-				getDealCard(page, 5000).getByText("Document Review — Pending"),
+				getDealCard(page, 5000).getByText("Document Review - Pending"),
 			).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
 			// Action button updates to "Approve Documents"
@@ -250,44 +254,46 @@ test.describe.serial(
 			// Open cancel dialog
 			await deal.getByRole("button", { name: /Cancel Deal/ }).click();
 
-			// AlertDialog appears with title and description
+			// Dialog appears with title and description
 			await expect(
-				page.getByRole("heading", { name: "Cancel Deal" }),
+				page.getByRole("heading", { name: "Cancel deal" }),
 			).toBeVisible();
 			await expect(
-				page.getByText("Please provide a reason for cancelling"),
+				page.getByText(
+					"This action is submitted through the governed deal transition path",
+				),
 			).toBeVisible();
 
-			// Confirm button is disabled without a reason
+			// Confirm button is disabled without a reason.
 			const confirmBtn = page
-				.locator("[role='alertdialog']")
+				.locator("[role='dialog']")
 				.getByRole("button", { name: "Cancel Deal" });
 			await expect(confirmBtn).toBeDisabled();
 
 			// Enter cancellation reason
 			await page
-				.getByPlaceholder("Enter reason for cancellation...")
+				.getByPlaceholder("Explain why this deal is being cancelled...")
 				.fill("E2E test cancellation");
 
-			// Confirm button is now enabled
+			// Confirm button is now enabled.
 			await expect(confirmBtn).toBeEnabled();
 
 			// Confirm the cancellation
 			await confirmBtn.click();
 
 			// Success toast
-			await expect(page.getByText("Deal cancelled")).toBeVisible({
+			await expect(page.getByText("Cancel Deal submitted")).toBeVisible({
 				timeout: DATA_LOAD_TIMEOUT,
 			});
 
 			// Deal moves to Failed column (Convex reactivity, no refresh needed)
 			await expect(
-				getColumn(page, "Failed").getByText("Share: 2000%"),
+				getColumn(page, "Failed").getByText(shareText(2000)),
 			).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
 			// Badge shows terminal state
 			await expect(
-				getDealCard(page, 2000).getByText("Failed — Terminated"),
+				getDealCard(page, 2000).getByText("Failed - Terminated"),
 			).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
 			// No action buttons on terminal deal (including no Cancel Deal)
@@ -307,10 +313,10 @@ test.describe.serial(
 
 			// After the previous cancel, Failed column should show at least 1 deal
 			await expect(
-				getColumn(page, "Failed").getByText("Share: 2000%"),
+				getColumn(page, "Failed").getByText(shareText(2000)),
 			).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-			// The column count is a muted-foreground span next to the h3 header.
+			// The column count is a muted-foreground span next to the h2 header.
 			// Scope to the header row to avoid matching deal card content.
 			const failedHeader = getColumn(page, "Failed").locator(
 				".flex.items-center.gap-2",
