@@ -135,6 +135,19 @@ function buildListing(
 	overrides: Partial<ListingDetailMock> &
 		Pick<ListingDetailMock, "id" | "title">
 ): ListingDetailMock {
+	const defaultPaymentHistory: ListingDetailMock["paymentHistory"] = {
+		lateCount: 1,
+		missedCount: 0,
+		months: paymentTimeline,
+		nextUpcoming: {
+			amount: "$3,187",
+			date: "Apr 15, 2026",
+			status: "planned",
+			statusLabel: "Planned",
+		},
+		onTimeRate: "96%",
+	};
+
 	return {
 		id: overrides.id,
 		title: overrides.title,
@@ -363,11 +376,9 @@ function buildListing(
 				},
 			],
 		},
-		paymentHistory: overrides.paymentHistory ?? {
-			onTimeRate: "96%",
-			lateCount: 1,
-			missedCount: 0,
-			months: paymentTimeline,
+		paymentHistory: {
+			...defaultPaymentHistory,
+			...(overrides.paymentHistory ?? {}),
 		},
 		documents: overrides.documents ?? standardDocuments,
 		investment: overrides.investment ?? {

@@ -1,16 +1,20 @@
 import { useAction } from "convex/react";
+import { LEDGER_UNITS_PER_DECILE } from "#/lib/mortgage-ownership-display";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { ListingDetailPage } from "./ListingDetailPage";
+import type { ListingCheckoutReturnState } from "./listing-detail-types";
 import { buildMarketplaceListingDetailModel } from "./marketplace-detail-adapter";
 import type { MarketplaceListingDetailSnapshot } from "./marketplace-types";
 
 interface MarketplaceListingDetailPageProps {
+	checkoutReturnState?: ListingCheckoutReturnState;
 	portalId: Id<"portals">;
 	snapshot: NonNullable<MarketplaceListingDetailSnapshot>;
 }
 
 export function MarketplaceListingDetailPage({
+	checkoutReturnState,
 	portalId,
 	snapshot,
 }: MarketplaceListingDetailPageProps) {
@@ -23,6 +27,7 @@ export function MarketplaceListingDetailPage({
 		<ListingDetailPage
 			backHref="/listings"
 			buildSimilarListingHref={(listingId) => `/listings/${listingId}`}
+			checkoutReturnState={checkoutReturnState}
 			listing={listing}
 			mode={listing.checkout ? "interactive" : "readOnly"}
 			onStartCheckout={
@@ -31,7 +36,8 @@ export function MarketplaceListingDetailPage({
 							return await startCheckout({
 								listingId: selection.listingId as Id<"listings">,
 								portalId: selection.portalId as Id<"portals">,
-								requestedFractions: selection.requestedFractions,
+								requestedFractions:
+									selection.requestedFractions * LEDGER_UNITS_PER_DECILE,
 								selectedLawyer: selection.selectedLawyer,
 							});
 						}

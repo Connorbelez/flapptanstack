@@ -22,6 +22,7 @@ import {
 	SelectValue,
 } from "#/components/ui/select";
 import { Textarea } from "#/components/ui/textarea";
+import { SUPPORTED_DEAL_DOCUMENT_VARIABLE_KEYS } from "#/lib/document-engine/contracts";
 import {
 	defaultDocumentAssetName,
 	uploadDocumentAsset,
@@ -78,38 +79,7 @@ interface MappingPreview {
 	};
 }
 
-const ALLOWED_VARIABLE_KEYS = [
-	// Mirrors SUPPORTED_MORTGAGE_DOCUMENT_VARIABLE_KEYS until a shared-safe module exists.
-	"assigned_broker_full_name",
-	"borrower_co_1_full_name",
-	"borrower_co_2_full_name",
-	"borrower_primary_email",
-	"borrower_primary_full_name",
-	"broker_of_record_full_name",
-	"lawyer_primary_full_name",
-	"listing_description",
-	"listing_title",
-	"mortgage_amortization_months",
-	"mortgage_amount",
-	"mortgage_first_payment_date",
-	"mortgage_interest_rate",
-	"mortgage_lien_position",
-	"mortgage_maturity_date",
-	"mortgage_payment_amount",
-	"mortgage_payment_frequency",
-	"mortgage_principal",
-	"mortgage_rate_type",
-	"mortgage_term_months",
-	"mortgage_term_start_date",
-	"property_city",
-	"property_postal_code",
-	"property_province",
-	"property_street_address",
-	"property_type",
-	"property_unit",
-	"valuation_date",
-	"valuation_value_as_is",
-] as const;
+const ALLOWED_VARIABLE_KEYS = SUPPORTED_DEAL_DOCUMENT_VARIABLE_KEYS;
 
 const ALLOWED_PLATFORM_ROLES = [
 	"borrower_primary",

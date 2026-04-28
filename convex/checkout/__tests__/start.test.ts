@@ -1,3 +1,4 @@
+import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it } from "vitest";
 import { registerAuditLogComponent } from "../../../src/test/convex/registerAuditLogComponent";
@@ -5,12 +6,18 @@ import { api, internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
 import { buildMarketplaceAvailabilitySummary } from "../../listings/marketplaceShared";
+import { FAIRLEND_MIC_LENDER_EMAIL } from "../../platform/defaultOriginationOwnerContract";
 import schema from "../../schema";
+import { seedAuthIdFromEmail } from "../../seed/seedHelpers";
 import { convexModules } from "../../test/moduleMaps";
 import { buildCheckoutStripeMetadata } from "../metadata";
 
 const BUYER_AUTH_ID = "checkout-buyer-auth";
-const SELLER_LEDGER_LENDER_ID = "checkout-mic-lender";
+const CANONICAL_MIC_LENDER_AUTH_ID = seedAuthIdFromEmail(
+	FAIRLEND_MIC_LENDER_EMAIL
+);
+const SELLER_LEDGER_LENDER_ID = CANONICAL_MIC_LENDER_AUTH_ID;
+const NON_CANONICAL_MIC_PATTERN_LENDER_ID = "checkout-mic-lender";
 
 function createHarness() {
 	const t = convexTest(schema, convexModules);
@@ -458,6 +465,57 @@ describe("checkout start internal mutations", () => {
 		const result = await prepare(t, {
 			...fixture,
 			requestedFractions: 5001,
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			code: "insufficient_fractions",
+		});
+	});
+
+	it("rejects marketplace checkout when only a non-canonical MIC-pattern seller owns fractions", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		await t.run(async (ctx) => {
+			const sellerAccount = await ctx.db
+				.query("ledger_accounts")
+				.withIndex("by_mortgage_and_lender", (q) =>
+					q
+						.eq("mortgageId", String(fixture.mortgageId))
+						.eq("lenderId", CANONICAL_MIC_LENDER_AUTH_ID)
+				)
+				.unique();
+			if (!sellerAccount) {
+				throw new Error("Expected canonical seller account");
+			}
+			await ctx.db.patch(sellerAccount._id, {
+				lenderId: NON_CANONICAL_MIC_PATTERN_LENDER_ID,
+			});
+		});
+
+		const result = await prepare(t, fixture);
+
+		expect(result).toMatchObject({
+			ok: false,
+			code: "insufficient_fractions",
+		});
+	});
+
+	it("rejects marketplace checkout requests above the MIC sale availability override", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		await asAdmin(t).mutation(
+			anyApi.admin.mortgages.ownership.setMicSaleAvailabilityOverride,
+			{
+				availableLedgerUnits: 3000,
+				mortgageId: fixture.mortgageId,
+				reason: "Limit sale availability for checkout cap testing.",
+			}
+		);
+
+		const result = await prepare(t, {
+			...fixture,
+			requestedFractions: 3001,
 		});
 
 		expect(result).toMatchObject({

@@ -74,6 +74,9 @@ export function TemplateDesignerWorkspace({
 	const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [publishing, setPublishing] = useState(false);
+	const [lastPublishedVersion, setLastPublishedVersion] = useState<
+		number | null
+	>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	const initializedRef = useRef(false);
@@ -101,14 +104,25 @@ export function TemplateDesignerWorkspace({
 	}, [roleOptions, signatories]);
 
 	useEffect(() => {
-		if (variables) {
-			setVariableOptions(
-				variables.map((variable) => ({
-					label: `${variable.key} (${variable.type})`,
-					value: variable.key,
-				}))
-			);
+		if (!variables) {
+			return;
 		}
+
+		const seen = new Set<string>();
+		const uniqueVariables = variables.filter((variable) => {
+			if (seen.has(variable.key)) {
+				return false;
+			}
+			seen.add(variable.key);
+			return true;
+		});
+		uniqueVariables.sort((a, b) => a.key.localeCompare(b.key));
+		setVariableOptions(
+			uniqueVariables.map((variable) => ({
+				label: `${variable.key} (${variable.type})`,
+				value: variable.key,
+			}))
+		);
 	}, [variables]);
 
 	const buildPdfmeSchemaForSave = useCallback(() => {
@@ -262,11 +276,15 @@ export function TemplateDesignerWorkspace({
 			const version = await publishTemplate({
 				id: templateId as Id<"documentTemplates">,
 			});
-			toast.success(`Template published v${version}`);
+			setLastPublishedVersion(version);
+			toast.success("Template published", {
+				description: `Version ${version} is now available.`,
+			});
 		} catch (publishError) {
-			setError(
-				publishError instanceof Error ? publishError.message : "Publish failed"
-			);
+			const message =
+				publishError instanceof Error ? publishError.message : "Publish failed";
+			setError(message);
+			toast.error("Publish failed", { description: message });
 		} finally {
 			setPublishing(false);
 		}
@@ -299,8 +317,8 @@ export function TemplateDesignerWorkspace({
 	}
 
 	return (
-		<div className="space-y-4">
-			<div className="flex items-center gap-4">
+		<div className="min-w-0 max-w-full space-y-4 overflow-hidden">
+			<div className="flex min-w-0 flex-wrap items-center gap-4">
 				<Link to={backToTemplatesPath}>
 					<Button size="icon" variant="ghost">
 						<ChevronLeft className="size-4" />
@@ -312,8 +330,13 @@ export function TemplateDesignerWorkspace({
 						{template.basePdf?.name} · {fields.length} fields ·{" "}
 						{signatories.length} signatories
 					</p>
+					{lastPublishedVersion ? (
+						<p className="text-emerald-600 text-xs">
+							Published v{lastPublishedVersion}
+						</p>
+					) : null}
 				</div>
-				<div className="flex items-center gap-2">
+				<div className="flex shrink-0 flex-wrap items-center gap-2">
 					{template.currentPublishedVersion ? (
 						<Badge variant="outline">v{template.currentPublishedVersion}</Badge>
 					) : null}
@@ -355,11 +378,11 @@ export function TemplateDesignerWorkspace({
 				</div>
 			) : null}
 
-			<div className="flex flex-col gap-3 xl:flex-row xl:items-start">
-				<div className="min-w-0 flex-1">
+			<div className="flex min-w-0 max-w-full flex-col gap-3 overflow-hidden xl:flex-row xl:items-start">
+				<div className="min-w-0 max-w-full flex-1 overflow-hidden">
 					{pdfUrl && template.basePdf ? (
 						<PdfDesigner
-							className="h-[calc(100vh-8.5rem)] min-h-[720px] rounded-xl border-border/70 shadow-[0_24px_80px_rgba(8,12,20,0.22)]"
+							className="h-[calc(100vh-8.5rem)] min-h-[720px] w-full min-w-0 max-w-full rounded-xl border-border/70 shadow-[0_24px_80px_rgba(8,12,20,0.22)]"
 							fields={fields}
 							onFieldSelect={setSelectedFieldId}
 							onFieldsChange={handleFieldsChange}
@@ -370,7 +393,7 @@ export function TemplateDesignerWorkspace({
 				</div>
 
 				<div
-					className={`shrink-0 transition-[width] duration-200 ease-out xl:sticky xl:top-4 ${
+					className={`min-w-0 max-w-full shrink-0 transition-[width] duration-200 ease-out xl:sticky xl:top-4 ${
 						sidebarCollapsed ? "w-full xl:w-14" : "w-full xl:w-[22rem] 2xl:w-96"
 					}`}
 				>

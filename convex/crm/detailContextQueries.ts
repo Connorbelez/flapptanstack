@@ -6,6 +6,7 @@ import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { listMortgageBlueprintRows } from "../documents/mortgageBlueprints";
 import { crmQuery } from "../fluent";
 import { readListingPublicDocuments } from "../listings/publicDocuments";
+import { buildMortgageMicSaleAvailabilitySummary } from "../mortgages/micSaleAvailability";
 import { buildCollectionPlanEntryRow } from "../payments/collectionPlan/readModels";
 import {
 	buildMortgagePaymentSnapshot,
@@ -282,6 +283,7 @@ export const getMortgageDetailContext = crmQuery
 			externalCollectionSchedules,
 			originationCase,
 			documentBlueprints,
+			micSaleAvailability,
 		] = await Promise.all([
 			ctx.db.get(mortgage.propertyId),
 			ctx.db
@@ -339,6 +341,7 @@ export const getMortgageDetailContext = crmQuery
 				includeArchived: true,
 				mortgageId: args.mortgageId,
 			}),
+			buildMortgageMicSaleAvailabilitySummary(ctx, args.mortgageId),
 		]);
 
 		const borrowers = await Promise.all(
@@ -452,6 +455,7 @@ export const getMortgageDetailContext = crmQuery
 						updatedAt: listing.updatedAt,
 					}
 				: null,
+			micSaleAvailability,
 			latestValuationSnapshot: latestValuationSnapshot
 				? {
 						createdByUserId: latestValuationSnapshot.createdByUserId,

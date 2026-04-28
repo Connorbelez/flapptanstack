@@ -16,6 +16,7 @@ import type * as accrual_interestMath from "../accrual/interestMath.js";
 import type * as accrual_ownershipPeriods from "../accrual/ownershipPeriods.js";
 import type * as accrual_queryHelpers from "../accrual/queryHelpers.js";
 import type * as accrual_types from "../accrual/types.js";
+import type * as admin_mortgages_ownership from "../admin/mortgages/ownership.js";
 import type * as admin_origination_caseDocuments from "../admin/origination/caseDocuments.js";
 import type * as admin_origination_cases from "../admin/origination/cases.js";
 import type * as admin_origination_collections from "../admin/origination/collections.js";
@@ -245,6 +246,7 @@ import type * as micInvestorAccessRequests_validators from "../micInvestorAccess
 import type * as micPortfolio_contracts from "../micPortfolio/contracts.js";
 import type * as micPortfolio_queries from "../micPortfolio/queries.js";
 import type * as mortgages_activateMortgageAggregate from "../mortgages/activateMortgageAggregate.js";
+import type * as mortgages_micSaleAvailability from "../mortgages/micSaleAvailability.js";
 import type * as mortgages_nominalAnnualRate from "../mortgages/nominalAnnualRate.js";
 import type * as mortgages_paymentFrequency from "../mortgages/paymentFrequency.js";
 import type * as mortgages_provenance from "../mortgages/provenance.js";
@@ -469,6 +471,7 @@ declare const fullApi: ApiFromModules<{
   "accrual/ownershipPeriods": typeof accrual_ownershipPeriods;
   "accrual/queryHelpers": typeof accrual_queryHelpers;
   "accrual/types": typeof accrual_types;
+  "admin/mortgages/ownership": typeof admin_mortgages_ownership;
   "admin/origination/caseDocuments": typeof admin_origination_caseDocuments;
   "admin/origination/cases": typeof admin_origination_cases;
   "admin/origination/collections": typeof admin_origination_collections;
@@ -698,6 +701,7 @@ declare const fullApi: ApiFromModules<{
   "micPortfolio/contracts": typeof micPortfolio_contracts;
   "micPortfolio/queries": typeof micPortfolio_queries;
   "mortgages/activateMortgageAggregate": typeof mortgages_activateMortgageAggregate;
+  "mortgages/micSaleAvailability": typeof mortgages_micSaleAvailability;
   "mortgages/nominalAnnualRate": typeof mortgages_nominalAnnualRate;
   "mortgages/paymentFrequency": typeof mortgages_paymentFrequency;
   "mortgages/provenance": typeof mortgages_provenance;

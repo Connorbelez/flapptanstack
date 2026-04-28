@@ -333,9 +333,7 @@ export async function ensureDefaultEntriesForObligationsImpl(
 		}
 
 		const scheduledDate =
-			obligation.status === "upcoming"
-				? obligation.dueDate - delayDays * MS_PER_DAY
-				: now;
+			obligation.status === "upcoming" ? obligation.dueDate : now;
 		const entryId = await createEntryImpl(ctx, {
 			obligationIds: [obligation._id],
 			amount: getCollectibleOutstandingAmount(obligation),

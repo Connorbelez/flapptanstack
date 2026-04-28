@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { listingQuery } from "../fluent";
+import { loadMortgagePaymentSnapshots } from "../payments/mortgagePaymentSnapshot";
 import type { PortalPricingPolicyDoc } from "../portals/pricing";
 import { projectListingForPortal } from "../portals/pricing";
 import {
@@ -30,10 +31,12 @@ const OFFSET_CURSOR_PREFIX = "offset:";
 const OFFSET_CURSOR_PATTERN = /^\d+$/;
 
 type ListingDoc = Doc<"listings">;
+type ObligationDoc = Doc<"obligations">;
 type MarketplacePropertyType = NonNullable<
 	ListingDoc["marketplacePropertyType"]
 >;
 type MortgageTypeLabel = "First" | "Second" | "Other";
+type MarketplaceUpcomingPaymentStatus = "due" | "none" | "overdue" | "planned";
 
 export interface MarketplaceFilters {
 	interestRate?: { max?: number; min?: number };
@@ -216,6 +219,55 @@ async function takeBoundedPublishedListings(
 
 function buildListingSummary(listing: ListingDoc): string {
 	return listing.marketplaceCopy ?? listing.description ?? "Mortgage Listing";
+}
+
+function toMarketplaceUpcomingPaymentStatus(
+	obligation: ObligationDoc
+): MarketplaceUpcomingPaymentStatus {
+	switch (obligation.status) {
+		case "due":
+			return "due";
+		case "overdue":
+		case "partially_settled":
+			return "overdue";
+		default:
+			return "planned";
+	}
+}
+
+async function loadMarketplaceNextPaymentDue(
+	ctx: Pick<QueryCtx, "db">,
+	mortgageId: ListingDoc["mortgageId"]
+) {
+	if (!mortgageId) {
+		return null;
+	}
+
+	const obligation = await ctx.db
+		.query("obligations")
+		.withIndex("by_mortgage_and_date", (q) => q.eq("mortgageId", mortgageId))
+		.order("asc")
+		.filter((q) =>
+			q.and(
+				q.neq(q.field("status"), "settled"),
+				q.neq(q.field("status"), "waived")
+			)
+		)
+		.first();
+
+	if (!obligation) {
+		return {
+			amount: null,
+			date: null,
+			status: "none" satisfies MarketplaceUpcomingPaymentStatus,
+		};
+	}
+
+	return {
+		amount: obligation.amount,
+		date: obligation.dueDate,
+		status: toMarketplaceUpcomingPaymentStatus(obligation),
+	};
 }
 
 function getMarketplacePropertyType(
@@ -522,6 +574,8 @@ export const getMarketplaceListingDetail = listingQuery
 			encumbrances,
 			similarListings,
 			closingLawyers,
+			paymentSnapshots,
+			nextPaymentDue,
 		] = await Promise.all([
 			buildMarketplaceAvailabilitySummary(ctx, listing.mortgageId),
 			readListingPublicDocuments(ctx, {
@@ -537,7 +591,14 @@ export const getMarketplaceListingDetail = listingQuery
 			listing.mortgageId
 				? getMarketplaceClosingLawyers(ctx, listing.mortgageId)
 				: Promise.resolve([]),
+			listing.mortgageId
+				? loadMortgagePaymentSnapshots(ctx, [listing.mortgageId])
+				: Promise.resolve(new Map()),
+			loadMarketplaceNextPaymentDue(ctx, listing.mortgageId),
 		]);
+		const paymentSnapshot = listing.mortgageId
+			? (paymentSnapshots.get(String(listing.mortgageId)) ?? null)
+			: null;
 
 		return {
 			appraisals,
@@ -576,6 +637,8 @@ export const getMarketplaceListingDetail = listingQuery
 				monthlyPayment: projectedListing.monthlyPayment,
 				paymentFrequency: listing.paymentFrequency,
 				paymentHistory: listing.paymentHistory ?? null,
+				nextPaymentDue,
+				paymentSnapshot,
 				principal: listing.principal,
 				propertyTypeLabel: getMarketplacePropertyType(listing),
 				rateType: listing.rateType,
