@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AdminRecordDetailPage } from "#/components/admin/shell/AdminRecordDetailPage";
+import { DealOperationsConsole } from "#/components/admin/deals/DealOperationsConsole";
 import {
 	AdminPageSkeleton,
 	AdminRouteErrorBoundary,
 } from "#/components/admin/shell/AdminRouteStates";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 export const Route = createFileRoute("/admin/deals/$recordid")({
 	component: RouteComponent,
@@ -14,7 +15,7 @@ export const Route = createFileRoute("/admin/deals/$recordid")({
 function RouteComponent() {
 	const { recordid } = Route.useParams();
 
-	return <AdminRecordDetailPage entityType="deals" recordId={recordid} />;
+	return <DealOperationsConsole dealId={recordid as Id<"deals">} />;
 }
 
 function DealDetailPendingPage() {

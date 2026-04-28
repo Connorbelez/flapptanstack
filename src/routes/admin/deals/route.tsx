@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, useMatch } from "@tanstack/react-router";
-import { AdminEntityViewPage } from "#/components/admin/shell/AdminEntityViewPage";
+import { DealOperationsPipeline } from "#/components/admin/deals/DealOperationsPipeline";
 import { AdminRouteErrorBoundary } from "#/components/admin/shell/AdminRouteStates";
 
 export const Route = createFileRoute("/admin/deals")({
@@ -18,5 +18,5 @@ function EntityList() {
 		return <Outlet />;
 	}
 
-	return <AdminEntityViewPage entityType="deals" />;
+	return <DealOperationsPipeline />;
 }
