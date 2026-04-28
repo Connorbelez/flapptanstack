@@ -162,6 +162,101 @@ describe("FSRA import refresh", () => {
 		expect(state.sourceRows).toHaveLength(records.length);
 	});
 
+	it("treats stored FSRA source rows as a replacement snapshot", async () => {
+		const t = createTestConvex();
+		const records = buildBulkFsraSourceRecords(125);
+		const retiredLicenseNumber = "ON-BULK-124";
+		const replacementRecords = records.filter(
+			(record) => record.licenseNumber !== retiredLicenseNumber
+		);
+
+		await t.action(
+			internal.onboarding.verification.fsraImport.runFsraImportRefresh,
+			{
+				records,
+				trigger: "manual",
+			}
+		);
+		await t.action(
+			internal.onboarding.verification.fsraImport.runFsraImportRefresh,
+			{
+				records: replacementRecords,
+				trigger: "manual",
+			}
+		);
+		const result = await t.action(
+			internal.onboarding.verification.fsraImport.runFsraImportRefresh,
+			{
+				trigger: "cron",
+			}
+		);
+
+		expect(result.status).toBe("success");
+		expect(result.recordCount).toBe(replacementRecords.length);
+
+		const licenses = await t.run(async (ctx) =>
+			ctx.db.query("fsraLicenses").collect()
+		);
+
+		expect(licenses).toHaveLength(replacementRecords.length);
+		expect(
+			licenses.some((record) => record.licenseNumber === retiredLicenseNumber)
+		).toBe(false);
+	});
+
+	it("records partial stored import counts when a later page fails", async () => {
+		const t = createTestConvex();
+		const records = buildBulkFsraSourceRecords(101);
+		const failingRecord = records[100];
+		if (!failingRecord) {
+			throw new Error("Expected failing FSRA fixture");
+		}
+		const invalidRecord = {
+			...failingRecord,
+			licenseeFullName: " ",
+			rawRecord: {
+				...failingRecord.rawRecord,
+				licenseeFullName: " ",
+			},
+		};
+
+		await t.run(async (ctx) => {
+			for (const record of [...records.slice(0, 100), invalidRecord]) {
+				await ctx.db.insert("fsraSourceRows", {
+					...record,
+					brokerageName: record.brokerageName ?? undefined,
+					brokerageNumber: record.brokerageNumber ?? undefined,
+					sourceSuppliedAt: NOW,
+					createdAt: NOW,
+					updatedAt: NOW,
+				});
+			}
+		});
+
+		await expect(
+			t.action(internal.onboarding.verification.fsraImport.runFsraImportRefresh, {
+				trigger: "cron",
+			})
+		).rejects.toThrow(/licenseeFullName is required/i);
+
+		const state = await t.run(async (ctx) => {
+			const latestRun = await ctx.db
+				.query("fsraImportRuns")
+				.withIndex("by_started_at")
+				.order("desc")
+				.first();
+			const licenses = await ctx.db.query("fsraLicenses").collect();
+			return { latestRun, licenses };
+		});
+
+		expect(state.licenses).toHaveLength(100);
+		expect(state.latestRun?.status).toBe("failed");
+		expect(state.latestRun?.recordCount).toBe(101);
+		expect(state.latestRun?.createdCount).toBe(100);
+		expect(state.latestRun?.updatedCount).toBe(0);
+		expect(state.latestRun?.failedCount).toBe(1);
+	});
+
 	it("treats provided FSRA rows as a replacement snapshot", async () => {
 		const t = createTestConvex();
 		const records = buildDefaultFsraSourceRecords(NOW);

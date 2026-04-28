@@ -643,6 +643,16 @@ function addFsraImportCounts(
 	};
 }
 
+class FsraImportRunError extends Error {
+	readonly counts: FsraImportCounts;
+
+	constructor(message: string, counts: FsraImportCounts) {
+		super(message);
+		this.name = "FsraImportRunError";
+		this.counts = counts;
+	}
+}
+
 async function runProvidedFsraImport(
 	ctx: ActionCtx,
 	records: FsraSourceRecord[]
@@ -671,25 +681,45 @@ async function runStoredFsraImport(ctx: ActionCtx): Promise<FsraImportCounts> {
 	let sawRecords = false;
 
 	while (true) {
-		const page: FsraSourceRecordPage = await ctx.runQuery(
-			listFsraSourceRecordsRef,
-			{
+		let page: FsraSourceRecordPage;
+		try {
+			page = await ctx.runQuery(listFsraSourceRecordsRef, {
 				cursor,
 				limit: FSRA_IMPORT_PAGE_SIZE,
-			}
-		);
+			});
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "FSRA import failed";
+			throw new FsraImportRunError(message, counts);
+		}
 
 		if (page.page.length > 0) {
+			const replaceSnapshot = !sawRecords;
 			sawRecords = true;
-			const result = await ctx.runMutation(upsertFsraImportRecordsRef, {
-				records: page.page,
-			});
-			counts = addFsraImportCounts(counts, {
-				createdCount: result.createdCount,
-				failedCount: result.failedCount,
-				recordCount: result.recordCount,
-				updatedCount: result.updatedCount,
-			});
+			try {
+				const result = await ctx.runMutation(upsertFsraImportRecordsRef, {
+					records: page.page,
+					replaceSnapshot,
+				});
+				counts = addFsraImportCounts(counts, {
+					createdCount: result.createdCount,
+					failedCount: result.failedCount,
+					recordCount: result.recordCount,
+					updatedCount: result.updatedCount,
+				});
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : "FSRA import failed";
+				throw new FsraImportRunError(
+					message,
+					addFsraImportCounts(counts, {
+						createdCount: 0,
+						failedCount: page.page.length,
+						recordCount: page.page.length,
+						updatedCount: 0,
+					})
+				);
+			}
 		}
 
 		if (page.isDone) {
@@ -746,15 +776,24 @@ export const runFsraImportRefresh = convex
 				status,
 			};
 		} catch (error) {
+			const failedCounts =
+				error instanceof FsraImportRunError
+					? error.counts
+					: {
+							createdCount: 0,
+							failedCount: recordCount,
+							recordCount,
+							updatedCount: 0,
+						};
 			await ctx.runMutation(finishFsraImportRunRef, {
-				createdCount: 0,
+				createdCount: failedCounts.createdCount,
 				errorMessage:
 					error instanceof Error ? error.message : "FSRA import failed",
-				failedCount: recordCount,
-				recordCount,
+				failedCount: failedCounts.failedCount,
+				recordCount: failedCounts.recordCount,
 				runId,
 				status: "failed",
-				updatedCount: 0,
+				updatedCount: failedCounts.updatedCount,
 			});
 			throw error;
 		}
