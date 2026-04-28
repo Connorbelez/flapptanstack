@@ -2,10 +2,13 @@
 
 import { Link, Outlet, useMatches } from "@tanstack/react-router";
 import {
+	Files,
 	FileText,
 	FolderOpen,
+	History,
 	LayoutDashboard,
 	Library,
+	PackageOpen,
 	Play,
 	Variable,
 } from "lucide-react";
@@ -16,6 +19,9 @@ interface DocumentEngineLayoutPaths {
 	generate?: "/demo/document-engine/generate";
 	groups: "/admin/document-engine/groups" | "/demo/document-engine/groups";
 	library: "/admin/document-engine/library" | "/demo/document-engine/library";
+	packages?: "/admin/document-engine/packages";
+	publishedDealDocuments?: "/admin/document-engine/published-deal-documents";
+	publishedTemplates?: "/admin/document-engine/published-templates";
 	templates:
 		| "/admin/document-engine/templates"
 		| "/demo/document-engine/templates";
@@ -48,6 +54,27 @@ export function DocumentEngineLayout({
 		{ icon: Variable, label: "Variables", to: paths.variables },
 		{ icon: FileText, label: "Templates", to: paths.templates },
 		{ icon: FolderOpen, label: "Groups", to: paths.groups },
+		...(paths.packages
+			? [{ icon: PackageOpen, label: "Packages", to: paths.packages }]
+			: []),
+		...(paths.publishedTemplates
+			? [
+					{
+						icon: History,
+						label: "Published Templates",
+						to: paths.publishedTemplates,
+					},
+				]
+			: []),
+		...(paths.publishedDealDocuments
+			? [
+					{
+						icon: Files,
+						label: "Published Deal Documents",
+						to: paths.publishedDealDocuments,
+					},
+				]
+			: []),
 		...(paths.generate
 			? [{ icon: Play, label: "Generate", to: paths.generate }]
 			: []),

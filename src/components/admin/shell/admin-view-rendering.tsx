@@ -7,7 +7,7 @@ import {
 	annualNominalPercentPointsForDisplay,
 	isNativeCentCurrencyField,
 } from "#/lib/adminNativeFieldFormat";
-import type { Doc } from "../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type {
 	EntityViewAdapterContract,
 	NormalizedFieldDefinition,
@@ -420,7 +420,9 @@ export function createKanbanFieldOptions(
 	return fields
 		.filter(
 			(field) =>
-				field.fieldType === "select" && field.layoutEligibility.kanban.enabled
+				field.fieldSource === "persisted" &&
+				field.fieldType === "select" &&
+				field.layoutEligibility.kanban.enabled
 		)
 		.sort((left, right) => left.displayOrder - right.displayOrder)
 		.map((field) => ({
@@ -431,8 +433,10 @@ export function createKanbanFieldOptions(
 			(
 				option
 			): option is {
-				fieldDefId: NonNullable<NormalizedFieldDefinition["fieldDefId"]>;
+				fieldDefId: Id<"fieldDefs">;
 				label: string;
-			} => option.fieldDefId !== undefined
+			} =>
+				option.fieldDefId !== undefined &&
+				!option.fieldDefId.startsWith("computed:")
 		);
 }

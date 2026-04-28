@@ -1,6 +1,11 @@
 import { ConvexError, v } from "convex/values";
 import { adminMutation, documentQuery } from "../fluent";
 import { formatOptionsValidator, variableTypeValidator } from "./validators";
+import {
+	CANONICAL_DOCUMENT_VARIABLES,
+	getCanonicalDocumentVariable,
+	isCanonicalDocumentVariableKey,
+} from "./variableRegistry";
 
 const SNAKE_CASE_RE = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 
@@ -18,6 +23,12 @@ export const create = adminMutation
 		if (!SNAKE_CASE_RE.test(args.key)) {
 			throw new ConvexError(
 				"Variable key must be snake_case (e.g. loan_amount)"
+			);
+		}
+
+		if (isCanonicalDocumentVariableKey(args.key)) {
+			throw new ConvexError(
+				`Variable key "${args.key}" is reserved by the canonical registry`
 			);
 		}
 
@@ -91,13 +102,60 @@ export const remove = adminMutation
 export const list = documentQuery
 	.input({})
 	.handler(async (ctx) => {
-		return await ctx.db.query("systemVariables").collect();
+		const customVariables = await ctx.db.query("systemVariables").collect();
+		const customOnly = customVariables.filter(
+			(variable) => !isCanonicalDocumentVariableKey(variable.key)
+		);
+
+		return [
+			...CANONICAL_DOCUMENT_VARIABLES.map((variable) => ({
+				_creationTime: 0,
+				_id: `canonical:${variable.key}`,
+				availability: variable.availability,
+				createdAt: 0,
+				description: variable.description,
+				formatOptions: undefined,
+				key: variable.key,
+				label: variable.label,
+				readOnly: true as const,
+				sampleValue: variable.sampleValue,
+				source: "canonical" as const,
+				systemPath: variable.sourcePath,
+				type: variable.type,
+			})),
+			...customOnly.map((variable) => ({
+				...variable,
+				availability: "custom_alias" as const,
+				readOnly: false as const,
+				sampleValue: undefined,
+				source: "custom" as const,
+			})),
+		];
 	})
 	.public();
 
 export const getByKey = documentQuery
 	.input({ key: v.string() })
 	.handler(async (ctx, args) => {
+		const canonicalVariable = getCanonicalDocumentVariable(args.key);
+		if (canonicalVariable) {
+			return {
+				_creationTime: 0,
+				_id: `canonical:${canonicalVariable.key}`,
+				availability: canonicalVariable.availability,
+				createdAt: 0,
+				description: canonicalVariable.description,
+				formatOptions: undefined,
+				key: canonicalVariable.key,
+				label: canonicalVariable.label,
+				readOnly: true as const,
+				sampleValue: canonicalVariable.sampleValue,
+				source: "canonical" as const,
+				systemPath: canonicalVariable.sourcePath,
+				type: canonicalVariable.type,
+			};
+		}
+
 		return await ctx.db
 			.query("systemVariables")
 			.withIndex("by_key", (q) => q.eq("key", args.key))

@@ -14,6 +14,7 @@ import {
 	ShieldCheck,
 	UsersRound,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -91,6 +92,35 @@ export function LawyerDealWorkspacePage({
 	const approveDocuments = useMutation(
 		api.deals.lawyerMutations.approveDocuments
 	);
+
+	return (
+		<LawyerDealWorkspaceContent
+			onApproveDocuments={async () => {
+				await approveDocuments({ dealId: workspace.deal.dealId });
+				await queryClient.invalidateQueries();
+			}}
+			onConfirmRepresentation={async () => {
+				await confirmRepresentation({ dealId: workspace.deal.dealId });
+				await queryClient.invalidateQueries();
+			}}
+			workspace={workspace}
+		/>
+	);
+}
+
+export interface LawyerDealWorkspaceContentProps {
+	onApproveDocuments: () => Promise<void>;
+	onConfirmRepresentation: () => Promise<void>;
+	renderBackLink?: (children: ReactNode) => ReactNode;
+	workspace: Workspace;
+}
+
+export function LawyerDealWorkspaceContent({
+	onApproveDocuments,
+	onConfirmRepresentation,
+	renderBackLink,
+	workspace,
+}: LawyerDealWorkspaceContentProps) {
 	const signerSummary = summarizeLawyerSigners({
 		attempts: workspace.envelope.attempts,
 		exceptions: workspace.envelope.exceptions,
@@ -130,10 +160,10 @@ export function LawyerDealWorkspacePage({
 	) {
 		try {
 			if (action === "confirmRepresentation") {
-				await confirmRepresentation({ dealId: workspace.deal.dealId });
+				await onConfirmRepresentation();
 				toast.success("Representation confirmed.");
 			} else {
-				await approveDocuments({ dealId: workspace.deal.dealId });
+				await onApproveDocuments();
 				toast.success("Package approved for signing.");
 			}
 		} catch (error) {
@@ -142,8 +172,6 @@ export function LawyerDealWorkspacePage({
 					? error.message
 					: "The lawyer action could not be completed."
 			);
-		} finally {
-			await queryClient.invalidateQueries();
 		}
 	}
 
@@ -153,10 +181,19 @@ export function LawyerDealWorkspacePage({
 				<header className="grid gap-5 border-slate-200 border-b pb-5 lg:grid-cols-[1fr_auto] lg:items-end">
 					<div className="space-y-4">
 						<Button asChild size="sm" variant="ghost">
-							<Link to="/lawyer">
-								<ArrowLeft className="size-4" />
-								Assigned closings
-							</Link>
+							{renderBackLink ? (
+								renderBackLink(
+									<>
+										<ArrowLeft className="size-4" />
+										Assigned closings
+									</>
+								)
+							) : (
+								<Link to="/lawyer">
+									<ArrowLeft className="size-4" />
+									Assigned closings
+								</Link>
+							)}
 						</Button>
 						<div className="space-y-2">
 							<div className="flex flex-wrap items-center gap-2">

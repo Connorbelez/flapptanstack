@@ -73,7 +73,7 @@ function DetailFieldGrid({
 	readonly record: UnifiedRecord;
 }) {
 	return (
-		<div className={cn("grid gap-3 md:grid-cols-2", className)}>
+		<div className={cn("grid gap-x-6 md:grid-cols-2", className)}>
 			{fields.map((field) => (
 				<FieldRenderer
 					field={field}
@@ -147,10 +147,10 @@ export function SectionedRecordDetails({
 	return (
 		<div className="space-y-6">
 			{highlightedFields.length > 0 ? (
-				<div className="grid gap-3 md:grid-cols-3">
+				<div className="grid gap-x-6 md:grid-cols-3">
 					{highlightedFields.map((field) => (
 						<FieldRenderer
-							className="h-full border-border/70 bg-background/80"
+							className="h-full"
 							field={field}
 							key={field.name}
 							objectDefs={objectDefs}
@@ -164,7 +164,7 @@ export function SectionedRecordDetails({
 
 			{renderedSections.map((section) => (
 				<section
-					className="space-y-3 rounded-xl border border-border/70 bg-muted/10 p-4"
+					className="space-y-4 border-border/70 border-t pt-5"
 					key={getDetailSectionKey(section)}
 				>
 					<div className="space-y-1">

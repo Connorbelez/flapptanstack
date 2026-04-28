@@ -1,0 +1,73 @@
+<h2>Mortgage Files Tab: Attach Document Flow</h2>
+<p class="subtitle">A lightweight wireframe for the recommended UI shape. The document engine remains the place where templates are authored.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Admin Mortgage Detail / Files</div>
+  <div class="mockup-body">
+    <div class="mock-nav">Overview | Borrowers | Payments | <strong>Files</strong> | Audit</div>
+    <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:18px;margin-top:18px;">
+      <div>
+        <div class="section">
+          <div class="label">Mortgage Files</div>
+          <div class="placeholder" style="height:auto;padding:16px;">
+            <strong>Existing uploaded files</strong><br>
+            Appraisal.pdf | Insurance Binder.pdf | Borrower Docs.zip
+          </div>
+        </div>
+        <div class="section">
+          <button class="mock-button">Attach document</button>
+          <p class="subtitle" style="margin-top:8px;">Creates a future-only mortgage document blueprint from an upload or published template.</p>
+        </div>
+      </div>
+      <div class="placeholder" style="height:auto;padding:16px;">
+        <strong>Documents summary</strong><br>
+        Public static: 2 active<br>
+        Private read-only templates: 1 active<br>
+        Signable templates: 1 active
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">Guided Composer Drawer</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:180px 1fr;gap:18px;">
+      <div class="mock-sidebar">
+        <strong>Steps</strong><br><br>
+        1. Document type<br>
+        2. Source<br>
+        3. Mappings<br>
+        4. Review & attach
+      </div>
+      <div class="mock-content">
+        <div class="options">
+          <div class="option" data-choice="public-static" onclick="toggleSelect(this)">
+            <div class="letter">1</div>
+            <div class="content">
+              <h3>Public Static PDF</h3>
+              <p>Upload a PDF that projects to future listing packages.</p>
+            </div>
+          </div>
+          <div class="option" data-choice="private-template" onclick="toggleSelect(this)">
+            <div class="letter">2</div>
+            <div class="content">
+              <h3>Private Template</h3>
+              <p>Select a published document template. Variables default to canonical mappings and can be overridden.</p>
+            </div>
+          </div>
+          <div class="option" data-choice="signable-template" onclick="toggleSelect(this)">
+            <div class="letter">3</div>
+            <div class="content">
+              <h3>Private Signable Template</h3>
+              <p>Select a published signable template and review variable plus signatory mappings.</p>
+            </div>
+          </div>
+        </div>
+        <div class="placeholder" style="height:auto;margin-top:16px;padding:16px;">
+          Mapping step shows defaults, editable overrides, reset-to-default controls, validation warnings, and a final "future deals only" confirmation.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

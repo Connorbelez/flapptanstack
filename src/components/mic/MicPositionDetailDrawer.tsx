@@ -68,7 +68,7 @@ function DrawerContent({
 	return (
 		<div className="space-y-6 py-4">
 			{/* Property */}
-			<section className="space-y-2">
+			<section className="space-y-2 border-border/70 border-t pt-4">
 				<h3 className="font-semibold text-sm">Property</h3>
 				<div className="space-y-1 text-sm">
 					<p>
@@ -86,58 +86,58 @@ function DrawerContent({
 			</section>
 
 			{/* Mortgage Terms */}
-			<section className="space-y-2">
+			<section className="space-y-2 border-border/70 border-t pt-4">
 				<h3 className="font-semibold text-sm">Mortgage Terms</h3>
-				<dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-					<div>
+				<dl className="grid grid-cols-2 gap-x-4 text-sm">
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Principal</dt>
 						<dd className="font-medium">
 							{formatCurrency(detail.mortgage.principal)}
 						</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Interest Rate</dt>
 						<dd className="font-medium">
 							{detail.mortgage.interestRate.toFixed(2)}%
 						</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Rate Type</dt>
 						<dd className="font-medium capitalize">
 							{detail.mortgage.rateType}
 						</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Term</dt>
 						<dd className="font-medium">{detail.mortgage.termMonths} months</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Amortization</dt>
 						<dd className="font-medium">
 							{detail.mortgage.amortizationMonths} months
 						</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Payment Amount</dt>
 						<dd className="font-medium">
 							{formatCurrency(detail.mortgage.paymentAmount)}
 						</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Frequency</dt>
 						<dd className="font-medium capitalize">
 							{detail.mortgage.paymentFrequency}
 						</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Lien Position</dt>
 						<dd className="font-medium">{detail.mortgage.lienPosition}</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Maturity Date</dt>
 						<dd className="font-medium">{detail.mortgage.maturityDate}</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Status</dt>
 						<dd className="font-medium">
 							<Badge variant="secondary">{detail.mortgage.status}</Badge>
@@ -147,24 +147,24 @@ function DrawerContent({
 			</section>
 
 			{/* Position */}
-			<section className="space-y-2">
+			<section className="space-y-2 border-border/70 border-t pt-4">
 				<h3 className="font-semibold text-sm">Position</h3>
-				<dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-					<div>
+				<dl className="grid grid-cols-2 gap-x-4 text-sm">
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Outstanding Principal</dt>
 						<dd className="font-medium">
 							{formatCurrency(position.outstandingPrincipal)}
 						</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Position Units</dt>
 						<dd className="font-medium">{position.positionUnits}</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">LTV</dt>
 						<dd className="font-medium">{formatPercent(position.ltv)}</dd>
 					</div>
-					<div>
+					<div className="border-border/60 border-t py-2">
 						<dt className="text-muted-foreground">Arrears</dt>
 						<dd className="font-medium">
 							<Badge variant="secondary">{position.arrearsSignal.status}</Badge>
@@ -174,14 +174,14 @@ function DrawerContent({
 			</section>
 
 			{/* Payment History */}
-			<section className="space-y-2">
+			<section className="space-y-2 border-border/70 border-t pt-4">
 				<h3 className="font-semibold text-sm">Payment History</h3>
 				{payments.length === 0 ? (
 					<p className="text-muted-foreground text-sm">
 						No payment history available.
 					</p>
 				) : (
-					<div className="rounded-md border">
+					<div className="border-border/70 border-y">
 						<Table>
 							<TableHeader>
 								<TableRow>

@@ -1,0 +1,77 @@
+<h2>Revised Model: Packages Compose Groups and Documents</h2>
+<p class="subtitle">Document groups stay focused on one Documenso signing envelope. A package is the higher-level deal-lock bundle containing multiple groups and standalone documents.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Conceptual hierarchy</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:start">
+      <div class="placeholder" style="min-height:150px">
+        <div class="label">Template</div>
+        <div>Single PDF layout</div>
+        <div style="margin-top:8px;font-size:12px;color:#64748b">Fields + variables + signatories</div>
+      </div>
+      <div class="placeholder" style="min-height:150px">
+        <div class="label">Document Group</div>
+        <div>One signing envelope</div>
+        <div style="margin-top:8px;font-size:12px;color:#64748b">N templates with compatible signatories</div>
+      </div>
+      <div class="placeholder" style="min-height:150px">
+        <div class="label">Deal Document Package</div>
+        <div>Full lock-time document bundle</div>
+        <div style="margin-top:8px;font-size:12px;color:#64748b">N groups + N individual docs</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Package Contents</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="group" onclick="toggleSelect(this)">
+      <div class="letter">G</div>
+      <div class="content">
+        <h3>Signing envelope group</h3>
+        <p>Selected from published document groups. At deal lock, each group materializes as its own Documenso envelope.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="individual-signable" onclick="toggleSelect(this)">
+      <div class="letter">S</div>
+      <div class="content">
+        <h3>Standalone signable document</h3>
+        <p>A published signable template that does not need to share an envelope with other documents.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="individual-templated" onclick="toggleSelect(this)">
+      <div class="letter">T</div>
+      <div class="content">
+        <h3>Standalone templated document</h3>
+        <p>A non-signable generated document using package-wide variables.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="static" onclick="toggleSelect(this)">
+      <div class="letter">P</div>
+      <div class="content">
+        <h3>Static PDF/document</h3>
+        <p>An immutable asset included in the package without generation.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>Implications</h4>
+    <ul>
+      <li>Keep existing Groups UI, but label it as signing envelope groups</li>
+      <li>Add Packages as a new higher-level tab</li>
+      <li>Package publish validates variables across all selected groups and standalone docs</li>
+      <li>Locked deal snapshots preserve package version, group versions, document versions, and generated envelope boundaries</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>Open decision</h4>
+    <ul>
+      <li>Whether standalone signable documents create one envelope each, or can be assigned into an ad hoc package envelope</li>
+    </ul>
+  </div>
+</div>

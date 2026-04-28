@@ -102,7 +102,7 @@ export function PositionSheet({
 										</Badge>
 									) : null}
 								</div>
-								<div className="overflow-hidden rounded-xl border border-border/70 bg-muted">
+								<div className="overflow-hidden border-border/70 border-y bg-muted">
 									{data.property.heroImageUrl ? (
 										<img
 											alt={data.position.propertyLabel}
@@ -192,14 +192,11 @@ export function PositionSheet({
 									description="These are the contract-backed quick action hosts. Renewal actions live in the dedicated Renewal tab."
 									title="Quick actions"
 								>
-									<div className="grid gap-3">
+									<div className="divide-y divide-border/60">
 										{data.quickActions
 											.filter((action) => action.kind !== "renewal_prompt")
 											.map((action) => (
-												<div
-													className="rounded-lg border border-border/70 p-4"
-													key={action.id}
-												>
+												<div className="py-4" key={action.id}>
 													<div className="flex flex-wrap items-start justify-between gap-3">
 														<div className="space-y-1">
 															<p className="font-medium text-sm">

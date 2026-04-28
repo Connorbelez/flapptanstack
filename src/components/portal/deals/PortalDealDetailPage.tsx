@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { FileText, Home, Percent, Wallet } from "lucide-react";
-import { useRef } from "react";
+import { type ReactNode, useRef } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -124,6 +124,14 @@ type DealDocumentListItem = NonNullable<
 	NonNullable<PortalDealDetail>["documentInstances"]
 >[number];
 type DealDocumentInstanceId = DealDocumentListItem["instanceId"];
+type CreateEmbeddedSigningSession = (args: {
+	dealId: Id<"deals">;
+	instanceId: DealDocumentInstanceId;
+}) => Promise<{ url: string }>;
+type SyncSignableDocumentEnvelope = (args: {
+	dealId: Id<"deals">;
+	instanceId: DealDocumentInstanceId;
+}) => Promise<unknown>;
 
 function groupDocuments(documents: DealDocumentListItem[]) {
 	const availableDocuments = documents.filter(
@@ -180,13 +188,6 @@ export function PortalDealDetailPage({
 	audience,
 	dealId,
 }: PortalDealDetailPageProps) {
-	const copy = PORTAL_COPY[audience];
-	const signingDialogsRef = useRef(
-		new Map<DealDocumentInstanceId, HTMLDialogElement>()
-	);
-	const signingFramesRef = useRef(
-		new Map<DealDocumentInstanceId, HTMLIFrameElement>()
-	);
 	const detail = useQuery(api.deals.queries.getPortalDealDetail, {
 		dealId: dealId as Id<"deals">,
 	});
@@ -195,6 +196,39 @@ export function PortalDealDetailPage({
 	);
 	const syncSignableDocumentEnvelope = useAction(
 		api.documents.signature.webhooks.syncSignableDocumentEnvelope
+	);
+
+	return (
+		<PortalDealDetailContent
+			audience={audience}
+			createEmbeddedSigningSession={createEmbeddedSigningSession}
+			detail={detail}
+			syncSignableDocumentEnvelope={syncSignableDocumentEnvelope}
+		/>
+	);
+}
+
+export interface PortalDealDetailContentProps {
+	audience: PortalAudience;
+	createEmbeddedSigningSession: CreateEmbeddedSigningSession;
+	detail: PortalDealDetail | null | undefined;
+	renderBackLink?: (children: ReactNode) => ReactNode;
+	syncSignableDocumentEnvelope: SyncSignableDocumentEnvelope;
+}
+
+export function PortalDealDetailContent({
+	audience,
+	createEmbeddedSigningSession,
+	detail,
+	renderBackLink,
+	syncSignableDocumentEnvelope,
+}: PortalDealDetailContentProps) {
+	const copy = PORTAL_COPY[audience];
+	const signingDialogsRef = useRef(
+		new Map<DealDocumentInstanceId, HTMLDialogElement>()
+	);
+	const signingFramesRef = useRef(
+		new Map<DealDocumentInstanceId, HTMLIFrameElement>()
 	);
 
 	if (detail === undefined) {
@@ -856,10 +890,19 @@ export function PortalDealDetailPage({
 
 			<div>
 				<Button asChild type="button" variant="ghost">
-					<Link to={copy.backTo}>
-						<Home className="mr-2 size-4" />
-						{copy.backLabel}
-					</Link>
+					{renderBackLink ? (
+						renderBackLink(
+							<>
+								<Home className="mr-2 size-4" />
+								{copy.backLabel}
+							</>
+						)
+					) : (
+						<Link to={copy.backTo}>
+							<Home className="mr-2 size-4" />
+							{copy.backLabel}
+						</Link>
+					)}
 				</Button>
 			</div>
 		</div>

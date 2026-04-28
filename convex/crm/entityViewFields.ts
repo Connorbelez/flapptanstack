@@ -3,6 +3,7 @@ import { resolveEntityViewAdapterContract } from "./entityAdapterRegistry";
 import { materializeFieldDefinition } from "./metadataCompiler";
 import type {
 	EntityViewAdapterContract,
+	FieldReferenceId,
 	NormalizedFieldDefinition,
 	UnifiedRecord,
 	ViewLayout,
@@ -42,8 +43,8 @@ function buildFieldOverridesByName(
 	);
 }
 
-function toSyntheticFieldDefId(fieldName: string): Id<"fieldDefs"> {
-	return `computed:${fieldName}` as Id<"fieldDefs">;
+function toSyntheticFieldDefId(fieldName: string): FieldReferenceId {
+	return `computed:${fieldName}`;
 }
 
 function applyFieldOverridesToDefinition(args: {

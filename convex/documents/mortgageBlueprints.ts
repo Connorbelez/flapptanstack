@@ -4,13 +4,19 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { assertOrgScopedRecordAccess } from "../authz/orgScope";
 import { adminMutation, adminQuery, requirePermission } from "../fluent";
 import { syncListingPublicDocumentsProjection } from "../listings/projection";
-import { mortgageDocumentBlueprintClassValidator } from "./contracts";
 import {
-	buildMortgageDocumentValidationSummary,
-	loadPinnedTemplateSnapshot,
-} from "./templateValidation";
+	ALLOWED_MORTGAGE_SIGNATORY_PLATFORM_ROLES,
+	type MortgageDocumentBlueprintClass,
+	type MortgageDocumentMappingOverrides,
+	type MortgageDocumentValidationSummary,
+	mortgageDocumentBlueprintClassValidator,
+	mortgageDocumentMappingOverridesValidator,
+	SUPPORTED_MORTGAGE_DOCUMENT_VARIABLE_KEYS,
+} from "./contracts";
+import { loadPinnedTemplateSnapshot } from "./templateValidation";
 
 type BlueprintRow = Doc<"mortgageDocumentBlueprints">;
+type TemplateSnapshot = Doc<"documentTemplateVersions">["snapshot"];
 
 async function buildBlueprintListItem(
 	ctx: Pick<QueryCtx | MutationCtx, "db" | "storage">,
@@ -167,10 +173,38 @@ async function syncListingProjectionForPublicBlueprints(
 	}
 }
 
-function buildBlueprintMatchKey(args: {
+function normalizeMappingOverridesForMatchKey(
+	mappingOverrides?: MortgageDocumentMappingOverrides
+) {
+	const variables = [...(mappingOverrides?.variables ?? [])]
+		.sort((left, right) =>
+			left.templateVariableKey.localeCompare(right.templateVariableKey)
+		)
+		.map((row) => ({
+			dealVariableKey: row.dealVariableKey,
+			templateVariableKey: row.templateVariableKey,
+		}));
+	const signatories = [...(mappingOverrides?.signatories ?? [])]
+		.sort((left, right) =>
+			left.templatePlatformRole.localeCompare(right.templatePlatformRole)
+		)
+		.map((row) => ({
+			dealParticipantRole: row.dealParticipantRole,
+			templatePlatformRole: row.templatePlatformRole,
+		}));
+
+	if (variables.length === 0 && signatories.length === 0) {
+		return null;
+	}
+
+	return { signatories, variables };
+}
+
+export function buildBlueprintMatchKey(args: {
 	assetId?: Id<"documentAssets">;
 	class: BlueprintRow["class"];
 	displayName: string;
+	mappingOverrides?: MortgageDocumentMappingOverrides;
 	packageKey?: string;
 	packageLabel?: string;
 	templateId?: Id<"documentTemplates">;
@@ -180,6 +214,9 @@ function buildBlueprintMatchKey(args: {
 		assetId: args.assetId ?? null,
 		class: args.class,
 		displayName: args.displayName,
+		mappingOverrides: normalizeMappingOverridesForMatchKey(
+			args.mappingOverrides
+		),
 		packageKey: args.packageKey ?? null,
 		packageLabel: args.packageLabel ?? null,
 		templateId: args.templateId ?? null,
@@ -218,6 +255,289 @@ async function archiveBlueprintRecord(
 	});
 }
 
+function assertUniqueRows(values: readonly string[], message: string) {
+	const seen = new Set<string>();
+	for (const value of values) {
+		if (seen.has(value)) {
+			throw new ConvexError(message);
+		}
+		seen.add(value);
+	}
+}
+
+export function validateMortgageDocumentMappingOverrides(args: {
+	allowedPlatformRoles: readonly string[];
+	allowedVariableKeys: readonly string[];
+	mappingOverrides?: MortgageDocumentMappingOverrides;
+	requiredPlatformRoles: readonly string[];
+	requiredVariableKeys: readonly string[];
+}) {
+	if (!args.mappingOverrides) {
+		return;
+	}
+
+	assertUniqueRows(
+		args.mappingOverrides.variables.map((row) => row.templateVariableKey),
+		"Duplicate variable mapping override"
+	);
+	assertUniqueRows(
+		args.mappingOverrides.signatories.map((row) => row.templatePlatformRole),
+		"Duplicate signatory mapping override"
+	);
+
+	for (const row of args.mappingOverrides.variables) {
+		if (!args.requiredVariableKeys.includes(row.templateVariableKey)) {
+			throw new ConvexError("Unknown template variable override");
+		}
+		if (!args.allowedVariableKeys.includes(row.dealVariableKey)) {
+			throw new ConvexError("Unsupported variable mapping target");
+		}
+	}
+
+	for (const row of args.mappingOverrides.signatories) {
+		if (!args.requiredPlatformRoles.includes(row.templatePlatformRole)) {
+			throw new ConvexError("Unknown template signatory override");
+		}
+		if (!args.allowedPlatformRoles.includes(row.dealParticipantRole)) {
+			throw new ConvexError("Unsupported signatory mapping target");
+		}
+	}
+}
+
+export function buildEffectiveMortgageDocumentMappings(args: {
+	mappingOverrides?: MortgageDocumentMappingOverrides;
+	requiredPlatformRoles: readonly string[];
+	requiredVariableKeys: readonly string[];
+}) {
+	const variableOverrides = new Map(
+		(args.mappingOverrides?.variables ?? []).map((row) => [
+			row.templateVariableKey,
+			row.dealVariableKey,
+		])
+	);
+	const signatoryOverrides = new Map(
+		(args.mappingOverrides?.signatories ?? []).map((row) => [
+			row.templatePlatformRole,
+			row.dealParticipantRole,
+		])
+	);
+
+	return {
+		signatories: args.requiredPlatformRoles.map((templatePlatformRole) => ({
+			dealParticipantRole:
+				signatoryOverrides.get(templatePlatformRole) ?? templatePlatformRole,
+			templatePlatformRole,
+		})),
+		variables: args.requiredVariableKeys.map((templateVariableKey) => ({
+			dealVariableKey:
+				variableOverrides.get(templateVariableKey) ?? templateVariableKey,
+			templateVariableKey,
+		})),
+	};
+}
+
+function discoverMortgageDocumentTemplateRequirements(args: {
+	documentClass: MortgageDocumentBlueprintClass;
+	snapshot: TemplateSnapshot;
+}) {
+	const requiredVariableKeys = [
+		...new Set(
+			args.snapshot.fields
+				.filter(
+					(field): field is typeof field & { variableKey: string } =>
+						field.type === "interpolable" &&
+						typeof field.variableKey === "string"
+				)
+				.map((field) => field.variableKey)
+		),
+	];
+	const requiredPlatformRoles = [
+		...new Set(
+			args.snapshot.signatories.map((signatory) => signatory.platformRole)
+		),
+	];
+	const containsSignableFields = args.snapshot.fields.some(
+		(field) => field.type === "signable"
+	);
+
+	if (
+		args.documentClass === "private_templated_non_signable" &&
+		containsSignableFields
+	) {
+		throw new ConvexError(
+			"Non-signable private templated drafts cannot contain signable fields."
+		);
+	}
+
+	if (args.documentClass === "private_templated_signable") {
+		if (!containsSignableFields) {
+			throw new ConvexError(
+				"Signable private templated drafts must contain at least one signable field."
+			);
+		}
+		if (requiredPlatformRoles.length === 0) {
+			throw new ConvexError(
+				"Signable private templated drafts must contain at least one platform role."
+			);
+		}
+	}
+
+	return {
+		containsSignableFields,
+		requiredPlatformRoles,
+		requiredVariableKeys,
+	};
+}
+
+export function buildOverrideAwareMortgageDocumentValidationSummary(args: {
+	documentClass: MortgageDocumentBlueprintClass;
+	mappingOverrides?: MortgageDocumentMappingOverrides;
+	snapshot: TemplateSnapshot;
+}): MortgageDocumentValidationSummary {
+	const requirements = discoverMortgageDocumentTemplateRequirements(args);
+	validateMortgageDocumentMappingOverrides({
+		allowedPlatformRoles: ALLOWED_MORTGAGE_SIGNATORY_PLATFORM_ROLES,
+		allowedVariableKeys: SUPPORTED_MORTGAGE_DOCUMENT_VARIABLE_KEYS,
+		mappingOverrides: args.mappingOverrides,
+		requiredPlatformRoles: requirements.requiredPlatformRoles,
+		requiredVariableKeys: requirements.requiredVariableKeys,
+	});
+	const effectiveMappings = buildEffectiveMortgageDocumentMappings({
+		mappingOverrides: args.mappingOverrides,
+		requiredPlatformRoles: requirements.requiredPlatformRoles,
+		requiredVariableKeys: requirements.requiredVariableKeys,
+	});
+	const supportedVariableKeys: readonly string[] =
+		SUPPORTED_MORTGAGE_DOCUMENT_VARIABLE_KEYS;
+	const supportedPlatformRoles: readonly string[] =
+		ALLOWED_MORTGAGE_SIGNATORY_PLATFORM_ROLES;
+	const unsupportedVariableKeys = effectiveMappings.variables
+		.filter(
+			(mapping) => !supportedVariableKeys.includes(mapping.dealVariableKey)
+		)
+		.map((mapping) => mapping.templateVariableKey);
+	const unsupportedPlatformRoles = effectiveMappings.signatories
+		.filter(
+			(mapping) => !supportedPlatformRoles.includes(mapping.dealParticipantRole)
+		)
+		.map((mapping) => mapping.templatePlatformRole);
+
+	if (unsupportedVariableKeys.length > 0) {
+		throw new ConvexError(
+			`Template uses unsupported mortgage variables: ${unsupportedVariableKeys.join(", ")}`
+		);
+	}
+
+	if (unsupportedPlatformRoles.length > 0) {
+		throw new ConvexError(
+			`Template uses unsupported signatory roles: ${unsupportedPlatformRoles.join(", ")}`
+		);
+	}
+
+	return {
+		containsSignableFields: requirements.containsSignableFields,
+		requiredPlatformRoles: requirements.requiredPlatformRoles,
+		requiredVariableKeys: requirements.requiredVariableKeys,
+		unsupportedPlatformRoles,
+		unsupportedVariableKeys,
+	};
+}
+
+export function buildPreviewMortgageDocumentMappingSummary(args: {
+	documentClass: MortgageDocumentBlueprintClass;
+	mappingOverrides?: MortgageDocumentMappingOverrides;
+	snapshot: TemplateSnapshot;
+}) {
+	const requirements = discoverMortgageDocumentTemplateRequirements(args);
+	validateMortgageDocumentMappingOverrides({
+		allowedPlatformRoles: ALLOWED_MORTGAGE_SIGNATORY_PLATFORM_ROLES,
+		allowedVariableKeys: SUPPORTED_MORTGAGE_DOCUMENT_VARIABLE_KEYS,
+		mappingOverrides: args.mappingOverrides,
+		requiredPlatformRoles: requirements.requiredPlatformRoles,
+		requiredVariableKeys: requirements.requiredVariableKeys,
+	});
+	const effectiveMappings = buildEffectiveMortgageDocumentMappings({
+		mappingOverrides: args.mappingOverrides,
+		requiredPlatformRoles: requirements.requiredPlatformRoles,
+		requiredVariableKeys: requirements.requiredVariableKeys,
+	});
+	const supportedVariableKeys: readonly string[] =
+		SUPPORTED_MORTGAGE_DOCUMENT_VARIABLE_KEYS;
+	const supportedPlatformRoles: readonly string[] =
+		ALLOWED_MORTGAGE_SIGNATORY_PLATFORM_ROLES;
+
+	return {
+		effectiveMappings,
+		validationSummary: {
+			containsSignableFields: requirements.containsSignableFields,
+			requiredPlatformRoles: requirements.requiredPlatformRoles,
+			requiredVariableKeys: requirements.requiredVariableKeys,
+			unsupportedPlatformRoles: effectiveMappings.signatories
+				.filter(
+					(mapping) =>
+						!supportedPlatformRoles.includes(mapping.dealParticipantRole)
+				)
+				.map((mapping) => mapping.templatePlatformRole),
+			unsupportedVariableKeys: effectiveMappings.variables
+				.filter(
+					(mapping) => !supportedVariableKeys.includes(mapping.dealVariableKey)
+				)
+				.map((mapping) => mapping.templateVariableKey),
+		},
+	};
+}
+
+export function buildMortgageTemplateClassCompatibility(
+	snapshot: TemplateSnapshot
+) {
+	const containsSignableFields = snapshot.fields.some(
+		(field) => field.type === "signable"
+	);
+	const requiredPlatformRoles = [
+		...new Set(snapshot.signatories.map((signatory) => signatory.platformRole)),
+	];
+
+	return {
+		private_templated_non_signable: containsSignableFields
+			? {
+					compatible: false,
+					reason:
+						"Signable templates cannot be attached as read-only documents.",
+				}
+			: { compatible: true },
+		private_templated_signable: getSignableTemplateCompatibility({
+			containsSignableFields,
+			requiredPlatformRoles,
+		}),
+	};
+}
+
+function getSignableTemplateCompatibility(args: {
+	containsSignableFields: boolean;
+	requiredPlatformRoles: readonly string[];
+}) {
+	if (!args.containsSignableFields) {
+		return {
+			compatible: false,
+			reason: "Signable templates must contain at least one signable field.",
+		};
+	}
+	if (args.requiredPlatformRoles.length === 0) {
+		return {
+			compatible: false,
+			reason: "Signable templates must contain at least one platform role.",
+		};
+	}
+	return { compatible: true };
+}
+
+export function resolveReplacementMappingOverrides(args: {
+	existingMappingOverrides?: MortgageDocumentMappingOverrides;
+	mappingOverrides?: MortgageDocumentMappingOverrides;
+}) {
+	return args.mappingOverrides ?? args.existingMappingOverrides;
+}
+
 async function insertBlueprint(
 	ctx: MutationCtx,
 	args: {
@@ -228,6 +548,7 @@ async function insertBlueprint(
 		description?: string;
 		displayName: string;
 		displayOrder: number;
+		mappingOverrides?: MortgageDocumentMappingOverrides;
 		mortgageId: Id<"mortgages">;
 		packageKey?: string;
 		packageLabel?: string;
@@ -247,6 +568,7 @@ async function insertBlueprint(
 		description: args.description,
 		displayName: args.displayName,
 		displayOrder: args.displayOrder,
+		mappingOverrides: args.mappingOverrides,
 		mortgageId: args.mortgageId,
 		packageKey: args.packageKey,
 		packageLabel: args.packageLabel,
@@ -385,6 +707,74 @@ export const listForMortgage = blueprintQuery
 	})
 	.public();
 
+export const listAttachableTemplates = blueprintQuery
+	.input({})
+	.handler(async (ctx) => {
+		const templates = await ctx.db
+			.query("documentTemplates")
+			.order("desc")
+			.collect();
+		const attachableTemplates = await Promise.all(
+			templates.map(async (template) => {
+				if (typeof template.currentPublishedVersion !== "number") {
+					return null;
+				}
+				const currentPublishedVersion = template.currentPublishedVersion;
+
+				const templateVersion = await ctx.db
+					.query("documentTemplateVersions")
+					.withIndex("by_template", (query) =>
+						query
+							.eq("templateId", template._id)
+							.eq("version", currentPublishedVersion)
+					)
+					.first();
+				if (!templateVersion) {
+					return null;
+				}
+
+				return {
+					compatibility: buildMortgageTemplateClassCompatibility(
+						templateVersion.snapshot
+					),
+					currentPublishedVersion,
+					description: template.description ?? null,
+					name: template.name,
+					templateId: template._id,
+				};
+			})
+		);
+
+		return attachableTemplates.filter((template) => template !== null);
+	})
+	.public();
+
+export const previewTemplateMappings = blueprintQuery
+	.input({
+		class: mortgageDocumentBlueprintClassValidator,
+		mappingOverrides: v.optional(mortgageDocumentMappingOverridesValidator),
+		templateId: v.id("documentTemplates"),
+		templateVersion: v.optional(v.number()),
+	})
+	.handler(async (ctx, args) => {
+		const templateSnapshot = await loadPinnedTemplateSnapshot(ctx, {
+			templateId: args.templateId,
+			templateVersion: args.templateVersion,
+		});
+		const previewSummary = buildPreviewMortgageDocumentMappingSummary({
+			documentClass: args.class,
+			mappingOverrides: args.mappingOverrides,
+			snapshot: templateSnapshot.snapshot,
+		});
+		return {
+			effectiveMappings: previewSummary.effectiveMappings,
+			templateName: templateSnapshot.template.name,
+			templateVersion: templateSnapshot.templateVersion,
+			validationSummary: previewSummary.validationSummary,
+		};
+	})
+	.public();
+
 export const archiveBlueprint = blueprintMutation
 	.input({
 		blueprintId: v.id("mortgageDocumentBlueprints"),
@@ -479,6 +869,7 @@ export const createStaticBlueprint = blueprintMutation
 					assetId: blueprint.assetId,
 					class: blueprint.class,
 					displayName: blueprint.displayName,
+					mappingOverrides: blueprint.mappingOverrides,
 					packageKey: blueprint.packageKey,
 					packageLabel: blueprint.packageLabel,
 					templateId: blueprint.templateId,
@@ -529,6 +920,7 @@ export const attachTemplateVersion = blueprintMutation
 		class: mortgageDocumentBlueprintClassValidator,
 		description: v.optional(v.string()),
 		displayName: v.optional(v.string()),
+		mappingOverrides: v.optional(mortgageDocumentMappingOverridesValidator),
 		mortgageId: v.id("mortgages"),
 		packageKey: v.optional(v.string()),
 		packageLabel: v.optional(v.string()),
@@ -557,15 +949,18 @@ export const attachTemplateVersion = blueprintMutation
 					templateVersion: args.templateVersion,
 				}),
 			]);
-		const validationSummary = buildMortgageDocumentValidationSummary({
-			documentClass: args.class,
-			snapshot: templateSnapshot.snapshot,
-		});
+		const validationSummary =
+			buildOverrideAwareMortgageDocumentValidationSummary({
+				documentClass: args.class,
+				mappingOverrides: args.mappingOverrides,
+				snapshot: templateSnapshot.snapshot,
+			});
 		const displayName =
 			args.displayName?.trim() || templateSnapshot.template.name;
 		const matchKey = buildBlueprintMatchKey({
 			class: args.class,
 			displayName,
+			mappingOverrides: args.mappingOverrides,
 			packageKey: args.packageKey,
 			packageLabel: args.packageLabel,
 			templateId: templateSnapshot.template._id,
@@ -577,6 +972,7 @@ export const attachTemplateVersion = blueprintMutation
 					assetId: blueprint.assetId,
 					class: blueprint.class,
 					displayName: blueprint.displayName,
+					mappingOverrides: blueprint.mappingOverrides,
 					packageKey: blueprint.packageKey,
 					packageLabel: blueprint.packageLabel,
 					templateId: blueprint.templateId,
@@ -600,6 +996,7 @@ export const attachTemplateVersion = blueprintMutation
 			description: args.description,
 			displayName,
 			displayOrder,
+			mappingOverrides: args.mappingOverrides,
 			mortgageId: args.mortgageId,
 			packageKey: args.packageKey,
 			packageLabel: args.packageLabel,
@@ -666,6 +1063,7 @@ export const replaceStaticBlueprint = blueprintMutation
 					assetId: active.assetId,
 					class: active.class,
 					displayName: active.displayName,
+					mappingOverrides: active.mappingOverrides,
 					packageKey: active.packageKey,
 					packageLabel: active.packageLabel,
 					templateId: active.templateId,
@@ -722,6 +1120,7 @@ export const replaceTemplateBlueprint = blueprintMutation
 		category: v.optional(v.string()),
 		description: v.optional(v.string()),
 		displayName: v.optional(v.string()),
+		mappingOverrides: v.optional(mortgageDocumentMappingOverridesValidator),
 		templateId: v.id("documentTemplates"),
 		templateVersion: v.optional(v.number()),
 	})
@@ -746,15 +1145,22 @@ export const replaceTemplateBlueprint = blueprintMutation
 					templateVersion: args.templateVersion,
 				}),
 			]);
-		const validationSummary = buildMortgageDocumentValidationSummary({
-			documentClass: blueprint.class,
-			snapshot: templateSnapshot.snapshot,
+		const replacementMappingOverrides = resolveReplacementMappingOverrides({
+			existingMappingOverrides: blueprint.mappingOverrides,
+			mappingOverrides: args.mappingOverrides,
 		});
+		const validationSummary =
+			buildOverrideAwareMortgageDocumentValidationSummary({
+				documentClass: blueprint.class,
+				mappingOverrides: replacementMappingOverrides,
+				snapshot: templateSnapshot.snapshot,
+			});
 		const replacementDisplayName =
 			args.displayName?.trim() || templateSnapshot.template.name;
 		const matchKey = buildBlueprintMatchKey({
 			class: blueprint.class,
 			displayName: replacementDisplayName,
+			mappingOverrides: replacementMappingOverrides,
 			packageKey: blueprint.packageKey,
 			packageLabel: blueprint.packageLabel,
 			templateId: templateSnapshot.template._id,
@@ -767,6 +1173,7 @@ export const replaceTemplateBlueprint = blueprintMutation
 					assetId: active.assetId,
 					class: active.class,
 					displayName: active.displayName,
+					mappingOverrides: active.mappingOverrides,
 					packageKey: active.packageKey,
 					packageLabel: active.packageLabel,
 					templateId: active.templateId,
@@ -790,6 +1197,7 @@ export const replaceTemplateBlueprint = blueprintMutation
 			description: args.description ?? blueprint.description,
 			displayName: replacementDisplayName,
 			displayOrder: blueprint.displayOrder,
+			mappingOverrides: replacementMappingOverrides,
 			mortgageId: blueprint.mortgageId,
 			packageKey: blueprint.packageKey,
 			packageLabel: blueprint.packageLabel,

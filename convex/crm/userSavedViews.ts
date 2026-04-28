@@ -3,9 +3,11 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { auditLog } from "../auditLog";
 import { crmMutation, crmQuery } from "../fluent";
+import { resolveEntityViewAdapterContract } from "./entityAdapterRegistry";
 import { isValidOperatorForFieldType } from "./filterOperatorValidation";
 import {
 	aggregatePresetValidator,
+	fieldReferenceIdValidator,
 	recordSortValidator,
 	savedViewFilterValidator,
 	viewTypeValidator,
@@ -48,7 +50,7 @@ async function validateObjectAccess(
 async function validateFieldOwnership(
 	ctx: MutationCtx,
 	args: {
-		fieldIds: Id<"fieldDefs">[];
+		fieldIds: string[];
 		objectDefId: Id<"objectDefs">;
 	}
 ) {
@@ -56,18 +58,35 @@ async function validateFieldOwnership(
 		return;
 	}
 
-	const fieldDefs = await ctx.db
-		.query("fieldDefs")
-		.withIndex("by_object", (query) =>
-			query.eq("objectDefId", args.objectDefId)
-		)
-		.collect();
+	const [objectDef, fieldDefs] = await Promise.all([
+		ctx.db.get(args.objectDefId),
+		ctx.db
+			.query("fieldDefs")
+			.withIndex("by_object", (query) =>
+				query.eq("objectDefId", args.objectDefId)
+			)
+			.collect(),
+	]);
+	if (!objectDef) {
+		throw new ConvexError("Object not found or access denied");
+	}
 	const fieldIds = new Set(
 		fieldDefs.map((fieldDef) => fieldDef._id.toString())
 	);
+	const adapterContract = resolveEntityViewAdapterContract({
+		currentLayout: "table",
+		fieldDefs,
+		objectDef,
+		objectDefId: args.objectDefId,
+	});
+	const computedFieldIds = new Set(
+		adapterContract.computedFields.map(
+			(computedField) => `computed:${computedField.fieldName}`
+		)
+	);
 
 	for (const fieldId of args.fieldIds) {
-		if (!fieldIds.has(fieldId.toString())) {
+		if (!(fieldIds.has(fieldId) || computedFieldIds.has(fieldId))) {
 			throw new ConvexError(
 				`Field ${fieldId} does not belong to this object definition`
 			);
@@ -279,8 +298,8 @@ export const createUserSavedView = crmMutation
 		sourceViewDefId: v.optional(v.id("viewDefs")),
 		name: v.string(),
 		viewType: viewTypeValidator,
-		visibleFieldIds: v.optional(v.array(v.id("fieldDefs"))),
-		fieldOrder: v.optional(v.array(v.id("fieldDefs"))),
+		visibleFieldIds: v.optional(v.array(fieldReferenceIdValidator)),
+		fieldOrder: v.optional(v.array(fieldReferenceIdValidator)),
 		filters: v.optional(v.array(savedViewFilterValidator)),
 		groupByFieldId: v.optional(v.id("fieldDefs")),
 		sort: v.optional(v.union(recordSortValidator, v.null())),
@@ -386,8 +405,8 @@ export const updateUserSavedView = crmMutation
 	.input({
 		userSavedViewId: v.id("userSavedViews"),
 		name: v.optional(v.string()),
-		visibleFieldIds: v.optional(v.array(v.id("fieldDefs"))),
-		fieldOrder: v.optional(v.array(v.id("fieldDefs"))),
+		visibleFieldIds: v.optional(v.array(fieldReferenceIdValidator)),
+		fieldOrder: v.optional(v.array(fieldReferenceIdValidator)),
 		filters: v.optional(v.array(savedViewFilterValidator)),
 		groupByFieldId: v.optional(v.id("fieldDefs")),
 		sort: v.optional(v.union(recordSortValidator, v.null())),

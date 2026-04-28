@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; padding: 32px; background: #f8fafc; color: #0f172a; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    h2 { margin: 24px 0 8px; font-size: 16px; }
+    p { margin: 0 0 16px; color: #475569; }
+    .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06); }
+    .label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; margin-bottom: 6px; }
+    .title { font-weight: 700; margin-bottom: 8px; }
+    ul { margin: 8px 0 0 18px; padding: 0; color: #334155; }
+    li { margin: 4px 0; }
+    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; font-size: 12px; color: #475569; }
+    code { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .badge { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; background: #dcfce7; color: #166534; }
+    .warn { background: #fef3c7; color: #92400e; }
+  </style>
+</head>
+<body>
+  <h1>Variable Model Section</h1>
+  <p>Variables become a production contract for what data exists at deal lock, not just an editable demo list.</p>
+
+  <div class="columns">
+    <div class="card">
+      <div class="label">Canonical</div>
+      <div class="title">Read-only lock-time variables</div>
+      <ul>
+        <li>Generated from a typed registry, not manually seeded rows</li>
+        <li>Visible in <code>/admin/document-engine/variables</code></li>
+        <li>Available in the editor variable picker</li>
+        <li>Carry source path, type, nullability, description, sample value</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="label">Custom</div>
+      <div class="title">Admin-created aliases</div>
+      <ul>
+        <li>Allowed only when mapped to canonical source variables</li>
+        <li>Cannot invent unavailable data</li>
+        <li>Can provide business-friendly names and formatting</li>
+        <li>Publish validation resolves aliases back to canonical sources</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Package Variable Availability Matrix</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Source</th>
+        <th>Availability</th>
+        <th>Used By</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>lender_primary_full_name</code></td>
+        <td>new deal row → lender/user projection</td>
+        <td><span class="badge">Required at lock</span></td>
+        <td>Standalone commitment letter, lender envelope group</td>
+      </tr>
+      <tr>
+        <td><code>deal_investment_amount</code></td>
+        <td>selected fractions × mortgage principal</td>
+        <td><span class="badge">Computed at lock</span></td>
+        <td>Funding agreement</td>
+      </tr>
+      <tr>
+        <td><code>lawyer_primary_full_name</code></td>
+        <td>selected lawyer entry</td>
+        <td><span class="badge warn">Nullable until selected</span></td>
+        <td>Lawyer approval envelope group</td>
+      </tr>
+      <tr>
+        <td><code>mortgage_principal</code></td>
+        <td>mortgage table</td>
+        <td><span class="badge">Guaranteed</span></td>
+        <td>All generated documents</td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>

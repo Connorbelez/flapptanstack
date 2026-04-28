@@ -51,7 +51,12 @@ export function FieldRenderer({
 	const metadataBadge = resolveMetadataBadge(field);
 
 	return (
-		<div className={cn("space-y-3 rounded-lg border bg-card p-4", className)}>
+		<div
+			className={cn(
+				"min-w-0 space-y-2 border-border/60 border-t py-3",
+				className
+			)}
+		>
 			<div className="flex items-start justify-between gap-3">
 				<p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
 					{resolvedLabel}

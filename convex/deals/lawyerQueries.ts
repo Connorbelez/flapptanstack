@@ -118,6 +118,13 @@ async function lawyerAccessPolicyForDeal(
 	ctx: LawyerQueryCtx,
 	deal: Doc<"deals">
 ): Promise<LawyerAccessPolicy | null> {
+	if (ctx.viewer.isFairLendAdmin) {
+		return {
+			accessRole: "platform_lawyer",
+			accessState: "completed_read_only",
+		};
+	}
+
 	const rows = await ctx.db
 		.query("dealAccess")
 		.withIndex("by_user_and_deal", (query) =>

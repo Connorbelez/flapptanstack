@@ -14,28 +14,30 @@ export function MarketplaceListingDetailPage({
 	portalId,
 	snapshot,
 }: MarketplaceListingDetailPageProps) {
-	const startCheckout = useAction(api.dealLocks.actions.startCheckout);
+	const startCheckout = useAction(
+		api.checkout.actions.startMarketplaceCheckout
+	);
 	const listing = buildMarketplaceListingDetailModel(snapshot);
 
 	return (
 		<ListingDetailPage
+			backHref="/listings"
+			buildSimilarListingHref={(listingId) => `/listings/${listingId}`}
 			listing={listing}
-			listingsIndexTo="/listings"
 			mode={listing.checkout ? "interactive" : "readOnly"}
 			onStartCheckout={
 				listing.checkout
 					? async (selection) => {
-							const result = await startCheckout({
-								fractionalShareUnits: selection.fractionalShareUnits,
-								listingId: snapshot.listing.id as Id<"listings">,
-								portalId,
-								selectedLawyerAuthId: selection.selectedLawyerAuthId,
-								selectedLawyerType: selection.selectedLawyerType,
+							return await startCheckout({
+								listingId: selection.listingId as Id<"listings">,
+								portalId: selection.portalId as Id<"portals">,
+								requestedFractions: selection.requestedFractions,
+								selectedLawyer: selection.selectedLawyer,
 							});
-							window.location.assign(result.url);
 						}
 					: undefined
 			}
+			portalId={portalId}
 		/>
 	);
 }

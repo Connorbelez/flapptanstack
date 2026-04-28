@@ -292,5 +292,21 @@ describe("deal dedicated details", () => {
 			screen.getByRole("button", { name: "Retry package generation" })
 		);
 		expect(retryPackageGeneration).toHaveBeenCalledWith({ dealId: "deal_1" });
+
+		fireEvent.pointerDown(screen.getByRole("button", { name: "Open portal" }));
+		expect(
+			screen.getByRole("menuitem", { name: "Broker portal" }).getAttribute("href")
+		).toBe("/broker/deals/deal_1");
+		expect(
+			screen.getByRole("menuitem", { name: "Lender portal" }).getAttribute("href")
+		).toBe("/lender/deals/deal_1");
+		expect(
+			screen
+				.getByRole("menuitem", { name: "Borrower portal" })
+				.getAttribute("href")
+		).toBe("/borrower/deals/deal_1");
+		expect(
+			screen.getByRole("menuitem", { name: "Lawyer portal" }).getAttribute("href")
+		).toBe("/lawyer/deals/deal_1");
 	});
 });

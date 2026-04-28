@@ -14,16 +14,16 @@ import {
 	PopoverTrigger,
 } from "#/components/ui/popover";
 import { ScrollArea } from "#/components/ui/scroll-area";
-import type { Id } from "../../../../convex/_generated/dataModel";
+import type { FieldReferenceId } from "../../../../convex/crm/types";
 import type { AdminViewSchemaColumn } from "./admin-view-types";
 
 interface AdminTableColumnVisibilityPopoverProps {
 	readonly columns: readonly AdminViewSchemaColumn[];
-	readonly defaultVisibleFieldIds: readonly Id<"fieldDefs">[];
+	readonly defaultVisibleFieldIds: readonly FieldReferenceId[];
 	readonly disabled?: boolean;
 	readonly onRestoreDefaults: () => void;
 	readonly onToggleVisibility: (
-		fieldDefId: Id<"fieldDefs">,
+		fieldDefId: FieldReferenceId,
 		nextVisible: boolean
 	) => void;
 }
@@ -62,8 +62,11 @@ export function AdminTableColumnVisibilityPopover({
 					Columns
 				</Button>
 			</PopoverTrigger>
-			<PopoverContent align="end" className="w-80 p-0">
-				<div className="p-4 pb-3">
+			<PopoverContent
+				align="end"
+				className="flex max-h-[min(80vh,40rem)] w-80 flex-col overflow-hidden p-0"
+			>
+				<div className="shrink-0 p-4 pb-3">
 					<PopoverHeader>
 						<PopoverTitle>Visible columns</PopoverTitle>
 						<PopoverDescription>
@@ -72,7 +75,7 @@ export function AdminTableColumnVisibilityPopover({
 					</PopoverHeader>
 				</div>
 
-				<div className="px-4 pb-3">
+				<div className="shrink-0 px-4 pb-3">
 					<div className="relative">
 						<Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 						<Input
@@ -84,7 +87,7 @@ export function AdminTableColumnVisibilityPopover({
 					</div>
 				</div>
 
-				<ScrollArea className="max-h-72 px-4 pb-4">
+				<ScrollArea className="min-h-0 flex-1 px-4 pb-4">
 					<div className="space-y-2">
 						{filteredColumns.map((column) => {
 							const isDefaultVisible = defaultVisibleSet.has(
@@ -128,7 +131,7 @@ export function AdminTableColumnVisibilityPopover({
 					</div>
 				</ScrollArea>
 
-				<div className="flex items-center justify-between border-t px-4 py-3">
+				<div className="flex shrink-0 items-center justify-between border-t px-4 py-3">
 					<p className="text-muted-foreground text-xs">
 						{visibleCount} visible
 					</p>

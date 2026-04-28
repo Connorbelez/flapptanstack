@@ -113,8 +113,11 @@ function MarketplacePublicDocumentsE2eRoute() {
 
 	return (
 		<ListingDetailPage
+			backHref="/e2e/marketplace-public-documents"
+			buildSimilarListingHref={(listingId) =>
+				`/e2e/marketplace-public-documents/${listingId}`
+			}
 			listing={listing}
-			listingsIndexTo="/e2e/marketplace-public-documents"
 			mode="readOnly"
 		/>
 	);

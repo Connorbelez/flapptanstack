@@ -8,6 +8,7 @@ import {
 	Trash2,
 	Upload,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "#/components/ui/button";
@@ -17,6 +18,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import type { RecordAttachmentView } from "../../../../convex/crm/recordAttachments";
 
 interface RecordAttachmentsPanelProps {
+	readonly headerAction?: ReactNode;
 	readonly objectDefId: Id<"objectDefs">;
 	readonly recordId: string;
 	readonly recordKind: "record" | "native";
@@ -29,6 +31,7 @@ const SKELETON_IDS = [
 ] as const;
 
 export function RecordAttachmentsPanel({
+	headerAction,
 	objectDefId,
 	recordId,
 	recordKind,
@@ -121,7 +124,8 @@ export function RecordAttachmentsPanel({
 						Drop receipts, scans, or supporting docs — stored in Convex storage.
 					</p>
 				</div>
-				<div>
+				<div className="flex flex-wrap items-center gap-2">
+					{headerAction}
 					<input
 						className="hidden"
 						multiple

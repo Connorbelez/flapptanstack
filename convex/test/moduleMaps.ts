@@ -287,6 +287,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../documents/dealPackages.ts"),
 	"/convex/documents/mortgageBlueprints.ts": async () =>
 		await import("./../documents/mortgageBlueprints.ts"),
+	"/convex/documents/mortgagePackages.ts": async () =>
+		await import("./../documents/mortgagePackages.ts"),
 	"/convex/documents/signature/documenso.ts": async () =>
 		await import("./../documents/signature/documenso.ts"),
 	"/convex/documents/signature/provider.ts": async () =>
@@ -299,6 +301,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../documentEngine/generation.ts"),
 	"/convex/documentEngine/generationHelpers.ts": async () =>
 		await import("./../documentEngine/generationHelpers.ts"),
+	"/convex/documentEngine/packages.ts": async () =>
+		await import("./../documentEngine/packages.ts"),
 	"/convex/documentEngine/systemVariables.ts": async () =>
 		await import("./../documentEngine/systemVariables.ts"),
 	"/convex/documentEngine/templateGroups.ts": async () =>
@@ -311,6 +315,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../documentEngine/templateVersions.ts"),
 	"/convex/documentEngine/validators.ts": async () =>
 		await import("./../documentEngine/validators.ts"),
+	"/convex/documentEngine/variableRegistry.ts": async () =>
+		await import("./../documentEngine/variableRegistry.ts"),
 	"/convex/engine/auditJournal.ts": async () =>
 		await import("./../engine/auditJournal.ts"),
 	"/convex/engine/commands.ts": async () =>

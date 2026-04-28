@@ -16,6 +16,7 @@ import {
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
@@ -104,6 +105,10 @@ export function DocumentEngineTemplatesPage({
 					<DialogContent>
 						<DialogHeader>
 							<DialogTitle>Create Template</DialogTitle>
+							<DialogDescription>
+								Choose a base PDF and name the template before placing fields in
+								the designer.
+							</DialogDescription>
 						</DialogHeader>
 						<div className="space-y-4">
 							<div>

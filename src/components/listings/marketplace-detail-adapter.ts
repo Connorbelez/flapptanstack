@@ -25,6 +25,7 @@ const HERO_TONES: readonly ListingHeroImage["tone"][] = [
 	"sage",
 ];
 const WORD_BOUNDARY_PATTERN = /[_\s-]+/g;
+const CENTS_PER_DOLLAR = 100;
 
 function pickHeroTone(index: number): ListingHeroImage["tone"] {
 	return HERO_TONES[index % HERO_TONES.length] ?? "stone";
@@ -45,6 +46,18 @@ function formatCompactCurrency(value: number) {
 		notation: "compact",
 		style: "currency",
 	}).format(value);
+}
+
+function centsToDollars(cents: number) {
+	return cents / CENTS_PER_DOLLAR;
+}
+
+function formatCentsAsCurrency(cents: number) {
+	return formatCurrency(centsToDollars(cents));
+}
+
+function formatCentsAsCompactCurrency(cents: number) {
+	return formatCompactCurrency(centsToDollars(cents));
 }
 
 function formatPercent(value: number, digits = 2) {
@@ -191,7 +204,7 @@ function buildComparables(
 			id: comparable.id,
 			price:
 				comparable.salePrice !== null
-					? formatCurrency(comparable.salePrice)
+					? formatCentsAsCurrency(comparable.salePrice)
 					: "Unavailable",
 			squareFeet:
 				comparable.squareFootage !== null
@@ -397,7 +410,7 @@ function buildSimilarListings(
 		id: listing.id,
 		imageUrl: listing.heroImageUrl,
 		metrics: [formatPercent(listing.interestRate), `${listing.ltvRatio}% LTV`],
-		price: formatCompactCurrency(listing.principal),
+		price: formatCentsAsCompactCurrency(listing.principal),
 		title: listing.title,
 		tone: pickHeroTone(index),
 	}));
@@ -407,33 +420,36 @@ function buildCheckoutContract(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>,
 	perFractionAmount: number
 ): ListingDetailData["checkout"] {
-	const checkout = detail.checkout;
-	if (!checkout) {
+	if (!detail.investment.checkoutReady) {
 		return undefined;
 	}
 
+	const availableFractions = wholeDecilesFromLedger(
+		detail.investment.availableFractions
+	);
+	const minimumFractions = Math.min(1, availableFractions);
+
 	return {
-		defaultFractions: checkout.defaultFractions,
-		disabledReason: checkout.disabledReason,
-		isEligible: checkout.isEligible,
-		lawyers: checkout.lawyers.map((lawyer) => ({
-			detail: lawyer.detail,
+		defaultFractions: Math.max(minimumFractions, 1),
+		disabledReason:
+			availableFractions > 0 ? null : "No fractions are currently available.",
+		isEligible: availableFractions > 0,
+		lawyers: detail.lawyers.map((lawyer) => ({
+			detail: titleCase(lawyer.role),
 			email: lawyer.email,
-			firm: lawyer.firm,
-			id: lawyer.id,
-			label: lawyer.label,
-			type: lawyer.type,
+			firm: null,
+			id: lawyer.authId,
+			label: lawyer.displayName,
+			type: "platform_lawyer",
 		})),
 		lockFee: {
-			amountCents: checkout.lockFee.amountCents,
+			amountCents: 25_000,
 			currency: "CAD",
-			display: checkout.lockFee.display,
+			display: formatCurrency(250),
 		},
-		maximumFractions: checkout.maximumFractions,
-		minimumFractions: checkout.minimumFractions,
-		perFractionAmount: Math.round(
-			checkout.perFractionAmount ?? perFractionAmount
-		),
+		maximumFractions: availableFractions,
+		minimumFractions,
+		perFractionAmount: Math.round(perFractionAmount),
 	};
 }
 
@@ -446,7 +462,7 @@ export function buildMarketplaceListingDetailModel(
 	const totalDecilesExact = ledgerUnitsToDecilesExact(totalLedger);
 	const totalDecilesForPricing = Math.max(totalDecilesExact, 1);
 	const perFractionAmount = Math.round(
-		detail.listing.principal / totalDecilesForPricing
+		centsToDollars(detail.listing.principal) / totalDecilesForPricing
 	);
 	const availableDecilesWhole = wholeDecilesFromLedger(availableLedger);
 	const totalDecilesWhole = wholeDecilesFromLedger(totalLedger);
@@ -461,7 +477,7 @@ export function buildMarketplaceListingDetailModel(
 						note: "Projected value from the latest published appraisal package.",
 						secondaryLabel: "Effective",
 						secondaryValue: formatDate(latestAppraisal.effectiveDate),
-						value: formatCurrency(latestAppraisal.valueAsIfComplete),
+						value: formatCentsAsCurrency(latestAppraisal.valueAsIfComplete),
 					}
 				: {
 						label: "Projected Value",
@@ -475,7 +491,7 @@ export function buildMarketplaceListingDetailModel(
 						note: titleCase(latestAppraisal.type),
 						secondaryLabel: "Effective",
 						secondaryValue: formatDate(latestAppraisal.effectiveDate),
-						value: formatCurrency(latestAppraisal.valueAsIs),
+						value: formatCentsAsCurrency(latestAppraisal.valueAsIs),
 					}
 				: {
 						label: "As-Is Appraisal",
@@ -484,7 +500,10 @@ export function buildMarketplaceListingDetailModel(
 					},
 		},
 		atAGlance: [
-			{ label: "Principal", value: formatCurrency(detail.listing.principal) },
+			{
+				label: "Principal",
+				value: formatCentsAsCurrency(detail.listing.principal),
+			},
 			{
 				label: "Interest Rate",
 				value: `${formatPercent(detail.listing.interestRate)} ${titleCase(detail.listing.rateType)}`,
@@ -535,7 +554,7 @@ export function buildMarketplaceListingDetailModel(
 			{
 				label: "Principal Amount",
 				note: "CAD",
-				value: formatCurrency(detail.listing.principal),
+				value: formatCentsAsCurrency(detail.listing.principal),
 			},
 			{
 				label: "Interest Rate",
@@ -565,7 +584,7 @@ export function buildMarketplaceListingDetailModel(
 			{
 				label: "Monthly Payment",
 				note: titleCase(detail.listing.paymentFrequency),
-				value: formatCurrency(detail.listing.monthlyPayment),
+				value: formatCentsAsCurrency(detail.listing.monthlyPayment),
 			},
 			{
 				label: "Payment Frequency",

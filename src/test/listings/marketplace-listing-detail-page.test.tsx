@@ -89,11 +89,11 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				comparables: [
 					{
 						address: "12 Mercer Street",
-						adjustedValue: 655000,
+						adjustedValue: 65_500_000,
 						id: "comp-1",
 						propertyType: "Condo",
 						saleDate: "2026-02-14",
-						salePrice: 648000,
+						salePrice: 64_800_000,
 						squareFootage: 812,
 					},
 				],
@@ -101,8 +101,8 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				id: "appraisal-1",
 				reportDate: "2026-02-22",
 				type: "desktop",
-				valueAsIfComplete: 705000,
-				valueAsIs: 675000,
+				valueAsIfComplete: 70_500_000,
+				valueAsIs: 67_500_000,
 			},
 		],
 		documents: [
@@ -123,7 +123,7 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				balanceAsOfDate: "2026-01-05",
 				holder: "Senior Charge Holder",
 				id: "enc-1",
-				outstandingBalance: 125000,
+				outstandingBalance: 12_500_000,
 				priority: 1,
 				type: "mortgage",
 			},
@@ -186,7 +186,7 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				"Strong first-position opportunity with disciplined underwriting.",
 			maturityDate: "2028-03-15",
 			mortgageTypeLabel: "First",
-			monthlyPayment: 3187,
+			monthlyPayment: 318_700,
 			paymentFrequency: "monthly",
 			paymentHistory: {
 				byStatus: {
@@ -204,7 +204,7 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				],
 				totalObligations: 12,
 			},
-			principal: 450000,
+			principal: 45_000_000,
 			propertyTypeLabel: "Detached Home",
 			rateType: "fixed",
 			readOnly: true,
@@ -221,7 +221,7 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				locationLabel: "Etobicoke, ON",
 				ltvRatio: 66,
 				mortgageTypeLabel: "First",
-				principal: 320000,
+				principal: 32_000_000,
 				propertyTypeLabel: "Condo",
 				title: "Lakeshore Condo Bridge",
 			},
@@ -238,6 +238,16 @@ describe("marketplace listing detail adapter", () => {
 		expect(model.investment.totalFractions).toBe(10);
 		expect(model.investment.perFractionAmount).toBe(45_000);
 		expect(model.investment.availabilityLabel).toBe("4.2 of 10 available");
+		expect(model.atAGlance).toContainEqual({
+			label: "Principal",
+			value: "$450,000",
+		});
+		expect(model.appraisal.asIs.value).toBe("$675,000");
+		expect(model.keyFinancials).toContainEqual({
+			label: "Monthly Payment",
+			note: "Monthly",
+			value: "$3,187",
+		});
 		expect(model.documents[0]?.url).toBe(
 			"https://example.com/appraisal-report.pdf"
 		);

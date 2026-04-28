@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { adminMutation, documentQuery } from "../fluent";
 import { draftStateValidator } from "./validators";
+import { isCanonicalDocumentVariableKey } from "./variableRegistry";
 
 export const create = adminMutation
 	.input({
@@ -83,6 +84,10 @@ export const saveDraft = adminMutation
 		if (interpolableKeys.length > 0) {
 			const missingKeys: string[] = [];
 			for (const key of interpolableKeys) {
+				if (isCanonicalDocumentVariableKey(key)) {
+					continue;
+				}
+
 				const variable = await ctx.db
 					.query("systemVariables")
 					.withIndex("by_key", (q) => q.eq("key", key))

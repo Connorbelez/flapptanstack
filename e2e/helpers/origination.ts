@@ -372,6 +372,112 @@ export function uniqueOriginationValue(prefix: string) {
 	return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+export interface E2eCommittedMortgage {
+	accessToken: string;
+	caseId: string;
+	mortgageId: string;
+}
+
+export async function createCommittedMortgage(
+	page: Page
+): Promise<E2eCommittedMortgage> {
+	const accessToken = await readE2eAccessToken(page);
+	const client = createOriginationE2eClient(accessToken);
+	await client.ensureDefaultOriginationOwner();
+	const { borrowerId, brokerOfRecordId } =
+		await client.ensureOriginationE2eContext();
+	const uniqueSuffix = uniqueOriginationValue("attachments");
+
+	await primeOriginationE2eBootstrap(page);
+	await page.goto("/admin/originations");
+	await Promise.all([
+		page.waitForURL(/\/admin\/originations\/(?:new|[^/?#]+)(?:\?.*)?$/, {
+			timeout: 30_000,
+		}),
+		page.getByRole("link", { name: "New origination" }).first().click(),
+	]);
+	if (page.url().includes("/admin/originations/new")) {
+		await page.waitForURL(
+			/\/admin\/originations\/(?!new(?:\?|$))[^/?#]+(?:\?.*)?$/,
+			{
+				timeout: 30_000,
+			}
+		);
+	}
+	const caseId = extractCommittedMortgageRouteId(page, "/admin/originations");
+
+	await page.getByLabel("Existing borrower ID").first().fill(String(borrowerId));
+	await page.getByLabel("Broker of record ID").fill(String(brokerOfRecordId));
+	await openCommittedMortgageOriginationStep(page, "Property + valuation");
+	await page.getByLabel("Street address").fill(`700 ${uniqueSuffix} Street`);
+	await page.getByLabel("City").fill("Toronto");
+	await page.getByLabel("Province").fill("ON");
+	await page.getByLabel("Postal code").fill("M5H 1J9");
+	await page.getByLabel("Property type").selectOption("residential");
+	await page.getByLabel("Value as-is").fill("425000");
+	await page.getByLabel("Valuation date").fill("2026-05-01");
+	await openCommittedMortgageOriginationStep(page, "Mortgage terms");
+	await page.getByLabel("Principal").fill("250000");
+	await page.getByLabel("Interest rate (%)").fill("9.5");
+	await page.getByLabel("Rate type").selectOption("fixed");
+	await page.getByLabel("Loan type").selectOption("conventional");
+	await page.getByLabel("Term (months)").fill("12");
+	await page.getByLabel("Amortization (months)").fill("300");
+	await page.getByLabel("Payment amount").fill("2450");
+	await page.getByLabel("Payment frequency").selectOption("monthly");
+	await page.getByLabel("Lien position").fill("1");
+	await page.getByLabel("Term start date").fill("2026-05-01");
+	await page.getByLabel("First payment date").fill("2026-06-01");
+	await page.getByLabel("Maturity date").fill("2027-04-30");
+	await page.getByLabel("Interest adjustment date").fill("2026-05-01");
+	await openCommittedMortgageOriginationStep(page, "Review + commit");
+
+	await Promise.all([
+		page.waitForURL(/\/admin\/mortgages\/[^/?#]+(?:\?.*)?$/, {
+			timeout: 30_000,
+		}),
+		page.getByRole("button", { name: "Commit origination" }).click(),
+	]);
+
+	return {
+		accessToken,
+		caseId,
+		mortgageId: extractCommittedMortgageRouteId(page, "/admin/mortgages"),
+	};
+}
+
+function escapeCommittedMortgageRegex(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractCommittedMortgageRouteId(page: Page, routePrefix: string) {
+	const match = page.url().match(new RegExp(`${routePrefix}/([^/?#]+)`));
+	if (!match?.[1]) {
+		throw new Error(`Unable to resolve route id from ${page.url()}`);
+	}
+	return match[1];
+}
+
+function committedMortgageOriginationStepTitle(page: Page, title: string) {
+	return page
+		.locator('[data-slot="card-title"]')
+		.filter({
+			hasText: new RegExp(`^${escapeCommittedMortgageRegex(title)}$`),
+		})
+		.first();
+}
+
+async function openCommittedMortgageOriginationStep(page: Page, title: string) {
+	await page
+		.getByRole("button", {
+			name: new RegExp(escapeCommittedMortgageRegex(title), "i"),
+		})
+		.click();
+	await expect(committedMortgageOriginationStepTitle(page, title)).toBeVisible({
+		timeout: 30_000,
+	});
+}
+
 async function createPdfBytes(label: string) {
 	const pdf = await PDFDocument.create();
 	const page = pdf.addPage([612, 792]);

@@ -515,6 +515,46 @@ describe("marketplace listings", () => {
 		expect(result?.similarListings[0]?.interestRate).toBe(9);
 	});
 
+	it("falls back to other published listings when no same-property similar listings exist", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					marketplacePropertyType: "Detached Home",
+					propertyType: "residential",
+					title: "Detached Detail Listing",
+				})
+			);
+			await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					marketplacePropertyType: "Condo",
+					propertyType: "condo",
+					title: "Fallback Condo Opportunity",
+				})
+			);
+		});
+
+		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(result?.similarListings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					propertyTypeLabel: "Condo",
+					title: "Fallback Condo Opportunity",
+				}),
+			])
+		);
+	});
+
 	it("returns null for unpublished marketplace detail", async () => {
 		const t = createHarness();
 		const portalId = await insertBrokerPortalPricingFixture(t);

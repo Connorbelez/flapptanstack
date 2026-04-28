@@ -14,6 +14,7 @@ import type {
 	EntityViewAdapterContract,
 	EntityViewCellDisplayValue,
 	EntityViewRow,
+	FieldReferenceId,
 	NormalizedFieldDefinition,
 	RecordFilter,
 	SavedViewFilterDefinition,
@@ -27,7 +28,6 @@ type FieldDef = Doc<"fieldDefs">;
 type ViewField = Doc<"viewFields">;
 type CrmQueryCtx = QueryCtx & { viewer: Viewer };
 type DbCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
-type FieldDefId = Id<"fieldDefs">;
 type ViewDefDoc = Doc<"viewDefs">;
 type ViewFieldDoc = Doc<"viewFields">;
 type ViewFilterDoc = Doc<"viewFilters">;
@@ -42,7 +42,7 @@ type UserSavedViewSnapshot = Omit<
 >;
 interface ColumnCandidate {
 	displayOrder: number;
-	fieldDefId: Id<"fieldDefs">;
+	fieldDefId: FieldReferenceId;
 	fieldType: FieldDef["fieldType"];
 	isVisibleByDefault: boolean;
 	label: string;
@@ -52,7 +52,7 @@ interface ColumnCandidate {
 
 export interface ViewColumnDefinition {
 	displayOrder: number;
-	fieldDefId: Id<"fieldDefs">;
+	fieldDefId: FieldReferenceId;
 	fieldType: FieldDef["fieldType"];
 	isVisible: boolean;
 	label: string;
@@ -95,12 +95,12 @@ function parseStoredFilterValue(value: string | undefined): unknown {
 }
 
 function normalizeFieldOrder(
-	preferred: FieldDefId[] | undefined,
-	fallback: FieldDefId[]
-): FieldDefId[] {
+	preferred: FieldReferenceId[] | undefined,
+	fallback: FieldReferenceId[]
+): FieldReferenceId[] {
 	const orderedIds = preferred && preferred.length > 0 ? preferred : fallback;
 	const uniqueIds = new Set<string>();
-	const normalized: FieldDefId[] = [];
+	const normalized: FieldReferenceId[] = [];
 
 	for (const fieldId of [...orderedIds, ...fallback]) {
 		const key = fieldId.toString();
@@ -115,12 +115,12 @@ function normalizeFieldOrder(
 }
 
 function normalizeVisibleFieldIds(
-	preferred: FieldDefId[] | undefined,
-	fallback: FieldDefId[]
-): FieldDefId[] {
+	preferred: FieldReferenceId[] | undefined,
+	fallback: FieldReferenceId[]
+): FieldReferenceId[] {
 	const sourceIds = preferred ?? fallback;
 	const uniqueIds = new Set<string>();
-	const normalized: FieldDefId[] = [];
+	const normalized: FieldReferenceId[] = [];
 
 	for (const fieldId of sourceIds) {
 		const key = fieldId.toString();
@@ -216,8 +216,8 @@ function applyFieldOverridesToColumn(args: {
 	};
 }
 
-function toSyntheticFieldDefId(fieldName: string): Id<"fieldDefs"> {
-	return `computed:${fieldName}` as Id<"fieldDefs">;
+function toSyntheticFieldDefId(fieldName: string): FieldReferenceId {
+	return `computed:${fieldName}`;
 }
 
 function compareSchemaOrderedEntries(args: {
@@ -419,12 +419,12 @@ function buildComputedColumnDefinitions(
 }
 
 function sanitizeColumnIdList(
-	preferred: Id<"fieldDefs">[],
-	fallback: Id<"fieldDefs">[],
+	preferred: FieldReferenceId[],
+	fallback: FieldReferenceId[],
 	availableColumnsById: ReadonlyMap<string, ColumnCandidate>
-): Id<"fieldDefs">[] {
+): FieldReferenceId[] {
 	const seen = new Set<string>();
-	const sanitized: Id<"fieldDefs">[] = [];
+	const sanitized: FieldReferenceId[] = [];
 
 	for (const fieldId of [...preferred, ...fallback]) {
 		const key = fieldId.toString();
@@ -492,8 +492,7 @@ function buildEffectiveColumns(args: {
 						width: baseColumn?.width,
 						isVisible:
 							visibleFieldIds.has(fieldId.toString()) ||
-							((!args.hasExplicitVisibilityOverride ||
-								fieldId.toString().startsWith("computed:")) &&
+							(!args.hasExplicitVisibilityOverride &&
 								baseColumn.isVisibleByDefault),
 						displayOrder: index,
 					},
