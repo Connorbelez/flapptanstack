@@ -71,7 +71,9 @@ async function getVisibleLenderPortalListingDetail(
 
 	return {
 		...snapshot,
-		documents: await readListingPublicDocuments(ctx, { listingId }),
+		documents: await readListingPublicDocuments(ctx, {
+			mortgageId: listing.mortgageId,
+		}),
 	};
 }
 

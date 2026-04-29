@@ -94,7 +94,7 @@ export async function getTreasuryAccount(
  * scan via `by_mortgage` for legacy rows that used `investorId`.
  */
 async function findExistingPosition(
-	ctx: QueryCtx,
+	ctx: Pick<QueryCtx, "db">,
 	mortgageId: string,
 	lenderId: string
 ): Promise<Doc<"ledger_accounts"> | null> {
@@ -119,6 +119,15 @@ async function findExistingPosition(
 				account.type === "POSITION" && getAccountLenderId(account) === lenderId
 		) ?? null
 	);
+}
+
+/** Find existing POSITION account for a mortgage + lender auth id, or null. */
+export async function findPositionAccountOrNull(
+	ctx: Pick<QueryCtx, "db">,
+	mortgageId: string,
+	lenderId: string
+): Promise<Doc<"ledger_accounts"> | null> {
+	return findExistingPosition(ctx, mortgageId, lenderId);
 }
 
 /** Find existing POSITION account. Throws if not found. */
