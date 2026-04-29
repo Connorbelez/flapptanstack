@@ -117,7 +117,7 @@ describe("broker onboarding verification contracts", () => {
 		});
 
 		expect(staleRegulatorData).toEqual({
-			recommendation: "stale_regulator_data",
+			recommendation: "review_needed",
 			reasonCodes: ["stale_regulator_data"],
 		});
 	});

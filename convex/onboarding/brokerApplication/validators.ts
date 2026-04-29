@@ -177,6 +177,25 @@ export const brokerOnboardingVerificationSnapshotValidator = v.object({
 	similarityScores: verificationNameSimilarityScoresValidator,
 });
 
+export const brokerOnboardingVerificationStateValidator = v.object({
+	currentIdvLaunchUrl: v.union(v.string(), v.null()),
+	currentIdvProviderKey: v.union(v.string(), v.null()),
+	currentIdvSessionId: v.union(v.string(), v.null()),
+	idvCompletedAt: v.union(v.number(), v.null()),
+	idvStartedAt: v.union(v.number(), v.null()),
+	lastCallbackEventId: v.union(
+		v.id("brokerOnboardingVerificationCallbackEvents"),
+		v.null()
+	),
+	lastCallbackProcessedAt: v.union(v.number(), v.null()),
+	lastCallbackReceivedAt: v.union(v.number(), v.null()),
+	lastCallbackSignatureVerified: v.union(v.boolean(), v.null()),
+	lastRecomputedAt: v.union(v.number(), v.null()),
+	requiresReverification: v.boolean(),
+	reverificationFieldPaths: v.array(v.string()),
+	reverificationRequiredAt: v.union(v.number(), v.null()),
+});
+
 export const brokerOnboardingReopenedFieldValidator = v.object({
 	fieldPath: v.string(),
 	reason: v.optional(v.string()),

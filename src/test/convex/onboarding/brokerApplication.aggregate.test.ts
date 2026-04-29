@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { api } from "../../../../convex/_generated/api";
 import { BROKER_ONBOARDING_RESUME_WINDOW_MS } from "../../../../convex/onboarding/brokerApplication/helpers";
 import { createBrokerOnboardingVerificationSnapshot } from "../../../../shared/brokerOnboarding/contracts";
 import { DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG } from "../../../../convex/onboarding/verification/config";
 import { ensureSeededIdentity } from "../../auth/helpers";
-import { createGovernedTestConvex } from "./helpers";
+import { createGovernedTestConvex, drainScheduledWork } from "./helpers";
 import {
 	appendBrokerNote,
 	buildVerifiedMemberIdentity,
@@ -14,8 +14,10 @@ import {
 	getReviewEntries,
 	getUserByAuthId,
 	requestBrokerApplicationChanges,
+	recomputeBrokerVerification,
 	saveBrokerApplicationDraft,
 	startBrokerApplication,
+	startBrokerIdentityVerification,
 	submitBrokerApplication,
 	upsertBrokerVerificationSnapshot,
 } from "./brokerApplicationTestHelpers";
@@ -126,6 +128,42 @@ describe("broker onboarding application aggregate", () => {
 		expect(applications).toHaveLength(2);
 	});
 
+	it("blocks identity verification on expired applications", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("aggregate-idv-expired");
+		const startResult = await startBrokerApplication(t, identity);
+
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.patch(startResult.application._id, {
+				expiresAt: now - 1,
+				lastActivityAt: now - BROKER_ONBOARDING_RESUME_WINDOW_MS,
+			});
+		});
+
+		await expect(
+			startBrokerIdentityVerification(t, identity, startResult.application._id)
+		).rejects.toThrow("Broker onboarding application has expired");
+	});
+
+	it("blocks manual verification recompute on expired applications", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("aggregate-recompute-expired");
+		const startResult = await startBrokerApplication(t, identity);
+
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.patch(startResult.application._id, {
+				expiresAt: now - 1,
+				lastActivityAt: now - BROKER_ONBOARDING_RESUME_WINDOW_MS,
+			});
+		});
+
+		await expect(
+			recomputeBrokerVerification(t, identity, startResult.application._id)
+		).rejects.toThrow("Broker onboarding application has expired");
+	});
+
 	it("expires stale non-terminal candidates even when a newer terminal application exists", async () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("aggregate-expiry-terminal");
@@ -206,30 +244,40 @@ describe("broker onboarding application aggregate", () => {
 	});
 
 	it("submits and resubmits after changes requested, resolving reopened fields", async () => {
+		vi.useFakeTimers();
 		const t = createGovernedTestConvex();
-		const identity = buildVerifiedMemberIdentity("aggregate-submit");
-		const startResult = await startBrokerApplication(t, identity);
+		try {
+			const identity = buildVerifiedMemberIdentity("aggregate-submit");
+			const startResult = await startBrokerApplication(t, identity);
 
-		await submitBrokerApplication(t, identity, startResult.application._id);
-		await requestBrokerApplicationChanges(t, {
-			applicationId: startResult.application._id,
-			body: "Please correct the requested broker portal slug.",
-			reopenedFields: [{ fieldPath: "draftData.requestedPortalSlug" }],
-		});
-		const resubmitted = await submitBrokerApplication(
-			t,
-			identity,
-			startResult.application._id
-		);
-		const entries = await getReviewEntries(t, startResult.application._id);
+			await submitBrokerApplication(t, identity, startResult.application._id);
+			await drainScheduledWork(t);
+			await requestBrokerApplicationChanges(t, {
+				applicationId: startResult.application._id,
+				body: "Please correct the requested broker portal slug.",
+				reopenedFields: [{ fieldPath: "draftData.requestedPortalSlug" }],
+			});
+			const resubmitted = await submitBrokerApplication(
+				t,
+				identity,
+				startResult.application._id
+			);
+			await drainScheduledWork(t);
+			const entries = await getReviewEntries(t, startResult.application._id);
 
-		expect(resubmitted.application.status).toBe("submitted");
-		expect(resubmitted.application.reopenedFields[0]?.status).toBe("resolved");
-		expect(
-			entries.some(
-				(entry) => entry.systemEventType === "application_submitted"
-			)
-		).toBe(true);
+			expect(resubmitted.application.status).toBe("submitted");
+			expect(resubmitted.application.reopenedFields[0]?.status).toBe(
+				"resolved"
+			);
+			expect(
+				entries.some(
+					(entry) => entry.systemEventType === "application_submitted"
+				)
+			).toBe(true);
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		}
 	});
 
 	it("stores normalized verification snapshot metadata through the internal helper", async () => {
@@ -335,5 +383,132 @@ describe("broker onboarding application aggregate", () => {
 				(entry) => entry.systemEventType === "verification_snapshot_updated"
 			)
 		).toBe(true);
+	});
+
+	it("invalidates prior verification evidence when reviewer-reopened identity and license fields require reverification", async () => {
+		vi.useFakeTimers();
+		const t = createGovernedTestConvex();
+		try {
+			const identity = buildVerifiedMemberIdentity("aggregate-reverification");
+			const startResult = await startBrokerApplication(t, identity);
+
+			await saveBrokerApplicationDraft(t, identity, {
+				applicationId: startResult.application._id,
+				draftData: {
+					brokerageName: "FairLend Brokerage",
+					brokerageNumber: "BR-001",
+					licenseNumber: "ON-STALE-1",
+					licenseProvince: "ON",
+					selfReportedName: {
+						fullName: "Stale Broker",
+					},
+				},
+			});
+			await submitBrokerApplication(t, identity, startResult.application._id);
+
+			const approvedSnapshot = createBrokerOnboardingVerificationSnapshot({
+				capturedAt: 1_700_000_000_000,
+				policy: DEFAULT_BROKER_ONBOARDING_VERIFICATION_CONFIG,
+				province: "on",
+				selfReportedName: {
+					fullName: "Francois Smith",
+				},
+				regulator: {
+					provider: "mock_regulator",
+					status: "active",
+					freshness: "fresh",
+					licenseNumber: "ON-12345",
+					licenseProvince: "ON",
+					legalName: {
+						fullName: "Francois Smith",
+					},
+					checkedAt: 1_700_000_000_000,
+					dataAsOf: 1_700_000_000_000,
+					evidenceReferences: [],
+				},
+				identityVerification: {
+					provider: "mock_identity",
+					status: "verified",
+					legalName: {
+						fullName: "Francois Smith",
+					},
+					checkedAt: 1_700_000_000_000,
+					completedAt: 1_700_000_000_000,
+					fraudSignal: false,
+					evidenceReferences: [],
+				},
+				emailVerification: {
+					provider: "workos_authkit",
+					status: "verified",
+					email: identity.user_email,
+					checkedAt: 1_700_000_000_000,
+					verifiedAt: 1_700_000_000_000,
+					evidenceReferences: [],
+				},
+				similarityScores: {
+					selfReportedVsRegulator: 0.95,
+					selfReportedVsIdentity: 0.96,
+					regulatorVsIdentity: 0.97,
+				},
+			});
+			await upsertBrokerVerificationSnapshot(t, {
+				applicationId: startResult.application._id,
+				authorAuthId: "system_test",
+				authorType: "system",
+				snapshot: approvedSnapshot,
+				verificationState: {
+					currentIdvLaunchUrl:
+						"https://mock-idv.local/session/mock-idv:verified:application",
+					currentIdvProviderKey: "mock_identity",
+					currentIdvSessionId: "mock-idv:verified:application",
+					idvCompletedAt: 1_700_000_000_000,
+					idvStartedAt: 1_700_000_000_000,
+					lastCallbackEventId: null,
+					lastCallbackProcessedAt: null,
+					lastCallbackReceivedAt: null,
+					lastCallbackSignatureVerified: null,
+					lastRecomputedAt: 1_700_000_000_000,
+					requiresReverification: false,
+					reverificationFieldPaths: [],
+					reverificationRequiredAt: null,
+				},
+			});
+
+			await requestBrokerApplicationChanges(t, {
+				applicationId: startResult.application._id,
+				body: "Please resubmit after correcting the legal name and license data.",
+				reopenedFields: [
+					{ fieldPath: "draftData.selfReportedName.fullName" },
+					{ fieldPath: "draftData.licenseNumber" },
+				],
+			});
+
+			const application = await getApplication(t, startResult.application._id);
+
+			expect(application?.status).toBe("changes_requested");
+			expect(application?.verificationState?.requiresReverification).toBe(
+				true
+			);
+			expect(application?.verificationState?.reverificationFieldPaths).toEqual(
+				[
+					"draftData.selfReportedName.fullName",
+					"draftData.licenseNumber",
+				]
+			);
+			expect(application?.verificationState?.currentIdvSessionId).toBeNull();
+			expect(
+				application?.verificationSnapshot?.identityVerification.status
+			).toBe("not_started");
+			expect(application?.verificationSnapshot?.regulator.status).toBe(
+				"incomplete"
+			);
+			expect(application?.verificationRecommendation).toBe("review_needed");
+			expect(application?.verificationReasonCodes).toContain(
+				"verification_sources_incomplete"
+			);
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		}
 	});
 });

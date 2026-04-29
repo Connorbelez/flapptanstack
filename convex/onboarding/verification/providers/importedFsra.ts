@@ -5,12 +5,14 @@ import {
 	type BrokerOnboardingRegulatorFreshness,
 	type BrokerOnboardingRegulatorLicenseType,
 	type BrokerOnboardingRegulatorSourceSnapshot,
-	type BrokerOnboardingRegulatorStatus,
 	normalizeBrokerOnboardingPersonName,
 	normalizeBrokerOnboardingProvince,
 	type VerificationEvidenceReference,
 } from "../../../../shared/brokerOnboarding/contracts";
-import { normalizeOptionalFsraIdentifier } from "../fsraFixtures";
+import {
+	type FsraPersistedStatus,
+	normalizeOptionalFsraIdentifier,
+} from "../fsraFixtures";
 import type {
 	RegulatorDirectoryBrokerageLookupRequest,
 	RegulatorDirectoryLookupRequest,
@@ -27,10 +29,7 @@ export interface ImportedFsraRegulatorRecord {
 	licenseType?: BrokerOnboardingRegulatorLicenseType | null;
 	province: string;
 	sourceSnapshot?: BrokerOnboardingRegulatorSourceSnapshot | null;
-	status: Exclude<
-		BrokerOnboardingRegulatorStatus,
-		"not_found" | "provider_unavailable"
-	>;
+	status: FsraPersistedStatus;
 }
 
 export interface ImportedFsraBrokerageRecord {
@@ -40,10 +39,7 @@ export interface ImportedFsraBrokerageRecord {
 	freshness?: BrokerOnboardingRegulatorFreshness;
 	province: string;
 	sourceSnapshot?: BrokerOnboardingRegulatorSourceSnapshot | null;
-	status: Exclude<
-		BrokerOnboardingRegulatorStatus,
-		"not_found" | "provider_unavailable"
-	>;
+	status: FsraPersistedStatus;
 }
 
 export interface ImportedFsraRegulatorProviderOptions {

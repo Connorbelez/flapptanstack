@@ -446,6 +446,10 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../onboarding/queries.ts"),
 	"/convex/onboarding/verification/actions.ts": async () =>
 		await import("./../onboarding/verification/actions.ts"),
+	"/convex/onboarding/verification/abuse.ts": async () =>
+		await import("./../onboarding/verification/abuse.ts"),
+	"/convex/onboarding/verification/callbackVerification.ts": async () =>
+		await import("./../onboarding/verification/callbackVerification.ts"),
 	"/convex/onboarding/verification/config.ts": async () =>
 		await import("./../onboarding/verification/config.ts"),
 	"/convex/onboarding/verification/fsraFixtures.ts": async () =>
@@ -454,12 +458,20 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../onboarding/verification/fsraImport.ts"),
 	"/convex/onboarding/verification/interface.ts": async () =>
 		await import("./../onboarding/verification/interface.ts"),
+	"/convex/onboarding/verification/idvWebhook.ts": async () =>
+		await import("./../onboarding/verification/idvWebhook.ts"),
+	"/convex/onboarding/verification/nameMatching.ts": async () =>
+		await import("./../onboarding/verification/nameMatching.ts"),
 	"/convex/onboarding/verification/providers/importedFsra.ts": async () =>
 		await import("./../onboarding/verification/providers/importedFsra.ts"),
+	"/convex/onboarding/verification/providers/mockIdentity.ts": async () =>
+		await import("./../onboarding/verification/providers/mockIdentity.ts"),
 	"/convex/onboarding/verification/providers/mockRegulator.ts": async () =>
 		await import("./../onboarding/verification/providers/mockRegulator.ts"),
 	"/convex/onboarding/verification/registry.ts": async () =>
 		await import("./../onboarding/verification/registry.ts"),
+	"/convex/onboarding/verification/runtime.ts": async () =>
+		await import("./../onboarding/verification/runtime.ts"),
 	"/convex/onboarding/verification/validators.ts": async () =>
 		await import("./../onboarding/verification/validators.ts"),
 	"/convex/onboarding/verification/workosEmailVerification.ts": async () =>

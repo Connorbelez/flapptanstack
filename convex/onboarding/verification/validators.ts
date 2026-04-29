@@ -25,6 +25,14 @@ export const fsraImportTriggerValidator = v.union(
 	v.literal("manual")
 );
 
+export const brokerOnboardingVerificationCallbackProcessingStatusValidator =
+	v.union(v.literal("pending"), v.literal("processed"), v.literal("failed"));
+
+export const brokerOnboardingVerificationCallbackHeadersValidator = v.record(
+	v.string(),
+	v.string()
+);
+
 export const fsraRawRecordValidator = v.record(
 	v.string(),
 	v.union(v.string(), v.null())

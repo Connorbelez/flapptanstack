@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../../../../convex/_generated/api";
-import { createGovernedTestConvex } from "./helpers";
+import { createGovernedTestConvex, drainScheduledWork } from "./helpers";
 import {
 	approveBrokerApplication,
 	buildVerifiedMemberIdentity,
@@ -19,12 +19,29 @@ import {
 process.env.DISABLE_GT_HASHCHAIN = "true";
 process.env.DISABLE_CASH_LEDGER_HASHCHAIN = "true";
 
+beforeEach(() => {
+	vi.useFakeTimers();
+});
+
+afterEach(() => {
+	vi.clearAllTimers();
+	vi.useRealTimers();
+});
+
+async function submitBrokerApplicationAndDrain(
+	...args: Parameters<typeof submitBrokerApplication>
+) {
+	const [t] = args;
+	await submitBrokerApplication(...args);
+	await drainScheduledWork(t);
+}
+
 describe("broker onboarding downstream handoff", () => {
 	it("links an approved application to a downstream onboardingRequest and backfills the request link", async () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("handoff-link");
 		const startResult = await startBrokerApplication(t, identity);
-		await submitBrokerApplication(t, identity, startResult.application._id);
+		await submitBrokerApplicationAndDrain(t, identity, startResult.application._id);
 		await approveBrokerApplication(t, startResult.application._id);
 
 		const user = await getUserByAuthId(t, identity.subject);
@@ -54,7 +71,7 @@ describe("broker onboarding downstream handoff", () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("handoff-role-assigned");
 		const startResult = await startBrokerApplication(t, identity);
-		await submitBrokerApplication(t, identity, startResult.application._id);
+		await submitBrokerApplicationAndDrain(t, identity, startResult.application._id);
 		await approveBrokerApplication(t, startResult.application._id);
 
 		const user = await getUserByAuthId(t, identity.subject);
@@ -85,7 +102,7 @@ describe("broker onboarding downstream handoff", () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("handoff-activate");
 		const startResult = await startBrokerApplication(t, identity);
-		await submitBrokerApplication(t, identity, startResult.application._id);
+		await submitBrokerApplicationAndDrain(t, identity, startResult.application._id);
 		await approveBrokerApplication(t, startResult.application._id);
 
 		const user = await getUserByAuthId(t, identity.subject);
@@ -127,7 +144,7 @@ describe("broker onboarding downstream handoff", () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("handoff-activation-replay");
 		const startResult = await startBrokerApplication(t, identity);
-		await submitBrokerApplication(t, identity, startResult.application._id);
+		await submitBrokerApplicationAndDrain(t, identity, startResult.application._id);
 		await approveBrokerApplication(t, startResult.application._id);
 
 		const user = await getUserByAuthId(t, identity.subject);
@@ -170,7 +187,7 @@ describe("broker onboarding downstream handoff", () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("handoff-activation-portal");
 		const startResult = await startBrokerApplication(t, identity);
-		await submitBrokerApplication(t, identity, startResult.application._id);
+		await submitBrokerApplicationAndDrain(t, identity, startResult.application._id);
 		await approveBrokerApplication(t, startResult.application._id);
 
 		const user = await getUserByAuthId(t, identity.subject);
@@ -224,7 +241,7 @@ describe("broker onboarding downstream handoff", () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("handoff-reject-activation");
 		const startResult = await startBrokerApplication(t, identity);
-		await submitBrokerApplication(t, identity, startResult.application._id);
+		await submitBrokerApplicationAndDrain(t, identity, startResult.application._id);
 		await approveBrokerApplication(t, startResult.application._id);
 
 		const user = await getUserByAuthId(t, identity.subject);

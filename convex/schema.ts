@@ -94,12 +94,16 @@ import {
 	brokerOnboardingApprovalRecommendationValidator,
 	brokerOnboardingDownstreamHandoffStatusValidator,
 	brokerOnboardingDraftDataValidator,
+	brokerOnboardingIdentityVerificationStatusValidator,
 	brokerOnboardingReopenedFieldValidator,
 	brokerOnboardingReviewEntryTypeValidator,
 	brokerOnboardingVerificationReasonCodeValidator,
 	brokerOnboardingVerificationSnapshotValidator,
+	brokerOnboardingVerificationStateValidator,
 } from "./onboarding/brokerApplication/validators";
 import {
+	brokerOnboardingVerificationCallbackHeadersValidator,
+	brokerOnboardingVerificationCallbackProcessingStatusValidator,
 	fsraImportRunStatusValidator,
 	fsraImportTriggerValidator,
 	fsraLicenseStatusValidator,
@@ -596,6 +600,7 @@ export default defineSchema({
 		verificationSnapshot: v.optional(
 			brokerOnboardingVerificationSnapshotValidator
 		),
+		verificationState: v.optional(brokerOnboardingVerificationStateValidator),
 		verificationRecommendation: v.optional(
 			brokerOnboardingApprovalRecommendationValidator
 		),
@@ -656,6 +661,32 @@ export default defineSchema({
 		.index("by_application", ["applicationId"])
 		.index("by_application_created_at", ["applicationId", "createdAt"])
 		.index("by_application_entry_type", ["applicationId", "entryType"]),
+
+	brokerOnboardingVerificationCallbackEvents: defineTable({
+		applicationId: v.optional(v.id("brokerOnboardingApplications")),
+		identityVerificationSessionId: v.optional(v.string()),
+		provider: v.string(),
+		providerEventId: v.string(),
+		rawBody: v.string(),
+		headers: v.optional(brokerOnboardingVerificationCallbackHeadersValidator),
+		signatureVerified: v.boolean(),
+		status: brokerOnboardingVerificationCallbackProcessingStatusValidator,
+		normalizedIdentityStatus: v.optional(
+			brokerOnboardingIdentityVerificationStatusValidator
+		),
+		recommendation: v.optional(brokerOnboardingApprovalRecommendationValidator),
+		reasonCodes: v.optional(
+			v.array(brokerOnboardingVerificationReasonCodeValidator)
+		),
+		attempts: v.number(),
+		receivedAt: v.number(),
+		processedAt: v.optional(v.number()),
+		errorMessage: v.optional(v.string()),
+	})
+		.index("by_provider_event", ["provider", "providerEventId"])
+		.index("by_application_received_at", ["applicationId", "receivedAt"])
+		.index("by_session_id", ["identityVerificationSessionId"])
+		.index("by_status_received_at", ["status", "receivedAt"]),
 
 	fsraLicenses: defineTable({
 		licenseNumber: v.string(),

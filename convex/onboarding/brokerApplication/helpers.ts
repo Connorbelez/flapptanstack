@@ -13,10 +13,29 @@ export const BROKER_ONBOARDING_RESUME_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type BrokerOnboardingApplicationDoc =
 	Doc<"brokerOnboardingApplications">;
+export type BrokerOnboardingVerificationState = NonNullable<
+	BrokerOnboardingApplicationDoc["verificationState"]
+>;
 export type BrokerOnboardingReviewEntryInsert = Omit<
 	Doc<"brokerOnboardingReviewEntries">,
 	"_creationTime" | "_id"
 >;
+
+const IDENTITY_REVERIFICATION_FIELD_PREFIXES = [
+	"draftData.selfReportedName",
+] as const;
+
+const REGULATOR_REVERIFICATION_FIELD_PREFIXES = [
+	"draftData.licenseNumber",
+	"draftData.licenseProvince",
+	"draftData.brokerageNumber",
+	"draftData.brokerageName",
+] as const;
+
+const REVERIFICATION_FIELD_PREFIXES = [
+	...IDENTITY_REVERIFICATION_FIELD_PREFIXES,
+	...REGULATOR_REVERIFICATION_FIELD_PREFIXES,
+] as const;
 
 export interface BrokerOnboardingApplicationReadModel {
 	application: BrokerOnboardingApplicationDoc;
@@ -88,6 +107,81 @@ export function buildResumeWindowPatch(now: number) {
 		lastActivityAt: now,
 		updatedAt: now,
 	};
+}
+
+export function createDefaultBrokerOnboardingVerificationState(): BrokerOnboardingVerificationState {
+	return {
+		currentIdvLaunchUrl: null,
+		currentIdvProviderKey: null,
+		currentIdvSessionId: null,
+		idvCompletedAt: null,
+		idvStartedAt: null,
+		lastCallbackEventId: null,
+		lastCallbackProcessedAt: null,
+		lastCallbackReceivedAt: null,
+		lastCallbackSignatureVerified: null,
+		lastRecomputedAt: null,
+		requiresReverification: false,
+		reverificationFieldPaths: [],
+		reverificationRequiredAt: null,
+	};
+}
+
+export function getBrokerOnboardingVerificationState(
+	application: BrokerOnboardingApplicationDoc
+): BrokerOnboardingVerificationState {
+	return application.verificationState
+		? {
+				...application.verificationState,
+				reverificationFieldPaths: [
+					...application.verificationState.reverificationFieldPaths,
+				],
+			}
+		: createDefaultBrokerOnboardingVerificationState();
+}
+
+export function mergeBrokerOnboardingVerificationState(
+	current: BrokerOnboardingVerificationState | null | undefined,
+	patch: Partial<BrokerOnboardingVerificationState>
+): BrokerOnboardingVerificationState {
+	const baseline = current ?? createDefaultBrokerOnboardingVerificationState();
+
+	return {
+		...baseline,
+		...patch,
+		reverificationFieldPaths:
+			patch.reverificationFieldPaths ?? baseline.reverificationFieldPaths,
+	};
+}
+
+export function shouldInvalidateVerificationForField(fieldPath: string) {
+	return REVERIFICATION_FIELD_PREFIXES.some(
+		(prefix) => fieldPath === prefix || fieldPath.startsWith(`${prefix}.`)
+	);
+}
+
+export function isIdentityVerificationInvalidationField(fieldPath: string) {
+	return IDENTITY_REVERIFICATION_FIELD_PREFIXES.some(
+		(prefix) => fieldPath === prefix || fieldPath.startsWith(`${prefix}.`)
+	);
+}
+
+export function isRegulatorVerificationInvalidationField(fieldPath: string) {
+	return REGULATOR_REVERIFICATION_FIELD_PREFIXES.some(
+		(prefix) => fieldPath === prefix || fieldPath.startsWith(`${prefix}.`)
+	);
+}
+
+export function resolveVerificationInvalidationFieldPaths(
+	reopenedFields: readonly { fieldPath: string }[]
+) {
+	return [
+		...new Set(
+			reopenedFields
+				.map((reopenedField) => reopenedField.fieldPath)
+				.filter(shouldInvalidateVerificationForField)
+		),
+	];
 }
 
 export async function getViewerUserOrThrow(ctx: ReaderCtx, authUserId: string) {

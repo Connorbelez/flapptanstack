@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { auditLog } from "../../auditLog";
@@ -390,6 +391,17 @@ export const submit = brokerOnboardingMutation
 				previousState: result.previousState,
 			},
 		});
+		await ctx.scheduler.runAfter(
+			0,
+			internal.onboarding.verification.actions
+				.recomputeBrokerOnboardingVerificationInternal,
+			{
+				applicationId: args.applicationId,
+				authorAuthId: ctx.viewer.authId,
+				authorType: "member",
+				trigger: "submit",
+			}
+		);
 
 		return getFreshReadModel(ctx, args.applicationId, now);
 	})

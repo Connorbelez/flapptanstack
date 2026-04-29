@@ -19,10 +19,7 @@ export interface FsraSourceRecord {
 	province: string;
 	rawRecord: BrokerOnboardingRegulatorSourceSnapshot;
 	sourceImportedAt: number;
-	status: Exclude<
-		BrokerOnboardingRegulatorStatus,
-		"not_found" | "provider_unavailable"
-	>;
+	status: FsraPersistedStatus;
 }
 
 interface FsraFixtureTemplate {
@@ -35,11 +32,13 @@ interface FsraFixtureTemplate {
 	province: string;
 	rawRecord?: BrokerOnboardingRegulatorSourceSnapshot;
 	sourceImportedAtOffsetMs?: number;
-	status: Exclude<
-		BrokerOnboardingRegulatorStatus,
-		"not_found" | "provider_unavailable"
-	>;
+	status: FsraPersistedStatus;
 }
+
+export type FsraPersistedStatus = Exclude<
+	BrokerOnboardingRegulatorStatus,
+	"not_found" | "provider_unavailable" | "incomplete"
+>;
 
 const DEFAULT_FSRA_FIXTURE_TEMPLATES: readonly FsraFixtureTemplate[] = [
 	{

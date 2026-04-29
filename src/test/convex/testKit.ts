@@ -17,6 +17,13 @@ const migrationsSchema = (
 		).href
 	)
 ).default;
+const rateLimiterSchema = (
+	await import(
+		pathToFileURL(
+			`${dirname(require.resolve("@convex-dev/rate-limiter/package.json"))}/dist/component/schema.js`
+		).href
+	)
+).default;
 const workflowSchema = (
 	await import(
 		pathToFileURL(
@@ -40,6 +47,10 @@ const migrationsModules = loadModulesFromRoot(
 	new URL("../../../node_modules/@convex-dev/migrations/dist/component/", import.meta.url),
 	"/node_modules/@convex-dev/migrations/dist/component"
 );
+const rateLimiterModules = loadModulesFromRoot(
+	new URL("../../../node_modules/@convex-dev/rate-limiter/dist/component/", import.meta.url),
+	"/node_modules/@convex-dev/rate-limiter/dist/component"
+);
 const workflowModules = loadModulesFromRoot(
 	new URL("../../../node_modules/@convex-dev/workflow/dist/component/", import.meta.url),
 	"/node_modules/@convex-dev/workflow/dist/component"
@@ -58,6 +69,7 @@ export function createConvexTestKit(options?: ConvexTestKitOptions) {
 	registerAuditLogComponent(t, "auditLog");
 	t.registerComponent("auditTrail", auditTrailSchema, auditTrailModules);
 	t.registerComponent("migrations", migrationsSchema, migrationsModules);
+	t.registerComponent("rateLimiter", rateLimiterSchema, rateLimiterModules);
 
 	if (options?.includeWorkflowComponents ?? true) {
 		t.registerComponent("workflow", workflowSchema, workflowModules);
