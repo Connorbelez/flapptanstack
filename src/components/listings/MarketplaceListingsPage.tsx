@@ -151,49 +151,40 @@ export function MarketplaceListingsPage({
 				</div>
 			</div>
 
-			<div className="min-h-0 md:h-full md:flex-1 md:overflow-hidden">
-				<ListingGridShell
-					groupItemsForMobile={groupItemsForMobile}
-					items={items}
-					mapProps={{
-						initialCenter: { lat: 43.6532, lng: -79.3832 },
-						initialZoom: 10,
-					}}
-					renderCard={(listing) => (
-						<Link
-							className="block"
-							params={{ listingId: listing.id }}
-							to={detailRoute}
-						>
-							<Horizontal
-								address={listing.address}
-								apr={listing.apr}
-								availablePercent={listing.availablePercent}
-								fractionsSummary={listing.fractionsSummary}
-								id={listing.id}
-								imageSrc={listing.imageSrc}
-								lockedPercent={listing.lockedPercent}
-								ltv={listing.ltv}
-								maturityDate={listing.maturityDate.toLocaleDateString("en-CA")}
-								principal={listing.principal}
-								propertyType={listing.propertyType}
-								soldPercent={listing.soldPercent}
-								title={listing.title}
-							/>
-						</Link>
-					)}
-					renderMapPopup={(listing) => (
-						<ListingMapPopup
+			<ListingGridShell
+				groupItemsForMobile={groupItemsForMobile}
+				items={items}
+				mapProps={{
+					initialCenter: { lat: 43.6532, lng: -79.3832 },
+					initialZoom: 10,
+				}}
+				renderCard={(listing) => (
+					<Link
+						className="block"
+						params={{ listingId: listing.id }}
+						search={{ checkout: undefined }}
+						to={detailRoute}
+					>
+						<Horizontal
 							address={listing.address}
 							apr={listing.apr}
 							imageSrc={listing.imageSrc}
 							principal={listing.principal}
 							title={listing.title}
 						/>
-					)}
-					toolbar={toolbar}
-				/>
-			</div>
+					</Link>
+				)}
+				renderMapPopup={(listing) => (
+					<ListingMapPopup
+						address={listing.address}
+						apr={listing.apr}
+						imageSrc={listing.imageSrc}
+						principal={listing.principal}
+						title={listing.title}
+					/>
+				)}
+				toolbar={toolbar}
+			/>
 		</div>
 	);
 }

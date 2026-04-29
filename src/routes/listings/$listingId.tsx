@@ -1,11 +1,20 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { AlertCircle, ArrowLeft } from "lucide-react";
+import type { ListingCheckoutReturnState } from "#/components/listings/listing-detail-types";
 import { MarketplaceListingDetailPage } from "#/components/listings/MarketplaceListingDetailPage";
 import { marketplaceListingDetailQueryOptions } from "#/components/listings/query-options";
 import { guardRouteAccess } from "#/lib/auth";
 import { assertActivePortalId } from "#/lib/portal/active-portal";
 import { Route as RootRoute } from "../__root";
+
+const CHECKOUT_RETURN_STATES = new Set([
+	"abandoned",
+	"error",
+	"expired",
+	"provider_start_failed",
+	"success_pending",
+]);
 
 export const Route = createFileRoute("/listings/$listingId")({
 	beforeLoad: guardRouteAccess("listings"),
@@ -25,6 +34,13 @@ export const Route = createFileRoute("/listings/$listingId")({
 	},
 	component: RouteComponent,
 	notFoundComponent: MarketplaceListingNotFoundComponent,
+	validateSearch: (search: Record<string, unknown>) => ({
+		checkout:
+			typeof search.checkout === "string" &&
+			CHECKOUT_RETURN_STATES.has(search.checkout)
+				? search.checkout
+				: undefined,
+	}),
 });
 
 function RouteComponent() {
@@ -37,12 +53,21 @@ function RouteComponent() {
 	const { data } = useSuspenseQuery(
 		marketplaceListingDetailQueryOptions(portalId, listingId)
 	);
+	const search = Route.useSearch();
 
 	if (!data) {
 		throw notFound();
 	}
 
-	return <MarketplaceListingDetailPage snapshot={data} />;
+	return (
+		<MarketplaceListingDetailPage
+			checkoutReturnState={
+				search.checkout as ListingCheckoutReturnState | undefined
+			}
+			portalId={portalId}
+			snapshot={data}
+		/>
+	);
 }
 
 function MarketplaceListingNotFoundComponent() {

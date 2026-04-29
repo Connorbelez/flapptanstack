@@ -2,39 +2,85 @@
  * @vitest-environment jsdom
  */
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useAction } from "convex/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarketplaceListingDetailPage } from "#/components/listings/MarketplaceListingDetailPage";
 import { buildMarketplaceListingDetailModel } from "#/components/listings/marketplace-detail-adapter";
 import type { MarketplaceListingDetailSnapshot } from "#/components/listings/marketplace-types";
 
 vi.mock("#/components/listings/ListingDetailPage", () => ({
 	ListingDetailPage: ({
+		backHref,
 		buildSimilarListingHref,
+		checkoutReturnState,
 		listing,
 		listingsIndexTo,
 		mode,
+		onStartCheckout,
+		portalId,
 	}: {
+		backHref?: string;
 		buildSimilarListingHref?: (listingId: string) => string;
 		listing: { checkout?: unknown; title: string };
 		listingsIndexTo?: string;
 		mode?: string;
+		checkoutReturnState?: string;
+		onStartCheckout?: (input: {
+			listingId: string;
+			portalId: string;
+			requestedFractions: number;
+			selectedLawyer: {
+				email: string;
+				name: string;
+				type: "guest_lawyer";
+			};
+		}) => Promise<unknown>;
+		portalId?: string;
 	}) => (
 		<div
+			data-back-href={backHref}
+			data-checkout-return-state={checkoutReturnState}
 			data-has-checkout={String(listing.checkout !== undefined)}
 			data-listings-index-to={listingsIndexTo}
 			data-mode={mode}
-			data-similar-href={
-				buildSimilarListingHref?.("listing_similar_1") ??
+			data-portal-id={portalId}
+			data-similar-href={buildSimilarListingHref?.("listing_similar_1") ??
 				(listingsIndexTo
 					? `${listingsIndexTo}/listing_similar_1`
-					: "/demo/listings/listing_similar_1")
-			}
+					: "/demo/listings/listing_similar_1")}
 			data-testid="listing-detail-props"
 			data-title={listing.title}
-		/>
+		>
+			<button
+				onClick={() =>
+					void onStartCheckout?.({
+						listingId: "listing_123456",
+						portalId: "portal_meridian",
+						requestedFractions: 2,
+						selectedLawyer: {
+							type: "guest_lawyer",
+							name: "Jordan Counsel",
+							email: "jordan@example.test",
+						},
+					})
+				}
+				type="button"
+			>
+				Start checkout proxy
+			</button>
+		</div>
 	),
 }));
+
+vi.mock("convex/react", () => ({
+	useAction: vi.fn(() => vi.fn()),
+}));
+
+afterEach(() => {
+	cleanup();
+	vi.clearAllMocks();
+});
 
 function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 	return {
@@ -85,6 +131,29 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 			lockedPercent: 12,
 			soldPercent: 28,
 			totalFractions: 10_000,
+		},
+		checkout: {
+			defaultFractions: 1,
+			disabledReason: null,
+			isEligible: true,
+			lawyers: [
+				{
+					detail: "FairLend closing counsel coordination",
+					email: "closing@fairlend.local",
+					firm: "FairLend Closing Network",
+					id: "fairlend-closing-network",
+					label: "FairLend Closing Network",
+					type: "platform_lawyer",
+				},
+			],
+			lockFee: {
+				amountCents: 25_000,
+				currency: "CAD",
+				display: "CAD 250",
+			},
+			maximumFractions: 420,
+			minimumFractions: 1,
+			perFractionAmount: 450,
 		},
 		listing: {
 			approximateLatitude: 43.645,
@@ -184,19 +253,63 @@ describe("marketplace listing detail adapter", () => {
 });
 
 describe("marketplace listing detail page", () => {
-	it("passes the shared detail page a read-only listing model", () => {
-		render(<MarketplaceListingDetailPage snapshot={createDetailSnapshot()} />);
+	it("passes the shared detail page an interactive listing model when checkout is eligible", () => {
+		render(
+			<MarketplaceListingDetailPage
+				checkoutReturnState="success_pending"
+				portalId={"portal_meridian" as never}
+				snapshot={createDetailSnapshot()}
+			/>
+		);
 
 		const rendered = screen.getByTestId("listing-detail-props");
 
-		expect(rendered.getAttribute("data-mode")).toBe("readOnly");
+		expect(useAction).toHaveBeenCalled();
+		expect(rendered.getAttribute("data-mode")).toBe("interactive");
+		expect(rendered.getAttribute("data-back-href")).toBe("/listings");
+		expect(rendered.getAttribute("data-checkout-return-state")).toBe(
+			"success_pending"
+		);
+		expect(rendered.getAttribute("data-portal-id")).toBe("portal_meridian");
 		expect(rendered.getAttribute("data-listings-index-to")).toBe("/listings");
 		expect(rendered.getAttribute("data-title")).toBe(
 			"King West Bridge Opportunity"
 		);
-		expect(rendered.getAttribute("data-has-checkout")).toBe("false");
+		expect(rendered.getAttribute("data-has-checkout")).toBe("true");
 		expect(rendered.getAttribute("data-similar-href")).toBe(
 			"/listings/listing_similar_1"
 		);
+	});
+
+	it("forwards checkout start input to the backend action with route portal authority", async () => {
+		const startMarketplaceCheckout = vi.fn().mockResolvedValue({
+			ok: true,
+			checkoutSessionId: "checkout_123",
+			expiresAt: Date.now() + 300_000,
+			stripeCheckoutUrl: "https://checkout.stripe.test/session",
+		});
+		vi.mocked(useAction).mockReturnValue(startMarketplaceCheckout);
+
+		render(
+			<MarketplaceListingDetailPage
+				portalId={"portal_meridian" as never}
+				snapshot={createDetailSnapshot()}
+			/>
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Start checkout proxy" }));
+
+		await waitFor(() => {
+			expect(startMarketplaceCheckout).toHaveBeenCalledWith({
+				listingId: "listing_123456",
+				portalId: "portal_meridian",
+				requestedFractions: 2,
+				selectedLawyer: {
+					type: "guest_lawyer",
+					name: "Jordan Counsel",
+					email: "jordan@example.test",
+				},
+			});
+		});
 	});
 });

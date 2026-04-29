@@ -561,36 +561,36 @@ async function buildSuggestedOpportunitiesSection(
 			atTime: args.generatedAt,
 			portalId: ctx.portal.portalId,
 		});
-			const { excludedOwnedMortgageCount, rows: suggestedOpportunityCandidates } =
-				await loadSuggestedOpportunityCandidates(ctx, {
-					filters: args.effectiveFilters,
-					heldMortgageIds: args.heldMortgageIds,
-					pricingPolicy:
-						pricingSelection.kind === "ready" ? pricingSelection.policy : null,
-				});
-			const rows: PortfolioSuggestedOpportunity[] =
-				suggestedOpportunityCandidates.map((suggestion) => ({
-					explanationTags: buildSuggestionReasonTags({
-						heldMortgageTypes: args.heldMortgageTypes,
-						heldPropertyTypes: args.heldPropertyTypes,
-						interestRateBenchmark: args.interestRateBenchmark,
-						interestRate: suggestion.interestRate,
-						mortgageType: suggestion.mortgageTypeLabel,
-						propertyType: suggestion.propertyTypeLabel,
-					}),
-					heroImageUrl: suggestion.heroImageUrl,
+		const { excludedOwnedMortgageCount, rows: suggestedOpportunityCandidates } =
+			await loadSuggestedOpportunityCandidates(ctx, {
+				filters: args.effectiveFilters,
+				heldMortgageIds: args.heldMortgageIds,
+				pricingPolicy:
+					pricingSelection.kind === "ready" ? pricingSelection.policy : null,
+			});
+		const rows: PortfolioSuggestedOpportunity[] =
+			suggestedOpportunityCandidates.map((suggestion) => ({
+				explanationTags: buildSuggestionReasonTags({
+					heldMortgageTypes: args.heldMortgageTypes,
+					heldPropertyTypes: args.heldPropertyTypes,
+					interestRateBenchmark: args.interestRateBenchmark,
 					interestRate: suggestion.interestRate,
-					listingId: suggestion.id,
-					locationLabel: suggestion.locationLabel,
-					ltvRatio: suggestion.ltvRatio,
-					marketplaceCopy: suggestion.marketplaceCopy,
-					maturityDate: suggestion.maturityDate,
-					mortgageId: suggestion.mortgageId,
-					mortgageTypeLabel: suggestion.mortgageTypeLabel,
-					principal: suggestion.principal,
-					propertyTypeLabel: suggestion.propertyTypeLabel,
-					title: suggestion.title,
-				}));
+					mortgageType: suggestion.mortgageTypeLabel,
+					propertyType: suggestion.propertyTypeLabel,
+				}),
+				heroImageUrl: suggestion.heroImageUrl,
+				interestRate: suggestion.interestRate,
+				listingId: suggestion.id,
+				locationLabel: suggestion.locationLabel,
+				ltvRatio: suggestion.ltvRatio,
+				marketplaceCopy: suggestion.marketplaceCopy,
+				maturityDate: suggestion.maturityDate,
+				mortgageId: suggestion.mortgageId,
+				mortgageTypeLabel: suggestion.mortgageTypeLabel,
+				principal: suggestion.principal,
+				propertyTypeLabel: suggestion.propertyTypeLabel,
+				title: suggestion.title,
+			}));
 
 		return {
 			section: {
