@@ -78,6 +78,9 @@ describe("broker onboarding verification contracts", () => {
 		expect(snapshot.province).toBe("ON");
 		expect(snapshot.selfReportedName.fullName).toBe("francois a smith");
 		expect(snapshot.similarityScores.effectiveScore).toBe(0.94);
+		expect(snapshot.regulator.brokerageName).toBeNull();
+		expect(snapshot.regulator.brokerageNumber).toBeNull();
+		expect(snapshot.regulator.licenseType).toBeNull();
 		expect(snapshot.recommendation).toBe("auto_approve_candidate");
 		expect(snapshot.reasonCodes).toEqual([]);
 		expect(snapshot.evidenceReferences).toHaveLength(3);

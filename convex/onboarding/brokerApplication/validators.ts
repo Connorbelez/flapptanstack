@@ -7,6 +7,7 @@ import {
 	IDENTITY_VERIFICATION_STATUSES,
 	REGULATOR_DIRECTORY_STATUSES,
 	REGULATOR_FRESHNESS_STATES,
+	REGULATOR_LICENSE_TYPES,
 	VERIFICATION_EVIDENCE_REFERENCE_TYPES,
 } from "../../../shared/brokerOnboarding/contracts";
 import { actorTypeValidator } from "../../engine/validators";
@@ -64,6 +65,10 @@ export const brokerOnboardingRegulatorFreshnessValidator = literalUnion(
 	REGULATOR_FRESHNESS_STATES
 );
 
+export const brokerOnboardingRegulatorLicenseTypeValidator = literalUnion(
+	REGULATOR_LICENSE_TYPES
+);
+
 export const brokerOnboardingIdentityVerificationStatusValidator = literalUnion(
 	IDENTITY_VERIFICATION_STATUSES
 );
@@ -106,7 +111,24 @@ export const verificationNameSimilarityScoresValidator = v.object({
 	selfReportedVsRegulator: v.union(v.number(), v.null()),
 });
 
+export const brokerOnboardingBrokerageAssociationValidator = v.object({
+	matched: v.union(v.boolean(), v.null()),
+	requestedBrokerageName: v.union(v.string(), v.null()),
+	requestedBrokerageNumber: v.union(v.string(), v.null()),
+});
+
+export const brokerOnboardingRegulatorSourceSnapshotValidator = v.record(
+	v.string(),
+	v.union(v.string(), v.null())
+);
+
 export const brokerOnboardingRegulatorCheckValidator = v.object({
+	brokerageAssociation: v.union(
+		brokerOnboardingBrokerageAssociationValidator,
+		v.null()
+	),
+	brokerageName: v.union(v.string(), v.null()),
+	brokerageNumber: v.union(v.string(), v.null()),
 	checkedAt: v.union(v.number(), v.null()),
 	dataAsOf: v.union(v.number(), v.null()),
 	evidenceReferences: v.array(verificationEvidenceReferenceValidator),
@@ -114,7 +136,12 @@ export const brokerOnboardingRegulatorCheckValidator = v.object({
 	legalName: v.union(normalizedBrokerOnboardingPersonNameValidator, v.null()),
 	licenseNumber: v.union(v.string(), v.null()),
 	licenseProvince: v.union(v.string(), v.null()),
+	licenseType: v.union(brokerOnboardingRegulatorLicenseTypeValidator, v.null()),
 	provider: v.string(),
+	sourceSnapshot: v.union(
+		brokerOnboardingRegulatorSourceSnapshotValidator,
+		v.null()
+	),
 	status: brokerOnboardingRegulatorStatusValidator,
 });
 

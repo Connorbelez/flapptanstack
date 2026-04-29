@@ -16,6 +16,7 @@ import type {
 	IdentityVerificationProvider,
 	RegulatorDirectoryProvider,
 } from "./interface";
+import type { ImportedFsraRegulatorProviderOptions } from "./providers/importedFsra";
 import { createImportedFsraRegulatorProvider } from "./providers/importedFsra";
 import { createMockIdentityVerificationProvider } from "./providers/mockIdentity";
 import { createMockRegulatorDirectoryProvider } from "./providers/mockRegulator";
@@ -43,14 +44,38 @@ function createUnavailableRegulatorDirectoryProvider(
 	return {
 		mode,
 		providerKey,
+		async lookupBrokerage(request) {
+			return {
+				provider: providerKey,
+				status: "provider_unavailable",
+				freshness: "unknown",
+				brokerageNumber: request.brokerageNumber,
+				brokerageName: null,
+				licenseProvince: normalizeBrokerOnboardingProvince(request.province),
+				checkedAt: request.requestedAt,
+				dataAsOf: null,
+				evidenceReferences: [
+					buildProviderEvidenceReference(
+						providerKey,
+						`${providerKey}:${request.brokerageNumber}`,
+						request.requestedAt
+					),
+				],
+				sourceSnapshot: null,
+			};
+		},
 		async lookupLicense(request) {
 			return {
 				provider: providerKey,
 				status: "provider_unavailable",
 				freshness: "unknown",
+				brokerageAssociation: null,
+				brokerageName: null,
+				brokerageNumber: null,
 				licenseNumber: request.licenseNumber,
 				licenseProvince: normalizeBrokerOnboardingProvince(request.province),
 				legalName: null,
+				licenseType: null,
 				checkedAt: request.requestedAt,
 				dataAsOf: null,
 				evidenceReferences: [
@@ -60,6 +85,7 @@ function createUnavailableRegulatorDirectoryProvider(
 						request.requestedAt
 					),
 				],
+				sourceSnapshot: null,
 			};
 		},
 	};
@@ -115,6 +141,7 @@ export interface BrokerOnboardingVerificationRegistryOptions {
 	identityProviders?: Partial<
 		Record<IdentityVerificationProviderMode, IdentityVerificationProvider>
 	>;
+	importedFsra?: ImportedFsraRegulatorProviderOptions;
 	regulatorProviders?: Partial<
 		Record<RegulatorDirectoryProviderMode, RegulatorDirectoryProvider>
 	>;
@@ -145,7 +172,7 @@ export function createBrokerOnboardingVerificationRegistry(
 		RegulatorDirectoryProvider
 	> = {
 		mock: createMockRegulatorDirectoryProvider(),
-		imported_fsra: createImportedFsraRegulatorProvider(),
+		imported_fsra: createImportedFsraRegulatorProvider(options.importedFsra),
 		live: createUnavailableRegulatorDirectoryProvider("live"),
 		...options.regulatorProviders,
 	};

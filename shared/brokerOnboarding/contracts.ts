@@ -52,6 +52,16 @@ export const REGULATOR_DIRECTORY_STATUSES = [
 export type BrokerOnboardingRegulatorStatus =
 	(typeof REGULATOR_DIRECTORY_STATUSES)[number];
 
+export const REGULATOR_LICENSE_TYPES = [
+	"agent",
+	"broker",
+	"principal_broker",
+	"brokerage",
+] as const;
+
+export type BrokerOnboardingRegulatorLicenseType =
+	(typeof REGULATOR_LICENSE_TYPES)[number];
+
 export const REGULATOR_FRESHNESS_STATES = [
 	"fresh",
 	"stale",
@@ -135,7 +145,20 @@ export interface BrokerOnboardingRecommendationPolicy {
 	thresholds: BrokerOnboardingRecommendationThresholds;
 }
 
+export type BrokerOnboardingRegulatorSourceSnapshot = Readonly<
+	Record<string, string | null>
+>;
+
+export interface BrokerOnboardingBrokerageAssociation {
+	matched: boolean | null;
+	requestedBrokerageName: string | null;
+	requestedBrokerageNumber: string | null;
+}
+
 export interface BrokerOnboardingRegulatorCheck {
+	brokerageAssociation: BrokerOnboardingBrokerageAssociation | null;
+	brokerageName: string | null;
+	brokerageNumber: string | null;
 	checkedAt: number | null;
 	dataAsOf: number | null;
 	evidenceReferences: VerificationEvidenceReference[];
@@ -143,7 +166,22 @@ export interface BrokerOnboardingRegulatorCheck {
 	legalName: NormalizedBrokerOnboardingPersonName | null;
 	licenseNumber: string | null;
 	licenseProvince: string | null;
+	licenseType: BrokerOnboardingRegulatorLicenseType | null;
 	provider: string;
+	sourceSnapshot: BrokerOnboardingRegulatorSourceSnapshot | null;
+	status: BrokerOnboardingRegulatorStatus;
+}
+
+export interface BrokerOnboardingBrokerageCheck {
+	brokerageName: string | null;
+	brokerageNumber: string | null;
+	checkedAt: number | null;
+	dataAsOf: number | null;
+	evidenceReferences: VerificationEvidenceReference[];
+	freshness: BrokerOnboardingRegulatorFreshness;
+	licenseProvince: string | null;
+	provider: string;
+	sourceSnapshot: BrokerOnboardingRegulatorSourceSnapshot | null;
 	status: BrokerOnboardingRegulatorStatus;
 }
 
@@ -213,10 +251,21 @@ export interface CreateBrokerOnboardingVerificationSnapshotInput {
 	province: string;
 	regulator: Omit<
 		BrokerOnboardingRegulatorCheck,
-		"evidenceReferences" | "legalName"
+		| "brokerageAssociation"
+		| "brokerageName"
+		| "brokerageNumber"
+		| "evidenceReferences"
+		| "legalName"
+		| "licenseType"
+		| "sourceSnapshot"
 	> & {
+		brokerageAssociation?: BrokerOnboardingBrokerageAssociation | null;
+		brokerageName?: string | null;
+		brokerageNumber?: string | null;
 		evidenceReferences?: readonly VerificationEvidenceReference[];
 		legalName?: BrokerOnboardingPersonNameInput | null;
+		licenseType?: BrokerOnboardingRegulatorLicenseType | null;
+		sourceSnapshot?: BrokerOnboardingRegulatorSourceSnapshot | null;
 	};
 	selfReportedName: BrokerOnboardingPersonNameInput;
 	similarityScores: Omit<VerificationNameSimilarityScores, "effectiveScore"> & {
@@ -491,10 +540,17 @@ export function createBrokerOnboardingVerificationSnapshot(
 
 	const regulator: BrokerOnboardingRegulatorCheck = {
 		...input.regulator,
+		brokerageAssociation: input.regulator.brokerageAssociation ?? null,
+		brokerageName: input.regulator.brokerageName ?? null,
+		brokerageNumber: input.regulator.brokerageNumber ?? null,
 		legalName: input.regulator.legalName
 			? normalizeBrokerOnboardingPersonName(input.regulator.legalName)
 			: null,
+		licenseType: input.regulator.licenseType ?? null,
 		evidenceReferences: [...(input.regulator.evidenceReferences ?? [])],
+		sourceSnapshot: input.regulator.sourceSnapshot
+			? { ...input.regulator.sourceSnapshot }
+			: null,
 	};
 
 	const identityVerification: BrokerOnboardingIdentityVerificationCheck = {

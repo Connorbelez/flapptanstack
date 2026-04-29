@@ -13,6 +13,11 @@ const rotessaReadModelSyncRef = makeFunctionReference<
 	{ trigger: "cron" | "manual" },
 	Promise<unknown>
 >("admin/origination/collections:runRotessaReadModelSync");
+const fsraImportRefreshRef = makeFunctionReference<
+	"action",
+	{ trigger: "cron" | "manual" },
+	Promise<unknown>
+>("onboarding/verification/fsraImport:runFsraImportRefresh");
 
 // Audit trail crons (outbox processor + retention) are managed by the
 // auditTrail component — see convex/components/auditTrail/crons.ts
@@ -64,6 +69,16 @@ crons.interval(
 	"rotessa read-model sync",
 	{ minutes: 360 },
 	rotessaReadModelSyncRef,
+	{ trigger: "cron" }
+);
+
+// Daily FSRA imported-data refresh: loads staged normalized FSRA source rows and
+// keeps the local regulator lookup surface current without live critical-path I/O.
+// Runs at 05:30 UTC so fresh data is available before the other morning jobs.
+crons.daily(
+	"daily fsra imported-data refresh",
+	{ hourUTC: 5, minuteUTC: 30 },
+	fsraImportRefreshRef,
 	{ trigger: "cron" }
 );
 
