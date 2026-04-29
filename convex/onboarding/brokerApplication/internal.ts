@@ -341,12 +341,24 @@ async function ensureApprovedApplicationDownstreamHandoff(
 		...resolveAuthor(args),
 	});
 
-	return approveDownstreamRequest(ctx, {
+	const downstreamAfterApprove = await approveDownstreamRequest(ctx, {
 		application,
 		authorAuthId: args.authorAuthId,
 		authorType: args.authorType,
 		onboardingRequestId,
 	});
+	const applicationAfterHandoff = await ctx.db.get(args.applicationId);
+	if (
+		downstreamAfterApprove.status === "role_assigned" &&
+		applicationAfterHandoff?.status === "approved"
+	) {
+		await completeActivationForApplication(ctx, {
+			applicationId: args.applicationId,
+			authorAuthId: args.authorAuthId,
+			authorType: args.authorType,
+		});
+	}
+	return downstreamAfterApprove;
 }
 
 async function completeActivationForApplication(
@@ -1261,6 +1273,75 @@ export const markDownstreamRoleAssigned = convex
 	})
 	.internal();
 
+async function repairMissingDownstreamLinkOnBrokerApplication(
+	ctx: MutationCtx,
+	onboardingRequestId: Id<"onboardingRequests">,
+	onboardingRequest: Doc<"onboardingRequests">,
+	application: BrokerOnboardingApplicationDoc
+): Promise<BrokerOnboardingApplicationDoc> {
+	const now = Date.now();
+	await ctx.db.patch(application._id, {
+		downstreamOnboardingRequestId: onboardingRequestId,
+		downstreamHandoffStatus:
+			onboardingRequest.status === "role_assigned" ? "role_assigned" : "linked",
+		downstreamLinkedAt: application.downstreamLinkedAt ?? now,
+		...(onboardingRequest.status === "role_assigned"
+			? {
+					downstreamRoleAssignedAt: application.downstreamRoleAssignedAt ?? now,
+				}
+			: {}),
+		lastActivityAt: now,
+		updatedAt: now,
+	});
+	const patched = await ctx.db.get(application._id);
+	if (!patched) {
+		throw new ConvexError("Broker onboarding application not found");
+	}
+	return patched;
+}
+
+async function resolveBrokerApplicationLinkedToOnboardingRequest(
+	ctx: MutationCtx,
+	onboardingRequestId: Id<"onboardingRequests">,
+	onboardingRequest: Doc<"onboardingRequests">
+): Promise<BrokerOnboardingApplicationDoc | null> {
+	let application = await ctx.db
+		.query("brokerOnboardingApplications")
+		.withIndex("by_downstream_onboarding_request", (query) =>
+			query.eq("downstreamOnboardingRequestId", onboardingRequestId)
+		)
+		.unique();
+
+	if (!application && onboardingRequest.brokerOnboardingApplicationId) {
+		application = await ctx.db.get(
+			onboardingRequest.brokerOnboardingApplicationId
+		);
+		if (!application) {
+			throw new ConvexError(
+				"Broker onboarding application not found for linked onboarding request"
+			);
+		}
+		if (
+			application.downstreamOnboardingRequestId &&
+			application.downstreamOnboardingRequestId !== onboardingRequestId
+		) {
+			throw new ConvexError(
+				"Broker onboarding application downstream link does not match this onboarding request"
+			);
+		}
+		if (!application.downstreamOnboardingRequestId) {
+			return repairMissingDownstreamLinkOnBrokerApplication(
+				ctx,
+				onboardingRequestId,
+				onboardingRequest,
+				application
+			);
+		}
+	}
+
+	return application;
+}
+
 export const completeActivationForDownstreamRequest = convex
 	.mutation()
 	.input({
@@ -1269,15 +1350,20 @@ export const completeActivationForDownstreamRequest = convex
 		onboardingRequestId: v.id("onboardingRequests"),
 	})
 	.handler(async (ctx, args) => {
-		const application = await ctx.db
-			.query("brokerOnboardingApplications")
-			.withIndex("by_downstream_onboarding_request", (query) =>
-				query.eq("downstreamOnboardingRequestId", args.onboardingRequestId)
-			)
-			.unique();
+		const onboardingRequest = await ctx.db.get(args.onboardingRequestId);
+		if (!onboardingRequest) {
+			throw new ConvexError("Onboarding request not found");
+		}
+
+		const application = await resolveBrokerApplicationLinkedToOnboardingRequest(
+			ctx,
+			args.onboardingRequestId,
+			onboardingRequest
+		);
 		if (!application) {
 			return null;
 		}
+
 		return completeActivationForApplication(ctx, {
 			applicationId: application._id,
 			authorAuthId: args.authorAuthId,

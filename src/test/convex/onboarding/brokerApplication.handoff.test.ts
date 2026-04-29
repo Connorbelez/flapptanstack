@@ -274,6 +274,86 @@ describe("broker onboarding downstream handoff", () => {
 		expect(user?.homePortalId).toBe(portal?._id);
 	});
 
+	it("activates when downstream onboarding request is already role_assigned at approval time", async () => {
+		const { activationInput, identity, startResult, t } =
+			await submitActivationReadyApplication("handoff-prelinked-ra", {
+				licenseNumber: "ON-HANDOFF-PRELINKED-RA",
+				portalSlug: "handoff-prelinked-ra",
+			});
+		const provisioning = createProvisioningMock({
+			createOrganization: vi
+				.fn()
+				.mockResolvedValue({ id: "org_handoff_prelinked_ra" }),
+		});
+		setWorkosProvisioningForTests(provisioning);
+
+		const applicationBefore = await getApplication(t, startResult.application._id);
+		if (!applicationBefore) {
+			throw new Error("Expected broker application to exist");
+		}
+		const now = Date.now();
+		const prelinkedRequestId = await t.run(async (ctx) => {
+			return await ctx.db.insert("onboardingRequests", {
+				userId: applicationBefore.userId,
+				requestedRole: "broker",
+				status: "role_assigned",
+				machineContext: undefined,
+				lastTransitionAt: now,
+				referralSource: "self_signup",
+				brokerOnboardingApplicationId: startResult.application._id,
+				targetOrganizationId: "org_handoff_prelinked_ra",
+				portalId: applicationBefore.portalId,
+				createdAt: now,
+			});
+		});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(startResult.application._id, {
+				downstreamOnboardingRequestId: prelinkedRequestId,
+				downstreamHandoffStatus: "role_assigned",
+				downstreamLinkedAt: now,
+				downstreamRoleAssignedAt: now,
+				lastActivityAt: now,
+				updatedAt: now,
+			});
+		});
+
+		await approveBrokerApplication(t, startResult.application._id);
+
+		const broker = await t.run(async (ctx) =>
+			ctx.db
+				.query("brokers")
+				.withIndex("by_license", (query) =>
+					query.eq("licenseId", activationInput.licenseNumber)
+				)
+				.unique()
+		);
+		const portal = await t.run(async (ctx) =>
+			ctx.db
+				.query("portals")
+				.withIndex("by_slug", (query) =>
+					query.eq("slug", "handoff-prelinked-ra")
+				)
+				.unique()
+		);
+		const activatedApplication = await getApplication(
+			t,
+			startResult.application._id
+		);
+		const user = await getUserByAuthId(t, identity.subject);
+
+		expect(provisioning.createOrganizationMembership).not.toHaveBeenCalled();
+		expect(activatedApplication?.status).toBe("activated");
+		expect(activatedApplication?.downstreamHandoffStatus).toBe("activated");
+		expect(activatedApplication?.activatedBrokerId).toBe(broker?._id);
+		expect(broker).toMatchObject({
+			brokerOnboardingApplicationId: startResult.application._id,
+			licenseId: "ON-HANDOFF-PRELINKED-RA",
+			orgId: "org_handoff_prelinked_ra",
+			userId: user?._id,
+		});
+		expect(user?.homePortalId).toBe(portal?._id);
+	});
+
 	it("reuses the canonical broker and portal when activation callbacks replay", async () => {
 		const { startResult, t } = await submitActivationReadyApplication(
 			"handoff-replay",

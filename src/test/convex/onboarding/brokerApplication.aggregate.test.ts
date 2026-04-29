@@ -71,6 +71,19 @@ describe("broker onboarding application aggregate", () => {
 			)
 		).rejects.toThrow("trusted home portal");
 
+		const inviterIdentity = buildVerifiedMemberIdentity(
+			"aggregate-inviter-mismatch"
+		);
+		await ensureSeededIdentity(t, inviterIdentity);
+		await expect(
+			t.withIdentity(identity).mutation(
+				api.onboarding.brokerApplication.mutations.startOrResume,
+				{ invitedByBrokerId: inviterIdentity.subject }
+			)
+		).rejects.toThrow(
+			"invitedByBrokerId is only valid when referralSource is broker_invite"
+		);
+
 		const noHomeIdentity = buildVerifiedMemberIdentity(
 			"aggregate-portal-spoof-no-home"
 		);

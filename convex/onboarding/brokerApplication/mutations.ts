@@ -86,6 +86,11 @@ export const startOrResume = brokerOnboardingMutation
 				"broker_invite referral requires invitedByBrokerId"
 			);
 		}
+		if (args.invitedByBrokerId && referralSource !== "broker_invite") {
+			throw new ConvexError(
+				"invitedByBrokerId is only valid when referralSource is broker_invite"
+			);
+		}
 		const user = await getViewerUserOrThrow(ctx, ctx.viewer.authId);
 		const verifiedEmail = ctx.viewer.verifiedEmail;
 		const candidates = await listCandidateBrokerApplications(ctx, {
