@@ -19,6 +19,26 @@ async function completeRoleAssignmentProcessing(
 	);
 }
 
+async function completeBrokerApplicationActivation(
+	ctx: ActionCtx,
+	requestId: Id<"onboardingRequests">,
+	hasBrokerApplicationLink: boolean
+) {
+	if (!hasBrokerApplicationLink) {
+		return;
+	}
+
+	await ctx.runMutation(
+		internal.onboarding.brokerApplication.internal
+			.completeActivationForDownstreamRequest,
+		{
+			onboardingRequestId: requestId,
+			authorAuthId: "system",
+			authorType: "system",
+		}
+	);
+}
+
 async function resolveTargetOrganizationId(
 	ctx: ActionCtx,
 	requestId: Id<"onboardingRequests">,
@@ -168,6 +188,11 @@ export const assignRole = internalAction({
 			request.status === "role_assigned" &&
 			request.activeRoleAssignmentJournalId === args.journalEntryId
 		) {
+			await completeBrokerApplicationActivation(
+				ctx,
+				args.entityId as Id<"onboardingRequests">,
+				Boolean(request.brokerOnboardingApplicationId)
+			);
 			await completeRoleAssignmentProcessing(
 				ctx,
 				args.entityId as Id<"onboardingRequests">,
@@ -241,6 +266,11 @@ export const assignRole = internalAction({
 				);
 			}
 
+			await completeBrokerApplicationActivation(
+				ctx,
+				args.entityId as Id<"onboardingRequests">,
+				Boolean(request.brokerOnboardingApplicationId)
+			);
 			await completeRoleAssignmentProcessing(
 				ctx,
 				args.entityId as Id<"onboardingRequests">,
