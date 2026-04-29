@@ -29,6 +29,7 @@ import { Route as ListingsIndexRouteImport } from './routes/listings/index'
 import { Route as BrokerIndexRouteImport } from './routes/broker/index'
 import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
 import { Route as ListingsListingIdRouteImport } from './routes/listings/$listingId'
+import { Route as LenderPortfolioRouteImport } from './routes/lender.portfolio'
 import { Route as LenderDealsRouteImport } from './routes/lender.deals'
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
 import { Route as E2eSessionRouteImport } from './routes/e2e/session'
@@ -247,6 +248,11 @@ const ListingsListingIdRoute = ListingsListingIdRouteImport.update({
   id: '/$listingId',
   path: '/$listingId',
   getParentRoute: () => ListingsRouteRoute,
+} as any)
+const LenderPortfolioRoute = LenderPortfolioRouteImport.update({
+  id: '/portfolio',
+  path: '/portfolio',
+  getParentRoute: () => LenderRouteRoute,
 } as any)
 const LenderDealsRoute = LenderDealsRouteImport.update({
   id: '/deals',
@@ -950,13 +956,7 @@ export interface FileRoutesByFullPath {
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-  '/broker/': typeof BrokerIndexRoute
->>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
-=======
->>>>>>> 2ba15015a (responding to feedback on eng-310)
+  '/lender/portfolio': typeof LenderPortfolioRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
@@ -1085,13 +1085,7 @@ export interface FileRoutesByTo {
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-  '/broker': typeof BrokerIndexRoute
->>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
-=======
->>>>>>> 2ba15015a (responding to feedback on eng-310)
+  '/lender/portfolio': typeof LenderPortfolioRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker': typeof BrokerIndexRoute
@@ -1232,13 +1226,7 @@ export interface FileRoutesById {
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-  '/broker/': typeof BrokerIndexRoute
->>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
-=======
->>>>>>> 2ba15015a (responding to feedback on eng-310)
+  '/lender/portfolio': typeof LenderPortfolioRoute
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
@@ -1381,13 +1369,7 @@ export interface FileRouteTypes {
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-    | '/broker/'
->>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
-=======
->>>>>>> 2ba15015a (responding to feedback on eng-310)
+    | '/lender/portfolio'
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker/'
@@ -1516,13 +1498,7 @@ export interface FileRouteTypes {
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-    | '/broker'
->>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
-=======
->>>>>>> 2ba15015a (responding to feedback on eng-310)
+    | '/lender/portfolio'
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker'
@@ -1662,13 +1638,7 @@ export interface FileRouteTypes {
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-    | '/broker/'
->>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
-=======
->>>>>>> 2ba15015a (responding to feedback on eng-310)
+    | '/lender/portfolio'
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker/'
@@ -1939,6 +1909,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/listings/$listingId'
       preLoaderRoute: typeof ListingsListingIdRouteImport
       parentRoute: typeof ListingsRouteRoute
+    }
+    '/lender/portfolio': {
+      id: '/lender/portfolio'
+      path: '/portfolio'
+      fullPath: '/lender/portfolio'
+      preLoaderRoute: typeof LenderPortfolioRouteImport
+      parentRoute: typeof LenderRouteRoute
     }
     '/lender/deals': {
       id: '/lender/deals'
@@ -2963,10 +2940,12 @@ const LenderDealsRouteWithChildren = LenderDealsRoute._addFileChildren(
 
 interface LenderRouteRouteChildren {
   LenderDealsRoute: typeof LenderDealsRouteWithChildren
+  LenderPortfolioRoute: typeof LenderPortfolioRoute
 }
 
 const LenderRouteRouteChildren: LenderRouteRouteChildren = {
   LenderDealsRoute: LenderDealsRouteWithChildren,
+  LenderPortfolioRoute: LenderPortfolioRoute,
 }
 
 const LenderRouteRouteWithChildren = LenderRouteRoute._addFileChildren(
