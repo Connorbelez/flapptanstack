@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import type {
@@ -74,7 +75,9 @@ function normalizeYear(year: number | undefined, today: string) {
 		return currentYear;
 	}
 	if (!Number.isInteger(year) || year < 2000 || year > currentYear) {
-		throw new Error(`year must be an integer between 2000 and ${currentYear}`);
+		throw new ConvexError(
+			`year must be an integer between 2000 and ${currentYear}`
+		);
 	}
 	return year;
 }

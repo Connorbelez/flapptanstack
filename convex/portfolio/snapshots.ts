@@ -1,10 +1,11 @@
-import { type Infer, v } from "convex/values";
+import { ConvexError, type Infer, v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { calculateAccrualForPeriods, dayBefore } from "../accrual/interestMath";
 import { getOwnershipPeriods } from "../accrual/ownershipPeriods";
 import { convex } from "../fluent";
+import { getAccountLenderId } from "../ledger/accountOwnership";
 import { TOTAL_SUPPLY } from "../ledger/constants";
 import {
 	businessDateToUnixMs,
@@ -101,7 +102,7 @@ function normalizeMonths(months: number | undefined) {
 		return 12;
 	}
 	if (!Number.isInteger(months) || months < 1 || months > 24) {
-		throw new Error("months must be an integer between 1 and 24");
+		throw new ConvexError("months must be an integer between 1 and 24");
 	}
 	return months;
 }
@@ -196,13 +197,21 @@ async function listSnapshotPositionAccounts(
 	ctx: SnapshotDbCtx,
 	lenderAuthId: string
 ) {
-	const accounts = await ctx.db
+	const indexedAccounts = await ctx.db
 		.query("ledger_accounts")
 		.withIndex("by_lender", (query) => query.eq("lenderId", lenderAuthId))
 		.collect();
+	const legacyAccounts =
+		indexedAccounts.length === 0
+			? (await ctx.db.query("ledger_accounts").collect()).filter(
+					(account) =>
+						account.type === "POSITION" &&
+						getAccountLenderId(account) === lenderAuthId
+				)
+			: [];
 
 	const deduped = new Map<string, Doc<"ledger_accounts">>();
-	for (const account of accounts) {
+	for (const account of [...indexedAccounts, ...legacyAccounts]) {
 		if (account.type !== "POSITION" || !account.mortgageId) {
 			continue;
 		}

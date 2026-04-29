@@ -1,7 +1,7 @@
 # Spec Compliance Review
 
 - Audit skill: `$linear-pr-spec-audit`
-- Review target: current branch diff in `/Users/connor/.codex/worktrees/a335/fairlendapp`
+- Review target: current branch diff in `<repo-root>`
 - Last run: 2026-04-21T20:16:46Z
 
 ## Findings

@@ -17,7 +17,7 @@
 - `bun check`: passed
 - `bun typecheck`: passed
 - `bun run test -- convex/portfolio/__tests__/snapshots.test.ts convex/portfolio/__tests__/export.test.ts convex/portfolio/__tests__/queries.test.ts`: passed
-- `python3 /Users/connor/.codex/skills/linear-implement-v2/scripts/validate_execution_artifacts.py ENG-310 --repo-root "/Users/connor/.codex/worktrees/a335/fairlendapp" --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`: pending rerun after artifact closeout
+- `python3 <path-to-validate_execution_artifacts.py> ENG-310 --repo-root "<repo-root>" --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`: pending rerun after artifact closeout
 
 ## Notes
 - Audit and final artifact validation stay in this chunk so the closeout evidence remains localized.
