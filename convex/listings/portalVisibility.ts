@@ -49,8 +49,12 @@ function clampEnumValues<T extends string>(
 	requested: readonly T[] | undefined,
 	allowed: readonly string[] | undefined
 ): T[] | undefined {
-	if (!allowed?.length) {
+	if (allowed === undefined) {
 		return requested ? [...requested] : undefined;
+	}
+
+	if (allowed.length === 0) {
+		return [];
 	}
 
 	if (!requested?.length) {

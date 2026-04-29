@@ -175,7 +175,10 @@ export function matchesMarketplaceFilters(
 	].every(Boolean);
 }
 
-function compareMarketplaceListings(left: ListingDoc, right: ListingDoc) {
+export function compareMarketplaceListings(
+	left: ListingDoc,
+	right: ListingDoc
+) {
 	if (left.featured !== right.featured) {
 		return left.featured ? -1 : 1;
 	}
@@ -224,7 +227,7 @@ function getMarketplacePropertyType(
 	);
 }
 
-async function collectMarketplaceListingCandidates(
+export async function collectMarketplaceListingCandidates(
 	ctx: Pick<QueryCtx, "db">,
 	filters: MarketplaceFilters | undefined
 ): Promise<ListingDoc[]> {
@@ -374,11 +377,16 @@ export async function listMarketplaceListingsSnapshot(
 						projectedListing.description ??
 						"",
 					maturityDate: projectedListing.maturityDate,
+					mortgageId: projectedListing.mortgageId
+						? String(projectedListing.mortgageId)
+						: null,
 					mortgageTypeLabel: lienPositionToMortgageType(
 						projectedListing.lienPosition
 					),
 					principal: projectedListing.principal,
-					propertyTypeLabel: projectedListing.marketplacePropertyType,
+					propertyTypeLabel:
+						projectedListing.marketplacePropertyType ??
+						deriveMarketplacePropertyType(projectedListing.propertyType),
 					title: projectedListing.title ?? "Mortgage Listing",
 				};
 			})
