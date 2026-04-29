@@ -1,6 +1,10 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import {
+	CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+	CHECKOUT_LOCK_FEE_CURRENCY,
+} from "../checkout/validators";
 import { listingQuery } from "../fluent";
 import type { PortalPricingPolicyDoc } from "../portals/pricing";
 import { projectListingForPortal } from "../portals/pricing";
@@ -34,6 +38,57 @@ type MarketplacePropertyType = NonNullable<
 	ListingDoc["marketplacePropertyType"]
 >;
 type MortgageTypeLabel = "First" | "Second" | "Other";
+
+function formatCheckoutLockFeeDisplay(): string {
+	return `${CHECKOUT_LOCK_FEE_CURRENCY} ${(
+		CHECKOUT_LOCK_FEE_AMOUNT_CENTS / 100
+	).toLocaleString("en-CA", {
+		maximumFractionDigits: 0,
+	})}`;
+}
+
+function buildMarketplaceCheckoutContract(args: {
+	availableFractions: number;
+	listing: ListingDoc;
+	perFractionAmount: number;
+}) {
+	const isProductionBacked =
+		args.listing.dataSource === "mortgage_pipeline" &&
+		args.listing.mortgageId !== undefined;
+	const hasAvailableFractions = args.availableFractions > 0;
+	const isEligible = isProductionBacked && hasAvailableFractions;
+	let disabledReason: string | null = null;
+	if (!isProductionBacked) {
+		disabledReason =
+			"Hosted checkout is available only for production listings.";
+	} else if (!hasAvailableFractions) {
+		disabledReason = "No fractions are currently available for checkout.";
+	}
+
+	return {
+		defaultFractions: isEligible ? 1 : 0,
+		disabledReason,
+		isEligible,
+		lawyers: [
+			{
+				detail: "FairLend closing counsel coordination",
+				email: "closing@fairlend.local",
+				firm: "FairLend Closing Network",
+				id: "fairlend-closing-network",
+				label: "FairLend Closing Network",
+				type: "platform_lawyer" as const,
+			},
+		],
+		lockFee: {
+			amountCents: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+			currency: CHECKOUT_LOCK_FEE_CURRENCY,
+			display: formatCheckoutLockFeeDisplay(),
+		},
+		maximumFractions: Math.max(args.availableFractions, 0),
+		minimumFractions: isEligible ? 1 : 0,
+		perFractionAmount: args.perFractionAmount,
+	};
+}
 
 export interface MarketplaceFilters {
 	interestRate?: { max?: number; min?: number };
@@ -478,6 +533,8 @@ export const getMarketplaceListingDetail = listingQuery
 				: Promise.resolve([]),
 			getSimilarMarketplaceListings(ctx, listing, pricingPolicy),
 		]);
+		const perFractionAmount =
+			listing.principal / Math.max(investmentSummary.totalFractions, 1);
 
 		return {
 			appraisals,
@@ -520,6 +577,11 @@ export const getMarketplaceListingDetail = listingQuery
 				termMonths: listing.termMonths,
 				title: listing.title ?? "Mortgage Listing",
 			},
+			checkout: buildMarketplaceCheckoutContract({
+				availableFractions: investmentSummary.availableFractions,
+				listing,
+				perFractionAmount,
+			}),
 			similarListings,
 		};
 	})

@@ -3,13 +3,16 @@
 import { Link } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
 import {
+	AlertCircle,
 	ArrowLeft,
 	Check,
 	ChevronLeft,
 	ChevronRight,
+	ExternalLink,
 	FileText,
 	Heart,
 	ImageIcon,
+	Loader2,
 	MapPin,
 	MapPinned,
 } from "lucide-react";
@@ -22,6 +25,10 @@ import { ListingMap } from "./ListingMap";
 import type {
 	ListingBadge,
 	ListingBorrowerSignal,
+	ListingCheckoutReturnState,
+	ListingCheckoutSelectedLawyer,
+	ListingCheckoutStartInput,
+	ListingCheckoutStartResult,
 	ListingComparable,
 	ListingDetailData,
 	ListingDocumentItem,
@@ -93,21 +100,34 @@ type ListingDetailPageMode = "interactive" | "readOnly";
 export type ListingsIndexTo = "/listings" | "/demo/listings";
 
 interface ListingDetailPageProps {
+	backHref?: string;
 	buildSimilarListingHref?: (listingId: string) => string;
+	checkoutReturnState?: ListingCheckoutReturnState;
 	listing: ListingDetailData;
-	listingsIndexTo?: ListingsIndexTo;
 	mode?: ListingDetailPageMode;
+	onStartCheckout?: (
+		input: ListingCheckoutStartInput
+	) => Promise<ListingCheckoutStartResult>;
+	portalId?: string;
+	redirectToHostedCheckout?: (url: string) => void;
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Large component intentionally composes many presentation controls for read-only and interactive paths.
 export function ListingDetailPage({
-	listingsIndexTo = "/demo/listings",
-	buildSimilarListingHref = (listingId) => `${listingsIndexTo}/${listingId}`,
+	backHref = "/demo/listings",
+	buildSimilarListingHref = (listingId) => `${backHref}/${listingId}`,
+	checkoutReturnState,
 	listing,
 	mode = "interactive",
+	onStartCheckout,
+	portalId,
+	redirectToHostedCheckout = (url) => {
+		window.location.assign(url);
+	},
 }: ListingDetailPageProps) {
 	const checkout = listing.checkout;
-	const isInteractive = mode === "interactive" && checkout !== undefined;
+	const isInteractive =
+		mode === "interactive" && checkout !== undefined && checkout.isEligible;
 	const defaultFractions =
 		checkout?.defaultFractions ?? listing.investment.minimumFractions ?? 1;
 	const minimumFractions =
@@ -124,9 +144,16 @@ export function ListingDetailPage({
 	const [selectedLawyerId, setSelectedLawyerId] = useState<string | undefined>(
 		checkout?.lawyers[0]?.id
 	);
+	const [lawyerMode, setLawyerMode] = useState<"guest" | "platform">(
+		checkout?.lawyers[0] ? "platform" : "guest"
+	);
+	const [guestLawyerName, setGuestLawyerName] = useState("");
+	const [guestLawyerEmail, setGuestLawyerEmail] = useState("");
+	const [guestLawyerFirm, setGuestLawyerFirm] = useState("");
 	const [fractionInput, setFractionInput] = useState(String(defaultFractions));
+	const [checkoutError, setCheckoutError] = useState<string | null>(null);
+	const [isCheckoutPending, setIsCheckoutPending] = useState(false);
 	const [showMobileMap, setShowMobileMap] = useState(false);
-	const [checkoutSubmitted, setCheckoutSubmitted] = useState(false);
 	const firstHeroImageId = listing.heroImages[0]?.id;
 	const firstDocumentId = listing.documents[0]?.id;
 	const firstLawyerId = checkout?.lawyers[0]?.id;
@@ -135,9 +162,14 @@ export function ListingDetailPage({
 		setSelectedImageId(firstHeroImageId);
 		setSelectedDocumentId(firstDocumentId);
 		setSelectedLawyerId(firstLawyerId);
+		setLawyerMode(firstLawyerId ? "platform" : "guest");
+		setGuestLawyerName("");
+		setGuestLawyerEmail("");
+		setGuestLawyerFirm("");
 		setFractionInput(String(defaultFractions));
+		setCheckoutError(null);
+		setIsCheckoutPending(false);
 		setShowMobileMap(false);
-		setCheckoutSubmitted(false);
 	}, [defaultFractions, firstDocumentId, firstHeroImageId, firstLawyerId]);
 
 	const selectedImageIndex = selectedImageId
@@ -169,18 +201,74 @@ export function ListingDetailPage({
 		Math.max(minimumFractions, requestedFractions),
 		availableFractions
 	);
+	const fractionError =
+		fractionInput === "" ||
+		!DIGITS_ONLY_PATTERN.test(fractionInput) ||
+		requestedFractions < minimumFractions ||
+		requestedFractions > availableFractions
+			? `Enter ${minimumFractions.toLocaleString()} to ${availableFractions.toLocaleString()} fractions.`
+			: null;
 	const calculatedInvestment = effectiveFractions * perFractionAmount;
-	let ctaLabel = "";
-	if (checkoutSubmitted) {
-		ctaLabel = "Lock request queued";
-	} else if (checkout) {
-		ctaLabel = `Lock ${effectiveFractions} Fractions — Pay ${checkout.lockFee.replace(
-			".00",
-			""
-		)} Fee`;
-	}
+	const selectedLawyerSnapshot = buildSelectedLawyerSnapshot({
+		guestFirm: guestLawyerFirm,
+		guestEmail: guestLawyerEmail,
+		guestName: guestLawyerName,
+		lawyerMode,
+		selectedLawyer,
+	});
+	const lawyerError = getLawyerError(lawyerMode, selectedLawyerSnapshot);
+	const canStartCheckout =
+		isInteractive &&
+		fractionError === null &&
+		lawyerError === null &&
+		selectedLawyerSnapshot !== null &&
+		onStartCheckout !== undefined &&
+		portalId !== undefined &&
+		!isCheckoutPending;
+	const ctaLabel = checkout
+		? `Lock ${effectiveFractions} Fractions - Pay ${checkout.lockFee.display} Fee`
+		: "";
 	const summaryParagraphs = splitSummary(listing.summary);
 	const reduceMotion = useReducedMotion();
+
+	async function handleStartCheckout() {
+		if (
+			!canStartCheckout ||
+			selectedLawyerSnapshot === null ||
+			portalId === undefined ||
+			onStartCheckout === undefined
+		) {
+			return;
+		}
+
+		setCheckoutError(null);
+		setIsCheckoutPending(true);
+		try {
+			const result = await onStartCheckout({
+				listingId: listing.id,
+				portalId,
+				requestedFractions,
+				selectedLawyer: selectedLawyerSnapshot,
+			});
+			if (!result.ok) {
+				setCheckoutError(result.message);
+				return;
+			}
+			if (result.stripeCheckoutUrl.trim().length === 0) {
+				setCheckoutError("Hosted checkout is unavailable. Please try again.");
+				return;
+			}
+			redirectToHostedCheckout(result.stripeCheckoutUrl);
+		} catch (error) {
+			setCheckoutError(
+				error instanceof Error
+					? error.message
+					: "Unable to start hosted checkout."
+			);
+		} finally {
+			setIsCheckoutPending(false);
+		}
+	}
 
 	function goToNextImage() {
 		if (listing.heroImages.length <= 1) {
@@ -225,20 +313,13 @@ export function ListingDetailPage({
 		setFractionInput(normalizeFractions(requestedFractions));
 	}
 
-	function handleLockFeeCheckout() {
-		if (checkoutSubmitted) {
-			return;
-		}
-		setCheckoutSubmitted(true);
-	}
-
 	return (
 		<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col text-foreground">
 			<div className="hidden lg:block">
-				<DesktopTopNav listingsIndexTo={listingsIndexTo} mode={mode} />
+				<DesktopTopNav backHref={backHref} mode={mode} />
 			</div>
 			<div className="lg:hidden">
-				<MobileTopNav listingsIndexTo={listingsIndexTo} mode={mode} />
+				<MobileTopNav backHref={backHref} mode={mode} />
 			</div>
 
 			<div className="hidden lg:block" data-testid="desktop-listing-detail">
@@ -363,74 +444,46 @@ export function ListingDetailPage({
 					onDocumentSelect={setSelectedDocumentId}
 					selectedDocumentId={selectedDocument?.id}
 				/>
-				<ListingScrollReveal className="mx-16 mt-10">
-					<InvestmentSummaryCard listing={listing} />
-				</ListingScrollReveal>
+				<InvestmentSummaryCard className="mx-16 mt-10" listing={listing} />
+				<CheckoutReturnStateBanner
+					className="mx-16 mt-6"
+					state={checkoutReturnState}
+				/>
 
 				{isInteractive && checkout ? (
-					<ListingScrollReveal className="flex gap-6 px-16 pt-6">
-						<WhiteSurface className="flex-1 px-7 py-7">
-							<h2 className="font-semibold text-[20px]">
-								Select Your Investment
-							</h2>
-							<div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-4">
-								<div className="space-y-2">
-									<label
-										className="font-medium text-[13px] text-muted-foreground"
-										htmlFor="desktop-fractions-input"
-									>
-										Number of fractions
-									</label>
-									<Input
-										aria-label="Number of fractions"
-										className="h-12 rounded-xl border-border/80 bg-background/80 text-base"
-										id="desktop-fractions-input"
-										onBlur={handleFractionBlur}
-										onChange={(event) =>
-											handleFractionChange(event.target.value)
-										}
-										value={fractionInput}
-									/>
-								</div>
-								<div className="rounded-xl border border-primary/20 bg-primary/10 px-5 py-3 font-semibold text-[var(--palm)] text-xl dark:border-primary/30 dark:bg-primary/15">
-									= {formatCurrency(calculatedInvestment)}
-								</div>
-							</div>
-
-							<div className="mt-6 space-y-3">
-								<p className="font-medium text-[13px] text-muted-foreground">
-									Select your lawyer
-								</p>
-								{checkout.lawyers.length > 0 ? (
-									checkout.lawyers.map((lawyer) => (
-										<LawyerOptionCard
-											isSelected={lawyer.id === selectedLawyer?.id}
-											key={lawyer.id}
-											lawyer={lawyer}
-											onSelect={setSelectedLawyerId}
-										/>
-									))
-								) : (
-									<EmptySelectionState message="No lawyers are configured for this demo listing yet." />
-								)}
-							</div>
-						</WhiteSurface>
-
-						<CheckoutCard
-							calculatedInvestment={calculatedInvestment}
-							checkout={checkout}
-							checkoutSubmitted={checkoutSubmitted}
-							ctaLabel={ctaLabel}
-							fractions={effectiveFractions}
-							listingTitle={listing.title}
-							onCheckout={handleLockFeeCheckout}
-							selectedLawyerLabel={selectedLawyer?.label}
-						/>
-					</ListingScrollReveal>
+					<HostedCheckoutLauncher
+						availableFractions={availableFractions}
+						calculatedInvestment={calculatedInvestment}
+						canStartCheckout={canStartCheckout}
+						checkout={checkout}
+						checkoutError={checkoutError}
+						ctaLabel={ctaLabel}
+						fractionError={fractionError}
+						fractionInput={fractionInput}
+						fractions={effectiveFractions}
+						guestLawyerEmail={guestLawyerEmail}
+						guestLawyerFirm={guestLawyerFirm}
+						guestLawyerName={guestLawyerName}
+						isCheckoutPending={isCheckoutPending}
+						lawyerError={lawyerError}
+						lawyerMode={lawyerMode}
+						listingTitle={listing.title}
+						minimumFractions={minimumFractions}
+						onFractionBlur={handleFractionBlur}
+						onFractionChange={handleFractionChange}
+						onGuestLawyerEmailChange={setGuestLawyerEmail}
+						onGuestLawyerFirmChange={setGuestLawyerFirm}
+						onGuestLawyerNameChange={setGuestLawyerName}
+						onLawyerModeChange={setLawyerMode}
+						onPlatformLawyerSelect={setSelectedLawyerId}
+						onStartCheckout={handleStartCheckout}
+						selectedLawyer={selectedLawyer}
+					/>
 				) : (
 					<ReadOnlyMarketplaceNotice
 						availableFractions={listing.investment.availableFractions}
 						className="mx-16 mt-6"
+						reason={checkout?.disabledReason}
 						totalFractions={listing.investment.totalFractions}
 					/>
 				)}
@@ -736,74 +789,46 @@ export function ListingDetailPage({
 				</ListingScrollReveal>
 
 				<InvestmentSummaryCard className="mx-5 mt-6" listing={listing} mobile />
+				<CheckoutReturnStateBanner
+					className="mx-5 mt-4"
+					state={checkoutReturnState}
+				/>
 
 				{isInteractive && checkout ? (
-					<>
-						<section className="px-5 pt-3">
-							<div className="space-y-4">
-								<div className="space-y-2">
-									<label
-										className="font-medium text-[13px] text-muted-foreground"
-										htmlFor="mobile-fractions-input"
-									>
-										Number of fractions
-									</label>
-									<div className="grid grid-cols-[1fr_auto] gap-2">
-										<Input
-											aria-label="Number of fractions"
-											className="h-11 rounded-xl border-border/80 bg-background/80"
-											id="mobile-fractions-input"
-											onBlur={handleFractionBlur}
-											onChange={(event) =>
-												handleFractionChange(event.target.value)
-											}
-											value={fractionInput}
-										/>
-										<div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 font-semibold text-[var(--palm)] text-lg dark:border-primary/30 dark:bg-primary/15">
-											= {formatCurrency(calculatedInvestment)}
-										</div>
-									</div>
-								</div>
-
-								<div className="space-y-2">
-									<p className="font-medium text-[13px] text-muted-foreground">
-										Select your lawyer
-									</p>
-									{checkout.lawyers.length > 0 ? (
-										checkout.lawyers.map((lawyer) => (
-											<LawyerOptionCard
-												isCompact
-												isSelected={lawyer.id === selectedLawyer?.id}
-												key={lawyer.id}
-												lawyer={lawyer}
-												onSelect={setSelectedLawyerId}
-											/>
-										))
-									) : (
-										<EmptySelectionState message="No lawyers are configured for this demo listing yet." />
-									)}
-								</div>
-							</div>
-						</section>
-
-						<div className="px-5 pt-4">
-							<CheckoutCard
-								calculatedInvestment={calculatedInvestment}
-								checkout={checkout}
-								checkoutSubmitted={checkoutSubmitted}
-								className="w-full px-5 py-5"
-								ctaLabel={ctaLabel}
-								fractions={effectiveFractions}
-								listingTitle={listing.title}
-								onCheckout={handleLockFeeCheckout}
-								selectedLawyerLabel={selectedLawyer?.label}
-							/>
-						</div>
-					</>
+					<HostedCheckoutLauncher
+						availableFractions={availableFractions}
+						calculatedInvestment={calculatedInvestment}
+						canStartCheckout={canStartCheckout}
+						checkout={checkout}
+						checkoutError={checkoutError}
+						ctaLabel={ctaLabel}
+						fractionError={fractionError}
+						fractionInput={fractionInput}
+						fractions={effectiveFractions}
+						guestLawyerEmail={guestLawyerEmail}
+						guestLawyerFirm={guestLawyerFirm}
+						guestLawyerName={guestLawyerName}
+						isCheckoutPending={isCheckoutPending}
+						isMobile
+						lawyerError={lawyerError}
+						lawyerMode={lawyerMode}
+						listingTitle={listing.title}
+						minimumFractions={minimumFractions}
+						onFractionBlur={handleFractionBlur}
+						onFractionChange={handleFractionChange}
+						onGuestLawyerEmailChange={setGuestLawyerEmail}
+						onGuestLawyerFirmChange={setGuestLawyerFirm}
+						onGuestLawyerNameChange={setGuestLawyerName}
+						onLawyerModeChange={setLawyerMode}
+						onPlatformLawyerSelect={setSelectedLawyerId}
+						onStartCheckout={handleStartCheckout}
+						selectedLawyer={selectedLawyer}
+					/>
 				) : (
 					<ReadOnlyMarketplaceNotice
 						availableFractions={listing.investment.availableFractions}
 						className="mx-5 mt-4"
+						reason={checkout?.disabledReason}
 						totalFractions={listing.investment.totalFractions}
 					/>
 				)}
@@ -821,10 +846,10 @@ export function ListingDetailPage({
 }
 
 function DesktopTopNav({
-	listingsIndexTo,
+	backHref,
 	mode,
 }: {
-	listingsIndexTo: ListingsIndexTo;
+	backHref: string;
 	mode: ListingDetailPageMode;
 }) {
 	return (
@@ -836,7 +861,7 @@ function DesktopTopNav({
 		>
 			<Link
 				className="inline-flex items-center gap-2 font-medium text-[13px] text-muted-foreground hover:text-foreground"
-				to={listingsIndexTo}
+				to={backHref}
 				viewTransition
 			>
 				<ArrowLeft className="size-4" />
@@ -863,10 +888,10 @@ function DesktopTopNav({
 }
 
 function MobileTopNav({
-	listingsIndexTo,
+	backHref,
 	mode,
 }: {
-	listingsIndexTo: ListingsIndexTo;
+	backHref: string;
 	mode: ListingDetailPageMode;
 }) {
 	return (
@@ -879,7 +904,7 @@ function MobileTopNav({
 			<Link
 				aria-label="Back to Listings"
 				className="inline-flex"
-				to={listingsIndexTo}
+				to={backHref}
 				viewTransition
 			>
 				<ChevronLeft className="size-5 text-muted-foreground" />
@@ -1252,40 +1277,297 @@ function InvestmentSummaryCard({
 	);
 }
 
-function CheckoutCard({
+function HostedCheckoutLauncher({
+	availableFractions,
 	calculatedInvestment,
+	canStartCheckout,
 	checkout,
-	checkoutSubmitted,
+	checkoutError,
+	ctaLabel,
+	fractionError,
+	fractionInput,
+	fractions,
+	guestLawyerEmail,
+	guestLawyerFirm,
+	guestLawyerName,
+	isCheckoutPending,
+	isMobile = false,
+	lawyerError,
+	lawyerMode,
+	listingTitle,
+	minimumFractions,
+	onFractionBlur,
+	onFractionChange,
+	onGuestLawyerEmailChange,
+	onGuestLawyerFirmChange,
+	onGuestLawyerNameChange,
+	onLawyerModeChange,
+	onPlatformLawyerSelect,
+	onStartCheckout,
+	selectedLawyer,
+}: {
+	availableFractions: number;
+	calculatedInvestment: number;
+	canStartCheckout: boolean;
+	checkout: NonNullable<ListingDetailData["checkout"]>;
+	checkoutError: string | null;
+	ctaLabel: string;
+	fractionError: string | null;
+	fractionInput: string;
+	fractions: number;
+	guestLawyerEmail: string;
+	guestLawyerFirm: string;
+	guestLawyerName: string;
+	isCheckoutPending: boolean;
+	isMobile?: boolean;
+	lawyerError: string | null;
+	lawyerMode: "guest" | "platform";
+	listingTitle: string;
+	minimumFractions: number;
+	onFractionBlur: () => void;
+	onFractionChange: (value: string) => void;
+	onGuestLawyerEmailChange: (value: string) => void;
+	onGuestLawyerFirmChange: (value: string) => void;
+	onGuestLawyerNameChange: (value: string) => void;
+	onLawyerModeChange: (value: "guest" | "platform") => void;
+	onPlatformLawyerSelect: (lawyerId: string) => void;
+	onStartCheckout: () => void;
+	selectedLawyer?: NonNullable<
+		ListingDetailData["checkout"]
+	>["lawyers"][number];
+}) {
+	const idBase = useId();
+	const fractionsInputId = `${idBase}-fractions`;
+	const guestNameId = `${idBase}-guest-name`;
+	const guestEmailId = `${idBase}-guest-email`;
+	const guestFirmId = `${idBase}-guest-firm`;
+	let lawyerSelection: ReactNode;
+	if (lawyerMode === "platform") {
+		lawyerSelection =
+			checkout.lawyers.length > 0 ? (
+				checkout.lawyers.map((lawyer) => (
+					<LawyerOptionCard
+						isCompact={isMobile}
+						isSelected={lawyer.id === selectedLawyer?.id}
+						key={lawyer.id}
+						lawyer={lawyer}
+						onSelect={onPlatformLawyerSelect}
+					/>
+				))
+			) : (
+				<EmptySelectionState message="No platform lawyers are currently configured." />
+			);
+	} else {
+		lawyerSelection = (
+			<div className="grid gap-3 sm:grid-cols-2">
+				<FieldInput
+					id={guestNameId}
+					label="Name"
+					onChange={onGuestLawyerNameChange}
+					value={guestLawyerName}
+				/>
+				<FieldInput
+					id={guestEmailId}
+					label="Email"
+					onChange={onGuestLawyerEmailChange}
+					type="email"
+					value={guestLawyerEmail}
+				/>
+				<FieldInput
+					className="sm:col-span-2"
+					id={guestFirmId}
+					label="Firm"
+					onChange={onGuestLawyerFirmChange}
+					value={guestLawyerFirm}
+				/>
+			</div>
+		);
+	}
+
+	return (
+		<section className={cn(isMobile ? "px-5 pt-3" : "flex gap-6 px-16 pt-6")}>
+			<WhiteSurface className={cn("px-7 py-7", isMobile ? "w-full" : "flex-1")}>
+				<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+					<div>
+						<SectionLabel>Lock workflow</SectionLabel>
+						<h2 className="mt-1 font-semibold text-[20px]">
+							Choose fractions and counsel
+						</h2>
+					</div>
+					<div className="rounded-xl bg-[#F1FAF3] px-4 py-3 text-[#204636]">
+						<p className="font-medium text-xs uppercase tracking-[0.16em]">
+							Available
+						</p>
+						<p className="mt-1 font-semibold text-xl">
+							{availableFractions.toLocaleString()}
+						</p>
+					</div>
+				</div>
+
+				<div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+					<div className="space-y-2">
+						<label
+							className="font-medium text-[#6B6B68] text-[13px]"
+							htmlFor={fractionsInputId}
+						>
+							Number of fractions
+						</label>
+						<Input
+							aria-describedby={
+								fractionError ? `${fractionsInputId}-error` : undefined
+							}
+							aria-invalid={fractionError !== null}
+							className="h-12 rounded-xl border-[#E7E5E4] bg-[#FBFAF8] text-base"
+							id={fractionsInputId}
+							inputMode="numeric"
+							onBlur={onFractionBlur}
+							onChange={(event) => onFractionChange(event.target.value)}
+							value={fractionInput}
+						/>
+						<p className="text-[#6B6B68] text-xs">
+							Minimum {minimumFractions.toLocaleString()}, maximum{" "}
+							{availableFractions.toLocaleString()}. Availability is checked
+							again at checkout start.
+						</p>
+						{fractionError ? (
+							<p
+								className="text-[#B42318] text-xs"
+								id={`${fractionsInputId}-error`}
+							>
+								{fractionError}
+							</p>
+						) : null}
+					</div>
+					<div className="rounded-xl bg-[#E7F6EA] px-5 py-3 font-semibold text-[#2E7D4F] text-xl">
+						= {formatCurrency(calculatedInvestment)}
+					</div>
+				</div>
+
+				<div className="mt-6 space-y-3">
+					<p className="font-medium text-[#6B6B68] text-[13px]">
+						Select your lawyer
+					</p>
+					<div className="grid gap-2 sm:grid-cols-2">
+						<button
+							aria-pressed={lawyerMode === "platform"}
+							className={cn(
+								"rounded-xl border px-4 py-3 text-left font-medium text-sm",
+								lawyerMode === "platform"
+									? "border-[#204636] bg-[#F1FAF3] text-[#204636]"
+									: "border-[#E7E5E4] bg-white text-[#4A4A48]"
+							)}
+							onClick={() => onLawyerModeChange("platform")}
+							type="button"
+						>
+							Platform lawyer
+						</button>
+						<button
+							aria-pressed={lawyerMode === "guest"}
+							className={cn(
+								"rounded-xl border px-4 py-3 text-left font-medium text-sm",
+								lawyerMode === "guest"
+									? "border-[#204636] bg-[#F1FAF3] text-[#204636]"
+									: "border-[#E7E5E4] bg-white text-[#4A4A48]"
+							)}
+							onClick={() => onLawyerModeChange("guest")}
+							type="button"
+						>
+							Guest lawyer
+						</button>
+					</div>
+
+					{lawyerSelection}
+					{lawyerError ? (
+						<p className="text-[#B42318] text-xs">{lawyerError}</p>
+					) : null}
+				</div>
+			</WhiteSurface>
+
+			<HostedCheckoutSummary
+				calculatedInvestment={calculatedInvestment}
+				canStartCheckout={canStartCheckout}
+				checkout={checkout}
+				checkoutError={checkoutError}
+				ctaLabel={ctaLabel}
+				fractions={fractions}
+				isCheckoutPending={isCheckoutPending}
+				isMobile={isMobile}
+				listingTitle={listingTitle}
+				onStartCheckout={onStartCheckout}
+				selectedLawyerLabel={
+					lawyerMode === "guest"
+						? guestLawyerName || "Guest lawyer"
+						: selectedLawyer?.label
+				}
+			/>
+		</section>
+	);
+}
+
+function FieldInput({
 	className,
+	id,
+	label,
+	onChange,
+	type = "text",
+	value,
+}: {
+	className?: string;
+	id: string;
+	label: string;
+	onChange: (value: string) => void;
+	type?: "email" | "text";
+	value: string;
+}) {
+	return (
+		<div className={className}>
+			<label className="font-medium text-[#6B6B68] text-[13px]" htmlFor={id}>
+				{label}
+			</label>
+			<Input
+				className="mt-1 h-11 rounded-xl border-[#E7E5E4] bg-white"
+				id={id}
+				onChange={(event) => onChange(event.target.value)}
+				type={type}
+				value={value}
+			/>
+		</div>
+	);
+}
+
+function HostedCheckoutSummary({
+	calculatedInvestment,
+	canStartCheckout,
+	checkout,
+	checkoutError,
 	ctaLabel,
 	fractions,
+	isCheckoutPending,
+	isMobile,
 	listingTitle,
-	onCheckout,
+	onStartCheckout,
 	selectedLawyerLabel,
 }: {
 	calculatedInvestment: number;
+	canStartCheckout: boolean;
 	checkout: NonNullable<ListingDetailData["checkout"]>;
-	checkoutSubmitted: boolean;
-	className?: string;
+	checkoutError: string | null;
 	ctaLabel: string;
 	fractions: number;
+	isCheckoutPending: boolean;
+	isMobile: boolean;
 	listingTitle: string;
-	onCheckout: () => void;
+	onStartCheckout: () => void;
 	selectedLawyerLabel?: string;
 }) {
-	const idBase = useId();
-	const cardNumberId = `${idBase}-card-number`;
-	const expiryId = `${idBase}-expiry`;
-	const cvcId = `${idBase}-cvc`;
-
 	return (
 		<div
 			className={cn(
-				"w-[400px] shrink-0 rounded-xl bg-[#1B4332] px-7 py-7 text-white",
-				className
+				"shrink-0 rounded-xl bg-[#1B4332] px-7 py-7 text-white",
+				isMobile ? "mt-4 w-full px-5 py-5" : "w-[400px]"
 			)}
 		>
-			<h2 className="font-semibold text-[20px]">Lock Fee Checkout</h2>
+			<h2 className="font-semibold text-[20px]">Hosted Checkout</h2>
 			<div className="mt-5 space-y-3 text-sm">
 				<CheckoutRow label="Listing" value={listingTitle} />
 				<CheckoutRow
@@ -1296,56 +1578,42 @@ function CheckoutCard({
 					label="Lawyer"
 					value={selectedLawyerLabel ?? "No lawyer selected"}
 				/>
-				<CheckoutRow emphasis label="Lock Fee" value={checkout.lockFee} />
-			</div>
-
-			<div className="mt-6 space-y-3">
-				<div>
-					<label className="text-[12px] text-white/70" htmlFor={cardNumberId}>
-						Card number
-					</label>
-					<Input
-						className="mt-1 h-11 border-white/15 bg-white/6 text-white placeholder:text-white/45"
-						defaultValue="4242 4242 4242 4242"
-						id={cardNumberId}
-					/>
-				</div>
-				<div className="grid grid-cols-2 gap-3">
-					<div>
-						<label className="text-[12px] text-white/70" htmlFor={expiryId}>
-							Expiry
-						</label>
-						<Input
-							className="mt-1 h-11 border-white/15 bg-white/6 text-white placeholder:text-white/45"
-							defaultValue="MM / YY"
-							id={expiryId}
-						/>
-					</div>
-					<div>
-						<label className="text-[12px] text-white/70" htmlFor={cvcId}>
-							CVC
-						</label>
-						<Input
-							className="mt-1 h-11 border-white/15 bg-white/6 text-white placeholder:text-white/45"
-							defaultValue="123"
-							id={cvcId}
-						/>
-					</div>
-				</div>
+				<CheckoutRow
+					emphasis
+					label="Lock Fee"
+					value={checkout.lockFee.display}
+				/>
 			</div>
 
 			<Button
-				className="mt-6 h-11 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
-				disabled={checkoutSubmitted}
-				onClick={onCheckout}
+				className="mt-6 inline-flex h-auto min-h-11 w-full items-center justify-center gap-2 whitespace-normal rounded-xl bg-white px-4 py-3 text-[#173A2B] hover:bg-white/90"
+				disabled={!canStartCheckout || isCheckoutPending}
+				onClick={onStartCheckout}
 				type="button"
 			>
-				{ctaLabel}
+				{isCheckoutPending ? (
+					<>
+						<Loader2 className="size-4 animate-spin" />
+						Starting checkout
+					</>
+				) : (
+					<>
+						<ExternalLink className="size-4" />
+						{ctaLabel}
+					</>
+				)}
 			</Button>
 
+			{checkoutError ? (
+				<div className="mt-4 flex gap-2 rounded-xl bg-[#F8EAEA] px-3 py-3 text-[#7A271A] text-sm">
+					<AlertCircle className="mt-0.5 size-4 shrink-0" />
+					<p>{checkoutError}</p>
+				</div>
+			) : null}
+
 			<p className="mt-4 text-[12px] text-white/65 leading-5">
-				Non-refundable lock fee. Powered by {checkout.poweredBy}. Secures your
-				fractions while the deal is documented.
+				The lock fee is created by FairLend and paid on Stripe's hosted checkout
+				page. Availability is confirmed again before the hosted session opens.
 			</p>
 		</div>
 	);
@@ -1578,13 +1846,143 @@ function EmptySelectionState({ message }: { message: string }) {
 	);
 }
 
+function buildSelectedLawyerSnapshot({
+	guestEmail,
+	guestFirm,
+	guestName,
+	lawyerMode,
+	selectedLawyer,
+}: {
+	guestEmail: string;
+	guestFirm: string;
+	guestName: string;
+	lawyerMode: "guest" | "platform";
+	selectedLawyer?: NonNullable<
+		ListingDetailData["checkout"]
+	>["lawyers"][number];
+}): ListingCheckoutSelectedLawyer | null {
+	if (lawyerMode === "guest") {
+		const name = guestName.trim();
+		const email = guestEmail.trim();
+		const firm = guestFirm.trim();
+		if (name.length === 0 || email.length === 0) {
+			return null;
+		}
+		return {
+			type: "guest_lawyer",
+			name,
+			email,
+			...(firm.length > 0 ? { firm } : {}),
+		};
+	}
+
+	if (!selectedLawyer) {
+		return null;
+	}
+
+	return {
+		type: "platform_lawyer",
+		...(selectedLawyer.id ? { lawyerId: selectedLawyer.id } : {}),
+		name: selectedLawyer.label,
+		email: selectedLawyer.email ?? "closing@fairlend.local",
+		...(selectedLawyer.firm ? { firm: selectedLawyer.firm } : {}),
+	};
+}
+
+function getLawyerError(
+	lawyerMode: "guest" | "platform",
+	selectedLawyerSnapshot: ListingCheckoutSelectedLawyer | null
+): string | null {
+	if (selectedLawyerSnapshot !== null) {
+		return null;
+	}
+	if (lawyerMode === "guest") {
+		return "Enter a guest lawyer name and email.";
+	}
+	return "Select a platform lawyer.";
+}
+
+function CheckoutReturnStateBanner({
+	className,
+	state,
+}: {
+	className?: string;
+	state?: ListingCheckoutReturnState;
+}) {
+	if (!state) {
+		return null;
+	}
+
+	const content: Record<
+		ListingCheckoutReturnState,
+		{ heading: string; message: string; tone: "error" | "success" | "warning" }
+	> = {
+		abandoned: {
+			heading: "Checkout canceled",
+			message:
+				"No deal was created. Any active lock will be released by the checkout workflow.",
+			tone: "warning",
+		},
+		error: {
+			heading: "Checkout status unavailable",
+			message:
+				"We could not confirm the checkout state. Refresh the listing before starting another lock.",
+			tone: "error",
+		},
+		expired: {
+			heading: "Checkout expired",
+			message:
+				"The checkout window expired and the temporary lock is no longer active.",
+			tone: "warning",
+		},
+		provider_start_failed: {
+			heading: "Hosted checkout did not open",
+			message:
+				"The payment provider could not start checkout. No lock-fee payment was collected.",
+			tone: "error",
+		},
+		success_pending: {
+			heading: "Checkout received",
+			message:
+				"FairLend is reconciling the hosted checkout before deal creation is shown.",
+			tone: "success",
+		},
+	};
+	const selected = content[state];
+
+	return (
+		<section className={className}>
+			<div
+				className={cn(
+					"flex gap-3 rounded-xl border px-4 py-4 text-sm",
+					selected.tone === "success" &&
+						"border-[#B7E4C7] bg-[#F1FAF3] text-[#204636]",
+					selected.tone === "warning" &&
+						"border-[#F4D7A1] bg-[#FFF8E8] text-[#7A4D0B]",
+					selected.tone === "error" &&
+						"border-[#F1B8B1] bg-[#F8EAEA] text-[#7A271A]"
+				)}
+				role="status"
+			>
+				<AlertCircle className="mt-0.5 size-4 shrink-0" />
+				<div>
+					<p className="font-semibold">{selected.heading}</p>
+					<p className="mt-1 leading-6">{selected.message}</p>
+				</div>
+			</div>
+		</section>
+	);
+}
+
 function ReadOnlyMarketplaceNotice({
 	availableFractions,
 	className,
+	reason,
 	totalFractions,
 }: {
 	availableFractions: number;
 	className?: string;
+	reason?: string | null;
 	totalFractions: number;
 }) {
 	return (
@@ -1596,10 +1994,9 @@ function ReadOnlyMarketplaceNotice({
 						<h2 className="font-semibold text-[22px] leading-tight">
 							Fraction locking opens in the next phase
 						</h2>
-						<p className="max-w-2xl text-muted-foreground text-sm leading-6">
-							Availability on this page is live and accurate. Lawyer selection,
-							fraction reservation, and lock-fee checkout stay disabled on the
-							production marketplace until transaction workflows are promoted.
+						<p className="max-w-2xl text-[#5A5956] text-sm leading-6">
+							{reason ??
+								"Availability on this page is live and accurate. Lawyer selection, fraction reservation, and lock-fee checkout are not available for this listing."}
 						</p>
 					</div>
 					<div className="rounded-2xl border border-primary/15 bg-primary/10 px-5 py-4 text-right dark:border-primary/25 dark:bg-primary/15">
