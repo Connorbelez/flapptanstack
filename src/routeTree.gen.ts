@@ -950,6 +950,13 @@ export interface FileRoutesByFullPath {
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+  '/broker/': typeof BrokerIndexRoute
+>>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
+=======
+>>>>>>> 2ba15015a (responding to feedback on eng-310)
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
@@ -1078,6 +1085,13 @@ export interface FileRoutesByTo {
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+  '/broker': typeof BrokerIndexRoute
+>>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
+=======
+>>>>>>> 2ba15015a (responding to feedback on eng-310)
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker': typeof BrokerIndexRoute
@@ -1218,6 +1232,13 @@ export interface FileRoutesById {
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
   '/lender/deals': typeof LenderDealsRouteWithChildren
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+  '/broker/': typeof BrokerIndexRoute
+>>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
+=======
+>>>>>>> 2ba15015a (responding to feedback on eng-310)
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
@@ -1360,6 +1381,13 @@ export interface FileRouteTypes {
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+    | '/broker/'
+>>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
+=======
+>>>>>>> 2ba15015a (responding to feedback on eng-310)
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker/'
@@ -1488,6 +1516,13 @@ export interface FileRouteTypes {
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+    | '/broker'
+>>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
+=======
+>>>>>>> 2ba15015a (responding to feedback on eng-310)
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker'
@@ -1627,6 +1662,13 @@ export interface FileRouteTypes {
     | '/e2e/session'
     | '/e2e/switch-org'
     | '/lender/deals'
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+    | '/broker/'
+>>>>>>> 735c3bfad (fix(listings): remove redundant lender marketplace routes)
+=======
+>>>>>>> 2ba15015a (responding to feedback on eng-310)
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker/'

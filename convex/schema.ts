@@ -587,6 +587,7 @@ export default defineSchema({
 		createdAt: v.number(),
 	})
 		.index("by_lender_date", ["lenderId", "snapshotDate"])
+		.index("by_lender_snapshot", ["lenderId", "snapshotType", "snapshotDate"])
 		.index("by_type", ["snapshotType", "snapshotDate"]),
 
 	// ══════════════════════════════════════════════════════════
