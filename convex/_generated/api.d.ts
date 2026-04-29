@@ -26,6 +26,9 @@ import type * as admin_origination_participants from "../admin/origination/parti
 import type * as admin_origination_postCommitCollectionsActivation from "../admin/origination/postCommitCollectionsActivation.js";
 import type * as admin_origination_properties from "../admin/origination/properties.js";
 import type * as admin_origination_validators from "../admin/origination/validators.js";
+import type * as admin_portfolio_context from "../admin/portfolio/context.js";
+import type * as admin_portfolio_mutations from "../admin/portfolio/mutations.js";
+import type * as admin_portfolio_queries from "../admin/portfolio/queries.js";
 import type * as admin_queries from "../admin/queries.js";
 import type * as admin_settings_actions from "../admin/settings/actions.js";
 import type * as admin_settings_mockMortgages from "../admin/settings/mockMortgages.js";
@@ -498,6 +501,9 @@ declare const fullApi: ApiFromModules<{
   "admin/origination/postCommitCollectionsActivation": typeof admin_origination_postCommitCollectionsActivation;
   "admin/origination/properties": typeof admin_origination_properties;
   "admin/origination/validators": typeof admin_origination_validators;
+  "admin/portfolio/context": typeof admin_portfolio_context;
+  "admin/portfolio/mutations": typeof admin_portfolio_mutations;
+  "admin/portfolio/queries": typeof admin_portfolio_queries;
   "admin/queries": typeof admin_queries;
   "admin/settings/actions": typeof admin_settings_actions;
   "admin/settings/mockMortgages": typeof admin_settings_mockMortgages;

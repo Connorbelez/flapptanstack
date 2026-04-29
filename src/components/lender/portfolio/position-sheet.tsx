@@ -5,7 +5,6 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "#/components/ui/tabs";
-import type { Id } from "../../../../convex/_generated/dataModel";
 import {
 	PortfolioDetailHost,
 	PortfolioDetailSection,
@@ -20,14 +19,19 @@ import {
 	formatPortfolioFractions,
 	formatPortfolioPercent,
 } from "./portfolio-formatters";
-import { lenderPortfolioPositionDetailQueryOptions } from "./query-options";
+import type { PortfolioPositionDetail } from "./portfolio-types";
+import {
+	adminLenderPortfolioPositionDetailQueryOptions,
+	lenderPortfolioPositionDetailQueryOptions,
+	type PortfolioQueryAccess,
+} from "./query-options";
 import { RenewalActionSurface } from "./renewals/renewal-actions";
 
 interface PositionSheetProps {
+	access: PortfolioQueryAccess;
 	mortgageId: string;
 	onOpenChange: (open: boolean) => void;
 	open: boolean;
-	portalId: Id<"portals">;
 }
 
 const POSITION_SHEET_LOADING_KEYS = [
@@ -54,15 +58,100 @@ function SheetLoadingState() {
 }
 
 export function PositionSheet({
+	access,
 	mortgageId,
 	onOpenChange,
 	open,
-	portalId,
 }: PositionSheetProps) {
+	if (access.mode === "admin") {
+		return (
+			<AdminPositionSheet
+				access={access}
+				mortgageId={mortgageId}
+				onOpenChange={onOpenChange}
+				open={open}
+			/>
+		);
+	}
+
+	return (
+		<PortalPositionSheet
+			access={access}
+			mortgageId={mortgageId}
+			onOpenChange={onOpenChange}
+			open={open}
+		/>
+	);
+}
+
+function PortalPositionSheet({
+	access,
+	mortgageId,
+	onOpenChange,
+	open,
+}: PositionSheetProps & {
+	access: Extract<PortfolioQueryAccess, { mode: "portal" }>;
+}) {
 	const { data, error, isPending } = useQuery({
-		...lenderPortfolioPositionDetailQueryOptions(portalId, mortgageId),
+		...lenderPortfolioPositionDetailQueryOptions(access.portalId, mortgageId),
 	});
 
+	return (
+		<PositionSheetView
+			access={access}
+			data={data}
+			error={error}
+			isPending={isPending}
+			mortgageId={mortgageId}
+			onOpenChange={onOpenChange}
+			open={open}
+		/>
+	);
+}
+
+function AdminPositionSheet({
+	access,
+	mortgageId,
+	onOpenChange,
+	open,
+}: PositionSheetProps & {
+	access: Extract<PortfolioQueryAccess, { mode: "admin" }>;
+}) {
+	const { data, error, isPending } = useQuery({
+		...adminLenderPortfolioPositionDetailQueryOptions(
+			access.targetLenderId,
+			mortgageId
+		),
+	});
+
+	return (
+		<PositionSheetView
+			access={access}
+			data={data}
+			error={error}
+			isPending={isPending}
+			mortgageId={mortgageId}
+			onOpenChange={onOpenChange}
+			open={open}
+		/>
+	);
+}
+
+interface PositionSheetViewProps extends PositionSheetProps {
+	data: PortfolioPositionDetail | undefined;
+	error: Error | null;
+	isPending: boolean;
+}
+
+function PositionSheetView({
+	access,
+	data,
+	error,
+	isPending,
+	mortgageId,
+	onOpenChange,
+	open,
+}: PositionSheetViewProps) {
 	return (
 		<PortfolioDetailHost
 			dataTestId="position-detail-host"
@@ -221,8 +310,8 @@ export function PositionSheet({
 									title="Renewal"
 								>
 									<RenewalActionSurface
+										access={access}
 										mortgageId={mortgageId}
-										portalId={portalId}
 										variant="full"
 									/>
 								</PortfolioDetailSection>

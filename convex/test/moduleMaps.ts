@@ -94,6 +94,12 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../admin/origination/validators.ts"),
 	"/convex/admin/mortgages/ownership.ts": async () =>
 		await import("./../admin/mortgages/ownership.ts"),
+	"/convex/admin/portfolio/mutations.ts": async () =>
+		await import("./../admin/portfolio/mutations.ts"),
+	"/convex/admin/portfolio/context.ts": async () =>
+		await import("./../admin/portfolio/context.ts"),
+	"/convex/admin/portfolio/queries.ts": async () =>
+		await import("./../admin/portfolio/queries.ts"),
 	"/convex/admin/settings/actions.ts": async () =>
 		await import("./../admin/settings/actions.ts"),
 	"/convex/admin/settings/mutations.ts": async () =>

@@ -7,12 +7,12 @@ import {
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { cn } from "#/lib/utils";
-import type { Id } from "../../../../convex/_generated/dataModel";
 import {
 	formatPortfolioDate,
 	formatPortfolioEnumLabel,
 } from "./portfolio-formatters";
 import type { PortfolioCommandCenterSnapshot } from "./portfolio-types";
+import type { PortfolioQueryAccess } from "./query-options";
 import { RenewalActionSurface } from "./renewals/renewal-actions";
 
 type PortfolioActionItem =
@@ -20,11 +20,11 @@ type PortfolioActionItem =
 type PortfolioBrokerPrefillContext = PortfolioActionItem["prefillContext"];
 
 export interface ActionItemHostProps {
+	access: PortfolioQueryAccess;
 	action: PortfolioActionItem;
 	isSelected?: boolean;
 	onOpenDetails?: (action: PortfolioActionItem) => void;
 	onPrefill: (context: PortfolioBrokerPrefillContext) => void;
-	portalId: Id<"portals">;
 }
 
 function getActionDetailLabel(action: PortfolioActionItem) {
@@ -56,10 +56,10 @@ function getPriorityBadgeClassName(priority: PortfolioActionItem["priority"]) {
 
 export function ActionItemHost({
 	action,
+	access,
 	isSelected = false,
 	onOpenDetails,
 	onPrefill,
-	portalId,
 }: ActionItemHostProps) {
 	const detailLabel = getActionDetailLabel(action);
 
@@ -147,8 +147,8 @@ export function ActionItemHost({
 			{action.kind === "renewal_prompt" && action.mortgageId ? (
 				<div className="mt-4">
 					<RenewalActionSurface
+						access={access}
 						mortgageId={action.mortgageId}
-						portalId={portalId}
 						variant="compact"
 					/>
 				</div>

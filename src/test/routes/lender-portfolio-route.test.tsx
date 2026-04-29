@@ -7,7 +7,7 @@ import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	emptyPortfolioHistoricalSeriesFixture,
 	emptyPortfolioCommandCenterFixture,
@@ -25,14 +25,14 @@ import {
 } from "#/components/lender/portfolio/portfolio-types";
 import {
 	lenderPortfolioCommandCenterQueryOptions,
+	lenderPortfolioHistoricalSeriesQueryOptions,
 	lenderPortfolioPaymentDetailQueryOptions,
 	lenderPortfolioPositionDetailQueryOptions,
+	lenderPortfolioTaxExportQueryOptions,
 } from "#/components/lender/portfolio/query-options";
 import { useIsMobile } from "#/hooks/use-mobile";
-import {
-	LenderPortfolioRouteComponent,
-	Route,
-} from "#/routes/lender.portfolio";
+import { LenderPortfolioRouteComponent } from "#/routes/-lender-portfolio-route-component";
+import { Route } from "#/routes/lender.portfolio";
 import { Route as RootRoute } from "#/routes/__root";
 
 vi.mock("@tanstack/react-query", () => ({
@@ -66,8 +66,10 @@ vi.mock("@workos/authkit-tanstack-react-start/client", () => ({
 
 vi.mock("#/components/lender/portfolio/query-options", () => ({
 	lenderPortfolioCommandCenterQueryOptions: vi.fn(),
+	lenderPortfolioHistoricalSeriesQueryOptions: vi.fn(),
 	lenderPortfolioPaymentDetailQueryOptions: vi.fn(),
 	lenderPortfolioPositionDetailQueryOptions: vi.fn(),
+	lenderPortfolioTaxExportQueryOptions: vi.fn(),
 }));
 
 vi.mock("#/components/lender/portfolio/renewals/renewal-actions", () => ({
@@ -132,6 +134,15 @@ Object.defineProperty(HTMLElement.prototype, "clientWidth", {
 	get: () => TEST_CHART_RECT.width,
 });
 
+beforeEach(() => {
+	vi.mocked(lenderPortfolioHistoricalSeriesQueryOptions).mockReturnValue(
+		HISTORY_QUERY_OPTIONS as never
+	);
+	vi.mocked(lenderPortfolioTaxExportQueryOptions).mockReturnValue(
+		TAX_EXPORT_QUERY_OPTIONS as never
+	);
+});
+
 afterEach(() => {
 	cleanup();
 	vi.restoreAllMocks();
@@ -145,6 +156,12 @@ const POSITION_DETAIL_QUERY_OPTIONS = {
 };
 const PAYMENT_DETAIL_QUERY_OPTIONS = {
 	queryKey: ["portfolio-payment-detail", "obligation_overdue"],
+};
+const HISTORY_QUERY_OPTIONS = {
+	queryKey: ["portfolio-history"],
+};
+const TAX_EXPORT_QUERY_OPTIONS = {
+	queryKey: ["portfolio-tax-export"],
 };
 const PORTAL_ID = "portal_meridian" as never;
 

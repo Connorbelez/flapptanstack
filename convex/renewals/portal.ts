@@ -1,7 +1,9 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { appendAuditJournalEntry } from "../engine/auditJournal";
 import { executeTransition } from "../engine/transition";
+import type { CommandSource } from "../engine/types";
 import {
 	portalLenderMutation,
 	portalLenderQuery,
@@ -45,6 +47,20 @@ type RenewalMutationContext = MutationCtx & {
 		authId: string;
 	};
 };
+interface SignalLenderRenewalIntentArgs {
+	intent: LenderRenewalIntentChoice;
+	mortgageId: Doc<"mortgages">["_id"];
+	notes?: string;
+	partialExitFractions?: number;
+	transitionPayload?: Record<string, unknown>;
+	transitionSource: CommandSource;
+}
+interface PortalSignalLenderRenewalIntentArgs {
+	intent: LenderRenewalIntentChoice;
+	mortgageId: Doc<"mortgages">["_id"];
+	notes?: string;
+	partialExitFractions?: number;
+}
 type MortgageDoc = Awaited<ReturnType<typeof loadMortgageOrThrow>>;
 type PositionAccountDoc = NonNullable<
 	Awaited<ReturnType<typeof findCurrentPositionAccount>>
@@ -83,6 +99,19 @@ function buildSystemExpirySource() {
 		actorType: "system" as const,
 		channel: "scheduler" as const,
 	};
+}
+
+function patchAuditEventForIntent(intent: LenderRenewalIntentChoice) {
+	switch (intent) {
+		case "renew":
+			return "LENDER_UPDATES_RENEWAL_INTENT";
+		case "exit":
+			return "LENDER_UPDATES_EXIT_INTENT";
+		case "partial_exit":
+			return "LENDER_UPDATES_PARTIAL_EXIT_INTENT";
+		default:
+			throw new ConvexError("Unsupported renewal intent audit event");
+	}
 }
 
 function assertValidRequestedIntent(args: {
@@ -223,9 +252,7 @@ function summarizeRenewalIntent(args: {
 			args.intent.status === "pending_signal" && availableChoices.length > 0,
 		availableChoices,
 		canChangeIntent:
-			(args.intent.status === "renewed" || args.intent.status === "exiting") &&
-			!actionBlockedReason &&
-			availableChoices.length > 0,
+			args.intent.status === "renewed" || args.intent.status === "exiting",
 		currentHeldFractions: args.currentHeldFractions,
 		fractionCount: args.intent.fractionCount,
 		id: args.intent._id,
@@ -280,13 +307,6 @@ async function resolveSignalIntentRecord(args: {
 				positionAccount: args.positionAccount,
 			})
 		).intent;
-	}
-
-	if (intentRecord.status === "expired") {
-		return {
-			intentRecord,
-			kind: "expired",
-		};
 	}
 
 	if (
@@ -383,7 +403,7 @@ function decideSignalOperation(args: {
 	}
 }
 
-async function projectRenewalIntent(args: {
+export async function projectRenewalIntent(args: {
 	ctx: RenewalProjectionContext;
 	intent: LenderRenewalIntentDoc;
 	nowMs: number;
@@ -460,106 +480,157 @@ export const signalLenderRenewalIntent = portalLenderMutation({
 })
 	.use(requirePermission("portfolio:signal_renewal"))
 	.handler(async (ctx, args) => {
-		const nowMs = Date.now();
-		const mortgage = await loadMortgageOrThrow(ctx, args.mortgageId);
-		if (mortgage.brokerOfRecordId !== ctx.lender.brokerId) {
-			throw new ConvexError(
-				"Forbidden: mortgage is not available in this lender portal"
-			);
-		}
-		const positionAccount = await findCurrentPositionAccount({
-			ctx,
-			lenderAuthId: ctx.viewer.authId,
-			mortgageId: args.mortgageId,
-		});
-		const currentHeldFractions = getCurrentHeldFractions(positionAccount);
-
-		if (!(positionAccount && currentHeldFractions > 0)) {
-			throw new ConvexError(
-				"Forbidden: lender does not currently hold an actionable position for this mortgage"
-			);
-		}
-
-		assertValidRequestedIntent({
-			currentHeldFractions,
-			intent: args.intent,
-			partialExitFractions: args.partialExitFractions,
-		});
-
-		const resolvedIntent = await resolveSignalIntentRecord({
-			ctx,
-			currentHeldFractions,
-			mortgage,
-			mortgageId: args.mortgageId,
-			nowMs,
-			positionAccount,
-		});
-		if (resolvedIntent.kind === "expired") {
-			return projectRenewalIntent({
-				ctx,
-				intent: resolvedIntent.intentRecord,
-				nowMs,
-			});
-		}
-
-		const intentRecord = resolvedIntent.intentRecord;
-		const {
-			shouldPatchOnly,
-			shouldTransition,
-			transitionEventType,
-			transitionPayload,
-		} = decideSignalOperation({
-			intentRecord,
-			requestedIntent: args.intent,
-		});
-
-		if (shouldTransition && transitionEventType) {
-			const transitionResult = await executeTransition(ctx, {
-				entityType: "lenderRenewalIntent",
-				entityId: intentRecord._id,
-				eventType: transitionEventType,
-				payload: transitionPayload,
-				source: buildPortalTransitionSource(ctx.viewer.authId),
-			});
-
-			if (!transitionResult.success) {
-				throw new ConvexError(
-					transitionResult.reason ?? "Renewal transition was rejected"
-				);
-			}
-		}
-
-		if (shouldTransition || shouldPatchOnly) {
-			const timeline = buildLenderRenewalTimeline(mortgage.maturityDate);
-			await ctx.db.patch(intentRecord._id, {
-				brokerId: mortgage.brokerOfRecordId,
-				fractionCount: currentHeldFractions,
-				intent: args.intent,
-				maturityDate: timeline.maturityAt,
-				notes: args.notes,
-				partialExitFractions:
-					args.intent === "partial_exit"
-						? args.partialExitFractions
-						: undefined,
-				positionAccountId: positionAccount._id as string,
-				signalDeadline: timeline.signalDeadlineAt,
-				signalledAt: nowMs,
-			});
-		}
-
-		const refreshedIntent = await findExistingLenderRenewalIntent({
-			ctx,
-			lenderId: ctx.lender._id,
-			mortgageId: args.mortgageId,
-		});
-		if (!refreshedIntent) {
-			throw new ConvexError("Failed to reload lender renewal intent");
-		}
-
-		return projectRenewalIntent({
-			ctx,
-			intent: refreshedIntent,
-			nowMs,
+		const signalArgs = args as unknown as PortalSignalLenderRenewalIntentArgs;
+		return await signalLenderRenewalIntentForContext(ctx, {
+			intent: signalArgs.intent,
+			mortgageId: signalArgs.mortgageId,
+			notes: signalArgs.notes,
+			partialExitFractions: signalArgs.partialExitFractions,
+			transitionSource: buildPortalTransitionSource(ctx.viewer.authId),
 		});
 	})
 	.public();
+
+export async function signalLenderRenewalIntentForContext(
+	ctx: RenewalMutationContext,
+	args: SignalLenderRenewalIntentArgs
+) {
+	const nowMs = Date.now();
+	const mortgage = await loadMortgageOrThrow(ctx, args.mortgageId);
+	if (mortgage.brokerOfRecordId !== ctx.lender.brokerId) {
+		throw new ConvexError(
+			"Forbidden: mortgage is not available in this lender portal"
+		);
+	}
+	const positionAccount = await findCurrentPositionAccount({
+		ctx,
+		lenderAuthId: ctx.viewer.authId,
+		mortgageId: args.mortgageId,
+	});
+	const currentHeldFractions = getCurrentHeldFractions(positionAccount);
+
+	if (!(positionAccount && currentHeldFractions > 0)) {
+		throw new ConvexError(
+			"Forbidden: lender does not currently hold an actionable position for this mortgage"
+		);
+	}
+
+	assertValidRequestedIntent({
+		currentHeldFractions,
+		intent: args.intent,
+		partialExitFractions: args.partialExitFractions,
+	});
+
+	const resolvedIntent = await resolveSignalIntentRecord({
+		ctx,
+		currentHeldFractions,
+		mortgage,
+		mortgageId: args.mortgageId,
+		nowMs,
+		positionAccount,
+	});
+	if (resolvedIntent.kind === "expired") {
+		return projectRenewalIntent({
+			ctx,
+			intent: resolvedIntent.intentRecord,
+			nowMs,
+		});
+	}
+
+	const intentRecord = resolvedIntent.intentRecord;
+	const {
+		shouldPatchOnly,
+		shouldTransition,
+		transitionEventType,
+		transitionPayload,
+	} = decideSignalOperation({
+		intentRecord,
+		requestedIntent: args.intent,
+	});
+
+	if (shouldTransition && transitionEventType) {
+		const transitionResult = await executeTransition(ctx, {
+			entityType: "lenderRenewalIntent",
+			entityId: intentRecord._id,
+			eventType: transitionEventType,
+			payload: {
+				...(transitionPayload ?? {}),
+				...(args.transitionPayload ?? {}),
+			},
+			source: args.transitionSource,
+		});
+
+		if (!transitionResult.success) {
+			throw new ConvexError(
+				transitionResult.reason ?? "Renewal transition was rejected"
+			);
+		}
+	}
+
+	if (shouldTransition || shouldPatchOnly) {
+		const timeline = buildLenderRenewalTimeline(mortgage.maturityDate);
+		const patch = {
+			brokerId: mortgage.brokerOfRecordId,
+			fractionCount: currentHeldFractions,
+			intent: args.intent,
+			maturityDate: timeline.maturityAt,
+			notes: args.notes,
+			partialExitFractions:
+				args.intent === "partial_exit" ? args.partialExitFractions : undefined,
+			positionAccountId: positionAccount._id as string,
+			signalDeadline: timeline.signalDeadlineAt,
+			signalledAt: nowMs,
+		};
+		await ctx.db.patch(intentRecord._id, patch);
+
+		if (shouldPatchOnly) {
+			await appendAuditJournalEntry(ctx, {
+				actorId: args.transitionSource.actorId ?? "system",
+				actorType: args.transitionSource.actorType,
+				channel: args.transitionSource.channel,
+				beforeState: intentRecord as unknown as Record<string, unknown>,
+				afterState: {
+					...(intentRecord as unknown as Record<string, unknown>),
+					...patch,
+				},
+				entityId: intentRecord._id,
+				entityType: "lenderRenewalIntent",
+				eventCategory: "governed_transition",
+				eventType: patchAuditEventForIntent(args.intent),
+				linkedRecordIds: {
+					lenderId: ctx.lender._id,
+					mortgageId: args.mortgageId,
+					positionAccountId: positionAccount._id,
+				},
+				machineVersion: "patch-only",
+				newState: intentRecord.status,
+				organizationId: mortgage.orgId,
+				payload: {
+					intent: args.intent,
+					notes: args.notes,
+					partialExitFractions: args.partialExitFractions,
+					...(args.transitionPayload ?? {}),
+				},
+				previousState: intentRecord.status,
+				outcome: "transitioned",
+				reason: "patch_only_intent_update",
+				timestamp: nowMs,
+			});
+		}
+	}
+
+	const refreshedIntent = await findExistingLenderRenewalIntent({
+		ctx,
+		lenderId: ctx.lender._id,
+		mortgageId: args.mortgageId,
+	});
+	if (!refreshedIntent) {
+		throw new ConvexError("Failed to reload lender renewal intent");
+	}
+
+	return projectRenewalIntent({
+		ctx,
+		intent: refreshedIntent,
+		nowMs,
+	});
+}
