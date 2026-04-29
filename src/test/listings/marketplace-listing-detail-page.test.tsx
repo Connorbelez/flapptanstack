@@ -33,6 +33,7 @@ vi.mock("#/components/listings/ListingDetailPage", () => ({
 			selectedLawyer: {
 				email: string;
 				name: string;
+				source: "manual";
 				type: "guest_lawyer";
 			};
 		}) => Promise<unknown>;
@@ -60,6 +61,7 @@ vi.mock("#/components/listings/ListingDetailPage", () => ({
 						requestedFractions: 2,
 						selectedLawyer: {
 							type: "guest_lawyer",
+							source: "manual",
 							name: "Jordan Counsel",
 							email: "jordan@example.test",
 						},
@@ -325,6 +327,7 @@ describe("marketplace listing detail page", () => {
 				requestedFractions: 2000,
 				selectedLawyer: {
 					type: "guest_lawyer",
+					source: "manual",
 					name: "Jordan Counsel",
 					email: "jordan@example.test",
 				},

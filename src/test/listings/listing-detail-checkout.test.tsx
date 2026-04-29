@@ -123,6 +123,17 @@ function renderInteractiveListing(
 	return { listing, onStartCheckout, redirectToHostedCheckout };
 }
 
+function listingWithoutPlatformLawyers(): ListingDetailData {
+	const listing = getListing();
+	return {
+		...listing,
+		checkout: {
+			...listing.checkout!,
+			lawyers: [],
+		},
+	};
+}
+
 function firstCheckoutButton(): HTMLButtonElement {
 	return screen.getAllByRole("button", {
 		name: /Lock .* Fractions - Pay CAD 250 Fee/i,
@@ -195,13 +206,25 @@ describe("listing detail hosted checkout launcher", () => {
 	});
 
 	it("requires guest lawyer name and email before enabling checkout", () => {
-		renderInteractiveListing();
+		renderInteractiveListing({ listing: listingWithoutPlatformLawyers() });
 
-		fireEvent.click(screen.getAllByRole("button", { name: "Guest lawyer" })[0]!);
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "Guest lawyer fallback" })[0]!
+		);
 
 		expect(firstCheckoutButton().disabled).toBe(true);
 		expect(screen.getAllByLabelText("Name").length).toBeGreaterThan(0);
 		expect(screen.getAllByLabelText("Email").length).toBeGreaterThan(0);
+	});
+
+	it("does not expose manual guest fallback while platform lawyers are configured", () => {
+		renderInteractiveListing();
+
+		expect(
+			screen.queryByRole("button", { name: "Guest lawyer fallback" })
+		).toBeNull();
+		expect(screen.queryByLabelText("Name")).toBeNull();
+		expect(screen.queryByLabelText("Email")).toBeNull();
 	});
 
 	it("rejects non-positive fraction input instead of submitting the default", () => {
@@ -239,9 +262,11 @@ describe("listing detail hosted checkout launcher", () => {
 	});
 
 	it("requires a valid guest lawyer email", () => {
-		renderInteractiveListing();
+		renderInteractiveListing({ listing: listingWithoutPlatformLawyers() });
 
-		fireEvent.click(screen.getAllByRole("button", { name: "Guest lawyer" })[0]!);
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "Guest lawyer fallback" })[0]!
+		);
 		fireEvent.change(screen.getAllByLabelText("Name")[0]!, {
 			target: { value: "Jordan Counsel" },
 		});
@@ -253,6 +278,43 @@ describe("listing detail hosted checkout launcher", () => {
 		expect(
 			screen.getAllByText("Enter a guest lawyer name and valid email.").length
 		).toBeGreaterThan(0);
+	});
+
+	it("starts checkout with explicit manual guest fallback when no platform lawyer is configured", async () => {
+		const onStartCheckout = vi.fn().mockResolvedValue({
+			ok: true,
+			checkoutSessionId: "checkout_123",
+			expiresAt: Date.now() + 300_000,
+			stripeCheckoutUrl: "https://checkout.stripe.test/session",
+		});
+		renderInteractiveListing({
+			listing: listingWithoutPlatformLawyers(),
+			onStartCheckout,
+		});
+
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "Guest lawyer fallback" })[0]!
+		);
+		fireEvent.change(screen.getAllByLabelText("Name")[0]!, {
+			target: { value: "Jordan Counsel" },
+		});
+		fireEvent.change(screen.getAllByLabelText("Email")[0]!, {
+			target: { value: "jordan@example.test" },
+		});
+		fireEvent.click(firstCheckoutButton());
+
+		await waitFor(() => {
+			expect(onStartCheckout).toHaveBeenCalledWith(
+				expect.objectContaining({
+					selectedLawyer: {
+						type: "guest_lawyer",
+						source: "manual",
+						name: "Jordan Counsel",
+						email: "jordan@example.test",
+					},
+				})
+			);
+		});
 	});
 
 	it("renders stable copy for thrown checkout start failures", async () => {

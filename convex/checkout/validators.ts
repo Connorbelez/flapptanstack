@@ -38,6 +38,7 @@ export const checkoutPlatformLawyerSnapshotValidator = v.object({
 
 export const checkoutGuestLawyerSnapshotValidator = v.object({
 	type: v.literal("guest_lawyer"),
+	source: v.union(v.literal("lso_search"), v.literal("manual")),
 	name: v.string(),
 	email: v.string(),
 	firm: v.optional(v.string()),
@@ -63,6 +64,7 @@ export interface GuestLawyerSnapshot {
 	readonly firm?: string;
 	readonly lso?: LsoLawyerMetadata;
 	readonly name: string;
+	readonly source: "lso_search" | "manual";
 	readonly type: "guest_lawyer";
 }
 
@@ -201,9 +203,20 @@ export function parseSelectedLawyerSnapshot(
 	if (input.lawyerId !== undefined) {
 		throw new Error("guest lawyer snapshots must not include lawyerId");
 	}
+	const source = input.source;
+	if (source !== "lso_search" && source !== "manual") {
+		throw new Error("selectedLawyer.source must be lso_search or manual");
+	}
+	if (source === "lso_search" && lso === undefined) {
+		throw new Error("LSO-backed guest lawyer snapshots must include lso");
+	}
+	if (source === "manual" && lso !== undefined) {
+		throw new Error("manual guest lawyer snapshots must not include lso");
+	}
 
 	return {
 		type,
+		source,
 		name,
 		email,
 		...(firm === undefined ? {} : { firm }),

@@ -190,6 +190,7 @@ export type ListingCheckoutSelectedLawyer =
 			email: string;
 			firm?: string;
 			name: string;
+			source: "manual";
 			type: "guest_lawyer";
 	  };
 
