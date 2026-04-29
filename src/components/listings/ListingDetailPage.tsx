@@ -225,6 +225,10 @@ export function ListingDetailPage({
 		setFractionInput(normalizeFractions(requestedFractions));
 	}
 
+	function handleLockFeeCheckout() {
+		setCheckoutSubmitted(true);
+	}
+
 	return (
 		<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col text-foreground">
 			<div className="hidden lg:block">
@@ -413,6 +417,7 @@ export function ListingDetailPage({
 							calculatedInvestment={calculatedInvestment}
 							checkout={checkout}
 							ctaLabel={ctaLabel}
+							disableSubmit={checkoutSubmitted}
 							fractions={effectiveFractions}
 							listingTitle={listing.title}
 							selectedLawyerLabel={selectedLawyer?.label}
@@ -783,6 +788,7 @@ export function ListingDetailPage({
 								checkout={checkout}
 								className="w-full px-5 py-5"
 								ctaLabel={ctaLabel}
+								disableSubmit={checkoutSubmitted}
 								fractions={effectiveFractions}
 								listingTitle={listing.title}
 								selectedLawyerLabel={selectedLawyer?.label}
@@ -1246,6 +1252,7 @@ function CheckoutCard({
 	checkout,
 	className,
 	ctaLabel,
+	disableSubmit = false,
 	fractions,
 	listingTitle,
 	selectedLawyerLabel,
@@ -1254,6 +1261,7 @@ function CheckoutCard({
 	checkout: NonNullable<ListingDetailData["checkout"]>;
 	className?: string;
 	ctaLabel: string;
+	disableSubmit?: boolean;
 	fractions: number;
 	listingTitle: string;
 	selectedLawyerLabel?: string;
@@ -1319,7 +1327,12 @@ function CheckoutCard({
 				</div>
 			</div>
 
-			<Button className="mt-6 h-11 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90">
+			<Button
+				className="mt-6 h-11 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+				disabled={disableSubmit}
+				onClick={onCheckout}
+				type="button"
+			>
 				{ctaLabel}
 			</Button>
 
