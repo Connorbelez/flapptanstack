@@ -223,7 +223,9 @@ function summarizeRenewalIntent(args: {
 			args.intent.status === "pending_signal" && availableChoices.length > 0,
 		availableChoices,
 		canChangeIntent:
-			args.intent.status === "renewed" || args.intent.status === "exiting",
+			(args.intent.status === "renewed" || args.intent.status === "exiting") &&
+			!actionBlockedReason &&
+			availableChoices.length > 0,
 		currentHeldFractions: args.currentHeldFractions,
 		fractionCount: args.intent.fractionCount,
 		id: args.intent._id,
@@ -278,6 +280,13 @@ async function resolveSignalIntentRecord(args: {
 				positionAccount: args.positionAccount,
 			})
 		).intent;
+	}
+
+	if (intentRecord.status === "expired") {
+		return {
+			intentRecord,
+			kind: "expired",
+		};
 	}
 
 	if (
@@ -453,6 +462,11 @@ export const signalLenderRenewalIntent = portalLenderMutation({
 	.handler(async (ctx, args) => {
 		const nowMs = Date.now();
 		const mortgage = await loadMortgageOrThrow(ctx, args.mortgageId);
+		if (mortgage.brokerOfRecordId !== ctx.lender.brokerId) {
+			throw new ConvexError(
+				"Forbidden: mortgage is not available in this lender portal"
+			);
+		}
 		const positionAccount = await findCurrentPositionAccount({
 			ctx,
 			lenderAuthId: ctx.viewer.authId,

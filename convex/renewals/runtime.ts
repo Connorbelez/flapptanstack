@@ -2,8 +2,10 @@ import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { getLenderByAuthId } from "../auth/actorResolution";
-import { getAccountLenderId } from "../ledger/accountOwnership";
-import { getPostedBalance } from "../ledger/accounts";
+import {
+	findPositionAccountOrNull,
+	getPostedBalance,
+} from "../ledger/accounts";
 import { buildLenderRenewalTimeline } from "./constants";
 
 type RenewalReaderCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
@@ -37,31 +39,11 @@ export async function findCurrentPositionAccount(args: {
 	lenderAuthId: string;
 	mortgageId: Id<"mortgages">;
 }) {
-	const indexed = await args.ctx.db
-		.query("ledger_accounts")
-		.withIndex("by_mortgage_and_lender", (query) =>
-			query.eq("mortgageId", args.mortgageId).eq("lenderId", args.lenderAuthId)
-		)
-		.first();
-
-	if (indexed?.type === "POSITION") {
-		return indexed;
-	}
-
-	const fallback = (
-		await args.ctx.db
-			.query("ledger_accounts")
-			.withIndex("by_mortgage", (query) =>
-				query.eq("mortgageId", args.mortgageId)
-			)
-			.collect()
-	).find(
-		(account) =>
-			account.type === "POSITION" &&
-			getAccountLenderId(account) === args.lenderAuthId
+	return findPositionAccountOrNull(
+		args.ctx,
+		args.mortgageId,
+		args.lenderAuthId
 	);
-
-	return fallback ?? null;
 }
 
 export function getCurrentHeldFractions(

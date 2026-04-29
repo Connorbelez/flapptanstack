@@ -37,8 +37,16 @@ function makeInternalFunctionReference<
 
 const listCreateWindowMortgagesRef = makeInternalFunctionReference<
 	"query",
-	{ asOf?: number; limit?: number },
-	Array<{ mortgageId: Id<"mortgages"> }>
+	{
+		asOf?: number;
+		continueCursor?: string | null;
+		pageSize?: number;
+	},
+	{
+		continueCursor: string | null;
+		isDone: boolean;
+		items: Array<{ mortgageId: Id<"mortgages"> }>;
+	}
 >("renewals/internal:listCreateWindowMortgages");
 
 const syncRenewalIntentsForMortgageRef = makeInternalFunctionReference<
@@ -53,10 +61,18 @@ const listExpiredPendingIntentsRef = makeInternalFunctionReference<
 	Array<{ intentId: Id<"lenderRenewalIntents"> }>
 >("renewals/internal:listExpiredPendingIntents");
 
+interface ListCreateWindowMortgagesPage {
+	continueCursor: string | null;
+	isDone: boolean;
+	items: Array<{ mortgageId: Id<"mortgages"> }>;
+}
+
 export const listCreateWindowMortgages = internalQuery({
 	args: {
 		asOf: v.optional(v.number()),
+		continueCursor: v.optional(v.union(v.string(), v.null())),
 		limit: v.optional(v.number()),
+		pageSize: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const asOf = args.asOf ?? Date.now();
@@ -65,47 +81,41 @@ export const listCreateWindowMortgages = internalQuery({
 			businessDate,
 			LENDER_RENEWAL_CREATE_WINDOW_DAYS
 		);
-		const candidateMortgages: Array<{ mortgageId: Id<"mortgages"> }> = [];
-		let cursor: string | null = null;
+		const pageSize = args.pageSize ?? args.limit ?? 128;
+		const cursor = args.continueCursor ?? null;
 
-		// Scan the full maturity window in bounded pages so later mortgages are
-		// not starved by earlier rows that are already synced or not actionable.
-		while (true) {
-			const { continueCursor, isDone, page } = await ctx.db
-				.query("mortgages")
-				.withIndex("by_maturity", (query) =>
-					query
-						.gte("maturityDate", businessDate)
-						.lte("maturityDate", maxMaturityDate)
-				)
-				.paginate({
-					cursor,
-					numItems: args.limit ?? 128,
+		const { continueCursor, isDone, page } = await ctx.db
+			.query("mortgages")
+			.withIndex("by_maturity", (query) =>
+				query
+					.gte("maturityDate", businessDate)
+					.lte("maturityDate", maxMaturityDate)
+			)
+			.paginate({
+				cursor,
+				numItems: pageSize,
+			});
+
+		const items = page
+			.filter((mortgage) => {
+				if (mortgage.status !== "active") {
+					return false;
+				}
+
+				return isLenderRenewalWindowOpen({
+					asOf,
+					maturityDate: mortgage.maturityDate,
 				});
+			})
+			.map((mortgage) => ({
+				mortgageId: mortgage._id,
+			}));
 
-			candidateMortgages.push(
-				...page
-					.filter((mortgage) => {
-						if (mortgage.status !== "active") {
-							return false;
-						}
-
-						return isLenderRenewalWindowOpen({
-							asOf,
-							maturityDate: mortgage.maturityDate,
-						});
-					})
-					.map((mortgage) => ({
-						mortgageId: mortgage._id,
-					}))
-			);
-
-			if (isDone) {
-				return candidateMortgages;
-			}
-
-			cursor = continueCursor;
-		}
+		return {
+			continueCursor: isDone ? null : continueCursor,
+			isDone,
+			items,
+		};
 	},
 });
 
@@ -160,6 +170,11 @@ export const syncRenewalIntentsForMortgage = internalMutation({
 				continue;
 			}
 
+			if (lender.brokerId !== mortgage.brokerOfRecordId) {
+				skipped += 1;
+				continue;
+			}
+
 			const result = await ensurePendingLenderRenewalIntent({
 				asOf,
 				ctx,
@@ -204,25 +219,59 @@ export const createRenewalIntentsInWindow = internalAction({
 	args: {
 		asOf: v.optional(v.number()),
 		limit: v.optional(v.number()),
+		maxMortgagesPerRun: v.optional(v.number()),
+		pageSize: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
-		const candidates = await ctx.runQuery(listCreateWindowMortgagesRef, args);
+		const pageSize = args.pageSize ?? args.limit ?? 128;
+		const maxMortgagesPerRun = args.maxMortgagesPerRun ?? 2000;
 		let created = 0;
 		let skipped = 0;
 		let updated = 0;
+		let candidatesChecked = 0;
+		let dbCursor: string | null = null;
 
-		for (const candidate of candidates) {
-			const result = await ctx.runMutation(syncRenewalIntentsForMortgageRef, {
-				asOf: args.asOf,
-				mortgageId: candidate.mortgageId,
-			});
-			created += result.created;
-			skipped += result.skipped;
-			updated += result.updated;
+		while (candidatesChecked < maxMortgagesPerRun) {
+			const batch: ListCreateWindowMortgagesPage = await ctx.runQuery(
+				listCreateWindowMortgagesRef,
+				{
+					asOf: args.asOf,
+					continueCursor: dbCursor,
+					pageSize,
+				}
+			);
+
+			for (const candidate of batch.items) {
+				if (candidatesChecked >= maxMortgagesPerRun) {
+					break;
+				}
+				const result = await ctx.runMutation(syncRenewalIntentsForMortgageRef, {
+					asOf: args.asOf,
+					mortgageId: candidate.mortgageId,
+				});
+				created += result.created;
+				skipped += result.skipped;
+				updated += result.updated;
+				candidatesChecked += 1;
+			}
+
+			if (batch.isDone) {
+				break;
+			}
+
+			if (candidatesChecked >= maxMortgagesPerRun) {
+				break;
+			}
+
+			if (batch.continueCursor === null) {
+				break;
+			}
+
+			dbCursor = batch.continueCursor;
 		}
 
 		return {
-			candidatesChecked: candidates.length,
+			candidatesChecked,
 			created,
 			skipped,
 			updated,
