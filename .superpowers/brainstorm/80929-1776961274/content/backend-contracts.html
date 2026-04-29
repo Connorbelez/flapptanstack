@@ -1,0 +1,152 @@
+<h2>MIC Backend Contracts</h2>
+<p class="subtitle">
+	Separate MIC access workflow, explicit portal-to-ledger mapping, role-gated
+	portal route
+</p>
+
+<div class="section">
+	<div class="split">
+		<div class="mockup">
+			<div class="mockup-header">Public Request Workflow</div>
+			<div class="mockup-body" style="display:grid;gap:10px;">
+				<div class="placeholder" style="min-height:56px;">
+					POST public MIC access request with email
+				</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:22px;"
+				>
+					↓
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Create / dedupe pending MIC access request
+				</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:22px;"
+				>
+					↓
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Admin approves or rejects in dashboard
+				</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:22px;"
+				>
+					↓
+				</div>
+				<div class="placeholder" style="min-height:70px;">
+					Approval effect provisions WorkOS membership + MIC role + portal
+					assignment/invite path
+				</div>
+			</div>
+		</div>
+
+		<div class="mockup">
+			<div class="mockup-header">Authenticated Portal Query Flow</div>
+			<div class="mockup-body" style="display:grid;gap:10px;">
+				<div class="placeholder" style="min-height:56px;">
+					mic.&lt;domain&gt;/portal route guard
+				</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:22px;"
+				>
+					↓
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Resolve MIC portal config
+				</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:22px;"
+				>
+					↓
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Load mapped MIC lender identity
+				</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:22px;"
+				>
+					↓
+				</div>
+				<div class="placeholder" style="min-height:70px;">
+					Derive dashboard + positions + detail data from mortgage ledger
+					participation
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="section">
+	<div class="cards">
+		<div class="card">
+			<div class="card-body">
+				<h3>1. Role / Permission</h3>
+				<p>
+					Add WorkOS role <code>micinvestor</code> and a dedicated access
+					permission for the MIC route boundary.
+				</p>
+			</div>
+		</div>
+		<div class="card">
+			<div class="card-body">
+				<h3>2. Portal Registry</h3>
+				<p>
+					MIC portal is a normal portal record with host and default post-auth
+					path. It also needs explicit mapping to the MIC lender identity in
+					ledger space.
+				</p>
+			</div>
+		</div>
+		<div class="card">
+			<div class="card-body">
+				<h3>3. Request Entity</h3>
+				<p>
+					Use a dedicated MIC access request entity instead of overloading
+					authenticated onboarding requests.
+				</p>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="section">
+	<div class="mockup">
+		<div class="mockup-header">Recommended Data Boundaries</div>
+		<div
+			class="mockup-body"
+			style="display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:12px;"
+		>
+			<div
+				style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+			>
+				<div class="label">New Governed Entity</div>
+				<h3 style="margin:6px 0 8px;">micInvestorAccessRequest</h3>
+				<p style="margin:0;">
+					Tracks email-only request intake, review state, audit trail, and
+					provisioning result without forcing a pre-existing user row.
+				</p>
+			</div>
+			<div
+				style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+			>
+				<div class="label">Portal Config</div>
+				<h3 style="margin:6px 0 8px;">MIC lender mapping</h3>
+				<p style="margin:0;">
+					Store the canonical lender identity the MIC portal represents so
+					queries can derive holdings from lender participation, not org
+					ownership.
+				</p>
+			</div>
+			<div
+				style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+			>
+				<div class="label">Query Layer</div>
+				<h3 style="margin:6px 0 8px;">Separate MIC contracts</h3>
+				<p style="margin:0;">
+					Mirror lender portfolio UI seams where useful, but use separate MIC
+					dashboard/detail query contracts to keep semantics clean.
+				</p>
+			</div>
+		</div>
+	</div>
+</div>

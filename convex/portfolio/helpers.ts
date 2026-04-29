@@ -2,7 +2,6 @@ import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { buildPortfolioAccrualBreakdown } from "../accrual/queryHelpers";
-import type { Viewer } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
 import { getPostedBalance } from "../ledger/accounts";
 import { TOTAL_SUPPLY } from "../ledger/constants";
@@ -36,6 +35,7 @@ import type {
 	PortfolioBrokerPrefillContext,
 	PortfolioBrokerSummary,
 	PortfolioCommandCenter,
+	PortfolioMortgageDetailPage,
 	PortfolioPaymentDetail,
 	PortfolioPaymentRow,
 	PortfolioPositionDetail,
@@ -51,8 +51,11 @@ const MILLISECONDS_PER_DAY = 1000 * 60 * 60 * 24;
 const POSITION_UNITS_PER_FRACTION = 1000;
 const SUGGESTED_OPPORTUNITY_LIMIT = 5;
 
-type PortfolioQueryContext = Pick<QueryCtx, "db" | "storage"> &
-	PortalLenderContext & { viewer: Pick<Viewer, "authId"> };
+type PortfolioQueryContext = Pick<QueryCtx, "db" | "storage"> & {
+	lender: Doc<"lenders">;
+	lenderAuthId: string;
+	portal: PortalLenderContext["portal"];
+};
 type MarketplaceSuggestionRow = Awaited<
 	ReturnType<typeof listMarketplaceListingsSnapshot>
 >["page"][number];
@@ -720,6 +723,10 @@ function buildPortfolioRow(
 	position: ActiveLenderPositionAccount
 ): PortfolioPositionRow {
 	return {
+		borrowerLabel: null,
+		city: args.property?.city ?? null,
+		currentLtvPercent: null,
+		currentPrincipal: args.mortgage.principal,
 		estimatedPositionValue: calculateLenderShareAmount(
 			position.balanceUnits,
 			args.mortgage.principal
@@ -728,6 +735,7 @@ function buildPortfolioRow(
 		lenderSharePaymentAmount: args.nextPayment
 			? args.nextPayment.row.lenderShareAmount
 			: 0,
+		maturityDate: args.mortgage.maturityDate,
 		mortgageId: String(args.mortgage._id),
 		mortgageStatus: args.mortgage.status,
 		nextPaymentDate: args.nextPayment?.row.dueDate ?? null,
@@ -735,9 +743,12 @@ function buildPortfolioRow(
 		positionPercent: balanceUnitsToPercent(position.balanceUnits),
 		positionUnits: position.balanceUnits,
 		propertyLabel: buildPropertyLabel(args.property),
+		propertyType: args.property?.propertyType ?? null,
+		province: args.property?.province ?? null,
 		renewalIntentStatus: args.renewalIntent?.status ?? null,
 		renewalTimingLabel: buildRenewalTimingLabel(args.mortgage.maturityDate),
 		thumbnailUrl: null,
+		weightedRatePercent: args.mortgage.interestRate,
 	};
 }
 
@@ -958,7 +969,7 @@ export async function buildPortfolioCommandCenter(
 	const today = unixMsToBusinessDate(generatedAt);
 	const positions = await listActiveLenderPositionAccounts(
 		ctx,
-		ctx.viewer.authId
+		ctx.lenderAuthId
 	);
 	const mortgageIds = positions.map((position) => position.mortgageId);
 	const mortgageMap = await loadMortgageMap(ctx, mortgageIds);
@@ -1061,13 +1072,13 @@ export async function buildPortfolioCommandCenter(
 
 	const monthlyAccrual = await buildPortfolioAccrualBreakdown(
 		ctx,
-		ctx.viewer.authId,
+		ctx.lenderAuthId,
 		startOfMonthBusinessDate(),
 		today
 	);
 	const ytdAccrual = await buildPortfolioAccrualBreakdown(
 		ctx,
-		ctx.viewer.authId,
+		ctx.lenderAuthId,
 		startOfYearBusinessDate(),
 		today
 	);
@@ -1077,7 +1088,7 @@ export async function buildPortfolioCommandCenter(
 			.sort()[0] ?? today;
 	const lifetimeAccrual = await buildPortfolioAccrualBreakdown(
 		ctx,
-		ctx.viewer.authId,
+		ctx.lenderAuthId,
 		lifetimeFromDate,
 		today
 	);
@@ -1293,7 +1304,7 @@ async function loadOwnedPositionForMortgage(
 ) {
 	const positions = await listActiveLenderPositionAccounts(
 		ctx,
-		ctx.viewer.authId
+		ctx.lenderAuthId
 	);
 	return (
 		positions.find((position) => position.mortgageId === mortgageId) ?? null
@@ -1495,5 +1506,36 @@ export async function buildPortfolioPaymentDetail(
 			unit: property?.unit ?? null,
 		},
 		relatedActions,
+	};
+}
+
+export async function buildPortfolioMortgageDetailPage(
+	ctx: PortfolioQueryContext,
+	mortgageId: Id<"mortgages">
+): Promise<PortfolioMortgageDetailPage> {
+	const position = await loadOwnedPositionForMortgage(ctx, mortgageId);
+	if (!position) {
+		throw new ConvexError("Portfolio position not found");
+	}
+
+	const mortgage = await ctx.db.get(mortgageId);
+	if (!mortgage) {
+		throw new ConvexError("Mortgage not found");
+	}
+
+	const property = await ctx.db.get(mortgage.propertyId);
+	const paymentContexts = await loadPaymentContextsForMortgage(ctx, {
+		balanceUnits: position.balanceUnits,
+		mortgage,
+		propertyLabel: buildPropertyLabel(property),
+	});
+
+	return {
+		generatedAt: Date.now(),
+		paymentHistory: paymentContexts
+			.map((context) => context.row)
+			.sort((left, right) => left.dueDate.localeCompare(right.dueDate)),
+		positionDetail: await buildPortfolioPositionDetail(ctx, mortgageId),
+		sourceOfTruth: PORTFOLIO_SOURCE_OF_TRUTH,
 	};
 }

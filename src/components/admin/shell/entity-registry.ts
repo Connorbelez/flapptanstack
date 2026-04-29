@@ -186,6 +186,13 @@ export const STATIC_ADMIN_NAV_ITEMS = [
 		domain: "system",
 		iconName: "settings",
 	},
+	{
+		kind: "route",
+		label: "MIC Investors",
+		route: "/admin/mic-investors",
+		domain: "system",
+		iconName: "users",
+	},
 ] as const satisfies readonly StaticAdminNavigationItem[];
 
 export type StaticAdminRoute = (typeof STATIC_ADMIN_NAV_ITEMS)[number]["route"];

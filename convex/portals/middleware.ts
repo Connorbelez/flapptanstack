@@ -40,6 +40,11 @@ export interface PortalLenderContext extends PortalAccessContext {
 	lender: Doc<"lenders">;
 }
 
+export interface PortalMicContext extends PortalAccessContext {
+	micLender: Doc<"lenders">;
+	micLenderUser: Doc<"users">;
+}
+
 export interface PortalFilterBoundsContext extends PortalResolvedContext {
 	portalFilterBounds: {
 		brokerId: Id<"brokers"> | undefined;
@@ -101,6 +106,7 @@ function toPortalSummary(portal: Doc<"portals">): PortalSummary {
 		slug: portal.slug,
 		portalType: portal.portalType,
 		brokerId: portal.brokerId,
+		lenderId: portal.lenderId,
 		orgId: portal.orgId,
 		productionHost: portal.productionHost,
 		localHost: portal.localHost,
@@ -223,6 +229,35 @@ export function withPublicPortalContext<
 	};
 }
 
+export async function resolvePortalMic(
+	context: PortalAuthedBaseContext & PortalResolvedContext
+): Promise<Pick<PortalMicContext, "micLender" | "micLenderUser">> {
+	if (context.portal.portalType !== "mic") {
+		throw new ConvexError("Forbidden: portal is not a MIC portal");
+	}
+
+	if (!context.portal.lenderId) {
+		throw new ConvexError("Forbidden: MIC portal is missing a lender mapping");
+	}
+
+	const lender = await context.db.get(context.portal.lenderId);
+	if (!lender) {
+		throw new ConvexError("Forbidden: MIC lender mapping is invalid");
+	}
+
+	const lenderUser = await context.db.get(lender.userId);
+	if (!lenderUser?.authId) {
+		throw new ConvexError(
+			"Forbidden: MIC lender mapping is missing an auth-linked user"
+		);
+	}
+
+	return {
+		micLender: lender,
+		micLenderUser: lenderUser,
+	};
+}
+
 export function withPortalContext<
 	TContext extends PortalBaseContext,
 	TArgs extends PortalArgs,
@@ -293,6 +328,27 @@ export function withPortalLender<
 	return withPortalAccess<TContext, TArgs, TResult>(async (context, args) => {
 		return handler(
 			{ ...context, lender: await resolvePortalLender(context) },
+			args
+		);
+	});
+}
+
+export function withPortalMic<
+	TContext extends PortalAuthedBaseContext,
+	TArgs extends PortalArgs,
+	TResult,
+>(
+	handler: (
+		context: TContext & PortalMicContext,
+		args: TArgs
+	) => Promise<TResult>
+) {
+	return withPortalAccess<TContext, TArgs, TResult>(async (context, args) => {
+		return handler(
+			{
+				...context,
+				...(await resolvePortalMic(context)),
+			},
 			args
 		);
 	});

@@ -1,0 +1,170 @@
+<h2>MIC Portal Information Architecture</h2>
+<p class="subtitle">
+	Shared fund-transparency screen, ledger-derived metrics, sidebar-to-full-page
+	mortgage drilldown
+</p>
+
+<div class="section">
+	<div class="mockup">
+		<div class="mockup-header">
+			Authenticated Route: mic.&lt;domain&gt;/portal
+		</div>
+		<div class="mockup-body" style="display:grid;gap:14px;">
+			<div style="display:grid;grid-template-columns:2.1fr 1fr;gap:12px;">
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+				>
+					<div class="label">1. Fund Snapshot</div>
+					<h3 style="margin:6px 0 8px;">Command-center style overview</h3>
+					<p style="margin:0 0 10px;">
+						Top-level derived metrics already available from the mortgage
+						ledger.
+					</p>
+					<div
+						style="display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:8px;"
+					>
+						<div class="placeholder" style="min-height:56px;">
+							Outstanding principal
+						</div>
+						<div class="placeholder" style="min-height:56px;">
+							Weighted avg yield / coupon
+						</div>
+						<div class="placeholder" style="min-height:56px;">
+							Active positions count
+						</div>
+						<div class="placeholder" style="min-height:56px;">
+							Weighted avg LTV
+						</div>
+						<div class="placeholder" style="min-height:56px;">
+							Maturity profile
+						</div>
+						<div class="placeholder" style="min-height:56px;">
+							Delinquency / arrears exposure
+						</div>
+					</div>
+				</div>
+
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fafaf9;"
+				>
+					<div class="label">2. Exception / Focus Rail</div>
+					<h3 style="margin:6px 0 8px;">
+						What investors would care about first
+					</h3>
+					<p style="margin:0;">
+						Near maturities, delinquent positions, concentration spikes, and
+						recent payment activity.
+					</p>
+				</div>
+			</div>
+
+			<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:12px;">
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+				>
+					<div class="label">3. Positions Table</div>
+					<h3 style="margin:6px 0 8px;">Real-time MIC holdings transparency</h3>
+					<p style="margin:0 0 10px;">
+						Every MIC-held mortgage position appears here with filters and sort.
+					</p>
+					<div class="placeholder" style="min-height:150px;">
+						Rows: mortgage, borrower/property summary, balance, yield, LTV,
+						maturity, status, payment state, concentration markers
+					</div>
+				</div>
+
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff7ed;"
+				>
+					<div class="label">4. Detail Sidebar</div>
+					<h3 style="margin:6px 0 8px;">Click a position</h3>
+					<p style="margin:0 0 10px;">
+						Sidebar opens first for fast inspection.
+					</p>
+					<div class="placeholder" style="min-height:124px;">
+						Mortgage summary, status timeline, latest payment signals, core
+						ledger-derived facts
+					</div>
+					<button class="mock-button" style="margin-top:10px;">
+						Open full mortgage detail page
+					</button>
+				</div>
+			</div>
+
+			<div
+				style="display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:12px;"
+			>
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+				>
+					<div class="label">5. Payments / History</div>
+					<p style="margin:6px 0 0;">
+						Recent scheduled, paid, missed, and overdue cashflow events tied to
+						the MIC-held mortgages.
+					</p>
+				</div>
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+				>
+					<div class="label">6. Exposure Views</div>
+					<p style="margin:6px 0 0;">
+						Concentration by geography, borrower, property type, mortgage
+						status, and maturity bucket where derivable.
+					</p>
+				</div>
+				<div
+					style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+				>
+					<div class="label">7. No Personalization In V1</div>
+					<p style="margin:6px 0 0;">
+						Same screen for every approved MIC investor until cap-table/personal
+						allocation logic exists.
+					</p>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="section">
+	<div class="split">
+		<div class="mockup">
+			<div class="mockup-header">Position Drilldown Pattern</div>
+			<div class="mockup-body" style="display:grid;gap:10px;">
+				<div class="placeholder" style="min-height:54px;">Table row click</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:22px;"
+				>
+					↓
+				</div>
+				<div class="placeholder" style="min-height:70px;">
+					Right sidebar / mobile drawer
+				</div>
+				<div
+					style="display:flex;align-items:center;justify-content:center;font-size:22px;"
+				>
+					↓
+				</div>
+				<div class="placeholder" style="min-height:84px;">
+					Dedicated mortgage detail page with full history and related facts
+				</div>
+			</div>
+		</div>
+
+		<div class="mockup">
+			<div class="mockup-header">Metric Philosophy</div>
+			<div class="mockup-body" style="display:grid;gap:10px;">
+				<div class="placeholder" style="min-height:56px;">
+					Use only current mortgage-ledger truth or clear derivations
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Do not invent MIC treasury or cash-on-hand reporting from absent
+					cash-ledger coverage
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Bias toward maximum transparency from already-available system data
+				</div>
+			</div>
+		</div>
+	</div>
+</div>

@@ -72,6 +72,7 @@ function toPortalSummary(portal: Doc<"portals">): PortalSummary {
 		slug: portal.slug,
 		portalType: portal.portalType,
 		brokerId: portal.brokerId,
+		lenderId: portal.lenderId,
 		orgId: portal.orgId,
 		productionHost: portal.productionHost,
 		localHost: portal.localHost,
@@ -90,6 +91,7 @@ function toPublicPortalSummary(portal: Doc<"portals">): PublicPortalSummary {
 		portalId: portal._id,
 		slug: portal.slug,
 		portalType: portal.portalType,
+		lenderId: portal.lenderId,
 		productionHost: portal.productionHost,
 		localHost: portal.localHost,
 		status: portal.status,
@@ -115,10 +117,29 @@ async function resolvePortalAvailability(
 
 	return resolvePublishedPortalAvailability({
 		isPublished: portal.isPublished,
+		portalType: portal.portalType,
 		portalStatus: portal.status,
 		pricingSelection,
 	});
 }
+
+export const getPortalBySlugInternal = convex
+	.query()
+	.input({ slug: v.string() })
+	.handler(async (ctx, args) => {
+		const portal = await getPortalBySlug(ctx, args.slug);
+		return portal ? toPortalSummary(portal) : null;
+	})
+	.internal();
+
+export const getPortalByIdInternal = convex
+	.query()
+	.input({ portalId: v.id("portals") })
+	.handler(async (ctx, args) => {
+		const portal = await ctx.db.get(args.portalId);
+		return portal ? toPortalSummary(portal) : null;
+	})
+	.internal();
 
 export const getFairLendPortal = convex
 	.query()

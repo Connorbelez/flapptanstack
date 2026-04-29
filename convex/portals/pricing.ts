@@ -131,6 +131,7 @@ function isReadySelectionWithBrokerSplit(
 
 function resolvePublishedPortalAvailability(args: {
 	isPublished: boolean;
+	portalType: PortalDoc["portalType"];
 	portalStatus: PortalDoc["status"];
 	pricingSelection?: PortalPricingSelection;
 }): PortalAvailability {
@@ -140,6 +141,10 @@ function resolvePublishedPortalAvailability(args: {
 
 	if (args.portalStatus !== "active") {
 		return args.portalStatus;
+	}
+
+	if (args.portalType === "mic") {
+		return "active";
 	}
 
 	return args.pricingSelection?.kind === "ready" ? "active" : "misconfigured";

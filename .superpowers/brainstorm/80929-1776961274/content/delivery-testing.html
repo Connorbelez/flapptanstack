@@ -1,0 +1,127 @@
+<h2>MIC Delivery, Error Handling, And Testing</h2>
+<p class="subtitle">
+	Clear duplicate-request behavior, fail-closed access rules, and frontend
+	delegation boundaries
+</p>
+
+<div class="section">
+	<div class="split">
+		<div class="mockup">
+			<div class="mockup-header">Operational Rules</div>
+			<div class="mockup-body" style="display:grid;gap:10px;">
+				<div class="placeholder" style="min-height:56px;">
+					Duplicate public request by same email → return success-style response
+					and reuse/open existing pending request
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Rejected email can re-request later only if staff policy allows;
+					default recommendation: allow a fresh request after rejection
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Approved-but-provisioning-failed request remains visible as admin
+					exception, not silently lost
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					MIC portal route fails closed if portal-to-lender mapping is missing
+					or invalid
+				</div>
+			</div>
+		</div>
+
+		<div class="mockup">
+			<div class="mockup-header">Access Boundary Rules</div>
+			<div class="mockup-body" style="display:grid;gap:10px;">
+				<div class="placeholder" style="min-height:56px;">
+					Public landing page is always accessible
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					/portal requires auth + MIC permission + valid MIC portal host
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Non-approved users can sign in, but route boundary shows unauthorized
+					/ wrong-portal state instead of leaking fund data
+				</div>
+				<div class="placeholder" style="min-height:56px;">
+					Queries validate MIC lender mapping before loading dashboard contracts
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="section">
+	<div class="mockup">
+		<div class="mockup-header">Testing Pyramid</div>
+		<div
+			class="mockup-body"
+			style="display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:12px;"
+		>
+			<div
+				style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+			>
+				<div class="label">Backend</div>
+				<h3 style="margin:6px 0 8px;">Request + provisioning flow</h3>
+				<p style="margin:0;">
+					Create request, dedupe behavior, approve/reject transitions,
+					provisioning effects, audit trail, and MIC query contracts derived
+					from ledger participation.
+				</p>
+			</div>
+			<div
+				style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+			>
+				<div class="label">Route / Auth</div>
+				<h3 style="margin:6px 0 8px;">Host-aware access tests</h3>
+				<p style="margin:0;">
+					Public MIC landing, sign-in redirect behavior, unauthorized MIC portal
+					access, approved investor access, and fail-closed
+					wrong-host/wrong-permission cases.
+				</p>
+			</div>
+			<div
+				style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+			>
+				<div class="label">UI</div>
+				<h3 style="margin:6px 0 8px;">Presentational coverage</h3>
+				<p style="margin:0;">
+					Dashboard sections, positions table states, sidebar/detail
+					interactions, mobile drawer behavior, and empty/error states for the
+					MIC-specific surface.
+				</p>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="section">
+	<div class="mockup">
+		<div class="mockup-header">Frontend Delegation Split</div>
+		<div
+			class="mockup-body"
+			style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"
+		>
+			<div
+				style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff7ed;"
+			>
+				<div class="label">Delegate To Kimi</div>
+				<h3 style="margin:6px 0 8px;">Presentation-only work</h3>
+				<p style="margin:0;">
+					MIC landing page, portal page layout, metric cards, positions/panels
+					presentation, sidebar/detail shell, responsive layout,
+					loading/empty/error visual states.
+				</p>
+			</div>
+			<div
+				style="border:1px solid #d6d3d1;border-radius:16px;padding:14px;background:#fff;"
+			>
+				<div class="label">Keep In Codex</div>
+				<h3 style="margin:6px 0 8px;">System wiring and domain logic</h3>
+				<p style="margin:0;">
+					Portal registry/config, auth/permission enforcement, request entity
+					and transitions, admin triage mutations/queries, ledger-derived
+					aggregations, routing integration, tests, and final validation.
+				</p>
+			</div>
+		</div>
+	</div>
+</div>

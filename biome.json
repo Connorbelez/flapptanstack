@@ -13,6 +13,7 @@
       "!!plugins",
       "!!scripts",
       "!!**/convex/_generated",
+      "!!.superpowers",
       "!!.context/*",
       "!!**/convex/components",
       "!!**/src/routeTree.gen.ts",

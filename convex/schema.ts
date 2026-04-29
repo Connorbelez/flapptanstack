@@ -251,6 +251,7 @@ export default defineSchema({
 		slug: v.string(),
 		portalType: portalTypeValidator,
 		brokerId: v.optional(v.id("brokers")),
+		lenderId: v.optional(v.id("lenders")),
 		orgId: v.string(),
 		productionHost: v.string(),
 		localHost: v.string(),
@@ -807,6 +808,36 @@ export default defineSchema({
 		.index("by_portal_status", ["portalId", "status"])
 		.index("by_status", ["status"])
 		.index("by_user_and_status", ["userId", "status"]),
+
+	micInvestorAccessRequests: defineTable({
+		email: v.string(),
+		normalizedEmail: v.string(),
+		portalId: v.id("portals"),
+		status: v.union(
+			v.literal("pending_review"),
+			v.literal("approved"),
+			v.literal("rejected")
+		),
+		machineContext: v.optional(v.any()),
+		lastTransitionAt: v.optional(v.number()),
+		reviewedBy: v.optional(v.string()),
+		reviewedAt: v.optional(v.number()),
+		rejectionReason: v.optional(v.string()),
+		provisioningState: v.union(
+			v.literal("pending"),
+			v.literal("provisioned"),
+			v.literal("failed")
+		),
+		provisioningError: v.optional(v.string()),
+		workosUserId: v.optional(v.string()),
+		workosMembershipId: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_portal", ["portalId"])
+		.index("by_portal_normalized_email", ["portalId", "normalizedEmail"])
+		.index("by_portal_status", ["portalId", "status"])
+		.index("by_status", ["status"]),
 
 	// ══════════════════════════════════════════════════════════
 	// CORE FINANCIAL ENTITIES

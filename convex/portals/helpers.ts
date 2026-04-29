@@ -8,6 +8,7 @@ import {
 	normalizePortalSlug as normalizeSharedPortalSlug,
 	PORTAL_RESERVED_SLUGS as reservedPortalSlugs,
 } from "../../shared/portal/contracts";
+import type { Id } from "../_generated/dataModel";
 import { FAIRLEND_BROKERAGE_ORG_ID } from "../constants";
 
 export const DEFAULT_PORTAL_POST_AUTH_PATH = "/";
@@ -39,5 +40,30 @@ export function fairLendPortalFields(now: number) {
 		defaultPostAuthPath: DEFAULT_PORTAL_POST_AUTH_PATH,
 		createdAt: now,
 		updatedAt: now,
+	};
+}
+
+export function micPortalFields(args: {
+	lenderId: Id<"lenders">;
+	now: number;
+	orgId: string;
+	slug: string;
+}) {
+	const hosts = buildPortalHosts(args.slug);
+	return {
+		slug: args.slug,
+		portalType: "mic" as const,
+		brokerId: undefined,
+		lenderId: args.lenderId,
+		orgId: args.orgId,
+		productionHost: hosts.productionHost,
+		localHost: hosts.localHost,
+		status: "active" as const,
+		isPublished: true,
+		publicTeaserEnabled: false,
+		teaserListingLimit: 0,
+		defaultPostAuthPath: "/portal",
+		createdAt: args.now,
+		updatedAt: args.now,
 	};
 }

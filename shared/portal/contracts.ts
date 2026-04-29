@@ -6,7 +6,14 @@ export const FAIRLEND_ADMIN_LOCAL_HOST = "admin.localhost:3000";
 export const FAIRLEND_PORTAL_SLUG = "app";
 export const FAIRLEND_PORTAL_PRODUCTION_HOST = "app.fairlend.ca";
 export const FAIRLEND_PORTAL_LOCAL_HOST = "app.localhost:3000";
-export const PORTAL_RESERVED_SLUGS = ["app", "api", "admin", "staging", "www"];
+export const PORTAL_RESERVED_SLUGS = [
+	"app",
+	"api",
+	"admin",
+	"mic",
+	"staging",
+	"www",
+];
 
 const TRAILING_DOT_REGEX = /\.$/;
 const PRODUCTION_PORTAL_SUFFIX = ".fairlend.ca";
