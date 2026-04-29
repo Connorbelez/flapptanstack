@@ -54,6 +54,7 @@ describe("parseSelectedLawyerSnapshot", () => {
 	it("omits absent optional keys from parsed snapshots", () => {
 		const parsed = parseSelectedLawyerSnapshot({
 			type: "guest_lawyer",
+			source: "manual",
 			name: "Guest Counsel",
 			email: "guest@example.com",
 		});
@@ -65,12 +66,14 @@ describe("parseSelectedLawyerSnapshot", () => {
 		expect(
 			parseSelectedLawyerSnapshot({
 				type: "guest_lawyer",
+				source: "manual",
 				name: "Guest Counsel",
 				email: "guest@example.com",
 				firm: "Guest LLP",
 			})
 		).toEqual({
 			type: "guest_lawyer",
+			source: "manual",
 			name: "Guest Counsel",
 			email: "guest@example.com",
 			firm: "Guest LLP",
@@ -81,6 +84,7 @@ describe("parseSelectedLawyerSnapshot", () => {
 		expect(
 			parseSelectedLawyerSnapshot({
 				type: "guest_lawyer",
+				source: "lso_search",
 				name: "Guest Counsel",
 				email: "guest@example.com",
 				lso: {
@@ -94,6 +98,7 @@ describe("parseSelectedLawyerSnapshot", () => {
 			})
 		).toEqual({
 			type: "guest_lawyer",
+			source: "lso_search",
 			name: "Guest Counsel",
 			email: "guest@example.com",
 			lso: {
@@ -105,6 +110,27 @@ describe("parseSelectedLawyerSnapshot", () => {
 				sourceFetchedAt: 123,
 			},
 		});
+	});
+
+	it("rejects guest lawyer snapshots without an explicit source", () => {
+		expect(() =>
+			parseSelectedLawyerSnapshot({
+				type: "guest_lawyer",
+				name: "Guest Counsel",
+				email: "guest@example.com",
+			})
+		).toThrow("selectedLawyer.source");
+	});
+
+	it("rejects LSO-backed guest lawyer snapshots without LSO metadata", () => {
+		expect(() =>
+			parseSelectedLawyerSnapshot({
+				type: "guest_lawyer",
+				source: "lso_search",
+				name: "Guest Counsel",
+				email: "guest@example.com",
+			})
+		).toThrow("LSO-backed guest lawyer snapshots must include lso");
 	});
 
 	it("accepts an LSO-enriched platform lawyer snapshot", () => {

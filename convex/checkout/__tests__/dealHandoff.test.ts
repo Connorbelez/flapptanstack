@@ -129,6 +129,7 @@ function selectedPlatformLawyer() {
 function selectedGuestLawyer() {
 	return {
 		type: "guest_lawyer" as const,
+		source: "manual" as const,
 		name: "Gail Guest",
 		email: "gail.guest@example.com",
 		firm: "Guest LLP",
