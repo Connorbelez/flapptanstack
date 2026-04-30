@@ -51,6 +51,7 @@ function convergeClaim(
 		licenseProvince?: string;
 		requestedPortalSlug?: string;
 		targetOrganizationId?: string;
+		now?: number;
 		userId: Id<"users">;
 		verifiedEmail?: string;
 		verifiedLicenseId?: string;
@@ -59,6 +60,7 @@ function convergeClaim(
 	return t.mutation("brokers/claimConvergence:convergeBrokerClaimHarness", {
 		brokerageName: args.brokerageName,
 		licenseProvince: args.licenseProvince ?? "ON",
+		now: args.now,
 		requestedPortalSlug: args.requestedPortalSlug,
 		targetOrganizationId: args.targetOrganizationId ?? "org_claim_target",
 		userId: args.userId,
@@ -167,6 +169,7 @@ describe("broker claim convergence", () => {
 			await ctx.db.insert("users", {
 				authId: "user_claim_email_ambiguous_duplicate",
 				email: claimant.user_email.toUpperCase(),
+				normalizedEmail: claimant.user_email.toLowerCase(),
 				firstName: "Duplicate",
 				lastName: "Email",
 			});
@@ -183,6 +186,38 @@ describe("broker claim convergence", () => {
 			nextStep: "manual_review",
 			reason: "ambiguous_verified_email",
 		});
+	});
+
+	it("uses normalized email matches without requiring an exact-case email match", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("claim-normalized-email-index");
+		const userId = await ensureSeededIdentity(t, identity);
+		const brokerId = await insertBroker(t, {
+			licenseId: "ON-NORMALIZED-EMAIL",
+			userId,
+		});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(userId, {
+				email: identity.user_email.toUpperCase(),
+				normalizedEmail: identity.user_email.toLowerCase(),
+			});
+		});
+
+		const outcome = await convergeClaim(t, {
+			userId,
+			verifiedEmail: identity.user_email.toLowerCase(),
+			verifiedLicenseId: "ON-NORMALIZED-EMAIL",
+		});
+
+		expect(outcome).toMatchObject({
+			kind: "reused_existing_broker",
+			brokerId,
+			nextStep: "continue_self_serve_onboarding",
+			reason: "safe_match",
+		});
+		expect(outcome.matchedBy).toEqual(
+			expect.arrayContaining(["auth_linked_user", "verified_email"])
+		);
 	});
 
 	it("fails closed when a user has duplicate auth-linked broker rows", async () => {
@@ -318,6 +353,57 @@ describe("broker claim convergence", () => {
 			referralSource: "broker_invite",
 			status: "active",
 			userId,
+		});
+	});
+
+	it("reports portal-ready broker patch status from actual broker changes", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("claim-no-broker-patch");
+		const userId = await ensureSeededIdentity(t, identity);
+		const portalId = await createActivePortal(t, "claim-no-broker-patch");
+		const now = Date.now();
+		const brokerId = await t.run(async (ctx) =>
+			ctx.db.insert("brokers", {
+				activatedPortalId: portalId,
+				brokerageName: "No Patch Brokerage",
+				createdAt: now,
+				lastTransitionAt: now,
+				licenseId: "ON-NO-BROKER-PATCH",
+				licenseProvince: "ON",
+				onboardedAt: now,
+				orgId: "org_claim_target",
+				referralSource: "self_signup",
+				status: "active",
+				updatedAt: now,
+				userId,
+			})
+		);
+		await t.run(async (ctx) => {
+			await ctx.db.patch(portalId, {
+				brokerId,
+				orgId: "org_claim_target",
+			});
+		});
+
+		const outcome = await convergeClaim(t, {
+			brokerageName: "No Patch Brokerage",
+			licenseProvince: "ON",
+			now,
+			requestedPortalSlug: "claim-no-broker-patch",
+			targetOrganizationId: "org_claim_target",
+			userId,
+			verifiedEmail: identity.user_email,
+			verifiedLicenseId: "ON-NO-BROKER-PATCH",
+		});
+
+		expect(outcome).toMatchObject({
+			kind: "reused_existing_broker",
+			brokerId,
+			brokerWasPatched: false,
+			nextStep: "broker_portal_ready",
+			portalId,
+			portalWasCreated: false,
+			reason: "safe_match",
 		});
 	});
 

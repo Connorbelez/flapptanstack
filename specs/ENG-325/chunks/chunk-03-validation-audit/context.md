@@ -20,4 +20,4 @@
 - `bun check`
 - `bun typecheck`
 - `$linear-pr-spec-audit`
-- `python3 /Users/connor/.codex/skills/linear-implement-v2/scripts/validate_execution_artifacts.py ENG-325 --repo-root "/Users/connor/.codex/worktrees/cded/fairlendapp" --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`
+- From the repository root: `python3 "$CODEX_SKILLS_ROOT/linear-implement-v2/scripts/validate_execution_artifacts.py" ENG-325 --repo-root "." --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`

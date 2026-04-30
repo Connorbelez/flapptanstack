@@ -18,7 +18,7 @@
 - Resolved: focused coverage now includes normalized email ambiguity, duplicate auth-linked brokers, cross-org matches, portal slug preservation, and activation-field preservation.
 
 ## Validation notes
-- `bun run test -- src/test/convex/brokers/claimConvergence.test.ts` passes: 11/11 tests.
+- `bun run test -- src/test/convex/brokers/claimConvergence.test.ts` passes: 13/13 tests.
 - Final execution artifact validation passes.
 - Earlier full `bun run test` is not clean on this branch, but the observed failures are in unrelated pre-existing suites: listing schema fixtures, lender listing ConvexProvider setup, backend auth import guard, transfer reconciliation auth, and one root-route timeout.
 
@@ -32,7 +32,7 @@
 | SATISFIED | synchronization | Preserve `users.homePortalId` source of truth | `syncUserHomePortalAssignmentByUserId` call, safe portal reuse test | High-risk portal helper is reused unchanged. |
 | SATISFIED | duplicate prevention | No safe match routes to self-serve instead of silent provisioning | no-match test verifies no broker insert | Claim helper throws if activation helper unexpectedly creates a broker. |
 | SATISFIED | harness | Thin internal callable exists before production claim UI | `convergeBrokerClaimHarness` | Internal visibility is explicit via fluent-convex `.internal()`. |
-| SATISFIED | tests | Focused tests cover safe reuse, ambiguity, fallback, duplicate prevention, portal reuse | `src/test/convex/brokers/claimConvergence.test.ts` | 6 targeted tests pass. |
+| SATISFIED | tests | Focused tests cover safe reuse, ambiguity, fallback, duplicate prevention, portal reuse | `src/test/convex/brokers/claimConvergence.test.ts` | 13/13 tests pass. |
 | OUT_OF_SCOPE | frontend | Production claim UI, e2e, and Storybook coverage | ENG-325 plan says prefer backend helper and internal/test harness when no UI exists | No UI was added. |
 
 ## Next action

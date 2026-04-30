@@ -149,9 +149,23 @@ async function collectUsersByEmail(ctx: BrokerClaimReaderCtx, email: string) {
 	if (!normalizedEmail) {
 		return [];
 	}
-	return (await ctx.db.query("users").collect()).filter(
-		(user) => normalizeEmail(user.email) === normalizedEmail
-	);
+	const [usersByNormalizedEmail, usersByEmail] = await Promise.all([
+		ctx.db
+			.query("users")
+			.withIndex("by_normalized_email", (query) =>
+				query.eq("normalizedEmail", normalizedEmail)
+			)
+			.collect(),
+		ctx.db
+			.query("users")
+			.withIndex("by_email", (query) => query.eq("email", normalizedEmail))
+			.collect(),
+	]);
+	const usersById = new Map<string, Doc<"users">>();
+	for (const user of [...usersByNormalizedEmail, ...usersByEmail]) {
+		usersById.set(String(user._id), user);
+	}
+	return [...usersById.values()];
 }
 
 function addCandidate(
@@ -463,7 +477,9 @@ export async function convergeBrokerClaimToCanonicalBroker(
 
 	return {
 		brokerId: brokerResult.broker._id,
-		brokerWasPatched: true,
+		brokerWasPatched:
+			brokerResult.wasPatched ||
+			brokerResult.broker.activatedPortalId !== portalResult.portal._id,
 		homePortalId: homePortalSync.homePortalId,
 		kind: "reused_existing_broker",
 		matchedBy: [...candidate.sources],

@@ -17,6 +17,10 @@ interface RankedUser {
 	readonly user: UserDoc;
 }
 
+function normalizeEmail(value: string) {
+	return value.trim().toLowerCase();
+}
+
 async function loadUserReferenceSummary(
 	ctx: UserReaderCtx,
 	userId: Id<"users">
@@ -81,8 +85,10 @@ function buildUserInsert(args: {
 	lastName?: string;
 	phoneNumber?: string;
 }) {
+	const normalizedEmail = normalizeEmail(args.email);
 	return {
-		email: args.email,
+		email: normalizedEmail,
+		normalizedEmail,
 		firstName: args.firstName ?? "",
 		lastName: args.lastName ?? "",
 		...(args.phoneNumber !== undefined
@@ -97,13 +103,16 @@ function buildUserPatch(args: {
 	lastName?: string;
 	phoneNumber?: string;
 }) {
+	const normalizedEmail = normalizeEmail(args.email);
 	const patch: {
 		email: string;
 		firstName?: string;
 		lastName?: string;
+		normalizedEmail: string;
 		phoneNumber?: string;
 	} = {
-		email: args.email,
+		email: normalizedEmail,
+		normalizedEmail,
 	};
 	if (args.firstName !== undefined) {
 		patch.firstName = args.firstName;
