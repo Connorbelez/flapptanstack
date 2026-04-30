@@ -19,9 +19,7 @@ afterEach(() => {
 
 describe("onboard broker notes", () => {
 	it("appends broker notes into the review thread contract", async () => {
-		const appendBrokerNote = vi
-			.fn()
-			.mockReturnValue(new Promise(() => undefined));
+		const appendBrokerNote = vi.fn().mockResolvedValue(undefined);
 
 		render(
 			<ReviewThreadComposer

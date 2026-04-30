@@ -6,6 +6,7 @@ import { Button } from "#/components/ui/button";
 import { useAppAuth } from "#/hooks/use-app-auth";
 import { hasPermission } from "#/lib/auth";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { Route as RootRoute } from "../__root";
 import { OnboardingCorrections } from "./-components/OnboardingCorrections";
 import { OnboardingIntro } from "./-components/OnboardingIntro";
@@ -47,14 +48,14 @@ export function OnboardRoutePage() {
 			.startBrokerOnboardingIdentityVerification
 	);
 	const activePortalId =
-		portalContext.kind === "portal" ? portalContext.portal.portalId : undefined;
+		portalContext.kind === "portal"
+			? (portalContext.portal.portalId as Id<"portals">)
+			: undefined;
 
 	async function handleStartOrResume() {
 		setIsStarting(true);
 		try {
-			await startOrResume(
-				buildReferralMutationArgs(search, activePortalId as string | undefined)
-			);
+			await startOrResume(buildReferralMutationArgs(search, activePortalId));
 		} finally {
 			setIsStarting(false);
 		}

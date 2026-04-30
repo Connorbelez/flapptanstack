@@ -1,4 +1,5 @@
 import { sanitizeRedirectPath } from "#/lib/auth-redirect";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 export type OnboardingReferralSource = "broker_invite" | "self_signup";
 
@@ -76,11 +77,11 @@ export function buildOnboardingRedirect(search: OnboardingReferralSearch) {
 
 export function buildReferralMutationArgs(
 	search: OnboardingReferralSearch,
-	portalId?: string
+	portalId?: Id<"portals">
 ) {
 	return {
 		invitedByBrokerId: search.invitedByBrokerId,
-		portalId: portalId as never,
+		portalId,
 		referralSource: search.referralSource ?? "self_signup",
 		referralToken: search.ref,
 	};

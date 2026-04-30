@@ -1,5 +1,5 @@
 import { PlayCircle, Save, SendHorizonal } from "lucide-react";
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactNode, useId } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -74,6 +74,7 @@ export function OnboardingWizard({
 	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const progress = getChapterProgress(readModel.application);
+	const isBusy = isSaving || isStartingIdv || isSubmitting;
 
 	useEffect(() => {
 		if (hydratedApplicationIdRef.current === applicationId) {
@@ -93,6 +94,9 @@ export function OnboardingWizard({
 	async function handleSave(
 		currentStep = progress.activeKey
 	): Promise<boolean> {
+		if (isBusy) {
+			return false;
+		}
 		setIsSaving(true);
 		setError(null);
 		setMessage(null);
@@ -115,6 +119,9 @@ export function OnboardingWizard({
 	}
 
 	async function handleStartIdentityVerification() {
+		if (isBusy) {
+			return;
+		}
 		const didSave = await handleSave("verification");
 		if (!didSave) {
 			return;
@@ -159,6 +166,9 @@ export function OnboardingWizard({
 	}
 
 	async function handleSubmit() {
+		if (isBusy) {
+			return;
+		}
 		const didSave = await handleSave("submit");
 		if (!didSave) {
 			return;
@@ -221,7 +231,7 @@ export function OnboardingWizard({
 								</p>
 							</div>
 							<Button
-								disabled={isSaving}
+								disabled={isBusy}
 								onClick={() => void handleSave()}
 								variant="outline"
 							>
@@ -303,7 +313,7 @@ export function OnboardingWizard({
 						</p>
 						<div className="mt-4 grid gap-3 sm:grid-cols-2">
 							<Button
-								disabled={isStartingIdv}
+								disabled={isBusy}
 								onClick={() => void handleStartIdentityVerification()}
 								variant="outline"
 							>
@@ -311,7 +321,7 @@ export function OnboardingWizard({
 								{isStartingIdv ? "Starting..." : "Start identity verification"}
 							</Button>
 							<Button
-								disabled={isSubmitting}
+								disabled={isBusy}
 								onClick={() => void handleSubmit()}
 							>
 								<SendHorizonal className="size-4" />
@@ -343,10 +353,20 @@ function Field({
 	children,
 	label,
 }: Readonly<{ children: ReactNode; label: string }>) {
+	const generatedId = useId();
+	const child =
+		isValidElement<{ id?: string }>(children) && children.props.id === undefined
+			? cloneElement(children, { id: generatedId })
+			: children;
+	const htmlFor =
+		isValidElement<{ id?: string }>(children) && children.props.id
+			? children.props.id
+			: generatedId;
+
 	return (
 		<div className="grid gap-2">
-			<Label>{label}</Label>
-			{children}
+			<Label htmlFor={htmlFor}>{label}</Label>
+			{child}
 		</div>
 	);
 }

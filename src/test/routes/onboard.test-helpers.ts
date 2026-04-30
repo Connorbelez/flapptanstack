@@ -100,6 +100,12 @@ export function createOnboardingReadModel(
 	};
 
 	return {
+		activatedPortal: {
+			_id: "portal_meridian" as never,
+			localHost: "meridian.localhost:3000",
+			productionHost: "meridian.fairlend.ca",
+			slug: "meridian",
+		},
 		application,
 		canResume: status !== "activated" && status !== "rejected",
 		downstreamOnboardingRequest: null,

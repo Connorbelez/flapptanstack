@@ -23,6 +23,18 @@ interface OnboardingCorrectionsProps {
 	submit: SubmitFn;
 }
 
+type EditableDraftData = SaveDraftArgs["draftData"];
+type EditableDraftDataKey = keyof EditableDraftData;
+
+const EDITABLE_DRAFT_FIELD_PATHS = {
+	"draftData.brokerageName": "brokerageName",
+	"draftData.brokerageNumber": "brokerageNumber",
+	"draftData.businessPhone": "businessPhone",
+	"draftData.licenseNumber": "licenseNumber",
+	"draftData.licenseProvince": "licenseProvince",
+	"draftData.requestedPortalSlug": "requestedPortalSlug",
+} as const satisfies Record<string, EditableDraftDataKey>;
+
 function valueForField(
 	readModel: BrokerOnboardingReadModel,
 	fieldPath: string
@@ -53,25 +65,17 @@ function fieldPatch(
 	fieldPath: string,
 	value: string
 ): SaveDraftArgs["draftData"] | null {
-	switch (fieldPath) {
-		case "draftData.selfReportedName":
-		case "draftData.selfReportedName.fullName":
-			return { selfReportedName: { fullName: value } };
-		case "draftData.brokerageName":
-			return { brokerageName: value };
-		case "draftData.brokerageNumber":
-			return { brokerageNumber: value };
-		case "draftData.businessPhone":
-			return { businessPhone: value };
-		case "draftData.licenseNumber":
-			return { licenseNumber: value };
-		case "draftData.licenseProvince":
-			return { licenseProvince: value };
-		case "draftData.requestedPortalSlug":
-			return { requestedPortalSlug: value };
-		default:
-			return null;
+	if (
+		fieldPath === "draftData.selfReportedName" ||
+		fieldPath === "draftData.selfReportedName.fullName"
+	) {
+		return { selfReportedName: { fullName: value } };
 	}
+	const key =
+		EDITABLE_DRAFT_FIELD_PATHS[
+			fieldPath as keyof typeof EDITABLE_DRAFT_FIELD_PATHS
+		];
+	return key ? { [key]: value } : null;
 }
 
 export function OnboardingCorrections({

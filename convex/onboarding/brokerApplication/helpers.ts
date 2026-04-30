@@ -38,6 +38,10 @@ const REVERIFICATION_FIELD_PREFIXES = [
 ] as const;
 
 export interface BrokerOnboardingApplicationReadModel {
+	activatedPortal: Pick<
+		Doc<"portals">,
+		"_id" | "localHost" | "productionHost" | "slug"
+	> | null;
 	application: BrokerOnboardingApplicationDoc;
 	canResume: boolean;
 	downstreamOnboardingRequest: Doc<"onboardingRequests"> | null;
@@ -402,8 +406,21 @@ export async function buildBrokerOnboardingApplicationReadModel(
 			query.eq("applicationId", application._id)
 		)
 		.collect();
+	const activatedPortalId =
+		application.activatedPortalId ??
+		application.activationOutcome?.portalId ??
+		application.portalId;
+	const activatedPortal = await ctx.db.get(activatedPortalId);
 
 	return {
+		activatedPortal: activatedPortal
+			? {
+					_id: activatedPortal._id,
+					localHost: activatedPortal.localHost,
+					productionHost: activatedPortal.productionHost,
+					slug: activatedPortal.slug,
+				}
+			: null,
 		application,
 		canResume: !(
 			isBrokerOnboardingTerminalStatus(application.status) ||

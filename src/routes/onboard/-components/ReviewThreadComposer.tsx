@@ -90,6 +90,7 @@ export function ReviewThreadComposer({
 			{canSend ? (
 				<div className="mt-4 grid gap-2">
 					<Textarea
+						aria-label="Add context for the reviewer"
 						onChange={(event) => setBody(event.target.value)}
 						placeholder="Add context for the reviewer"
 						value={body}

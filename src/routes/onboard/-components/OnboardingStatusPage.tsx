@@ -109,11 +109,19 @@ export function OnboardingStatusPage({
 }
 
 function ActivatedPortalSummary({
+	activatedPortal,
 	application,
 }: {
+	activatedPortal: BrokerOnboardingReadModel["activatedPortal"];
 	application: BrokerOnboardingReadModel["application"];
 }) {
 	const seed = getPortalPreviewSeed(application);
+	const hosts = activatedPortal
+		? {
+				localHost: activatedPortal.localHost,
+				productionHost: activatedPortal.productionHost,
+			}
+		: seed.hosts;
 
 	return (
 		<section className="rounded-lg border border-teal-900/10 bg-white p-5 shadow-sm">
@@ -134,12 +142,12 @@ function ActivatedPortalSummary({
 				<div className="grid gap-2 text-sm">
 					<a
 						className="inline-flex items-center gap-2 text-teal-700"
-						href={`https://${seed.hosts.productionHost}`}
+						href={`https://${hosts.productionHost}`}
 					>
-						{seed.hosts.productionHost}
+						{hosts.productionHost}
 						<ExternalLink className="size-3.5" />
 					</a>
-					<p className="text-stone-500">{seed.hosts.localHost}</p>
+					<p className="text-stone-500">{hosts.localHost}</p>
 				</div>
 			</div>
 
