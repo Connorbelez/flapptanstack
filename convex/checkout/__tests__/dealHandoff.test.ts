@@ -8,12 +8,14 @@ import { api, internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import { canAccessDeal } from "../../auth/resourceChecks";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
+import { FAIRLEND_MIC_LENDER_EMAIL } from "../../platform/defaultOriginationOwnerContract";
 import schema from "../../schema";
+import { seedAuthIdFromEmail } from "../../seed/seedHelpers";
 import { convexModules } from "../../test/moduleMaps";
 import { buildCheckoutStripeMetadata } from "../metadata";
 
 const BUYER_AUTH_ID = "handoff-buyer-auth";
-const SELLER_LEDGER_LENDER_ID = "handoff-seller-lender";
+const SELLER_LEDGER_LENDER_ID = seedAuthIdFromEmail(FAIRLEND_MIC_LENDER_EMAIL);
 const STARTED_AT = 1_711_929_000_000;
 const TEST_STRIPE_SECRET = "whsec_handoff_test";
 
@@ -211,7 +213,7 @@ async function setupCheckoutFixture(t: TestHarness) {
 		source: { type: "system", channel: "handoff-test" },
 	});
 
-	return await t.run(async (ctx) => {
+	const fixture = await t.run(async (ctx) => {
 		const buyerUserId = await ctx.db.insert("users", {
 			authId: BUYER_AUTH_ID,
 			email: "buyer.handoff@fairlend.ca",
@@ -223,6 +225,15 @@ async function setupCheckoutFixture(t: TestHarness) {
 			email: selectedPlatformLawyer().email,
 			firstName: "Pat",
 			lastName: "Platform",
+		});
+		await ctx.db.insert("organizationMemberships", {
+			organizationName: "Handoff Law Firm",
+			organizationWorkosId: "org_handoff_lawfirm",
+			roleSlug: "platform_lawyer",
+			roleSlugs: ["platform_lawyer"],
+			status: "active",
+			userWorkosId: selectedPlatformLawyer().lawyerId,
+			workosId: "om_handoff_platform_lawyer",
 		});
 		const brokerId = await ctx.db.insert("brokers", {
 			createdAt: STARTED_AT,
@@ -263,6 +274,17 @@ async function setupCheckoutFixture(t: TestHarness) {
 		);
 		return { lenderId, listingId, mortgageId, portalId };
 	});
+	await admin.mutation(
+		api.legalRepresentation.platformLawyers.createOrDesignatePlatformLawyer,
+		{
+			authId: selectedPlatformLawyer().lawyerId,
+			displayName: selectedPlatformLawyer().name,
+			email: selectedPlatformLawyer().email,
+			firmName: selectedPlatformLawyer().firm,
+			platformStatus: "active",
+		}
+	);
+	return fixture;
 }
 
 async function prepareCompletedCheckout(
@@ -792,23 +814,18 @@ describe("paid checkout to deal handoff", () => {
 		expect(deals).toHaveLength(0);
 	});
 
-	it("rejects platform lawyer selections without a lawyer auth principal", async () => {
+	it("rejects platform lawyer selections without a lawyer auth principal before handoff", async () => {
 		const t = createHarness();
-		const { prepared } = await prepareCompletedCheckout(t, {
-			selectedLawyer: {
-				type: "platform_lawyer",
-				name: "Missing Lawyer",
-				email: "missing.lawyer@example.com",
-				firm: "No Principal LLP",
-			},
-		});
-
-		const result = await runDealHandoff(t, prepared.checkoutSessionId);
-
-		expect(result).toMatchObject({
-			ok: false,
-			code: "missing_platform_lawyer_auth_id",
-		});
+		await expect(
+			prepareCompletedCheckout(t, {
+				selectedLawyer: {
+					type: "platform_lawyer",
+					name: "Missing Lawyer",
+					email: "missing.lawyer@example.com",
+					firm: "No Principal LLP",
+				},
+			})
+		).rejects.toThrow("Platform lawyer profile not found");
 	});
 
 	it("creates and replays checkout handoff through Stripe webhooks without duplicate deal rows", async () => {

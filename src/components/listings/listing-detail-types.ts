@@ -78,11 +78,15 @@ export interface ListingDocumentItem {
 }
 
 export interface ListingLawyerOption {
+	barNumber?: string | null;
 	detail: string;
 	email?: string | null;
 	firm?: string | null;
 	id: string;
+	jurisdiction?: string | null;
 	label: string;
+	latestVerificationId?: string | null;
+	lawyerProfileId?: string;
 	type: "guest_lawyer" | "platform_lawyer";
 }
 

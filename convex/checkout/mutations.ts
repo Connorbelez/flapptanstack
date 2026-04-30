@@ -8,6 +8,7 @@ import {
 	reserveSharesHandler,
 	voidReservationHandler,
 } from "../ledger/mutations";
+import { assertPlatformLawyerAuthSelectableForCheckout } from "../legalRepresentation/profiles";
 import { matchesMarketplaceFilters } from "../listings/marketplace";
 import {
 	clampMarketplaceFiltersToLenderConstraints,
@@ -181,6 +182,42 @@ function selectedLawyerIdempotencyPart(
 		selectedLawyer.firm ?? "",
 		selectedLawyerLsoPart(selectedLawyer),
 	].join(":");
+}
+
+async function assertCheckoutLawyerSelectable(
+	ctx: MutationCtx,
+	args: {
+		now: number;
+		selectedLawyer: CheckoutSessionDoc["selectedLawyer"];
+	}
+): Promise<CheckoutSessionDoc["selectedLawyer"]> {
+	if (args.selectedLawyer.type === "guest_lawyer") {
+		return args.selectedLawyer;
+	}
+	const option = await assertPlatformLawyerAuthSelectableForCheckout(ctx, {
+		authId: args.selectedLawyer.lawyerId,
+		now: args.now,
+	});
+	return {
+		type: "platform_lawyer",
+		lawyerId: option.lawyerId,
+		name: option.name,
+		email: option.email,
+		...(option.firm === undefined ? {} : { firm: option.firm }),
+		...(option.barNumber || option.jurisdiction
+			? {
+					lso: {
+						...(option.barNumber === undefined
+							? {}
+							: { barNumber: option.barNumber }),
+						...(option.jurisdiction === undefined
+							? {}
+							: { jurisdiction: option.jurisdiction }),
+						source: "platform_profile",
+					},
+				}
+			: {}),
+	};
 }
 
 async function findActiveCheckoutSession(
@@ -368,6 +405,17 @@ export const prepareMarketplaceCheckout = convex
 		}
 		try {
 			selectedLawyer = parseSelectedLawyerSnapshot(args.selectedLawyer);
+		} catch (error) {
+			return checkoutFailure(
+				"invalid_lawyer",
+				error instanceof Error ? error.message : "Invalid lawyer"
+			);
+		}
+		try {
+			selectedLawyer = await assertCheckoutLawyerSelectable(ctx, {
+				now,
+				selectedLawyer,
+			});
 		} catch (error) {
 			return checkoutFailure(
 				"invalid_lawyer",
