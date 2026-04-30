@@ -93,7 +93,10 @@ export function OnboardingStatusPage({
 					</section>
 
 					{application.status === "activated" ? (
-						<ActivatedPortalSummary application={application} />
+						<ActivatedPortalSummary
+							activatedPortal={readModel.activatedPortal}
+							application={application}
+						/>
 					) : (
 						<PortalTeaserCard application={application} />
 					)}

@@ -8,24 +8,58 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../../convex/_generated/api";
 import { OnboardRoutePage, Route } from "#/routes/onboard/index";
 import { Route as RootRoute } from "#/routes/__root";
-import { useAppAuth } from "#/hooks/use-app-auth";
 import { cleanup, fireEvent, render, screen } from "./onboard.render";
 import { createOnboardingReadModel, PORTAL_CONTEXT } from "./onboard.test-helpers";
+
+const useAppAuthMock = vi.fn();
+
+function useTestRootRouteContext() {
+	return {
+		portalContext: PORTAL_CONTEXT,
+	};
+}
 
 vi.mock("lucide-react", () => {
 	const Icon = () => null;
 	return {
+		AlertTriangle: Icon,
 		ArrowRight: Icon,
+		ArrowLeft: Icon,
+		Bug: Icon,
 		Building2: Icon,
 		CheckCircle2: Icon,
+		Check: Icon,
+		ChevronDown: Icon,
+		ChevronRight: Icon,
+		Clipboard: Icon,
 		ExternalLink: Icon,
+		Globe: Icon,
 		Globe2: Icon,
+		Home: Icon,
+		Lock: Icon,
 		MessageSquarePlus: Icon,
 		PlayCircle: Icon,
+		RefreshCw: Icon,
 		RotateCcw: Icon,
 		Save: Icon,
+		Search: Icon,
 		SendHorizonal: Icon,
+		ServerCrash: Icon,
+		ShieldAlert: Icon,
 		ShieldCheck: Icon,
+		Timer: Icon,
+		Zap: Icon,
+	};
+});
+
+vi.mock("radix-ui", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("radix-ui")>();
+	return {
+		...actual,
+		Progress: {
+			Indicator: (props: React.ComponentProps<"div">) => <div {...props} />,
+			Root: (props: React.ComponentProps<"div">) => <div {...props} />,
+		},
 	};
 });
 
@@ -35,8 +69,8 @@ vi.mock("convex/react", () => ({
 	useQuery: vi.fn(),
 }));
 
-vi.mock("#/hooks/use-app-auth", () => ({
-	useAppAuth: vi.fn(),
+vi.mock("@workos/authkit-tanstack-react-start/client", () => ({
+	useAuth: () => useAppAuthMock(),
 }));
 
 vi.mock("#/components/ui/progress", () => ({
@@ -45,21 +79,28 @@ vi.mock("#/components/ui/progress", () => ({
 	),
 }));
 
-vi.mock("#/routes/__root", () => ({
+vi.mock("../../../src/components/ui/progress", () => ({
+	Progress: ({ value }: { value?: number }) => (
+		<div aria-valuenow={value ?? 0} role="progressbar" />
+	),
+}));
+
+vi.mock("../../../src/routes/__root", () => ({
 	Route: {
-		useRouteContext: vi.fn(),
+		useRouteContext: vi.fn(useTestRootRouteContext),
 	},
 }));
 
 afterEach(() => {
 	cleanup();
+	useAppAuthMock.mockReset();
 	vi.restoreAllMocks();
 });
 
 function mockRouteContext() {
-	vi.mocked(RootRoute.useRouteContext).mockReturnValue({
-		portalContext: PORTAL_CONTEXT,
-	} as never);
+	vi.spyOn(RootRoute, "useRouteContext").mockReturnValue(
+		useTestRootRouteContext() as never
+	);
 }
 
 function mockMutations(startOrResume = vi.fn()) {
@@ -85,9 +126,9 @@ describe("onboard route", () => {
 			ref: "launch-a",
 			referralSource: "broker_invite",
 		} as never);
-		vi.mocked(useAppAuth).mockReturnValue({
+		useAppAuthMock.mockReturnValue({
 			loading: false,
-			orgId: null,
+			organizationId: null,
 			permissions: [],
 			role: null,
 			roles: [],
@@ -113,9 +154,9 @@ describe("onboard route", () => {
 			ref: "launch-a",
 			referralSource: "broker_invite",
 		} as never);
-		vi.mocked(useAppAuth).mockReturnValue({
+		useAppAuthMock.mockReturnValue({
 			loading: false,
-			orgId: "org_broker",
+			organizationId: "org_broker",
 			permissions: ["onboarding:access"],
 			role: "broker",
 			roles: ["broker"],
@@ -142,9 +183,9 @@ describe("onboard route", () => {
 	it("resumes an existing draft from the server projection", () => {
 		mockRouteContext();
 		vi.spyOn(Route, "useSearch").mockReturnValue({} as never);
-		vi.mocked(useAppAuth).mockReturnValue({
+		useAppAuthMock.mockReturnValue({
 			loading: false,
-			orgId: "org_broker",
+			organizationId: "org_broker",
 			permissions: ["onboarding:access"],
 			role: "broker",
 			roles: ["broker"],

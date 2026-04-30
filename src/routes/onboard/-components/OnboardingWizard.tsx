@@ -1,6 +1,13 @@
 import { PlayCircle, Save, SendHorizonal } from "lucide-react";
-import { cloneElement, isValidElement, type ReactNode, useId } from "react";
-import { useEffect, useRef, useState } from "react";
+import {
+	cloneElement,
+	isValidElement,
+	type ReactNode,
+	useEffect,
+	useId,
+	useRef,
+	useState,
+} from "react";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -320,10 +327,7 @@ export function OnboardingWizard({
 								<PlayCircle className="size-4" />
 								{isStartingIdv ? "Starting..." : "Start identity verification"}
 							</Button>
-							<Button
-								disabled={isBusy}
-								onClick={() => void handleSubmit()}
-							>
+							<Button disabled={isBusy} onClick={() => void handleSubmit()}>
 								<SendHorizonal className="size-4" />
 								{isSubmitting ? "Submitting..." : "Submit for review"}
 							</Button>
