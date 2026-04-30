@@ -47,6 +47,12 @@ export interface LawyerActionState {
 	label: string;
 }
 
+export interface LawyerRepresentationGateState {
+	decision: "allow" | "block" | "requires_review";
+	message: string;
+	reasonCodes: readonly string[];
+}
+
 export interface LawyerPackageInstanceState {
 	class: string;
 	displayName: string;
@@ -157,9 +163,16 @@ export function isLawyerWorkspaceReadOnly(accessState: LawyerAccessState) {
 export function buildLawyerActionStates(args: {
 	accessState: LawyerAccessState;
 	packageReview: LawyerPackageReviewState;
+	representationGate?: LawyerRepresentationGateState | null;
 	status: string;
 }): Record<LawyerActionKey, LawyerActionState> {
 	const readOnlyReason = readOnlyDisabledReason(args.accessState);
+	const representationGateReason =
+		args.status === "lawyerOnboarding.verified" &&
+		args.representationGate &&
+		args.representationGate.decision !== "allow"
+			? args.representationGate.message
+			: undefined;
 
 	return {
 		confirmRepresentation: {
@@ -171,6 +184,7 @@ export function buildLawyerActionStates(args: {
 				status: args.status,
 				statusReason:
 					"Representation can only be confirmed after lawyer verification.",
+				secondaryReason: representationGateReason,
 			}),
 		},
 		approvePackageForSigning: {

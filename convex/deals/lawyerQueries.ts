@@ -3,6 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { lawyerQuery, type Viewer } from "../fluent";
+import { evaluateDealLegalGate } from "../legalRepresentation/gates";
 import { buildDealParticipantProjection } from "./participantProjection";
 
 type LawyerQueryCtx = Pick<QueryCtx, "db"> & { viewer: Viewer };
@@ -363,6 +364,15 @@ export const getLawyerDealWorkspace = lawyerQuery
 		}
 
 		const accessPolicy = await requireLawyerAccessPolicyForDeal(ctx, deal);
+		const representationConfirmationGate = await evaluateDealLegalGate(ctx, {
+			access: {
+				requireActiveAccess: accessPolicy.accessState === "active",
+				sourceActorId:
+					accessPolicy.accessState === "active" ? ctx.viewer.authId : undefined,
+			},
+			checkpoint: "REPRESENTATION_CONFIRMED",
+			deal,
+		});
 		const mortgage = await ctx.db.get(deal.mortgageId);
 		if (!mortgage) {
 			return null;
@@ -423,6 +433,9 @@ export const getLawyerDealWorkspace = lawyerQuery
 					: null,
 			},
 			readOnly: accessPolicy.accessState !== "active",
+			representationGate: {
+				confirmation: representationConfirmationGate,
+			},
 			timeline: {
 				closeMilestones: closeMilestonesForDeal(deal, timelineEntries),
 				legalActions: timelineEntries.map((entry) => ({
