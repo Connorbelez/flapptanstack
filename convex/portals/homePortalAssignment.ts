@@ -91,14 +91,15 @@ export async function ensureFairLendPortal(ctx: PortalWriterCtx) {
 	});
 
 	if (existingPortal) {
+		const pricingSelection = await ensurePortalSelectedPricingPolicy(ctx, {
+			brokerSplitPercent: 0,
+			portalId: existingPortal._id,
+		});
 		await ctx.db.patch(existingPortal._id, {
 			...fairLendPortal,
 			...normalizedPortal,
 			createdAt: existingPortal.createdAt,
-		});
-		await ensurePortalSelectedPricingPolicy(ctx, {
-			brokerSplitPercent: 0,
-			portalId: existingPortal._id,
+			pricingPolicyId: pricingSelection.policyId,
 		});
 		return existingPortal._id;
 	}

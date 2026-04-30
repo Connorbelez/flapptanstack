@@ -483,10 +483,10 @@ async function loadSuggestedOpportunityCandidates(
 			excludedOwnedMortgageCount += 1;
 			continue;
 		}
-		selectedListings.push(listing);
 		if (selectedListings.length >= SUGGESTED_OPPORTUNITY_LIMIT) {
-			break;
+			continue;
 		}
+		selectedListings.push(listing);
 	}
 
 	const withAvailability = await attachMarketplaceAvailabilityToListings(

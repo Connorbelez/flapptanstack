@@ -78,6 +78,7 @@ export const publicPortalSummaryValidator = v.object({
 	publicTeaserEnabled: v.boolean(),
 	teaserListingLimit: v.optional(v.number()),
 	defaultPostAuthPath: v.optional(v.string()),
+	pricingPolicyId: v.optional(v.id("portalPricingPolicies")),
 });
 
 export const resolvedPortalHostValidator = v.object({

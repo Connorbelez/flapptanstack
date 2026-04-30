@@ -47,6 +47,9 @@ function skipPdfmeBabelTransform(): Plugin {
 }
 
 const config = defineConfig({
+	resolve: {
+		dedupe: ["react", "react-dom"],
+	},
 	server: {
 		allowedHosts: ["localhost", ".localhost"],
 	},

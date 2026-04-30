@@ -191,14 +191,14 @@ async function paginateNativeTable(
 						.withIndex("by_org", (q) => q.eq("orgId", orgId))
 						.paginate(paginationOpts);
 		case "listings":
-			// Listings live on the FairLend marketplace surface and do not carry
-			// their own orgId. Admin access to this native table is already scoped
-			// to the FairLend staff org at the route/auth layer.
+			if (!canReadAcrossOrgs) {
+				throw new ConvexError("Forbidden: fair lend admin role required");
+			}
 			return ctx.db.query("listings").paginate(paginationOpts);
 		case "properties":
-			// Properties are shared across the FairLend marketplace (same shape as
-			// listings — no per-row orgId). The FairLend staff admin route is the
-			// only consumer, gated at the route/auth layer.
+			if (!canReadAcrossOrgs) {
+				throw new ConvexError("Forbidden: fair lend admin role required");
+			}
 			return ctx.db.query("properties").paginate(paginationOpts);
 		default:
 			throw new ConvexError(`Unknown native table: ${tableName}`);
@@ -258,9 +258,14 @@ async function takeNativeTable(
 						.withIndex("by_org", (q) => q.eq("orgId", orgId))
 						.take(limit);
 		case "listings":
+			if (!canReadAcrossOrgs) {
+				throw new ConvexError("Forbidden: fair lend admin role required");
+			}
 			return ctx.db.query("listings").take(limit);
 		case "properties":
-			// See paginateNativeTable — properties are not org-scoped.
+			if (!canReadAcrossOrgs) {
+				throw new ConvexError("Forbidden: fair lend admin role required");
+			}
 			return ctx.db.query("properties").take(limit);
 		default:
 			throw new ConvexError(`Unknown native table: ${tableName}`);

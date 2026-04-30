@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { canAccessMortgage } from "../auth/resourceChecks";
+import { canAccessMortgageResource } from "../authz/resourceAccess";
 import {
 	portalAuthedQuery,
 	portalBorrowerQuery,
@@ -24,11 +24,7 @@ export const getPortalMortgageAccessProof = portalAuthedQuery({
 		return {
 			accessMode: ctx.portalAccess.mode,
 			filterBounds: buildPortalFilterBounds(ctx.portal),
-			mortgageAllowed: await canAccessMortgage(
-				ctx,
-				ctx.viewer,
-				args.mortgageId
-			),
+			mortgageAllowed: await canAccessMortgageResource(ctx, args.mortgageId),
 			portalId: ctx.portal.portalId,
 			pricingProjection: buildPortalPricingProjection(ctx.portal),
 		};

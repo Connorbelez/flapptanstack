@@ -4,7 +4,6 @@ import { Link } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { FileText, Home, Percent, Wallet } from "lucide-react";
-import { useRef } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -181,12 +180,8 @@ export function PortalDealDetailPage({
 	dealId,
 }: PortalDealDetailPageProps) {
 	const copy = PORTAL_COPY[audience];
-	const signingDialogsRef = useRef(
-		new Map<DealDocumentInstanceId, HTMLDialogElement>()
-	);
-	const signingFramesRef = useRef(
-		new Map<DealDocumentInstanceId, HTMLIFrameElement>()
-	);
+	const signingDialogs = new Map<DealDocumentInstanceId, HTMLDialogElement>();
+	const signingFrames = new Map<DealDocumentInstanceId, HTMLIFrameElement>();
 	const detail = useQuery(api.deals.queries.getPortalDealDetail, {
 		dealId: dealId as Id<"deals">,
 	});
@@ -249,28 +244,28 @@ export function PortalDealDetailPage({
 	function setSigningDialogRef(instanceId: DealDocumentInstanceId) {
 		return (dialog: HTMLDialogElement | null) => {
 			if (dialog) {
-				signingDialogsRef.current.set(instanceId, dialog);
+				signingDialogs.set(instanceId, dialog);
 				return;
 			}
 
-			signingDialogsRef.current.delete(instanceId);
+			signingDialogs.delete(instanceId);
 		};
 	}
 
 	function setSigningFrameRef(instanceId: DealDocumentInstanceId) {
 		return (frame: HTMLIFrameElement | null) => {
 			if (frame) {
-				signingFramesRef.current.set(instanceId, frame);
+				signingFrames.set(instanceId, frame);
 				return;
 			}
 
-			signingFramesRef.current.delete(instanceId);
+			signingFrames.delete(instanceId);
 		};
 	}
 
 	function getSigningNodes(instanceId: DealDocumentInstanceId) {
-		const dialog = signingDialogsRef.current.get(instanceId);
-		const frame = signingFramesRef.current.get(instanceId);
+		const dialog = signingDialogs.get(instanceId);
+		const frame = signingFrames.get(instanceId);
 
 		if (!(dialog && frame)) {
 			toast.error(
@@ -283,7 +278,7 @@ export function PortalDealDetailPage({
 	}
 
 	function closeEmbeddedSigning(instanceId: DealDocumentInstanceId) {
-		const dialog = signingDialogsRef.current.get(instanceId);
+		const dialog = signingDialogs.get(instanceId);
 		if (!dialog) {
 			toast.error(
 				"Embedded signing dialog is unavailable right now. Refresh the page and try again."
@@ -295,7 +290,7 @@ export function PortalDealDetailPage({
 	}
 
 	function resetEmbeddedSigningFrame(instanceId: DealDocumentInstanceId) {
-		const frame = signingFramesRef.current.get(instanceId);
+		const frame = signingFrames.get(instanceId);
 		if (frame) {
 			frame.src = "about:blank";
 		}
