@@ -444,6 +444,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../ledger/validators.ts"),
 	"/convex/legalRepresentation/fixtures.ts": async () =>
 		await import("./../legalRepresentation/fixtures.ts"),
+	"/convex/legalRepresentation/invitations.ts": async () =>
+		await import("./../legalRepresentation/invitations.ts"),
 	"/convex/legalRepresentation/normalization.ts": async () =>
 		await import("./../legalRepresentation/normalization.ts"),
 	"/convex/legalRepresentation/platformLawyers.ts": async () =>
@@ -452,6 +454,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../legalRepresentation/profiles.ts"),
 	"/convex/legalRepresentation/providers.ts": async () =>
 		await import("./../legalRepresentation/providers.ts"),
+	"/convex/legalRepresentation/tokenUtils.ts": async () =>
+		await import("./../legalRepresentation/tokenUtils.ts"),
 	"/convex/legalRepresentation/validators.ts": async () =>
 		await import("./../legalRepresentation/validators.ts"),
 	"/convex/legalRepresentation/verifications.ts": async () =>
