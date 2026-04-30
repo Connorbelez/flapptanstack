@@ -304,6 +304,62 @@ describe("portal registry backfill", () => {
 		expect(result.resolvedPortalId).toBe(result.portalId);
 	});
 
+	it("previews portal slug availability with shared host contracts", async () => {
+		const t = createHarness();
+		await t.run(async (ctx) => {
+			await ctx.db.insert(
+				"portals",
+				buildPortalRecord({
+					localHost: "meridian-capital.localhost:3000",
+					productionHost: "meridian-capital.fairlend.ca",
+					slug: "meridian-capital",
+				})
+			);
+		});
+
+		const taken = await t.query(
+			api.portals.queries.previewPortalSlugCandidate,
+			{
+				slug: " Meridian Capital! ",
+			}
+		);
+		expect(taken).toEqual({
+			available: false,
+			conflictReason: "taken",
+			hosts: {
+				localHost: "meridian-capital.localhost:3000",
+				productionHost: "meridian-capital.fairlend.ca",
+			},
+			isReserved: false,
+			normalizedSlug: "meridian-capital",
+		});
+
+		const reserved = await t.query(
+			api.portals.queries.previewPortalSlugCandidate,
+			{ slug: "app" }
+		);
+		expect(reserved).toMatchObject({
+			available: false,
+			conflictReason: "reserved",
+			isReserved: true,
+			normalizedSlug: "app",
+		});
+
+		const empty = await t.query(
+			api.portals.queries.previewPortalSlugCandidate,
+			{
+				slug: "!!!",
+			}
+		);
+		expect(empty).toEqual({
+			available: false,
+			conflictReason: "empty",
+			hosts: null,
+			isReserved: false,
+			normalizedSlug: "",
+		});
+	});
+
 	it("syncs a freshly created user's home portal to the FairLend app portal", async () => {
 		const t = createHarness();
 		const authId = "user_marketing_signup";
@@ -329,7 +385,6 @@ describe("portal registry backfill", () => {
 			{}
 		);
 		expect(fairLendPortal?.slug).toBe("app");
-		expect(fairLendPortal?.pricingPolicyId).toBeDefined();
 
 		const resolvedFairLendPortal = await t.query(
 			api.portals.queries.resolvePortalByHost,
@@ -341,11 +396,15 @@ describe("portal registry backfill", () => {
 
 		const records = await t.run(async (ctx) => {
 			const user = await ctx.db.get(userId);
-			const policy = fairLendPortal?.pricingPolicyId
-				? await ctx.db.get(fairLendPortal.pricingPolicyId)
+			const portal = fairLendPortal
+				? await ctx.db.get(fairLendPortal.portalId)
 				: null;
-			return { policy, user };
+			const policy = portal?.pricingPolicyId
+				? await ctx.db.get(portal.pricingPolicyId)
+				: null;
+			return { policy, portal, user };
 		});
+		expect(records.portal?.pricingPolicyId).toBeDefined();
 		expect(String(records.user?.homePortalId)).toBe(
 			String(fairLendPortal?.portalId)
 		);

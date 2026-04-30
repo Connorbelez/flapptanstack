@@ -27,7 +27,7 @@ export interface PortalResolvedContext extends PublicPortalResolvedContext {
 
 export interface PortalAccessContext extends PortalResolvedContext {
 	portalAccess: {
-		mode: "admin-override" | "same-portal";
+		mode: "admin-override" | "current-org-portal" | "same-portal";
 		viewerUser: Doc<"users"> | null;
 	};
 }
@@ -155,13 +155,20 @@ export async function resolvePortalAccess(
 	const isSamePortal =
 		viewerUser?.homePortalId !== undefined &&
 		viewerUser.homePortalId === context.portal.portalId;
+	const isCurrentOrgPortal =
+		context.viewer.orgId !== undefined &&
+		context.viewer.orgId === context.portal.orgId;
 
-	if (!(isSamePortal || context.viewer.isFairLendAdmin)) {
+	if (!(isSamePortal || isCurrentOrgPortal || context.viewer.isFairLendAdmin)) {
 		throw new ConvexError("Forbidden: wrong portal");
 	}
 
 	return {
-		mode: isSamePortal ? "same-portal" : "admin-override",
+		mode: isSamePortal
+			? "same-portal"
+			: isCurrentOrgPortal
+				? "current-org-portal"
+				: "admin-override",
 		viewerUser,
 	};
 }

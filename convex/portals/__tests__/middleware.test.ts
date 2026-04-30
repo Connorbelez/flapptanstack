@@ -76,6 +76,16 @@ const SAME_ORG_WRONG_BROKER_LENDER = createMockViewer({
 	lastName: "WrongBroker",
 });
 
+const CURRENT_ORG_PORTAL_USER = createMockViewer({
+	roles: ["broker"],
+	orgId: BROKER.org_id,
+	orgName: BROKER.organization_name,
+	subject: "user_current_org_portal",
+	email: "current-org-portal@test.fairlend.ca",
+	firstName: "CurrentOrg",
+	lastName: "PortalUser",
+});
+
 function createHarness() {
 	return createTestConvex();
 }
@@ -119,6 +129,7 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 		seedFromIdentity(t, UNMAPPED_ORG_BORROWER),
 		seedFromIdentity(t, MULTI_PORTAL_BORROWER),
 		seedFromIdentity(t, SAME_ORG_WRONG_BROKER_LENDER),
+		seedFromIdentity(t, CURRENT_ORG_PORTAL_USER),
 	]);
 
 	return t.run(async (ctx) => {
@@ -147,6 +158,9 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 		);
 		const sameOrgWrongBrokerLenderUser = await findUser(
 			SAME_ORG_WRONG_BROKER_LENDER.subject
+		);
+		const currentOrgPortalUser = await findUser(
+			CURRENT_ORG_PORTAL_USER.subject
 		);
 
 		const brokerAId = await ctx.db.insert("brokers", {
@@ -228,6 +242,7 @@ async function seedPortalFixture(t: ReturnType<typeof createHarness>) {
 			ctx.db.patch(sameOrgWrongBrokerLenderUser._id, {
 				homePortalId: portalAId,
 			}),
+			ctx.db.patch(currentOrgPortalUser._id, { homePortalId: portalBId }),
 		]);
 
 		const borrowerId = await ctx.db.insert("borrowers", {
@@ -413,6 +428,21 @@ describe("portal middleware proof consumers", () => {
 		expect(result.mortgageAllowed).toBe(true);
 		expect(result.filterBounds.portalId).toBe(fixture.portalAId);
 		expect(result.pricingProjection.portalId).toBe(fixture.portalAId);
+	});
+
+	it("allows users whose current WorkOS org matches the portal", async () => {
+		const t = createHarness();
+		const fixture = await seedPortalFixture(t);
+
+		const result = await t
+			.withIdentity(CURRENT_ORG_PORTAL_USER)
+			.query(internal.portals.proof.getPortalMortgageAccessProof, {
+				portalId: fixture.portalAId,
+				mortgageId: fixture.mortgageId,
+			});
+
+		expect(result.accessMode).toBe("current-org-portal");
+		expect(result.portalId).toBe(fixture.portalAId);
 	});
 
 	it("denies cross-portal users before resource-level checks can grant access", async () => {

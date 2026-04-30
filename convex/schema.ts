@@ -610,6 +610,7 @@ export default defineSchema({
 			v.literal("broker_invite")
 		),
 		invitedByBrokerId: v.optional(v.string()),
+		referralToken: v.optional(v.string()),
 
 		// ─── Draft and verification state ───
 		draftData: brokerOnboardingDraftDataValidator,
