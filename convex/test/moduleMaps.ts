@@ -224,6 +224,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 	"/convex/demo/crons.ts": async () => await import("./../demo/crons.ts"),
 	"/convex/demo/debouncer.ts": async () =>
 		await import("./../demo/debouncer.ts"),
+	"/convex/demo/dealClosingPipeline.ts": async () =>
+		await import("./../demo/dealClosingPipeline.ts"),
 	"/convex/demo/demoLedgerSeed.ts": async () =>
 		await import("./../demo/demoLedgerSeed.ts"),
 	"/convex/demo/fileManagement.ts": async () =>

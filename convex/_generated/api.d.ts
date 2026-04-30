@@ -122,6 +122,7 @@ import type * as demo_auditTraceability from "../demo/auditTraceability.js";
 import type * as demo_cascadingDelete from "../demo/cascadingDelete.js";
 import type * as demo_crmSandbox from "../demo/crmSandbox.js";
 import type * as demo_crons from "../demo/crons.js";
+import type * as demo_dealClosingPipeline from "../demo/dealClosingPipeline.js";
 import type * as demo_debouncer from "../demo/debouncer.js";
 import type * as demo_demoLedgerSeed from "../demo/demoLedgerSeed.js";
 import type * as demo_fileManagement from "../demo/fileManagement.js";
@@ -590,6 +591,7 @@ declare const fullApi: ApiFromModules<{
   "demo/cascadingDelete": typeof demo_cascadingDelete;
   "demo/crmSandbox": typeof demo_crmSandbox;
   "demo/crons": typeof demo_crons;
+  "demo/dealClosingPipeline": typeof demo_dealClosingPipeline;
   "demo/debouncer": typeof demo_debouncer;
   "demo/demoLedgerSeed": typeof demo_demoLedgerSeed;
   "demo/fileManagement": typeof demo_fileManagement;
