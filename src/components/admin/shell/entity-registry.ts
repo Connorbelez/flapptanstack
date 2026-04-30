@@ -153,6 +153,13 @@ export const STATIC_ADMIN_NAV_ITEMS = [
 	},
 	{
 		kind: "route",
+		label: "Broker Onboarding",
+		route: "/admin/broker-onboarding",
+		domain: "marketplace",
+		iconName: "badge-check",
+	},
+	{
+		kind: "route",
 		label: "Originations",
 		route: "/admin/originations",
 		domain: "payments",

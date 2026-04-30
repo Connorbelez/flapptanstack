@@ -97,6 +97,7 @@ export async function startBrokerApplication(
 	identity: MockIdentity,
 	args?: {
 		portalId?: Id<"portals">;
+		referralToken?: string;
 	}
 ) {
 	await ensureSeededIdentity(t, identity);
@@ -104,6 +105,7 @@ export async function startBrokerApplication(
 		.withIdentity(identity)
 		.mutation(api.onboarding.brokerApplication.mutations.startOrResume, {
 			portalId: args?.portalId,
+			referralToken: args?.referralToken,
 		});
 }
 

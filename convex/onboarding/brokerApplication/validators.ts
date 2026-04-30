@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import {
 	BROKER_ONBOARDING_APPROVAL_RECOMMENDATIONS,
 	BROKER_ONBOARDING_REASON_CODES,
+	BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS,
 	EMAIL_VERIFICATION_STATUSES,
 	IDENTITY_VERIFICATION_STATUSES,
 	REGULATOR_DIRECTORY_STATUSES,
@@ -35,6 +36,13 @@ export const brokerOnboardingReviewEntryTypeValidator = v.union(
 	v.literal("reviewer_note"),
 	v.literal("broker_note"),
 	v.literal("system_event")
+);
+
+export const brokerOnboardingReviewQueueViewValidator = v.union(
+	v.literal("submitted"),
+	v.literal("changes_requested"),
+	v.literal("recently_updated"),
+	v.literal("rejected")
 );
 
 export const brokerOnboardingDownstreamHandoffStatusValidator = v.union(
@@ -205,6 +213,16 @@ export const brokerOnboardingReopenedFieldValidator = v.object({
 	resolvedAt: v.optional(v.number()),
 	resolvedByAuthId: v.optional(v.string()),
 	status: brokerOnboardingReopenedFieldStatusValidator,
+});
+
+export const brokerOnboardingReverificationFlagsValidator = v.object({
+	identityVerification: v.boolean(),
+	regulatorLookup: v.boolean(),
+});
+
+export const brokerOnboardingReviewReopenedFieldInputValidator = v.object({
+	fieldPath: literalUnion(BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS),
+	reason: v.optional(v.string()),
 });
 
 export const brokerOnboardingDraftDataValidator = v.object({

@@ -7,12 +7,18 @@ import { appendAuditJournalEntry } from "../../engine/auditJournal";
 import { buildSource } from "../../engine/commands";
 import { INITIAL_BROKER_ONBOARDING_APPLICATION_MACHINE_CONTEXT } from "../../engine/machines/brokerOnboardingApplication.machine";
 import { executeTransition } from "../../engine/transition";
-import { authedMutation, requirePermission } from "../../fluent";
+import {
+	adminAction,
+	authedMutation,
+	requirePermission,
+	requirePermissionAction,
+} from "../../fluent";
 import { referralSourceValidator } from "../validators";
 import {
 	appendBrokerOnboardingReviewEntry,
 	assertViewerCanAccessBrokerApplication,
 	type BrokerOnboardingApplicationDoc,
+	type BrokerOnboardingApplicationReadModel,
 	buildBrokerOnboardingApplicationReadModel,
 	buildResumeWindowPatch,
 	getViewerUserOrThrow,
@@ -22,21 +28,29 @@ import {
 	listCandidateBrokerApplications,
 	mergeBrokerOnboardingDraftData,
 	mergeBrokerOnboardingMachineContext,
+	normalizeRequiredReviewerNote,
 	resolveBrokerOnboardingPortalId,
 	resolveReopenedFieldsForResubmission,
 	selectResumableBrokerApplication,
 } from "./helpers";
-import { brokerOnboardingDraftDataValidator } from "./validators";
+import {
+	brokerOnboardingDraftDataValidator,
+	brokerOnboardingReverificationFlagsValidator,
+	brokerOnboardingReviewReopenedFieldInputValidator,
+} from "./validators";
 
 const brokerOnboardingMutation = authedMutation.use(
 	requirePermission("onboarding:access")
+);
+const brokerOnboardingReviewAction = adminAction.use(
+	requirePermissionAction("onboarding:review")
 );
 
 async function getFreshReadModel(
 	ctx: Pick<MutationCtx, "db">,
 	applicationId: Id<"brokerOnboardingApplications">,
 	now: number
-) {
+): Promise<BrokerOnboardingApplicationReadModel> {
 	const application = await ctx.db.get(applicationId);
 	if (!application) {
 		throw new ConvexError("Broker onboarding application not found");
@@ -77,8 +91,9 @@ export const startOrResume = brokerOnboardingMutation
 		invitedByBrokerId: v.optional(v.string()),
 		portalId: v.optional(v.id("portals")),
 		referralSource: v.optional(referralSourceValidator),
+		referralToken: v.optional(v.string()),
 	})
-	.handler(async (ctx, args) => {
+	.handler(async (ctx, args): Promise<BrokerOnboardingApplicationReadModel> => {
 		const now = Date.now();
 		const referralSource = args.referralSource ?? "self_signup";
 		if (referralSource === "broker_invite" && !args.invitedByBrokerId) {
@@ -108,8 +123,13 @@ export const startOrResume = brokerOnboardingMutation
 			)
 				? buildResumeWindowPatch(now)
 				: { lastActivityAt: now, updatedAt: now };
+			const referralTokenPatch =
+				args.referralToken && !resumableApplication.referralToken
+					? { referralToken: args.referralToken }
+					: {};
 			await ctx.db.patch(resumableApplication._id, {
 				...patch,
+				...referralTokenPatch,
 				...(verifiedEmail &&
 				resumableApplication.verifiedEmail !== verifiedEmail
 					? { verifiedEmail }
@@ -124,6 +144,7 @@ export const startOrResume = brokerOnboardingMutation
 				metadata: {
 					status: resumableApplication.status,
 					verifiedEmailPresent: Boolean(verifiedEmail),
+					...(args.referralToken ? { referralToken: args.referralToken } : {}),
 				},
 			});
 			return getFreshReadModel(ctx, resumableApplication._id, now);
@@ -146,6 +167,7 @@ export const startOrResume = brokerOnboardingMutation
 			portalId,
 			referralSource,
 			invitedByBrokerId: args.invitedByBrokerId,
+			referralToken: args.referralToken,
 			draftData: {},
 			reopenedFields: [],
 			startedAt: createdAt,
@@ -184,6 +206,7 @@ export const startOrResume = brokerOnboardingMutation
 				...(args.invitedByBrokerId
 					? { invitedByBrokerId: args.invitedByBrokerId }
 					: {}),
+				...(args.referralToken ? { referralToken: args.referralToken } : {}),
 			},
 			previousState: "none",
 			timestamp: createdAt,
@@ -208,6 +231,7 @@ export const startOrResume = brokerOnboardingMutation
 				...(args.invitedByBrokerId
 					? { invitedByBrokerId: args.invitedByBrokerId }
 					: {}),
+				...(args.referralToken ? { referralToken: args.referralToken } : {}),
 			},
 		});
 
@@ -225,7 +249,7 @@ export const saveDraft = brokerOnboardingMutation
 		currentStep: v.optional(v.string()),
 		draftData: brokerOnboardingDraftDataValidator,
 	})
-	.handler(async (ctx, args) => {
+	.handler(async (ctx, args): Promise<BrokerOnboardingApplicationReadModel> => {
 		const now = Date.now();
 		const application = await ctx.db.get(args.applicationId);
 		if (!application) {
@@ -291,7 +315,7 @@ export const appendBrokerNote = brokerOnboardingMutation
 		applicationId: v.id("brokerOnboardingApplications"),
 		body: v.string(),
 	})
-	.handler(async (ctx, args) => {
+	.handler(async (ctx, args): Promise<BrokerOnboardingApplicationReadModel> => {
 		const now = Date.now();
 		const application = await ctx.db.get(args.applicationId);
 		if (!application) {
@@ -352,7 +376,7 @@ export const submit = brokerOnboardingMutation
 	.input({
 		applicationId: v.id("brokerOnboardingApplications"),
 	})
-	.handler(async (ctx, args) => {
+	.handler(async (ctx, args): Promise<BrokerOnboardingApplicationReadModel> => {
 		const now = Date.now();
 		const application = await ctx.db.get(args.applicationId);
 		if (!application) {
@@ -430,5 +454,83 @@ export const submit = brokerOnboardingMutation
 		);
 
 		return getFreshReadModel(ctx, args.applicationId, now);
+	})
+	.public();
+
+export const approveForReview = brokerOnboardingReviewAction
+	.input({
+		applicationId: v.id("brokerOnboardingApplications"),
+		reviewerNote: v.string(),
+	})
+	.handler(async (ctx, args): Promise<{ ok: true }> => {
+		const reviewerNote = normalizeRequiredReviewerNote(
+			args.reviewerNote,
+			"Approval"
+		);
+		await ctx.runMutation(
+			internal.onboarding.brokerApplication.internal.approveApplication,
+			{
+				applicationId: args.applicationId,
+				authorAuthId: ctx.viewer.authId,
+				authorType: "admin",
+				body: reviewerNote,
+			}
+		);
+		return { ok: true };
+	})
+	.public();
+
+export const requestChangesForReview = brokerOnboardingReviewAction
+	.input({
+		applicationId: v.id("brokerOnboardingApplications"),
+		reopenedFields: v.array(brokerOnboardingReviewReopenedFieldInputValidator),
+		reverificationFlags: brokerOnboardingReverificationFlagsValidator,
+		reviewerNote: v.string(),
+	})
+	.handler(async (ctx, args): Promise<{ ok: true }> => {
+		const reviewerNote = normalizeRequiredReviewerNote(
+			args.reviewerNote,
+			"Request changes"
+		);
+		if (args.reopenedFields.length === 0) {
+			throw new ConvexError(
+				"Request changes requires at least one reopened field or section"
+			);
+		}
+		await ctx.runMutation(
+			internal.onboarding.brokerApplication.internal.requestChanges,
+			{
+				applicationId: args.applicationId,
+				authorAuthId: ctx.viewer.authId,
+				authorType: "admin",
+				body: reviewerNote,
+				reopenedFields: args.reopenedFields,
+				reverificationFlags: args.reverificationFlags,
+			}
+		);
+		return { ok: true };
+	})
+	.public();
+
+export const rejectForReview = brokerOnboardingReviewAction
+	.input({
+		applicationId: v.id("brokerOnboardingApplications"),
+		reviewerNote: v.string(),
+	})
+	.handler(async (ctx, args): Promise<{ ok: true }> => {
+		const reviewerNote = normalizeRequiredReviewerNote(
+			args.reviewerNote,
+			"Rejection"
+		);
+		await ctx.runMutation(
+			internal.onboarding.brokerApplication.internal.rejectApplication,
+			{
+				applicationId: args.applicationId,
+				authorAuthId: ctx.viewer.authId,
+				authorType: "admin",
+				body: reviewerNote,
+			}
+		);
+		return { ok: true };
 	})
 	.public();

@@ -110,6 +110,10 @@ export const ROUTE_AUTHORIZATION_RULES = {
 		kind: "fairLendAdminWithPermission",
 		permission: "document:review",
 	},
+	adminBrokerOnboarding: {
+		kind: "fairLendAdminWithPermission",
+		permission: "onboarding:review",
+	},
 	adminOriginations: {
 		kind: "operationalAdminPermission",
 		permission: "mortgage:originate",
@@ -155,9 +159,18 @@ const ADMIN_PATH_AUTHORIZATION_RULES: ReadonlyArray<{
 	matches: (pathname: string) => boolean;
 	routeKey: Extract<
 		RouteAuthorizationKey,
-		"adminOriginations" | "adminRotessaReconciliation" | "adminUnderwriting"
+		| "adminBrokerOnboarding"
+		| "adminOriginations"
+		| "adminRotessaReconciliation"
+		| "adminUnderwriting"
 	>;
 }> = [
+	{
+		matches: (pathname) =>
+			pathname === "/admin/broker-onboarding" ||
+			pathname.startsWith("/admin/broker-onboarding/"),
+		routeKey: "adminBrokerOnboarding",
+	},
 	{
 		matches: (pathname) =>
 			pathname === "/admin/underwriting" ||

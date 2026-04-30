@@ -53,6 +53,22 @@ describe("broker onboarding application aggregate", () => {
 		expect(result.reviewEntries).toEqual([]);
 	});
 
+	it("persists referral tokens from start and resume entry points", async () => {
+		const t = createGovernedTestConvex();
+		const identity = buildVerifiedMemberIdentity("aggregate-referral-token");
+
+		const firstResult = await startBrokerApplication(t, identity, {
+			referralToken: "launch-a",
+		});
+		const secondResult = await startBrokerApplication(t, identity, {
+			referralToken: "launch-b",
+		});
+
+		expect(firstResult.application.referralToken).toBe("launch-a");
+		expect(secondResult.application._id).toBe(firstResult.application._id);
+		expect(secondResult.application.referralToken).toBe("launch-a");
+	});
+
 	it("rejects caller-supplied portal attribution that does not match the trusted home portal", async () => {
 		const t = createGovernedTestConvex();
 		const identity = buildVerifiedMemberIdentity("aggregate-portal-spoof");

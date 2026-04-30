@@ -40,6 +40,18 @@ export const BROKER_ONBOARDING_REASON_CODES = [
 export type BrokerOnboardingVerificationReasonCode =
 	(typeof BROKER_ONBOARDING_REASON_CODES)[number];
 
+export const BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS = [
+	"draftData.selfReportedName",
+	"draftData.licenseNumber",
+	"draftData.licenseProvince",
+	"draftData.brokerageName",
+	"draftData.brokerageNumber",
+	"draftData.requestedPortalSlug",
+] as const;
+
+export type BrokerOnboardingReopenableFieldPath =
+	(typeof BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS)[number];
+
 export const REGULATOR_DIRECTORY_STATUSES = [
 	"active",
 	"incomplete",
