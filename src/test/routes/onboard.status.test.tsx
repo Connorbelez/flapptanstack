@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OnboardingCorrections } from "#/routes/onboard/-components/OnboardingCorrections";
 import { OnboardingStatusPage } from "#/routes/onboard/-components/OnboardingStatusPage";
 import { PortalTeaserCard } from "#/routes/onboard/-components/PortalTeaserCard";
-import { cleanup, render, screen } from "./onboard.render";
+import { cleanup, fireEvent, render, screen, waitFor } from "./onboard.render";
 import { createOnboardingReadModel } from "./onboard.test-helpers";
 
 vi.mock("lucide-react", () => {
@@ -77,6 +77,37 @@ describe("onboard status surfaces", () => {
 		expect(screen.getByText("Reviewer note")).toBeTruthy();
 		expect(screen.getByLabelText("License number")).toBeTruthy();
 		expect(screen.getByText(/Reverification is required for License number/)).toBeTruthy();
+	});
+
+	it("blocks resubmission when a reopened field is not editable", async () => {
+		mockPortalPreview(true);
+		const saveDraft = vi.fn();
+		const submit = vi.fn();
+		render(
+			<OnboardingCorrections
+				appendBrokerNote={vi.fn()}
+				readModel={createOnboardingReadModel("changes_requested", {
+					reopenedFields: [
+						{
+							fieldPath: "draftData.unmappedNested.value",
+							reason: "Reviewer requested an unmapped nested field.",
+							requestedAt: Date.now(),
+							status: "open",
+						},
+					],
+				})}
+				saveDraft={saveDraft}
+				submit={submit}
+			/>
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /Resubmit corrections/i }));
+
+		await waitFor(() =>
+			expect(screen.getByText(/Cannot resubmit until FairLend maps/)).toBeTruthy()
+		);
+		expect(saveDraft).not.toHaveBeenCalled();
+		expect(submit).not.toHaveBeenCalled();
 	});
 
 	it("distinguishes approved provisioning from activated", () => {

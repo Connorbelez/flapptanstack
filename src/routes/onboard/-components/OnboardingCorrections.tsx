@@ -30,6 +30,7 @@ function valueForField(
 	const draft = readModel.application.draftData;
 	switch (fieldPath) {
 		case "draftData.selfReportedName":
+		case "draftData.selfReportedName.fullName":
 			return draft.selfReportedName?.fullName ?? "";
 		case "draftData.brokerageName":
 			return draft.brokerageName ?? "";
@@ -51,9 +52,10 @@ function valueForField(
 function fieldPatch(
 	fieldPath: string,
 	value: string
-): SaveDraftArgs["draftData"] {
+): SaveDraftArgs["draftData"] | null {
 	switch (fieldPath) {
 		case "draftData.selfReportedName":
+		case "draftData.selfReportedName.fullName":
 			return { selfReportedName: { fullName: value } };
 		case "draftData.brokerageName":
 			return { brokerageName: value };
@@ -68,7 +70,7 @@ function fieldPatch(
 		case "draftData.requestedPortalSlug":
 			return { requestedPortalSlug: value };
 		default:
-			return {};
+			return null;
 	}
 }
 
@@ -97,10 +99,17 @@ export function OnboardingCorrections({
 		try {
 			const draftData: SaveDraftArgs["draftData"] = {};
 			for (const field of openFields) {
-				Object.assign(
-					draftData,
-					fieldPatch(field.fieldPath, values[field.fieldPath] ?? "")
+				const patch = fieldPatch(
+					field.fieldPath,
+					values[field.fieldPath] ?? ""
 				);
+				if (!patch) {
+					setError(
+						`Cannot resubmit until FairLend maps "${getFieldLabel(field.fieldPath)}" to an editable onboarding field.`
+					);
+					return;
+				}
+				Object.assign(draftData, patch);
 			}
 			await saveDraft({
 				applicationId: readModel.application._id,

@@ -6,7 +6,7 @@ import { useQuery } from "convex/react";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OnboardingWizard } from "#/routes/onboard/-components/OnboardingWizard";
-import { cleanup, render, screen, waitFor } from "./onboard.render";
+import { cleanup, fireEvent, render, screen, waitFor } from "./onboard.render";
 import { createOnboardingReadModel } from "./onboard.test-helpers";
 
 vi.mock("lucide-react", () => {
@@ -24,6 +24,27 @@ vi.mock("lucide-react", () => {
 vi.mock("convex/react", () => ({
 	useQuery: vi.fn(),
 }));
+
+vi.mock("radix-ui", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("radix-ui")>();
+	return {
+		...actual,
+		Progress: {
+			Indicator: ({ children, ...props }: React.ComponentProps<"div">) => (
+				<div {...props}>{children}</div>
+			),
+			Root: ({
+				children,
+				value,
+				...props
+			}: React.ComponentProps<"div"> & { value?: number }) => (
+				<div aria-valuenow={value ?? 0} role="progressbar" {...props}>
+					{children}
+				</div>
+			),
+		},
+	};
+});
 
 vi.mock("#/components/ui/progress", () => ({
 	Progress: ({ value }: { value?: number }) => (
@@ -94,5 +115,43 @@ describe("onboard wizard save gating", () => {
 
 		await waitFor(() => expect(screen.getByText("save failed")).toBeTruthy());
 		expect(submit).not.toHaveBeenCalled();
+	});
+});
+
+describe("onboard wizard read-model refreshes", () => {
+	it("preserves unsaved edits when the same application refreshes", () => {
+		mockPortalPreview();
+		const readModel = createOnboardingReadModel("draft");
+		const { rerender } = render(
+			<OnboardingWizard
+				readModel={readModel}
+				saveDraft={vi.fn()}
+				startIdentityVerification={vi.fn()}
+				submit={vi.fn()}
+			/>
+		);
+
+		fireEvent.input(screen.getByDisplayValue("Meridian Capital"), {
+			target: { value: "Unsaved Brokerage" },
+		});
+
+		rerender(
+			<OnboardingWizard
+				readModel={createOnboardingReadModel("draft", {
+					_id: readModel.application._id,
+					draftData: {
+						...readModel.application.draftData,
+						brokerageName: "Server Refresh Brokerage",
+					},
+					updatedAt: Date.now(),
+				})}
+				saveDraft={vi.fn()}
+				startIdentityVerification={vi.fn()}
+				submit={vi.fn()}
+			/>
+		);
+
+		expect(screen.getByDisplayValue("Unsaved Brokerage")).toBeTruthy();
+		expect(screen.queryByDisplayValue("Server Refresh Brokerage")).toBeNull();
 	});
 });

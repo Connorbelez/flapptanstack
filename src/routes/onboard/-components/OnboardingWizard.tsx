@@ -1,6 +1,6 @@
 import { PlayCircle, Save, SendHorizonal } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -65,6 +65,8 @@ export function OnboardingWizard({
 	startIdentityVerification,
 	submit,
 }: OnboardingWizardProps) {
+	const applicationId = readModel.application._id;
+	const hydratedApplicationIdRef = useRef(applicationId);
 	const [form, setForm] = useState(() => draftToForm(readModel));
 	const [isSaving, setIsSaving] = useState(false);
 	const [isStartingIdv, setIsStartingIdv] = useState(false);
@@ -74,8 +76,12 @@ export function OnboardingWizard({
 	const progress = getChapterProgress(readModel.application);
 
 	useEffect(() => {
+		if (hydratedApplicationIdRef.current === applicationId) {
+			return;
+		}
+		hydratedApplicationIdRef.current = applicationId;
 		setForm(draftToForm(readModel));
-	}, [readModel]);
+	}, [applicationId, readModel]);
 
 	function updateField<K extends keyof DraftFormState>(
 		field: K,
@@ -92,7 +98,7 @@ export function OnboardingWizard({
 		setMessage(null);
 		try {
 			await saveDraft({
-				applicationId: readModel.application._id,
+				applicationId,
 				currentStep,
 				draftData: formToDraftData(form),
 			});
@@ -118,7 +124,7 @@ export function OnboardingWizard({
 		setMessage(null);
 		try {
 			const result = await startIdentityVerification({
-				applicationId: readModel.application._id,
+				applicationId,
 			});
 			if (result.ok) {
 				setMessage(
@@ -161,7 +167,7 @@ export function OnboardingWizard({
 		setError(null);
 		setMessage(null);
 		try {
-			await submit({ applicationId: readModel.application._id });
+			await submit({ applicationId });
 			setMessage("Application submitted for review.");
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : "Could not submit");

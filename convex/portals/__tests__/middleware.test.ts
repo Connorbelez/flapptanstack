@@ -436,7 +436,7 @@ describe("portal middleware proof consumers", () => {
 
 		const result = await t
 			.withIdentity(CURRENT_ORG_PORTAL_USER)
-			.query(api.portals.proof.getPortalMortgageAccessProof, {
+			.query(internal.portals.proof.getPortalMortgageAccessProof, {
 				portalId: fixture.portalAId,
 				mortgageId: fixture.mortgageId,
 			});

@@ -31,7 +31,7 @@ export function parseOnboardingSearch(
 			? "broker_invite"
 			: undefined;
 	const referralSource =
-		invitedByBrokerId || requestedReferralSource === "broker_invite"
+		invitedByBrokerId && requestedReferralSource === "broker_invite"
 			? "broker_invite"
 			: "self_signup";
 
