@@ -151,6 +151,7 @@ export function LawyerDealWorkspaceContent({
 			),
 			packageStatus: workspace.packageReview.package?.status ?? null,
 		},
+		representationGate: workspace.representationGate.confirmation,
 		status: workspace.deal.status,
 	});
 	const readOnly = isLawyerWorkspaceReadOnly(workspace.access.accessState);

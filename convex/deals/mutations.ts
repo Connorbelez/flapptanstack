@@ -7,6 +7,10 @@ import { executeTransition } from "../engine/transition";
 import type { CommandSource } from "../engine/types";
 import { adminMutation } from "../fluent";
 import {
+	evaluateDealLegalGate,
+	type LegalGateResult,
+} from "../legalRepresentation/gates";
+import {
 	type FundsReceiptSource,
 	normalizeEvidenceNote,
 	parseFundsReceiptSource,
@@ -128,6 +132,22 @@ function assertFundsEvidenceAccepted(
 	}
 }
 
+function isLegalRepresentationGateEvent(
+	eventType: string
+): eventType is "LAWYER_VERIFIED" | "REPRESENTATION_CONFIRMED" {
+	return (
+		eventType === "LAWYER_VERIFIED" || eventType === "REPRESENTATION_CONFIRMED"
+	);
+}
+
+function throwLegalGateBlocked(gate: LegalGateResult): never {
+	throw new ConvexError({
+		code: "LEGAL_REPRESENTATION_GATE_BLOCKED",
+		message: gate.message,
+		reasonCodes: [...gate.reasonCodes],
+	});
+}
+
 /**
  * Admin-gated transition for deals.
  * Requires FairLend admin role (enforced by adminMutation).
@@ -147,7 +167,30 @@ export const transitionDeal = adminMutation
 		const source =
 			(args.source as CommandSource | undefined) ??
 			buildSource(ctx.viewer, "admin_dashboard");
-		const payload = args.payload as Record<string, unknown> | undefined;
+		let payload = args.payload as Record<string, unknown> | undefined;
+
+		if (isLegalRepresentationGateEvent(args.eventType)) {
+			const deal = await ctx.db.get(args.entityId);
+			if (!deal) {
+				throw new ConvexError("Deal not found");
+			}
+			const gate = await evaluateDealLegalGate(ctx, {
+				access: {
+					requireActiveAccess: args.eventType === "REPRESENTATION_CONFIRMED",
+				},
+				checkpoint: args.eventType,
+				deal,
+			});
+			if (gate.decision !== "allow") {
+				throwLegalGateBlocked(gate);
+			}
+			if (args.eventType === "LAWYER_VERIFIED" && gate.verificationId) {
+				payload = {
+					...payload,
+					verificationId: String(gate.verificationId),
+				};
+			}
+		}
 
 		if (args.eventType === "FUNDS_RECEIVED") {
 			const fundsReceiptSource = extractFundsReceiptSource(payload);

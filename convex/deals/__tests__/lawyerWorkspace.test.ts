@@ -5,6 +5,13 @@ import auditLogSchema from "../../../node_modules/convex-audit-log/dist/componen
 import { api } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
+import { recordSignedRepresentationEngagementRow } from "../../legalRepresentation/engagements";
+import {
+	buildEligiblePlatformLawyerProfileFixture,
+	buildEligiblePlatformLsoLawyerFixture,
+} from "../../legalRepresentation/fixtures";
+import { buildManualLawyerVerificationResult } from "../../legalRepresentation/providers";
+import { recordLawyerVerificationRow } from "../../legalRepresentation/verifications";
 import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
 
@@ -79,6 +86,10 @@ const NO_ACTIVE_LAWYER_ACCESS_ERROR = /Forbidden: no active lawyer access/;
 const INVALID_STATE_ERROR = /Invalid deal state/;
 const PACKAGE_APPROVAL_BLOCKED_ERROR =
 	/Document package is not ready for lawyer approval/;
+const MISSING_ENGAGEMENT_ERROR =
+	/Signed representation engagement evidence is required/;
+const MISSING_VERIFICATION_ERROR =
+	/Current eligible lawyer verification evidence is required/;
 
 function createLawyerWorkspaceTestHarness() {
 	process.env.DISABLE_GT_HASHCHAIN = "true";
@@ -148,6 +159,8 @@ async function seedLawyerWorkspaceFixture(args?: {
 	dealStatus?: string;
 	includePreSendException?: boolean;
 	includeEnvelope?: boolean;
+	includeRepresentationEngagement?: boolean;
+	includeVerificationEvidence?: boolean;
 	instanceStatus?: Doc<"dealDocumentInstances">["status"];
 	lawyerAuthId?: string;
 	packageStatus?: Doc<"dealDocumentPackages">["status"];
@@ -227,6 +240,10 @@ async function seedLawyerWorkspaceFixture(args?: {
 			termMonths: 60,
 			termStartDate: "2026-01-01",
 		});
+		const lsoLawyerId = await ctx.db.insert(
+			"lsoLawyers",
+			buildEligiblePlatformLsoLawyerFixture({ now: 1 })
+		);
 		const dealId = await ctx.db.insert("deals", {
 			buyerId: "buyer-auth",
 			closingDate: 1_800_000_000_000,
@@ -237,6 +254,22 @@ async function seedLawyerWorkspaceFixture(args?: {
 			lawyerType: "guest_lawyer",
 			lenderId,
 			mortgageId,
+			selectedLawyer: {
+				type: "guest_lawyer",
+				source: "lso_search",
+				name: "Laura Lawyer",
+				email: "lawyer@test.fairlend.ca",
+				firm: "Law Firm",
+				lso: {
+					barNumber: "LSO123456",
+					jurisdiction: "ON",
+					licensingStatus: "licensed",
+					restrictionStatus: "clear",
+					lsoLawyerId,
+					source: "test_fixture",
+					sourceFetchedAt: 1,
+				},
+			},
 			sellerId: "seller-auth",
 			status: args?.dealStatus ?? "documentReview.pending",
 		});
@@ -249,6 +282,46 @@ async function seedLawyerWorkspaceFixture(args?: {
 			status: args?.accessStatus ?? "active",
 			userId: lawyerAuthId,
 		});
+		const lawyerProfileId = await ctx.db.insert("lawyerProfiles", {
+			...buildEligiblePlatformLawyerProfileFixture({
+				lawyerAuthId,
+				now: 1,
+			}),
+			email: "lawyer@test.fairlend.ca",
+			normalizedEmail: "lawyer@test.fairlend.ca",
+			profileKind: "guest",
+			platformStatus: undefined,
+		});
+		if (args?.includeVerificationEvidence) {
+			await recordLawyerVerificationRow(ctx, {
+				authId: lawyerAuthId,
+				barNumber: "LSO123456",
+				checkType: "initial_lso",
+				createdAt: 1,
+				createdBy: "system:test",
+				dealId,
+				jurisdiction: "ON",
+				lawyerProfileId,
+				lsoLawyerId,
+				normalizedEmail: "lawyer@test.fairlend.ca",
+				providerResult: buildManualLawyerVerificationResult({
+					evidenceHash: `lawyer-workspace-verification:${lawyerAuthId}`,
+					expiresAt: 2_000_000_000_000,
+					outcome: "eligible",
+					reasonCodes: ["active_license"],
+					sourceSnapshot: { source: "lawyer-workspace-test" },
+				}),
+			});
+		}
+		if (args?.includeRepresentationEngagement) {
+			await recordSignedRepresentationEngagementRow(ctx, {
+				dealId,
+				evidenceHash: `sha256:lawyer-workspace-engagement:${lawyerAuthId}`,
+				lawyerAuthId,
+				lawyerProfileId,
+				signedAt: 1,
+			});
+		}
 		const packageId = await ctx.db.insert("dealDocumentPackages", {
 			createdAt: 1,
 			dealId,
@@ -456,6 +529,7 @@ describe("lawyer workspace projections", () => {
 	it("projects package blockers, envelope progress, exceptions, and hides embedded tokens", async () => {
 		const { dealId, t } = await seedLawyerWorkspaceFixture({
 			includeEnvelope: true,
+			includeVerificationEvidence: true,
 		});
 
 		const result = await t
@@ -465,6 +539,10 @@ describe("lawyer workspace projections", () => {
 		expect(result?.packageReview.approval).toMatchObject({
 			eligible: false,
 			blockers: ["Open pre-send configuration exceptions must be resolved."],
+		});
+		expect(result?.representationGate.confirmation).toMatchObject({
+			decision: "block",
+			reasonCodes: ["engagement_missing"],
 		});
 		expect(result?.envelope.attempts[0]?.recipients).toHaveLength(2);
 		expect(result?.envelope.attempts[0]?.recipients[1]).toMatchObject({
@@ -483,9 +561,58 @@ describe("lawyer workspace projections", () => {
 });
 
 describe("lawyer workspace mutations", () => {
+	it("blocks admin LAWYER_VERIFIED transitions without lawyer verification evidence", async () => {
+		const withoutEvidence = await seedLawyerWorkspaceFixture({
+			dealStatus: "lawyerOnboarding.pending",
+		});
+		await expect(
+			withoutEvidence.t
+				.withIdentity(fairLendAdminIdentity("admin-auth"))
+				.mutation(api.deals.mutations.transitionDeal, {
+					entityId: withoutEvidence.dealId,
+					eventType: "LAWYER_VERIFIED",
+				})
+		).rejects.toThrow(MISSING_VERIFICATION_ERROR);
+	});
+
+	it("enforces engagement evidence on admin REPRESENTATION_CONFIRMED transitions", async () => {
+		const withoutEngagement = await seedLawyerWorkspaceFixture({
+			dealStatus: "lawyerOnboarding.verified",
+			includeVerificationEvidence: true,
+		});
+		await expect(
+			withoutEngagement.t
+				.withIdentity(fairLendAdminIdentity("admin-auth"))
+				.mutation(api.deals.mutations.transitionDeal, {
+					entityId: withoutEngagement.dealId,
+					eventType: "REPRESENTATION_CONFIRMED",
+				})
+		).rejects.toThrow(MISSING_ENGAGEMENT_ERROR);
+
+		const withEngagement = await seedLawyerWorkspaceFixture({
+			dealStatus: "lawyerOnboarding.verified",
+			includeRepresentationEngagement: true,
+			includeVerificationEvidence: true,
+		});
+		const result = await withEngagement.t
+			.withIdentity(fairLendAdminIdentity("admin-auth"))
+			.mutation(api.deals.mutations.transitionDeal, {
+				entityId: withEngagement.dealId,
+				eventType: "REPRESENTATION_CONFIRMED",
+			});
+
+		expect(result).toMatchObject({
+			newState: "documentReview.pending",
+			previousState: "lawyerOnboarding.verified",
+			success: true,
+		});
+	});
+
 	it("confirms representation through the transition engine", async () => {
 		const { dealId, t } = await seedLawyerWorkspaceFixture({
 			dealStatus: "lawyerOnboarding.verified",
+			includeRepresentationEngagement: true,
+			includeVerificationEvidence: true,
 		});
 
 		const result = await t
@@ -505,6 +632,8 @@ describe("lawyer workspace mutations", () => {
 		const { dealId, t } = await seedLawyerWorkspaceFixture({
 			accessStatus: "revoked",
 			dealStatus: "lawyerOnboarding.verified",
+			includeRepresentationEngagement: true,
+			includeVerificationEvidence: true,
 		});
 
 		await expect(
@@ -515,6 +644,8 @@ describe("lawyer workspace mutations", () => {
 
 		const active = await seedLawyerWorkspaceFixture({
 			dealStatus: "documentReview.pending",
+			includeRepresentationEngagement: true,
+			includeVerificationEvidence: true,
 		});
 		await expect(
 			active.t
@@ -523,6 +654,19 @@ describe("lawyer workspace mutations", () => {
 					dealId: active.dealId,
 				})
 		).rejects.toThrow(INVALID_STATE_ERROR);
+	});
+
+	it("rejects representation confirmation without signed engagement evidence", async () => {
+		const { dealId, t } = await seedLawyerWorkspaceFixture({
+			dealStatus: "lawyerOnboarding.verified",
+			includeVerificationEvidence: true,
+		});
+
+		await expect(
+			t
+				.withIdentity(lawyerIdentity("lawyer-auth", "lawyer@test.fairlend.ca"))
+				.mutation(api.deals.lawyerMutations.confirmRepresentation, { dealId })
+		).rejects.toThrow(MISSING_ENGAGEMENT_ERROR);
 	});
 
 	it("approves ready document packages through the transition engine", async () => {

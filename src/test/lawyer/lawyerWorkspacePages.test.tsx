@@ -286,6 +286,15 @@ function createWorkspace(overrides?: Partial<Workspace>): Workspace {
 			},
 		},
 		readOnly: false,
+		representationGate: {
+			confirmation: {
+				checkpoint: "REPRESENTATION_CONFIRMED",
+				decision: "allow",
+				lawyerAuthId: "lawyer-auth",
+				message: "Legal representation gate is satisfied.",
+				reasonCodes: ["active_license", "engagement_signed"],
+			},
+		},
 		timeline: {
 			closeMilestones: [
 				{
@@ -390,5 +399,40 @@ describe("lawyer workspace pages", () => {
 				name: "Approve Package For Signing",
 			}) as HTMLButtonElement).disabled
 		).toBe(true);
+	});
+
+	it("disables representation confirmation when backend gate blocks evidence", () => {
+		vi.mocked(useMutation).mockReturnValue(vi.fn());
+		vi.mocked(useQueryClient).mockReturnValue({
+			invalidateQueries: vi.fn(),
+		} as never);
+
+		render(
+			<LawyerDealWorkspacePage
+				workspace={createWorkspace({
+					deal: {
+						...createWorkspace().deal,
+						status: "lawyerOnboarding.verified",
+					},
+					representationGate: {
+						confirmation: {
+							checkpoint: "REPRESENTATION_CONFIRMED",
+							decision: "block",
+							lawyerAuthId: "lawyer-auth",
+							message: "Signed representation engagement evidence is required.",
+							reasonCodes: ["engagement_missing"],
+						},
+					},
+				})}
+			/>
+		);
+
+		const button = screen.getByRole("button", {
+			name: "Confirm Representation",
+		}) as HTMLButtonElement;
+		expect(button.disabled).toBe(true);
+		expect(button.title).toBe(
+			"Signed representation engagement evidence is required."
+		);
 	});
 });
