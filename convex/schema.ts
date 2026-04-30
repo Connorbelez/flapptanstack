@@ -78,6 +78,22 @@ import {
 	feeSurfaceValidator,
 } from "./fees/validators";
 import {
+	fileActivityEventTypeValidator,
+	fileBoxStatusValidator,
+	fileBoxVisibilityValidator,
+	fileNodeTypeValidator,
+	fileParticipantStatusValidator,
+	fileScanStateValidator,
+	fileSecurityEventTypeValidator,
+	fileShareLinkKindValidator,
+	fileWorkspaceActorValidator,
+	fileWorkspaceDownloadPolicyValidator,
+	fileWorkspaceRetentionPolicyValidator,
+	fileWorkspaceRoleValidator,
+	fileWorkspaceScanPolicyValidator,
+	fileWorkspaceStorageLimitsValidator,
+} from "./fileWorkspace/validators";
+import {
 	listingDataSourceValidator,
 	listingDelistReasonValidator,
 	listingHeroImageValidator,
@@ -2492,6 +2508,192 @@ export default defineSchema({
 		name: v.literal("ledger_sequence"),
 		value: v.int64(),
 	}).index("by_name", ["name"]),
+
+	// ══════════════════════════════════════════════════════════
+	// FILE WORKSPACE
+	// ══════════════════════════════════════════════════════════
+
+	fileBoxes: defineTable({
+		name: v.string(),
+		description: v.optional(v.string()),
+		createdByAuthId: v.string(),
+		createdByUserId: v.optional(v.id("users")),
+		status: fileBoxStatusValidator,
+		visibility: fileBoxVisibilityValidator,
+		downloadPolicy: fileWorkspaceDownloadPolicyValidator,
+		retentionPolicy: fileWorkspaceRetentionPolicyValidator,
+		scanPolicy: fileWorkspaceScanPolicyValidator,
+		storageLimits: fileWorkspaceStorageLimitsValidator,
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		archivedAt: v.optional(v.number()),
+		suspendedAt: v.optional(v.number()),
+	})
+		.index("by_creator", ["createdByAuthId", "createdAt"])
+		.index("by_status", ["status", "updatedAt"])
+		.index("by_visibility_status", ["visibility", "status"])
+		.index("by_created_at", ["createdAt"]),
+
+	fileBoxParticipants: defineTable({
+		boxId: v.id("fileBoxes"),
+		participantKey: v.string(),
+		authId: v.optional(v.string()),
+		userId: v.optional(v.id("users")),
+		email: v.optional(v.string()),
+		role: fileWorkspaceRoleValidator,
+		status: fileParticipantStatusValidator,
+		invitedByAuthId: v.optional(v.string()),
+		invitedAt: v.optional(v.number()),
+		acceptedAt: v.optional(v.number()),
+		revokedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_box", ["boxId"])
+		.index("by_box_status_role", ["boxId", "status", "role"])
+		.index("by_participant", ["participantKey", "status"])
+		.index("by_box_participant_status", ["boxId", "participantKey", "status"]),
+
+	fileNodes: defineTable({
+		boxId: v.id("fileBoxes"),
+		parentId: v.optional(v.id("fileNodes")),
+		nodeType: fileNodeTypeValidator,
+		displayName: v.string(),
+		normalizedSiblingKey: v.string(),
+		isRoot: v.boolean(),
+		currentVersionId: v.optional(v.id("fileVersions")),
+		deletedAt: v.optional(v.number()),
+		deletedByAuthId: v.optional(v.string()),
+		createdByAuthId: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_box_parent", ["boxId", "parentId", "deletedAt"])
+		.index("by_box_parent_name", [
+			"boxId",
+			"parentId",
+			"normalizedSiblingKey",
+			"deletedAt",
+		])
+		.index("by_box_deleted", ["boxId", "deletedAt"])
+		.index("by_box_current_version", ["boxId", "currentVersionId"]),
+
+	fileVersions: defineTable({
+		boxId: v.id("fileBoxes"),
+		nodeId: v.id("fileNodes"),
+		versionNumber: v.number(),
+		storageId: v.id("_storage"),
+		sizeBytes: v.number(),
+		contentType: v.string(),
+		sha256: v.string(),
+		uploadedByAuthId: v.string(),
+		uploadedAt: v.number(),
+		scanState: fileScanStateValidator,
+		scanCompletedAt: v.optional(v.number()),
+		scanReason: v.optional(v.string()),
+		releasedAt: v.optional(v.number()),
+		releasedByAuthId: v.optional(v.string()),
+		releaseReason: v.optional(v.string()),
+	})
+		.index("by_node_version", ["nodeId", "versionNumber"])
+		.index("by_node_scan_state", ["nodeId", "scanState"])
+		.index("by_storage", ["storageId"])
+		.index("by_box_scan_state", ["boxId", "scanState", "uploadedAt"]),
+
+	fileShareLinks: defineTable({
+		boxId: v.id("fileBoxes"),
+		tokenHash: v.string(),
+		linkKind: fileShareLinkKindValidator,
+		expiresAt: v.optional(v.number()),
+		revokedAt: v.optional(v.number()),
+		revokedByAuthId: v.optional(v.string()),
+		viewEnabled: v.boolean(),
+		downloadEnabled: v.boolean(),
+		createdByAuthId: v.string(),
+		createdAt: v.number(),
+		lastUsedAt: v.optional(v.number()),
+	})
+		.index("by_token_hash", ["tokenHash"])
+		.index("by_box", ["boxId", "createdAt"])
+		.index("by_box_kind", ["boxId", "linkKind", "createdAt"])
+		.index("by_box_revoked", ["boxId", "revokedAt"]),
+
+	fileComments: defineTable({
+		boxId: v.id("fileBoxes"),
+		nodeId: v.id("fileNodes"),
+		body: v.string(),
+		authorAuthId: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		deletedAt: v.optional(v.number()),
+	})
+		.index("by_node", ["nodeId", "createdAt"])
+		.index("by_box_created_at", ["boxId", "createdAt"]),
+
+	fileTags: defineTable({
+		boxId: v.id("fileBoxes"),
+		name: v.string(),
+		normalizedName: v.string(),
+		color: v.optional(v.string()),
+		createdByAuthId: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_box", ["boxId", "createdAt"])
+		.index("by_box_name", ["boxId", "normalizedName"]),
+
+	fileNodeTags: defineTable({
+		boxId: v.id("fileBoxes"),
+		nodeId: v.id("fileNodes"),
+		tagId: v.id("fileTags"),
+		assignedByAuthId: v.string(),
+		assignedAt: v.number(),
+	})
+		.index("by_node", ["nodeId", "assignedAt"])
+		.index("by_tag", ["tagId", "assignedAt"])
+		.index("by_node_tag", ["nodeId", "tagId"]),
+
+	fileActivityEvents: defineTable({
+		boxId: v.id("fileBoxes"),
+		nodeId: v.optional(v.id("fileNodes")),
+		eventType: fileActivityEventTypeValidator,
+		actor: fileWorkspaceActorValidator,
+		actorAuthId: v.optional(v.string()),
+		targetType: v.union(
+			v.literal("box"),
+			v.literal("comment"),
+			v.literal("node"),
+			v.literal("tag"),
+			v.literal("version")
+		),
+		targetId: v.optional(v.string()),
+		metadata: v.optional(v.record(v.string(), v.string())),
+		createdAt: v.number(),
+	})
+		.index("by_box_created_at", ["boxId", "createdAt"])
+		.index("by_box_node_created_at", ["boxId", "nodeId", "createdAt"])
+		.index("by_actor_created_at", ["actorAuthId", "createdAt"]),
+
+	fileSecurityEvents: defineTable({
+		boxId: v.optional(v.id("fileBoxes")),
+		nodeId: v.optional(v.id("fileNodes")),
+		linkId: v.optional(v.id("fileShareLinks")),
+		eventType: fileSecurityEventTypeValidator,
+		actor: fileWorkspaceActorValidator,
+		actorAuthId: v.optional(v.string()),
+		outcome: v.union(
+			v.literal("allowed"),
+			v.literal("denied"),
+			v.literal("blocked")
+		),
+		reasonCode: v.optional(v.string()),
+		metadata: v.optional(v.record(v.string(), v.string())),
+		createdAt: v.number(),
+	})
+		.index("by_box_created_at", ["boxId", "createdAt"])
+		.index("by_box_event_type", ["boxId", "eventType", "createdAt"])
+		.index("by_link_created_at", ["linkId", "createdAt"])
+		.index("by_outcome_created_at", ["outcome", "createdAt"]),
 
 	// ══════════════════════════════════════════════════════════
 	// DOCUMENT ENGINE

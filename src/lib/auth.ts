@@ -143,6 +143,10 @@ export const ROUTE_AUTHORIZATION_RULES = {
 		kind: "permission",
 		permission: "lender:access",
 	},
+	lenderPortfolio: {
+		kind: "permission",
+		permission: "portfolio:view",
+	},
 	onboarding: {
 		kind: "permission",
 		permission: "onboarding:access",

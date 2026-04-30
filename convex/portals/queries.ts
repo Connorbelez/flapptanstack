@@ -97,6 +97,7 @@ function toPublicPortalSummary(portal: Doc<"portals">): PublicPortalSummary {
 		publicTeaserEnabled: portal.publicTeaserEnabled,
 		teaserListingLimit: portal.teaserListingLimit,
 		defaultPostAuthPath: portal.defaultPostAuthPath,
+		pricingPolicyId: portal.pricingPolicyId,
 	};
 }
 

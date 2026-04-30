@@ -492,8 +492,7 @@ function buildEffectiveColumns(args: {
 						width: baseColumn?.width,
 						isVisible:
 							visibleFieldIds.has(fieldId.toString()) ||
-							((!args.hasExplicitVisibilityOverride ||
-								fieldId.toString().startsWith("computed:")) &&
+							(!args.hasExplicitVisibilityOverride &&
 								baseColumn.isVisibleByDefault),
 						displayOrder: index,
 					},

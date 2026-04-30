@@ -53,6 +53,13 @@ export async function assertMortgageAccess(
 	});
 }
 
+export async function canAccessMortgageResource(
+	ctx: ViewerContext,
+	mortgageId: Id<"mortgages">
+) {
+	return canAccessMortgage(ctx, ctx.viewer, mortgageId);
+}
+
 export async function assertDealAccess(
 	ctx: ViewerContext,
 	dealId: Id<"deals">
