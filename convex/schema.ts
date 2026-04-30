@@ -158,6 +158,7 @@ export default defineSchema({
 		// ─── Auth (WorkOS synced) ───
 		authId: v.string(),
 		email: v.string(),
+		normalizedEmail: v.optional(v.string()),
 		firstName: v.string(),
 		lastName: v.string(),
 		homePortalId: v.optional(v.id("portals")),
@@ -179,6 +180,7 @@ export default defineSchema({
 		dateOfBirth: v.optional(v.string()),
 	})
 		.index("authId", ["authId"])
+		.index("by_normalized_email", ["normalizedEmail"])
 		.index("by_email", ["email"]),
 
 	organizations: defineTable({

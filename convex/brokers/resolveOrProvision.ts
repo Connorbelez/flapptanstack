@@ -6,7 +6,7 @@ type BrokerReaderCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
 type BrokerWriterCtx = Pick<MutationCtx, "db">;
 
 export interface ResolveOrProvisionBrokerInput {
-	applicationId: Id<"brokerOnboardingApplications">;
+	applicationId?: Id<"brokerOnboardingApplications">;
 	brokerageName?: string | null;
 	invitedByBrokerId?: string;
 	licenseId?: string | null;
@@ -20,11 +20,12 @@ export interface ResolveOrProvisionBrokerInput {
 export interface ResolveOrProvisionBrokerResult {
 	broker: Doc<"brokers">;
 	wasCreated: boolean;
+	wasPatched: boolean;
 }
 
 interface BrokerActivationPatch {
 	brokerageName?: string;
-	brokerOnboardingApplicationId: Id<"brokerOnboardingApplications">;
+	brokerOnboardingApplicationId?: Id<"brokerOnboardingApplications">;
 	invitedByBrokerId?: string;
 	lastTransitionAt: number;
 	licenseId: string;
@@ -135,7 +136,6 @@ function buildBrokerPatch(args: ResolveOrProvisionBrokerInput) {
 		);
 	}
 	const patch: BrokerActivationPatch = {
-		brokerOnboardingApplicationId: args.applicationId,
 		brokerageName: normalizeOptionalString(args.brokerageName),
 		invitedByBrokerId: args.invitedByBrokerId,
 		lastTransitionAt: args.now,
@@ -147,8 +147,29 @@ function buildBrokerPatch(args: ResolveOrProvisionBrokerInput) {
 		status: "active",
 		updatedAt: args.now,
 	};
+	if (args.applicationId) {
+		patch.brokerOnboardingApplicationId = args.applicationId;
+	}
 
 	return patch;
+}
+
+function hasMaterialBrokerActivationChanges(
+	broker: Doc<"brokers">,
+	patch: BrokerActivationPatch
+) {
+	return (
+		broker.brokerageName !== patch.brokerageName ||
+		broker.brokerOnboardingApplicationId !==
+			patch.brokerOnboardingApplicationId ||
+		broker.invitedByBrokerId !== patch.invitedByBrokerId ||
+		broker.licenseId !== patch.licenseId ||
+		broker.licenseProvince !== patch.licenseProvince ||
+		broker.onboardedAt !== patch.onboardedAt ||
+		broker.orgId !== patch.orgId ||
+		broker.referralSource !== patch.referralSource ||
+		broker.status !== patch.status
+	);
 }
 
 async function patchBrokerForActivation(
@@ -162,12 +183,17 @@ async function patchBrokerForActivation(
 		orgId: args.targetOrganizationId,
 		userId: args.userId,
 	});
-	await ctx.db.patch(broker._id, buildBrokerPatch(args));
+	const patch = buildBrokerPatch(args);
+	const wasPatched = hasMaterialBrokerActivationChanges(broker, patch);
+	await ctx.db.patch(broker._id, patch);
 	const patchedBroker = await ctx.db.get(broker._id);
 	if (!patchedBroker) {
 		throw new ConvexError("Broker record disappeared during activation");
 	}
-	return patchedBroker;
+	return {
+		broker: patchedBroker,
+		wasPatched,
+	};
 }
 
 export async function resolveOrProvisionBrokerForActivation(
@@ -183,25 +209,31 @@ export async function resolveOrProvisionBrokerForActivation(
 
 	const byLicense = await getUniqueBrokerByLicense(ctx, licenseId);
 	if (byLicense) {
+		const patchResult = await patchBrokerForActivation(ctx, byLicense, args);
 		return {
-			broker: await patchBrokerForActivation(ctx, byLicense, args),
+			broker: patchResult.broker,
 			wasCreated: false,
+			wasPatched: patchResult.wasPatched,
 		};
 	}
 
 	const byUser = await getUniqueBrokerByUser(ctx, args.userId);
 	if (byUser) {
+		const patchResult = await patchBrokerForActivation(ctx, byUser, args);
 		return {
-			broker: await patchBrokerForActivation(ctx, byUser, args),
+			broker: patchResult.broker,
 			wasCreated: false,
+			wasPatched: patchResult.wasPatched,
 		};
 	}
 
 	const byOrg = await getUniqueBrokerByOrg(ctx, args.targetOrganizationId);
 	if (byOrg) {
+		const patchResult = await patchBrokerForActivation(ctx, byOrg, args);
 		return {
-			broker: await patchBrokerForActivation(ctx, byOrg, args),
+			broker: patchResult.broker,
 			wasCreated: false,
+			wasPatched: patchResult.wasPatched,
 		};
 	}
 
@@ -217,6 +249,7 @@ export async function resolveOrProvisionBrokerForActivation(
 
 	return {
 		broker,
+		wasPatched: false,
 		wasCreated: true,
 	};
 }
