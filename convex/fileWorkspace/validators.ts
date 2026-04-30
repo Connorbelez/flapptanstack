@@ -130,10 +130,16 @@ export const fileActivityEventTypeValidator = v.union(
 	v.literal("comment_created"),
 	v.literal("tag_assigned"),
 	v.literal("node_deleted"),
-	v.literal("node_restored")
+	v.literal("node_restored"),
+	v.literal("participant_invited"),
+	v.literal("participant_role_changed"),
+	v.literal("participant_removed")
 );
 
 export const fileSecurityEventTypeValidator = v.union(
+	v.literal("box_created"),
+	v.literal("box_updated"),
+	v.literal("box_archived"),
 	v.literal("participant_invited"),
 	v.literal("participant_role_changed"),
 	v.literal("participant_removed"),
@@ -216,6 +222,7 @@ export const fileWorkspaceActivityEventValidator = v.object({
 		v.literal("box"),
 		v.literal("comment"),
 		v.literal("node"),
+		v.literal("participant"),
 		v.literal("tag"),
 		v.literal("version")
 	),

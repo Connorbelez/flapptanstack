@@ -2663,6 +2663,7 @@ export default defineSchema({
 			v.literal("box"),
 			v.literal("comment"),
 			v.literal("node"),
+			v.literal("participant"),
 			v.literal("tag"),
 			v.literal("version")
 		),
