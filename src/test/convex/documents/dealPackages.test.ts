@@ -49,6 +49,8 @@ interface MockDocumensoOptions {
 	signingUrl?: string;
 }
 
+const originalFetch = globalThis.fetch;
+
 function installMockDocumensoFetch(options?: MockDocumensoOptions) {
 	const envelopeId = "doc_env_1";
 	const envelopeItemId = "doc_item_1";
@@ -213,7 +215,7 @@ function installMockDocumensoFetch(options?: MockDocumensoOptions) {
 		);
 	});
 
-	vi.stubGlobal("fetch", fetchMock);
+	globalThis.fetch = fetchMock as unknown as typeof fetch;
 	process.env.DOCUMENSO_API_TOKEN = "documenso_test_token";
 
 	return {
@@ -298,7 +300,7 @@ async function storePdfStorageId(
 }
 
 afterEach(() => {
-	vi.unstubAllGlobals();
+	globalThis.fetch = originalFetch;
 	delete process.env.DOCUMENSO_API_KEY;
 	delete process.env.DOCUMENSO_API_TOKEN;
 	delete process.env.DOCUMENSO_API_BASE_URL;
@@ -1530,6 +1532,104 @@ describe("documents/dealPackages", () => {
 			])
 		);
 		expect(signatureEnvelopes).toHaveLength(0);
+	});
+
+	it("sends Documenso the expected payload shape for signable package documents", async () => {
+		const { fetchMock } = installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const createCall = fetchMock.mock.calls.find(([input]) =>
+			String(input).endsWith("/envelope/create")
+		);
+		expect(createCall).toBeDefined();
+		const [, init] = createCall ?? [];
+		expect(init?.method).toBe("POST");
+		expect(init?.body).toBeInstanceOf(FormData);
+		const formData = init?.body as FormData;
+		const payload = JSON.parse(String(formData.get("payload"))) as {
+			recipients: Array<{
+				fields: Array<Record<string, unknown>>;
+			}>;
+		};
+		expect(payload.recipients[0]?.fields.length).toBeGreaterThan(0);
+		expect(payload.recipients[0]?.fields[0]).toMatchObject({
+			type: "SIGNATURE",
+			page: expect.any(Number),
+			positionX: expect.any(Number),
+			positionY: expect.any(Number),
+			width: expect.any(Number),
+			height: expect.any(Number),
+			required: true,
+		});
+		expect(payload).toMatchObject({
+			type: "DOCUMENT",
+			title: "Borrower signature packet",
+			externalId: expect.any(String),
+			recipients: [
+				expect.objectContaining({
+					email: "lender.phase7@test.fairlend.ca",
+					name: "Lena Lender",
+					role: "SIGNER",
+					signingOrder: 0,
+				}),
+			],
+		});
+		expect(formData.get("files")).toBeInstanceOf(Blob);
+	});
+
+	it("records interpolation inputs and maps the lender signer to the canonical user", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeFullVariableData: true,
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const variables = await t.query(
+			internal.documents.dealPackages.resolveDealDocumentVariablesInternal,
+			{ dealId: fixture.dealId }
+		);
+		const recipients = await t.run((ctx) =>
+			ctx.db.query("signatureRecipients").collect()
+		);
+
+		expect(variables).toMatchObject({
+			borrower_primary_full_name: "Sam Seller",
+			lender_primary_email: "lender.phase7@test.fairlend.ca",
+			lender_primary_full_name: "Lena Lender",
+			lender_primary_system_id: String(fixture.lenderUserId),
+		});
+		expect(recipients).toEqual([
+			expect.objectContaining({
+				email: "lender.phase7@test.fairlend.ca",
+				name: "Lena Lender",
+				platformRole: "lender_primary",
+				userId: fixture.lenderUserId,
+			}),
+		]);
 	});
 
 	it("retries distribution on the existing envelope instead of creating a new one", async () => {
