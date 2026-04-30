@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { listingQuery } from "../fluent";
+import { listPlatformLawyerOptions } from "../legalRepresentation/profiles";
 import { loadMortgagePaymentSnapshots } from "../payments/mortgagePaymentSnapshot";
 import type { PortalPricingPolicyDoc } from "../portals/pricing";
 import { projectListingForPortal } from "../portals/pricing";
@@ -379,38 +380,20 @@ async function getSimilarMarketplaceListings(
 	);
 }
 
-async function getMarketplaceClosingLawyers(
-	ctx: Pick<QueryCtx, "db">,
-	mortgageId: Doc<"mortgages">["_id"]
-) {
-	const assignments = await ctx.db
-		.query("closingTeamAssignments")
-		.withIndex("by_mortgage", (q) => q.eq("mortgageId", mortgageId))
-		.collect();
-
-	return await Promise.all(
-		assignments
-			.filter(
-				(assignment) =>
-					assignment.role === "closing_lawyer" ||
-					assignment.role === "reviewing_lawyer"
-			)
-			.map(async (assignment) => {
-				const user = await ctx.db
-					.query("users")
-					.withIndex("authId", (q) => q.eq("authId", assignment.userId))
-					.unique();
-
-				return {
-					authId: assignment.userId,
-					displayName: user
-						? `${user.firstName} ${user.lastName}`.trim()
-						: "Assigned closing lawyer",
-					email: user?.email ?? null,
-					role: assignment.role,
-				};
-			})
-	);
+async function getMarketplacePlatformLawyers(ctx: Pick<QueryCtx, "db">) {
+	const options = await listPlatformLawyerOptions(ctx);
+	return options.map((option) => ({
+		authId: option.lawyerId,
+		barNumber: option.barNumber ?? null,
+		displayName: option.name,
+		email: option.email,
+		eligibilityStatus: option.eligibilityStatus,
+		firmName: option.firm ?? null,
+		jurisdiction: option.jurisdiction ?? null,
+		latestVerificationId: option.latestVerificationId ?? null,
+		lawyerProfileId: option.lawyerProfileId,
+		platformStatus: option.platformStatus,
+	}));
 }
 
 function resolveRequestedPageSize(args: {
@@ -573,7 +556,7 @@ export const getMarketplaceListingDetail = listingQuery
 			appraisals,
 			encumbrances,
 			similarListings,
-			closingLawyers,
+			platformLawyers,
 			paymentSnapshots,
 			nextPaymentDue,
 		] = await Promise.all([
@@ -588,9 +571,7 @@ export const getMarketplaceListingDetail = listingQuery
 				? getListingEncumbrancesByProperty(ctx, listing.propertyId)
 				: Promise.resolve([]),
 			getSimilarMarketplaceListings(ctx, listing, pricingPolicy),
-			listing.mortgageId
-				? getMarketplaceClosingLawyers(ctx, listing.mortgageId)
-				: Promise.resolve([]),
+			getMarketplacePlatformLawyers(ctx),
 			listing.mortgageId
 				? loadMortgagePaymentSnapshots(ctx, [listing.mortgageId])
 				: Promise.resolve(new Map()),
@@ -608,7 +589,7 @@ export const getMarketplaceListingDetail = listingQuery
 				availableFractions: investmentSummary.availableFractions,
 				checkoutReady:
 					investmentSummary.availableFractions > 0 &&
-					closingLawyers.length > 0 &&
+					platformLawyers.length > 0 &&
 					isDealLockCheckoutProviderConfigured(),
 				investorCount: investmentSummary.totalInvestors,
 				lockedPercent: investmentSummary.lockedPercent,
@@ -647,7 +628,7 @@ export const getMarketplaceListingDetail = listingQuery
 				termMonths: listing.termMonths,
 				title: listing.title ?? "Mortgage Listing",
 			},
-			lawyers: closingLawyers,
+			lawyers: platformLawyers,
 			similarListings,
 		};
 	})
