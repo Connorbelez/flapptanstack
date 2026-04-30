@@ -106,6 +106,10 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../components/auditTrail/schema.ts"),
 	"/convex/constants.ts": async () => await import("./../constants.ts"),
 	"/convex/convex.config.ts": async () => await import("./../convex.config.ts"),
+	"/convex/fileWorkspace/scanActions.ts": async () =>
+		await import("./../fileWorkspace/scanActions.ts"),
+	"/convex/fileWorkspace/scanMutations.ts": async () =>
+		await import("./../fileWorkspace/scanMutations.ts"),
 	"/convex/crm/activityQueries.ts": async () =>
 		await import("./../crm/activityQueries.ts"),
 	"/convex/crm/calendarQuery.ts": async () =>
