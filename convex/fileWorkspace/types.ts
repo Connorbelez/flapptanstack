@@ -59,10 +59,16 @@ export const FILE_ACTIVITY_EVENT_TYPES = [
 	"tag_assigned",
 	"node_deleted",
 	"node_restored",
+	"participant_invited",
+	"participant_role_changed",
+	"participant_removed",
 ] as const;
 export type FileActivityEventType = (typeof FILE_ACTIVITY_EVENT_TYPES)[number];
 
 export const FILE_SECURITY_EVENT_TYPES = [
+	"box_created",
+	"box_updated",
+	"box_archived",
 	"participant_invited",
 	"participant_role_changed",
 	"participant_removed",
@@ -168,7 +174,7 @@ export interface FileWorkspaceActivityEventEnvelope {
 	eventType: FileActivityEventType;
 	nodeId?: string;
 	targetId?: string;
-	targetType: "box" | "comment" | "node" | "tag" | "version";
+	targetType: "box" | "comment" | "node" | "participant" | "tag" | "version";
 }
 
 export interface FileWorkspaceSecurityEventEnvelope {

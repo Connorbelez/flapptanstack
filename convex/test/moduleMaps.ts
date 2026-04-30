@@ -110,6 +110,18 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../fileWorkspace/scanActions.ts"),
 	"/convex/fileWorkspace/scanMutations.ts": async () =>
 		await import("./../fileWorkspace/scanMutations.ts"),
+	"/convex/fileWorkspace/boxes.ts": async () =>
+		await import("./../fileWorkspace/boxes.ts"),
+	"/convex/fileWorkspace/participants.ts": async () =>
+		await import("./../fileWorkspace/participants.ts"),
+	"/convex/fileWorkspace/shareLinks.ts": async () =>
+		await import("./../fileWorkspace/shareLinks.ts"),
+	"/convex/fileWorkspace/readModels.ts": async () =>
+		await import("./../fileWorkspace/readModels.ts"),
+	"/convex/fileWorkspace/identity.ts": async () =>
+		await import("./../fileWorkspace/identity.ts"),
+	"/convex/fileWorkspace/tokens.ts": async () =>
+		await import("./../fileWorkspace/tokens.ts"),
 	"/convex/crm/activityQueries.ts": async () =>
 		await import("./../crm/activityQueries.ts"),
 	"/convex/crm/calendarQuery.ts": async () =>

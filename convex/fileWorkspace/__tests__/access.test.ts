@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	allowFileWorkspaceAccess,
+	assertFileWorkspaceCapability,
 	canFileWorkspace,
 	capabilitiesForLinkPrincipal,
 	capabilitiesForPlatformAdmin,
@@ -124,5 +125,25 @@ describe("File Workspace access contracts", () => {
 			eventType: "preview_requested",
 			outcome: "allowed",
 		});
+	});
+
+	it("asserts capabilities through the central permission decision point", () => {
+		const principal = principalForLink({
+			linkId: "link_123",
+			linkKind: "public_link",
+		});
+
+		expect(() =>
+			assertFileWorkspaceCapability({
+				capability: "preview_clean_file",
+				principal,
+			})
+		).not.toThrow();
+		expect(() =>
+			assertFileWorkspaceCapability({
+				capability: "comment_on_file",
+				principal,
+			})
+		).toThrow(FILE_WORKSPACE_SAFE_ERRORS.ACCESS_DENIED);
 	});
 });
