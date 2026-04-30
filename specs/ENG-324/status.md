@@ -6,11 +6,12 @@
 - Last updated: 2026-04-24T13:39:00Z
 
 ## Active focus
-- Running final audit and artifact validation after implementation and focused validation.
+- Waiting on full validation gates after implementation, focused validation, and audit.
 
 ## Blockers
 - Full `bun check` is blocked by unrelated pre-existing Biome complexity diagnostics outside ENG-324.
 - Full `bun run test` is blocked by unrelated pre-existing CRM/listings/auth/payment failures outside ENG-324.
+- Current cloud container is missing `bun`, `bunx`, `node`, `npx`, and GitNexus executables, so validation commands cannot be rerun here.
 
 ## Notes
 - Linear issue has managed Requirements and Definition of Done.
@@ -25,4 +26,4 @@
 - `bunx convex codegen` and `bun typecheck` pass.
 - Full `bun check` remains blocked by unrelated pre-existing Biome complexity diagnostics outside ENG-324; focused ENG-324 Biome check passes.
 - Full `bun run test` remains blocked by unrelated pre-existing failures in CRM/listings/auth/payment tests outside ENG-324; focused ENG-324 tests pass.
-- Final execution artifact validation passes with the global baseline blocker recorded.
+- Final execution artifact validation remains pending until `bun check`, `bun typecheck`, and `bunx convex codegen` can be rerun successfully.

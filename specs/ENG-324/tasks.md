@@ -35,11 +35,12 @@
 ## Phase 9: Validation And Audit
 - [x] T-900: Run targeted tests for ENG-324.
 - [x] T-901: Run `bunx convex codegen`.
-- [x] T-902: Run `bun check`.
+- [ ] T-902: Run `bun check`.
   - Full `bun check` fails on unrelated pre-existing Biome complexity diagnostics outside ENG-324; focused Biome check for ENG-324 files passes.
-- [x] T-903: Run `bun typecheck`.
+- [ ] T-903: Run `bun typecheck`.
+  - Must pass along with `bun check` and `bunx convex codegen` before validation-gated tasks can be checked off.
 - [x] T-910: Run `$linear-pr-spec-audit` and persist the verdict in `specs/ENG-324/audit.md`.
 - [x] T-920: Resolve audit findings or record blockers.
   - Audit found no ENG-324 spec gaps. Recorded unrelated full-suite/full-check blockers in `audit.md`.
-- [x] T-930: Run final execution artifact validation.
+- [ ] T-930: Run final execution artifact validation.
   - Final validation passes with the global `bun check` baseline blocker recorded.

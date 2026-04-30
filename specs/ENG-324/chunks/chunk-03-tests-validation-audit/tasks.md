@@ -5,11 +5,12 @@
 - [x] T-230: Record why E2E and Storybook coverage are or are not required for this slice.
 - [x] T-900: Run targeted tests for ENG-324.
 - [x] T-901: Run `bunx convex codegen`.
-- [x] T-902: Run `bun check`.
+- [ ] T-902: Run `bun check`.
   - Full repo command blocked by unrelated baseline diagnostics; focused ENG-324 check passes.
-- [x] T-903: Run `bun typecheck`.
+- [ ] T-903: Run `bun typecheck`.
+  - Must pass along with `bun check` and `bunx convex codegen` before validation-gated tasks can be checked off.
 - [x] T-910: Run `$linear-pr-spec-audit` and persist the verdict in `specs/ENG-324/audit.md`.
 - [x] T-920: Resolve audit findings or record blockers.
   - Audit found no ENG-324 spec gaps. Recorded unrelated full-suite/full-check blockers in `audit.md`.
-- [x] T-930: Run final execution artifact validation.
+- [ ] T-930: Run final execution artifact validation.
   - Final validation passes with the global `bun check` baseline blocker recorded.

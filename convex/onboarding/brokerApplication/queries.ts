@@ -56,14 +56,8 @@ function clampQueueLimit(limit: number | undefined) {
 }
 
 function buildLatestReviewEntry(
-	reviewEntries: readonly Doc<"brokerOnboardingReviewEntries">[]
+	latest: Doc<"brokerOnboardingReviewEntries"> | null
 ) {
-	const entriesByNewest = [...reviewEntries].sort(
-		(left, right) => right.createdAt - left.createdAt
-	);
-	const latest =
-		entriesByNewest.find((entry) => entry.entryType !== "system_event") ??
-		entriesByNewest[0];
 	return latest
 		? {
 				authorAuthId: latest.authorAuthId ?? null,
@@ -115,7 +109,7 @@ function buildQueueItem(args: {
 	};
 }
 
-async function listReviewEntries(
+async function getLatestReviewEntry(
 	ctx: Parameters<typeof buildBrokerOnboardingApplicationReadModel>[0],
 	applicationId: Doc<"brokerOnboardingApplications">["_id"]
 ) {
@@ -124,17 +118,18 @@ async function listReviewEntries(
 		.withIndex("by_application_created_at", (query) =>
 			query.eq("applicationId", applicationId)
 		)
-		.collect();
+		.order("desc")
+		.first();
 }
 
 async function buildQueueItemWithThread(
 	ctx: Parameters<typeof buildBrokerOnboardingApplicationReadModel>[0],
 	application: Doc<"brokerOnboardingApplications">
 ) {
-	const reviewEntries = await listReviewEntries(ctx, application._id);
+	const latestReviewEntry = await getLatestReviewEntry(ctx, application._id);
 	return buildQueueItem({
 		application,
-		latestReviewEntry: buildLatestReviewEntry(reviewEntries),
+		latestReviewEntry: buildLatestReviewEntry(latestReviewEntry),
 	});
 }
 
@@ -152,12 +147,12 @@ async function listReviewQueueApplications(
 				args.view === "recently_updated"
 					? ctx.db
 							.query("brokerOnboardingApplications")
-							.withIndex("by_status_updated_at", (q) => q.eq("status", status))
-					: ctx.db
-							.query("brokerOnboardingApplications")
 							.withIndex("by_status_last_activity_at", (q) =>
 								q.eq("status", status)
-							);
+							)
+					: ctx.db
+							.query("brokerOnboardingApplications")
+							.withIndex("by_status_updated_at", (q) => q.eq("status", status));
 			return query.order("desc").take(args.limit);
 		})
 	);
@@ -166,9 +161,9 @@ async function listReviewQueueApplications(
 		.flat()
 		.sort((left, right) => {
 			if (args.view === "recently_updated") {
-				return right.updatedAt - left.updatedAt;
+				return right.lastActivityAt - left.lastActivityAt;
 			}
-			return right.lastActivityAt - left.lastActivityAt;
+			return right.updatedAt - left.updatedAt;
 		})
 		.slice(0, args.limit);
 }
@@ -220,6 +215,7 @@ export const getReviewDossier = brokerOnboardingReviewQuery
 			)
 			.order("desc")
 			.take(50);
+		const latestReviewEntry = await getLatestReviewEntry(ctx, application._id);
 
 		return {
 			application: readModel.application,
@@ -239,7 +235,7 @@ export const getReviewDossier = brokerOnboardingReviewQuery
 			isExpired: readModel.isExpired,
 			queueItem: buildQueueItem({
 				application: readModel.application,
-				latestReviewEntry: buildLatestReviewEntry(readModel.reviewEntries),
+				latestReviewEntry: buildLatestReviewEntry(latestReviewEntry),
 			}),
 			reviewEntries: readModel.reviewEntries,
 		};

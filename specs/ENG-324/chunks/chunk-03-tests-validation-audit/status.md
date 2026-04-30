@@ -5,7 +5,7 @@
 
 ## Completed tasks
 - T-210 through T-230 complete.
-- T-900 through T-903 complete, with baseline blockers recorded for full-suite commands.
+- T-900 and T-901 complete; T-902, T-903, and T-930 remain open until `bun check`, `bun typecheck`, and `bunx convex codegen` pass together.
 
 ## Validation
 - Targeted tests: pass
@@ -17,4 +17,4 @@
 
 ## Notes
 - Full `bun run test` remains blocked by unrelated pre-existing failures outside ENG-324; focused ENG-324 tests pass.
-- Audit and final artifact validation remain.
+- Audit findings are recorded; final artifact validation remains open until the validation gates pass together.

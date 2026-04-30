@@ -28,6 +28,7 @@ import {
 	listCandidateBrokerApplications,
 	mergeBrokerOnboardingDraftData,
 	mergeBrokerOnboardingMachineContext,
+	normalizeRequiredReviewerNote,
 	resolveBrokerOnboardingPortalId,
 	resolveReopenedFieldsForResubmission,
 	selectResumableBrokerApplication,
@@ -49,7 +50,7 @@ async function getFreshReadModel(
 	ctx: Pick<MutationCtx, "db">,
 	applicationId: Id<"brokerOnboardingApplications">,
 	now: number
-) {
+): Promise<BrokerOnboardingApplicationReadModel> {
 	const application = await ctx.db.get(applicationId);
 	if (!application) {
 		throw new ConvexError("Broker onboarding application not found");
@@ -456,21 +457,13 @@ export const submit = brokerOnboardingMutation
 	})
 	.public();
 
-function normalizeAdminReviewerNote(body: string, label: string) {
-	const trimmedBody = body.trim();
-	if (!trimmedBody) {
-		throw new ConvexError(`${label} note cannot be empty`);
-	}
-	return trimmedBody;
-}
-
 export const approveForReview = brokerOnboardingReviewAction
 	.input({
 		applicationId: v.id("brokerOnboardingApplications"),
 		reviewerNote: v.string(),
 	})
 	.handler(async (ctx, args): Promise<{ ok: true }> => {
-		const reviewerNote = normalizeAdminReviewerNote(
+		const reviewerNote = normalizeRequiredReviewerNote(
 			args.reviewerNote,
 			"Approval"
 		);
@@ -495,7 +488,7 @@ export const requestChangesForReview = brokerOnboardingReviewAction
 		reviewerNote: v.string(),
 	})
 	.handler(async (ctx, args): Promise<{ ok: true }> => {
-		const reviewerNote = normalizeAdminReviewerNote(
+		const reviewerNote = normalizeRequiredReviewerNote(
 			args.reviewerNote,
 			"Request changes"
 		);
@@ -525,7 +518,7 @@ export const rejectForReview = brokerOnboardingReviewAction
 		reviewerNote: v.string(),
 	})
 	.handler(async (ctx, args): Promise<{ ok: true }> => {
-		const reviewerNote = normalizeAdminReviewerNote(
+		const reviewerNote = normalizeRequiredReviewerNote(
 			args.reviewerNote,
 			"Rejection"
 		);

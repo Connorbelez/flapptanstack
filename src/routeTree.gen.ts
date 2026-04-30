@@ -84,6 +84,7 @@ import { Route as AdminMortgagesRouteRouteImport } from './routes/admin/mortgage
 import { Route as AdminListingsRouteRouteImport } from './routes/admin/listings/route'
 import { Route as AdminDealsRouteRouteImport } from './routes/admin/deals/route'
 import { Route as AdminBrokerOnboardingRouteRouteImport } from './routes/admin/broker-onboarding/route'
+import { Route as AdminBrokerOnboardingRouteLazyImport } from './routes/admin/broker-onboarding/route.lazy'
 import { Route as AdminBorrowersRouteRouteImport } from './routes/admin/borrowers/route'
 import { Route as DemoRbacIndexRouteImport } from './routes/demo/rbac/index'
 import { Route as DemoRbacAuthIndexRouteImport } from './routes/demo/rbac-auth/index'
@@ -534,7 +535,9 @@ const AdminBrokerOnboardingRouteRoute =
     id: '/broker-onboarding',
     path: '/broker-onboarding',
     getParentRoute: () => AdminRouteRoute,
-  } as any)
+  } as any).lazy(() =>
+    import('./routes/admin/broker-onboarding/route.lazy').then((d) => d.Route),
+  )
 const AdminBorrowersRouteRoute = AdminBorrowersRouteRouteImport.update({
   id: '/borrowers',
   path: '/borrowers',

@@ -27,6 +27,7 @@ import {
 	isIdentityVerificationInvalidationField,
 	isRegulatorVerificationInvalidationField,
 	mergeBrokerOnboardingVerificationState,
+	normalizeRequiredReviewerNote,
 	resolveVerificationInvalidationFieldPaths,
 } from "./helpers";
 import {
@@ -51,14 +52,6 @@ interface ReopenedBrokerOnboardingField {
 interface BrokerOnboardingReverificationFlags {
 	identityVerification: boolean;
 	regulatorLookup: boolean;
-}
-
-function normalizeRequiredReviewerNote(body: string, label: string) {
-	const trimmedBody = body.trim();
-	if (!trimmedBody) {
-		throw new ConvexError(`${label} note cannot be empty`);
-	}
-	return trimmedBody;
 }
 
 function assertReopenedFieldsAreScoped(
@@ -579,16 +572,21 @@ async function buildVerificationInvalidationPatch(
 	ctx: Parameters<typeof createImportedFsraProviderBindings>[0],
 	args: {
 		application: BrokerOnboardingApplicationDoc;
-		invalidatedFieldPaths: string[];
+		originalInvalidatedFieldPaths: string[];
 		now: number;
+		reverificationFieldPaths: string[];
 		reverificationFlags: BrokerOnboardingReverificationFlags;
 	}
 ): Promise<Record<string, unknown>> {
 	const shouldInvalidateIdentity =
-		args.invalidatedFieldPaths.some(isIdentityVerificationInvalidationField) ||
+		args.originalInvalidatedFieldPaths.some(
+			isIdentityVerificationInvalidationField
+		) ||
 		args.reverificationFlags.identityVerification;
 	const shouldInvalidateRegulator =
-		args.invalidatedFieldPaths.some(isRegulatorVerificationInvalidationField) ||
+		args.originalInvalidatedFieldPaths.some(
+			isRegulatorVerificationInvalidationField
+		) ||
 		args.reverificationFlags.regulatorLookup;
 	const verificationRegistry = createBrokerOnboardingVerificationRegistry({
 		configOverrides: {
@@ -653,7 +651,7 @@ async function buildVerificationInvalidationPatch(
 					: {}),
 				lastRecomputedAt: args.now,
 				requiresReverification: true,
-				reverificationFieldPaths: args.invalidatedFieldPaths,
+				reverificationFieldPaths: args.reverificationFieldPaths,
 				reverificationRequiredAt: args.now,
 			}
 		),
@@ -887,8 +885,9 @@ export const requestChanges = convex
 				patch,
 				await buildVerificationInvalidationPatch(ctx, {
 					application,
-					invalidatedFieldPaths: reverificationFieldPaths,
 					now,
+					originalInvalidatedFieldPaths: invalidatedFieldPaths,
+					reverificationFieldPaths,
 					reverificationFlags,
 				})
 			);

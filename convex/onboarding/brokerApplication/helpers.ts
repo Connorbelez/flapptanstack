@@ -45,6 +45,14 @@ export interface BrokerOnboardingApplicationReadModel {
 	reviewEntries: Doc<"brokerOnboardingReviewEntries">[];
 }
 
+export function normalizeRequiredReviewerNote(body: string, label: string) {
+	const trimmedBody = body.trim();
+	if (!trimmedBody) {
+		throw new ConvexError(`${label} note cannot be empty`);
+	}
+	return trimmedBody;
+}
+
 function normalizeOptionalString(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim().length > 0
 		? value.trim()

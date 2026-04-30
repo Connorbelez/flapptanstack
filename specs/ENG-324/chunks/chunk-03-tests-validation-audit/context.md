@@ -27,4 +27,4 @@
 - `bun check`
 - `bun typecheck`
 - `$linear-pr-spec-audit ENG-324`
-- `python3 /Users/connor/.codex/skills/linear-implement-v2/scripts/validate_execution_artifacts.py ENG-324 --repo-root "/Users/connor/.codex/worktrees/eaa4/fairlendapp" --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`
+- `python3 <linear-implement-v2>/scripts/validate_execution_artifacts.py ENG-324 --repo-root "<repo-root>" --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`

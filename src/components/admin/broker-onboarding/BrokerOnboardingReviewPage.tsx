@@ -1,6 +1,7 @@
 "use client";
 
 import { useAction, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import {
 	CheckCircle2,
 	Clock3,
@@ -54,133 +55,17 @@ interface ReviewActionsApi {
 	requestChanges: RequestChangesReviewAction;
 }
 
-interface ReviewQueueItem {
-	applicationId: ApplicationId;
-	changesRequestedAt: number | null;
-	downstreamHandoffStatus:
-		| "not_started"
-		| "linked"
-		| "role_assigned"
-		| "activated";
-	draftSummary: {
-		brokerageName: string | null;
-		brokerageNumber: string | null;
-		licenseNumber: string | null;
-		licenseProvince: string | null;
-		requestedPortalSlug: string | null;
-		selfReportedName: {
-			firstName?: string;
-			fullName?: string;
-			lastName?: string;
-			middleName?: string;
-		} | null;
-	};
-	freshness: string | null;
-	identityVerificationStatus: string | null;
-	latestReviewEntry: {
-		body: string;
-		createdAt: number;
-		entryType: "broker_note" | "reviewer_note" | "system_event";
-	} | null;
-	reasonCodes: string[];
-	regulatorStatus: string | null;
-	requiresReverification: boolean;
-	status:
-		| "draft"
-		| "submitted"
-		| "changes_requested"
-		| "approved"
-		| "rejected"
-		| "activated";
-	submittedAt: number | null;
-	updatedAt: number;
-	verificationRecommendation: string | null;
-	verifiedEmail: string | null;
-}
-
-interface ReviewEntry {
-	_id: string;
-	authorAuthId?: string;
-	authorType?: string;
-	body: string;
-	createdAt: number;
-	entryType: "broker_note" | "reviewer_note" | "system_event";
-	systemEventType?: string;
-}
-
-interface ReviewDossier {
-	application: {
-		_id: ApplicationId;
-		activationOutcome?: {
-			brokerId: string;
-			homePortalId: string;
-			onboardingRequestId: string;
-			portalId: string;
-			targetOrganizationId: string;
-		};
-		downstreamHandoffStatus: ReviewQueueItem["downstreamHandoffStatus"];
-		downstreamOnboardingRequestId?: string;
-		draftData: ReviewQueueItem["draftSummary"];
-		reopenedFields: Array<{
-			fieldPath: string;
-			reason?: string;
-			status: "open" | "resolved";
-		}>;
-		status: ReviewQueueItem["status"];
-		verificationSnapshot?: {
-			emailVerification: {
-				email: string | null;
-				status: string;
-				verifiedAt: number | null;
-			};
-			evidenceReferences: Array<{
-				label?: string;
-				provider: string;
-				referenceId: string;
-				referenceType: string;
-				uri?: string;
-			}>;
-			identityVerification: {
-				fraudSignal: boolean;
-				status: string;
-			};
-			reasonCodes: string[];
-			recommendation: string;
-			regulator: {
-				brokerageName: string | null;
-				brokerageNumber: string | null;
-				freshness: string;
-				licenseNumber: string | null;
-				provider: string;
-				status: string;
-			};
-			similarityScores: {
-				effectiveScore: number | null;
-				regulatorVsIdentity: number | null;
-				selfReportedVsIdentity: number | null;
-				selfReportedVsRegulator: number | null;
-			};
-		};
-		verificationState?: {
-			requiresReverification: boolean;
-			reverificationFieldPaths: string[];
-		};
-	};
-	auditHistory: Array<{
-		actorId: string;
-		eventType: string;
-		newState: string;
-		outcome: "transitioned" | "rejected";
-		previousState: string;
-		timestamp: number;
-	}>;
-	downstreamOnboardingRequest: {
-		_id: string;
-		status: string;
-	} | null;
-	queueItem: ReviewQueueItem;
-	reviewEntries: ReviewEntry[];
-}
+type ReviewQueue = FunctionReturnType<
+	typeof api.onboarding.brokerApplication.queries.listReviewQueue
+>;
+type ReviewQueueItem = ReviewQueue[number];
+type ReviewDossier = NonNullable<
+	FunctionReturnType<
+		typeof api.onboarding.brokerApplication.queries.getReviewDossier
+	>
+>;
+type ReviewEntry = ReviewDossier["reviewEntries"][number];
+type AuditHistoryEntry = ReviewDossier["auditHistory"][number];
 
 const QUEUE_TABS: Array<{ label: string; value: QueueView }> = [
 	{ label: "Submitted", value: "submitted" },
@@ -232,7 +117,7 @@ function formatName(name: ReviewQueueItem["draftSummary"]["selfReportedName"]) {
 	const joinedName = [name.firstName, name.middleName, name.lastName]
 		.filter(Boolean)
 		.join(" ");
-	return name.fullName?.trim() || joinedName || "No name";
+	return name.fullName?.trim() || joinedName.trim() || "No name";
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -345,6 +230,49 @@ function ReviewThread({ entries }: { entries: ReviewEntry[] }) {
 	);
 }
 
+function AuditHistory({ entries }: { entries: AuditHistoryEntry[] }) {
+	return (
+		<section className="space-y-3">
+			<h2 className="font-semibold text-base">Audit History</h2>
+			<div className="space-y-2">
+				{entries.length === 0 ? (
+					<div className="rounded-md border border-dashed p-4 text-muted-foreground text-sm">
+						No audit entries yet.
+					</div>
+				) : (
+					entries.map((entry) => (
+						<div
+							className="rounded-md border p-3"
+							key={`${entry.eventType}-${entry.timestamp}`}
+						>
+							<div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+								<div className="flex flex-wrap gap-1">
+									<Badge variant="outline">{entry.eventType}</Badge>
+									<Badge variant="secondary">{entry.outcome}</Badge>
+								</div>
+								<span className="text-muted-foreground text-xs">
+									{formatTimestamp(entry.timestamp)}
+								</span>
+							</div>
+							<div className="grid gap-2 text-sm sm:grid-cols-2">
+								<KeyValue label="Previous state" value={entry.previousState} />
+								<KeyValue label="New state" value={entry.newState} />
+								<KeyValue label="Actor" value={entry.actorId} />
+								<KeyValue label="Channel" value={entry.channel} />
+							</div>
+							{entry.reason ? (
+								<p className="mt-2 whitespace-pre-wrap text-muted-foreground text-sm">
+									{entry.reason}
+								</p>
+							) : null}
+						</div>
+					))
+				)}
+			</div>
+		</section>
+	);
+}
+
 function DossierSection({
 	children,
 	title,
@@ -373,14 +301,23 @@ function ReviewActions({
 	actions,
 	applicationId,
 	status,
-	onCompleted,
 }: {
 	actions: ReviewActionsApi;
 	applicationId: ApplicationId;
 	status: ReviewQueueItem["status"];
-	onCompleted: () => void;
 }) {
 	const canReview = REVIEWABLE_APPLICATION_STATUSES.has(status);
+	const [intent, setIntent] = useState<
+		"approve" | "reject" | "request_changes"
+	>("approve");
+	const [reviewerNote, setReviewerNote] = useState("");
+	const [selectedFields, setSelectedFields] = useState<
+		BrokerOnboardingReopenableFieldPath[]
+	>([]);
+	const [requiresIdentity, setRequiresIdentity] = useState(false);
+	const [requiresRegulator, setRequiresRegulator] = useState(false);
+	const isNoteValid = reviewerNote.trim().length > 0;
+	const isRequestChangesValid = selectedFields.length > 0;
 
 	if (!canReview) {
 		return (
@@ -397,42 +334,49 @@ function ReviewActions({
 	async function submit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const form = event.currentTarget;
-		const formData = new FormData(form);
 		const submitter = (event.nativeEvent as SubmitEvent).submitter;
-		const intent = submitter?.getAttribute("value");
-		const reviewerNote = String(formData.get("reviewerNote") ?? "");
+		const submitIntent = submitter?.getAttribute("value");
 
-		if (intent === "approve") {
+		if (
+			!isNoteValid ||
+			(submitIntent === "request_changes" && !isRequestChangesValid)
+		) {
+			return;
+		}
+
+		if (submitIntent === "approve") {
 			await actions.approve({ applicationId, reviewerNote });
-		} else if (intent === "reject") {
+		} else if (submitIntent === "reject") {
 			await actions.reject({ applicationId, reviewerNote });
-		} else if (intent === "request_changes") {
-			const reopenedFields = formData
-				.getAll("reopenedFieldPaths")
-				.filter((value): value is BrokerOnboardingReopenableFieldPath =>
-					BROKER_ONBOARDING_REOPENABLE_FIELD_PATHS.includes(
-						value as BrokerOnboardingReopenableFieldPath
-					)
-				)
-				.map((fieldPath) => ({ fieldPath }));
+		} else if (submitIntent === "request_changes") {
+			const reopenedFields = selectedFields.map((fieldPath) => ({ fieldPath }));
 			await actions.requestChanges({
 				applicationId,
 				reopenedFields,
 				reverificationFlags: {
-					identityVerification: formData.has("requiresIdentity"),
-					regulatorLookup: formData.has("requiresRegulator"),
+					identityVerification: requiresIdentity,
+					regulatorLookup: requiresRegulator,
 				},
 				reviewerNote,
 			});
 		}
 
 		form.reset();
-		onCompleted();
+		setIntent("approve");
+		setReviewerNote("");
+		setSelectedFields([]);
+		setRequiresIdentity(false);
+		setRequiresRegulator(false);
 	}
 
 	return (
 		<form className="space-y-3 rounded-md border p-4" onSubmit={submit}>
-			<Textarea name="reviewerNote" placeholder="Reviewer note" />
+			<Textarea
+				name="reviewerNote"
+				onChange={(event) => setReviewerNote(event.target.value)}
+				placeholder="Reviewer note"
+				value={reviewerNote}
+			/>
 			<div className="space-y-3">
 				<div className="grid gap-2 sm:grid-cols-2">
 					{REOPENABLE_FIELDS.map((field) => (
@@ -443,7 +387,15 @@ function ReviewActions({
 							<input
 								aria-label={field.label}
 								className="size-4 rounded border"
+								checked={selectedFields.includes(field.value)}
 								name="reopenedFieldPaths"
+								onChange={(event) => {
+									setSelectedFields((current) =>
+										event.target.checked
+											? [...current, field.value]
+											: current.filter((value) => value !== field.value)
+									);
+								}}
 								type="checkbox"
 								value={field.value}
 							/>
@@ -456,7 +408,9 @@ function ReviewActions({
 						<input
 							aria-label="Require IDV reverification"
 							className="size-4 rounded border"
+							checked={requiresIdentity}
 							name="requiresIdentity"
+							onChange={(event) => setRequiresIdentity(event.target.checked)}
 							type="checkbox"
 						/>
 						<span>Require IDV reverification</span>
@@ -465,19 +419,40 @@ function ReviewActions({
 						<input
 							aria-label="Require regulator reverification"
 							className="size-4 rounded border"
+							checked={requiresRegulator}
 							name="requiresRegulator"
+							onChange={(event) => setRequiresRegulator(event.target.checked)}
 							type="checkbox"
 						/>
 						<span>Require regulator reverification</span>
 					</label>
 				</div>
 			</div>
+			{isNoteValid &&
+			(intent !== "request_changes" || isRequestChangesValid) ? null : (
+				<p className="text-muted-foreground text-xs">
+					Reviewer note is required
+					{intent === "request_changes" && selectedFields.length === 0
+						? "; request changes also requires at least one reopened field"
+						: ""}
+					.
+				</p>
+			)}
 			<div className="flex flex-wrap gap-2">
-				<Button name="intent" size="sm" type="submit" value="approve">
+				<Button
+					disabled={!isNoteValid}
+					name="intent"
+					onClick={() => setIntent("approve")}
+					size="sm"
+					type="submit"
+					value="approve"
+				>
 					<CheckCircle2 /> {REVIEW_MODE_LABELS.approve}
 				</Button>
 				<Button
+					disabled={!isNoteValid || !isRequestChangesValid}
 					name="intent"
+					onClick={() => setIntent("request_changes")}
 					size="sm"
 					type="submit"
 					value="request_changes"
@@ -486,7 +461,9 @@ function ReviewActions({
 					<MessageSquareText /> {REVIEW_MODE_LABELS.request_changes}
 				</Button>
 				<Button
+					disabled={!isNoteValid}
 					name="intent"
+					onClick={() => setIntent("reject")}
 					size="sm"
 					type="submit"
 					value="reject"
@@ -502,11 +479,9 @@ function ReviewActions({
 function Dossier({
 	actions,
 	dossier,
-	onActionCompleted,
 }: {
 	actions: ReviewActionsApi;
 	dossier: ReviewDossier | null | undefined;
-	onActionCompleted: () => void;
 }) {
 	if (dossier === undefined) {
 		return (
@@ -639,10 +614,10 @@ function Dossier({
 			<ReviewActions
 				actions={actions}
 				applicationId={application._id}
-				onCompleted={onActionCompleted}
 				status={application.status}
 			/>
 
+			<AuditHistory entries={dossier.auditHistory} />
 			<ReviewThread entries={dossier.reviewEntries} />
 		</div>
 	);
@@ -710,7 +685,6 @@ export function BrokerOnboardingReviewWorkspace({
 					<Dossier
 						actions={actions}
 						dossier={selectedId ? dossier : null}
-						onActionCompleted={() => undefined}
 					/>
 				</main>
 			</div>
@@ -726,11 +700,11 @@ export function BrokerOnboardingReviewPage() {
 		{
 			view,
 		}
-	) as ReviewQueueItem[] | undefined;
+	);
 	const dossier = useQuery(
 		api.onboarding.brokerApplication.queries.getReviewDossier,
 		selectedId ? { applicationId: selectedId } : "skip"
-	) as ReviewDossier | null | undefined;
+	);
 	const queueItems = useMemo(() => queue ?? [], [queue]);
 	const actions = {
 		approve: useAction(

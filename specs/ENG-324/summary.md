@@ -19,8 +19,8 @@
 
 ## Constraints
 - Use fluent-convex exports with explicit `.public()` or `.internal()`.
-- Use `adminQuery` / `adminMutation` plus `requirePermission("onboarding:review")` for the review workspace so FairLend staff boundary and explicit onboarding permission are both structural.
-- Do not reuse `RecordNotesPanel`; the review thread is append-only and typed as `reviewer_note`, `broker_note`, or `system_event`.
+- Use `adminQuery` for dossier/queue reads and `adminAction` plus `requirePermissionAction("onboarding:review")` for public review commands so FairLend staff boundary and explicit onboarding permission are both structural.
+- Do not reuse `RecordNotesPanel`; the action-based review API writes an append-only thread typed as `reviewer_note`, `broker_note`, or `system_event`.
 - Do not recompute verification policy or parse raw vendor payloads in React; backend projections must expose normalized summaries.
 - Do not change `executeTransition` or shared GT semantics; review actions must call aggregate-owned command surfaces.
 - Keep `approved` distinct from `activated`, and expose downstream `onboardingRequest` / handoff status to operations.

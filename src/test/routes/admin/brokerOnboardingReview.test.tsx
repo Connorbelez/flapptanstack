@@ -4,6 +4,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import "@testing-library/jest-dom/vitest";
 import {
 	cleanup,
 	fireEvent,
@@ -85,7 +86,9 @@ function createDossier(overrides: Record<string, unknown> = {}) {
 			},
 		},
 		auditHistory: [],
+		canResume: false,
 		downstreamOnboardingRequest: null,
+		isExpired: false,
 		queueItem,
 		reviewEntries: [],
 		...overrides,
@@ -102,6 +105,9 @@ describe("broker onboarding review route contract", () => {
 		const routeSource = readProjectFile(
 			"src/routes/admin/broker-onboarding/route.tsx"
 		);
+		const lazyRouteSource = readProjectFile(
+			"src/routes/admin/broker-onboarding/route.lazy.tsx"
+		);
 		const authSource = readProjectFile("src/lib/auth.ts");
 		const entityRegistrySource = readProjectFile(
 			"src/components/admin/shell/entity-registry.ts"
@@ -110,6 +116,11 @@ describe("broker onboarding review route contract", () => {
 
 		expect(routeSource).toContain('createFileRoute("/admin/broker-onboarding")');
 		expect(routeSource).toContain('guardRouteAccess("adminBrokerOnboarding")');
+		expect(routeSource).not.toContain("component: BrokerOnboardingReviewPage");
+		expect(lazyRouteSource).toContain(
+			'createLazyFileRoute("/admin/broker-onboarding")'
+		);
+		expect(lazyRouteSource).toContain("component: BrokerOnboardingReviewPage");
 		expect(authSource).toContain("adminBrokerOnboarding");
 		expect(authSource).toContain('permission: "onboarding:review"');
 		expect(authSource).toContain('"/admin/broker-onboarding"');
@@ -132,6 +143,7 @@ describe("broker onboarding review route contract", () => {
 		);
 
 		await screen.findByText("Normalized Evidence");
+		expect(screen.getByText("Audit History")).toBeTruthy();
 		expect(screen.getByText("Fraud signal").nextSibling?.textContent).toBe(
 			"Not available"
 		);
@@ -193,11 +205,19 @@ describe("broker onboarding review route contract", () => {
 		);
 		await screen.findByText("Normalized Evidence");
 
-		fireEvent.click(screen.getByLabelText("License number"));
-		fireEvent.click(screen.getByLabelText("Require regulator reverification"));
+		expect(
+			screen.getByRole("button", { name: /request changes/i })
+		).toBeDisabled();
+
 		fireEvent.change(screen.getByPlaceholderText("Reviewer note"), {
 			target: { value: "License number needs another regulator check." },
 		});
+		expect(
+			screen.getByRole("button", { name: /request changes/i })
+		).toBeDisabled();
+
+		fireEvent.click(screen.getByLabelText("License number"));
+		fireEvent.click(screen.getByLabelText("Require regulator reverification"));
 		fireEvent.click(screen.getByRole("button", { name: /request changes/i }));
 
 		await waitFor(() => {
