@@ -8,6 +8,7 @@ import {
 	reserveSharesHandler,
 	voidReservationHandler,
 } from "../ledger/mutations";
+import { assertPlatformLawyerSelectableForCheckout } from "../legalRepresentation/platformLawyers";
 import { assertPlatformLawyerAuthSelectableForCheckout } from "../legalRepresentation/profiles";
 import { matchesMarketplaceFilters } from "../listings/marketplace";
 import {
@@ -386,6 +387,32 @@ async function resolveSellerAccount(
 	);
 }
 
+async function validateSelectedLawyerForCheckout(
+	ctx: MutationCtx,
+	args: {
+		now: number;
+		selectedLawyer: CheckoutSessionDoc["selectedLawyer"];
+	}
+): Promise<StartMarketplaceCheckoutResult | null> {
+	if (args.selectedLawyer.type !== "platform_lawyer") {
+		return null;
+	}
+	try {
+		await assertPlatformLawyerSelectableForCheckout(ctx, {
+			lawyerAuthId: args.selectedLawyer.lawyerId,
+			now: args.now,
+		});
+		return null;
+	} catch (error) {
+		return checkoutFailure(
+			"invalid_lawyer",
+			error instanceof Error
+				? error.message
+				: "Selected platform lawyer is unavailable"
+		);
+	}
+}
+
 export const prepareMarketplaceCheckout = convex
 	.mutation()
 	.input(prepareMarketplaceCheckoutArgsValidator)
@@ -421,6 +448,16 @@ export const prepareMarketplaceCheckout = convex
 				"invalid_lawyer",
 				error instanceof Error ? error.message : "Invalid lawyer"
 			);
+		}
+		const lawyerValidationFailure = await validateSelectedLawyerForCheckout(
+			ctx,
+			{
+				now,
+				selectedLawyer,
+			}
+		);
+		if (lawyerValidationFailure) {
+			return lawyerValidationFailure;
 		}
 
 		const lender = await getLenderByAuthId(ctx, args.viewerAuthId);

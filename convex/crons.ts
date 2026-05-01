@@ -33,6 +33,21 @@ const sweepExpiredCheckoutSessionsRef = makeFunctionReference<
 	{ limit?: number; now?: number },
 	Promise<unknown>
 >("checkout/actions:sweepExpiredCheckoutSessions");
+const ensureSlaReviewsForPendingDealsRef = makeFunctionReference<
+	"mutation",
+	{ limit?: number; now?: number },
+	Promise<unknown>
+>("legalRepresentation/sla:ensureSlaReviewsForPendingDeals");
+const checkSlaBreachesRef = makeFunctionReference<
+	"mutation",
+	{ limit?: number; now?: number },
+	Promise<unknown>
+>("legalRepresentation/sla:checkSlaBreaches");
+const runPeriodicRestrictionRechecksRef = makeFunctionReference<
+	"mutation",
+	{ limit?: number; now?: number },
+	Promise<unknown>
+>("legalRepresentation/sla:runPeriodicRestrictionRechecks");
 
 // Audit trail crons (outbox processor + retention) are managed by the
 // auditTrail component — see convex/components/auditTrail/crons.ts
@@ -84,6 +99,27 @@ crons.interval(
 	{ minutes: 1 },
 	sweepExpiredCheckoutSessionsRef,
 	{ limit: 50 }
+);
+
+crons.interval(
+	"platform lawyer SLA review detector",
+	{ minutes: 15 },
+	ensureSlaReviewsForPendingDealsRef,
+	{ limit: 50 }
+);
+
+crons.interval(
+	"platform lawyer SLA breach detector",
+	{ minutes: 15 },
+	checkSlaBreachesRef,
+	{ limit: 50 }
+);
+
+crons.daily(
+	"platform lawyer restriction recheck",
+	{ hourUTC: 6, minuteUTC: 30 },
+	runPeriodicRestrictionRechecksRef,
+	{ limit: 25 }
 );
 
 // Provider-managed schedule polling spine: keeps externally managed recurring

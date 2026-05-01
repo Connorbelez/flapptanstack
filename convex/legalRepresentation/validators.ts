@@ -9,6 +9,7 @@ export const legalRepresentationProfileKindValidator = v.union(
 export const legalRepresentationPlatformStatusValidator = v.union(
 	v.literal("invited"),
 	v.literal("active"),
+	v.literal("requires_review"),
 	v.literal("suspended"),
 	v.literal("offboarded")
 );
@@ -106,6 +107,54 @@ export const legalCheckpointDecisionValidator = v.union(
 
 export const legalSourceSnapshotValidator = v.record(v.string(), v.string());
 
+export const platformLawyerAvailabilityWindowStatusValidator = v.union(
+	v.literal("active"),
+	v.literal("inactive")
+);
+
+export const platformLawyerAvailabilityExceptionKindValidator = v.union(
+	v.literal("available"),
+	v.literal("unavailable"),
+	v.literal("hold")
+);
+
+export const platformLawyerSlaTierStatusValidator = v.union(
+	v.literal("active"),
+	v.literal("inactive")
+);
+
+export const platformLawyerSlaReviewStatusValidator = v.union(
+	v.literal("active"),
+	v.literal("completed"),
+	v.literal("breached"),
+	v.literal("canceled")
+);
+
+export const platformLawyerEscalationKindValidator = v.union(
+	v.literal("sla_breach"),
+	v.literal("restriction_recheck"),
+	v.literal("active_deal_review")
+);
+
+export const platformLawyerEscalationStatusValidator = v.union(
+	v.literal("open"),
+	v.literal("acknowledged"),
+	v.literal("resolved")
+);
+
+export const platformLawyerCapacityWarningLevelValidator = v.union(
+	v.literal("none"),
+	v.literal("approaching"),
+	v.literal("full"),
+	v.literal("over_capacity")
+);
+
+export const platformLawyerRestrictionRecheckStatusValidator = v.union(
+	v.literal("pending"),
+	v.literal("completed"),
+	v.literal("failed")
+);
+
 export const lsoLawyerMetadataValidator = v.object({
 	barNumber: v.optional(v.string()),
 	jurisdiction: v.optional(v.string()),
@@ -160,6 +209,30 @@ export type LegalCheckpointDecision = Infer<
 	typeof legalCheckpointDecisionValidator
 >;
 export type LegalSourceSnapshot = Infer<typeof legalSourceSnapshotValidator>;
+export type PlatformLawyerAvailabilityWindowStatus = Infer<
+	typeof platformLawyerAvailabilityWindowStatusValidator
+>;
+export type PlatformLawyerAvailabilityExceptionKind = Infer<
+	typeof platformLawyerAvailabilityExceptionKindValidator
+>;
+export type PlatformLawyerSlaTierStatus = Infer<
+	typeof platformLawyerSlaTierStatusValidator
+>;
+export type PlatformLawyerSlaReviewStatus = Infer<
+	typeof platformLawyerSlaReviewStatusValidator
+>;
+export type PlatformLawyerEscalationKind = Infer<
+	typeof platformLawyerEscalationKindValidator
+>;
+export type PlatformLawyerEscalationStatus = Infer<
+	typeof platformLawyerEscalationStatusValidator
+>;
+export type PlatformLawyerCapacityWarningLevel = Infer<
+	typeof platformLawyerCapacityWarningLevelValidator
+>;
+export type PlatformLawyerRestrictionRecheckStatus = Infer<
+	typeof platformLawyerRestrictionRecheckStatusValidator
+>;
 export type LsoLawyerMetadata = Infer<typeof lsoLawyerMetadataValidator>;
 export type LegalCheckpointResult = Infer<
 	typeof legalCheckpointResultValidator

@@ -34,6 +34,7 @@ import type {
 	ListingDetailData,
 	ListingDocumentItem,
 	ListingHeroImage,
+	ListingLawyerOption,
 	ListingSimilarCard,
 	ListingValueTone,
 } from "./listing-detail-types";
@@ -2075,6 +2076,11 @@ function LawyerOptionCard({
 	lawyer: NonNullable<ListingDetailData["checkout"]>["lawyers"][number];
 	onSelect: (lawyerId: string) => void;
 }) {
+	const availability = lawyer.availability?.slice(0, 5) ?? [];
+	const capacityWarning =
+		lawyer.capacityWarning && lawyer.capacityWarning !== "none"
+			? capacityWarningLabel(lawyer.capacityWarning)
+			: null;
 	return (
 		<button
 			aria-pressed={isSelected}
@@ -2098,14 +2104,68 @@ function LawyerOptionCard({
 			>
 				<Check className="size-3" />
 			</div>
-			<div>
-				<p className="font-medium text-sm">{lawyer.label}</p>
+			<div className="min-w-0 flex-1">
+				<div className="flex flex-wrap items-center gap-2">
+					<p className="font-medium text-sm">{lawyer.label}</p>
+					{lawyer.slaTier ? (
+						<span className="rounded-full bg-[#E7F6EA] px-2 py-0.5 font-medium text-[#2E7D4F] text-[11px]">
+							{lawyer.slaTier.reviewHours}h SLA
+						</span>
+					) : null}
+				</div>
 				<p className="mt-1 text-[13px] text-muted-foreground">
-					{lawyer.detail}
+					{lawyer.firm ? `${lawyer.firm} · ${lawyer.detail}` : lawyer.detail}
 				</p>
+				{availability.length > 0 ? (
+					<div className="mt-3 flex flex-wrap gap-1.5">
+						{availability.map((day) => (
+							<span
+								className={cn(
+									"rounded-full px-2 py-1 text-[11px]",
+									day.hasAvailability
+										? "bg-[#F1FAF3] text-[#204636]"
+										: "bg-[#F8EAEA] text-[#7A271A]"
+								)}
+								key={day.businessDate}
+							>
+								{day.label}
+							</span>
+						))}
+					</div>
+				) : null}
+				<div className="mt-3 flex flex-wrap gap-2 text-[12px] text-muted-foreground">
+					{lawyer.activeDealCount !== undefined ? (
+						<span>
+							{lawyer.activeDealCount.toLocaleString()} active
+							{lawyer.capacityLimit !== undefined
+								? ` / ${lawyer.capacityLimit.toLocaleString()} capacity`
+								: ""}
+						</span>
+					) : null}
+					{capacityWarning ? (
+						<span className="font-medium text-[#B54708]">
+							{capacityWarning}
+						</span>
+					) : null}
+				</div>
 			</div>
 		</button>
 	);
+}
+
+function capacityWarningLabel(
+	warning: NonNullable<ListingLawyerOption["capacityWarning"]>
+): string {
+	const labels = {
+		approaching: "Capacity filling",
+		full: "Fully booked",
+		none: "",
+		over_capacity: "Over capacity",
+	} satisfies Record<
+		NonNullable<ListingLawyerOption["capacityWarning"]>,
+		string
+	>;
+	return labels[warning];
 }
 
 function SectionLabel({

@@ -125,6 +125,14 @@ import {
 	legalSourceSnapshotValidator,
 	lsoLicensingStatusValidator,
 	lsoRestrictionStatusValidator,
+	platformLawyerAvailabilityExceptionKindValidator,
+	platformLawyerAvailabilityWindowStatusValidator,
+	platformLawyerCapacityWarningLevelValidator,
+	platformLawyerEscalationKindValidator,
+	platformLawyerEscalationStatusValidator,
+	platformLawyerRestrictionRecheckStatusValidator,
+	platformLawyerSlaReviewStatusValidator,
+	platformLawyerSlaTierStatusValidator,
 	representationEngagementProviderValidator,
 	representationEngagementStatusValidator,
 } from "./legalRepresentation/validators";
@@ -2494,6 +2502,7 @@ export default defineSchema({
 		.index("by_seller", ["sellerId"])
 		.index("by_checkout_session", ["checkoutSessionId"])
 		.index("by_reservation", ["reservationId"])
+		.index("by_lawyer", ["lawyerId"])
 		.index("by_org", ["orgId"])
 		.index("by_org_status", ["orgId", "status"]),
 
@@ -2636,6 +2645,126 @@ export default defineSchema({
 		.index("by_normalized_email", ["normalizedEmail"])
 		.index("by_bar_jurisdiction", ["barNumber", "jurisdiction"])
 		.index("by_platform_status", ["platformStatus"]),
+
+	platformLawyerSlaTiers: defineTable({
+		name: v.string(),
+		description: v.optional(v.string()),
+		reviewHours: v.number(),
+		status: platformLawyerSlaTierStatusValidator,
+		createdAt: v.number(),
+		createdBy: v.string(),
+		updatedAt: v.number(),
+		updatedBy: v.string(),
+	})
+		.index("by_status", ["status"])
+		.index("by_name", ["name"]),
+
+	platformLawyerAssignments: defineTable({
+		lawyerProfileId: v.id("lawyerProfiles"),
+		slaTierId: v.optional(v.id("platformLawyerSlaTiers")),
+		capacityLimit: v.number(),
+		recheckIntervalDays: v.number(),
+		nextRestrictionRecheckAt: v.number(),
+		lastRestrictionRecheckAt: v.optional(v.number()),
+		createdAt: v.number(),
+		createdBy: v.string(),
+		updatedAt: v.number(),
+		updatedBy: v.string(),
+	})
+		.index("by_lawyer_profile", ["lawyerProfileId"])
+		.index("by_next_recheck", ["nextRestrictionRecheckAt"]),
+
+	platformLawyerAvailabilityWindows: defineTable({
+		lawyerProfileId: v.id("lawyerProfiles"),
+		dayOfWeek: v.number(),
+		startMinute: v.number(),
+		endMinute: v.number(),
+		timezone: v.string(),
+		status: platformLawyerAvailabilityWindowStatusValidator,
+		createdAt: v.number(),
+		createdBy: v.string(),
+		updatedAt: v.number(),
+		updatedBy: v.string(),
+	})
+		.index("by_lawyer_status_day", ["lawyerProfileId", "status", "dayOfWeek"])
+		.index("by_lawyer", ["lawyerProfileId"]),
+
+	platformLawyerAvailabilityExceptions: defineTable({
+		lawyerProfileId: v.id("lawyerProfiles"),
+		businessDate: v.string(),
+		kind: platformLawyerAvailabilityExceptionKindValidator,
+		startMinute: v.optional(v.number()),
+		endMinute: v.optional(v.number()),
+		reason: v.optional(v.string()),
+		createdAt: v.number(),
+		createdBy: v.string(),
+		updatedAt: v.number(),
+		updatedBy: v.string(),
+	})
+		.index("by_lawyer_date", ["lawyerProfileId", "businessDate"])
+		.index("by_lawyer_kind_date", ["lawyerProfileId", "kind", "businessDate"]),
+
+	platformLawyerSlaReviews: defineTable({
+		lawyerProfileId: v.id("lawyerProfiles"),
+		dealId: v.id("deals"),
+		slaTierId: v.id("platformLawyerSlaTiers"),
+		status: platformLawyerSlaReviewStatusValidator,
+		startedAt: v.number(),
+		dueAt: v.number(),
+		completedAt: v.optional(v.number()),
+		breachedAt: v.optional(v.number()),
+		idempotencyKey: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_deal", ["dealId"])
+		.index("by_lawyer_status_due", ["lawyerProfileId", "status", "dueAt"])
+		.index("by_status_due", ["status", "dueAt"])
+		.index("by_idempotency", ["idempotencyKey"]),
+
+	platformLawyerMetrics: defineTable({
+		lawyerProfileId: v.id("lawyerProfiles"),
+		activeDealCount: v.number(),
+		completedDealCount: v.number(),
+		averageTurnaroundHours: v.optional(v.number()),
+		slaComplianceRate: v.optional(v.number()),
+		breachCount: v.number(),
+		capacityLimit: v.number(),
+		capacityWarningLevel: platformLawyerCapacityWarningLevelValidator,
+		calculatedAt: v.number(),
+	})
+		.index("by_lawyer_profile", ["lawyerProfileId"])
+		.index("by_warning", ["capacityWarningLevel"]),
+
+	platformLawyerEscalations: defineTable({
+		lawyerProfileId: v.id("lawyerProfiles"),
+		dealId: v.optional(v.id("deals")),
+		kind: platformLawyerEscalationKindValidator,
+		status: platformLawyerEscalationStatusValidator,
+		idempotencyKey: v.string(),
+		message: v.string(),
+		metadata: v.optional(v.record(v.string(), v.string())),
+		createdAt: v.number(),
+		createdBy: v.string(),
+		resolvedAt: v.optional(v.number()),
+		resolvedBy: v.optional(v.string()),
+	})
+		.index("by_lawyer_status", ["lawyerProfileId", "status"])
+		.index("by_deal_kind", ["dealId", "kind"])
+		.index("by_idempotency", ["idempotencyKey"]),
+
+	platformLawyerRestrictionRechecks: defineTable({
+		lawyerProfileId: v.id("lawyerProfiles"),
+		verificationId: v.optional(v.id("lawyerVerifications")),
+		status: platformLawyerRestrictionRecheckStatusValidator,
+		idempotencyKey: v.string(),
+		startedAt: v.number(),
+		completedAt: v.optional(v.number()),
+		error: v.optional(v.string()),
+	})
+		.index("by_lawyer_started", ["lawyerProfileId", "startedAt"])
+		.index("by_status_started", ["status", "startedAt"])
+		.index("by_idempotency", ["idempotencyKey"]),
 
 	lawyerVerifications: defineTable({
 		lawyerProfileId: v.optional(v.id("lawyerProfiles")),

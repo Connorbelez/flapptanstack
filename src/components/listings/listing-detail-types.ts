@@ -78,7 +78,17 @@ export interface ListingDocumentItem {
 }
 
 export interface ListingLawyerOption {
+	activeDealCount?: number;
+	availability?: Array<{
+		businessDate: string;
+		hasAvailability: boolean;
+		isOnHold: boolean;
+		label: string;
+		windows: readonly string[];
+	}>;
 	barNumber?: string | null;
+	capacityLimit?: number;
+	capacityWarning?: "approaching" | "full" | "none" | "over_capacity";
 	detail: string;
 	email?: string | null;
 	firm?: string | null;
@@ -87,6 +97,10 @@ export interface ListingLawyerOption {
 	label: string;
 	latestVerificationId?: string | null;
 	lawyerProfileId?: string;
+	slaTier?: {
+		name: string;
+		reviewHours: number;
+	} | null;
 	type: "guest_lawyer" | "platform_lawyer";
 }
 
