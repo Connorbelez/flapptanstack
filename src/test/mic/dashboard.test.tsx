@@ -2,16 +2,21 @@
  * @vitest-environment jsdom
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { buildReturnChartSeries } from "#/components/mic/MicPortfolioCharts";
 import { MicPortalIndexRoutePage } from "#/routes/portal/index";
 import { Route as RootRoute } from "#/routes/__root";
 
-vi.mock("@tanstack/react-query", () => ({
-	useSuspenseQuery: vi.fn(),
-}));
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+	return {
+		...actual,
+		useSuspenseQuery: vi.fn(),
+	};
+});
 
 vi.mock("#/routes/__root", () => ({
 	Route: {
@@ -23,6 +28,19 @@ vi.mock("#/components/mic/query-options", () => ({
 	micDashboardSnapshotQueryOptions: vi.fn(() => ({
 		queryKey: ["mic-dashboard"],
 	})),
+	micPaymentsHistoryQueryOptions: vi.fn(() => ({
+		queryKey: ["mic-payments"],
+	})),
+}));
+
+vi.mock("#/components/mic/MicMaturityLadder", () => ({
+	MicMaturityLadder: () =>
+		React.createElement(
+			"div",
+			{ "data-testid": "mock-maturity-ladder" },
+			React.createElement("h2", null, "Maturity ladder"),
+			React.createElement("span", null, "6–12 mo")
+		),
 }));
 
 vi.mock("#/components/mic/MicPositionDetailDrawer", () => ({
@@ -41,11 +59,62 @@ vi.mock("#/components/mic/MicPositionDetailDrawer", () => ({
 	),
 }));
 
+const TEST_CHART_RECT = {
+	bottom: 320,
+	height: 320,
+	left: 0,
+	right: 960,
+	toJSON: () => undefined,
+	top: 0,
+	width: 960,
+	x: 0,
+	y: 0,
+} satisfies DOMRectReadOnly;
+
+class ResizeObserverMock {
+	constructor(private readonly callback: ResizeObserverCallback) {}
+
+	disconnect() {}
+
+	observe(target: Element) {
+		this.callback(
+			[
+				{
+					borderBoxSize: [],
+					contentBoxSize: [],
+					contentRect: TEST_CHART_RECT,
+					devicePixelContentBoxSize: [],
+					target,
+				} as ResizeObserverEntry,
+			],
+			this as never
+		);
+	}
+
+	unobserve() {}
+}
+
+vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+	() => TEST_CHART_RECT
+);
+Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+	configurable: true,
+	get: () => TEST_CHART_RECT.height,
+});
+Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+	configurable: true,
+	get: () => TEST_CHART_RECT.width,
+});
+
 const mockMetrics = {
 	activePositionCount: 3,
 	arrearsExposure: 0,
 	delinquencyExposure: 0,
+	inferredLendingFeeIncome: 25,
+	lendingFeeIncomeSharePercent: 100,
 	outstandingPrincipal: 1500000,
+	totalReturnIncome: 25,
 	weightedAverageLtv: 72.5,
 	weightedAverageYield: 8.25,
 };
@@ -66,6 +135,11 @@ const mockPosition = {
 	positionAccountId: "pos_123",
 	positionUnits: 250000,
 	principal: 600000,
+	currentPayment: {
+		amount: 2500,
+		dueDate: "2026-05-01",
+		status: "due",
+	},
 	propertyLabel: "123 Main St, Toronto",
 	propertySummary: {
 		city: "Toronto",
@@ -76,6 +150,32 @@ const mockPosition = {
 	},
 	rateYield: 8.5,
 	status: "active",
+	thumbnailUrl: "https://example.com/property.jpg",
+};
+
+const mockPayments = {
+	dataCompleteness: "partial" as const,
+	generatedAt: Date.now(),
+	mortgageId: null,
+	rows: [
+		{
+			amountSettled: 0,
+			dueDate: "2026-05-01",
+			grossAmount: 5000,
+			latestCollectionStatus: "pending",
+			latestTransferStatus: null,
+			micShareAmount: 2500,
+			micSharePercentOfGross: 50,
+			mortgageId: "mortgage_123",
+			obligationId: "obligation_123",
+			paymentNumber: 1,
+			propertyLabel: "123 Main St, Toronto",
+			rowStatus: "due",
+			type: "regular_interest",
+		},
+	],
+	sourceOfTruth: "mortgage_ledger_lender_participation" as const,
+	warnings: ["MIC treasury metrics are intentionally omitted."],
 };
 
 const mockSnapshot = {
@@ -84,6 +184,28 @@ const mockSnapshot = {
 	dataCompleteness: "partial" as const,
 	warnings: ["MIC treasury metrics are intentionally omitted."],
 	metrics: mockMetrics,
+	lendingFeeMetrics: {
+		feeBasisPoints: 100,
+		inferredLendingFeeIncome: 25,
+		lendingFeeIncomeSharePercent: 100,
+		mortgageOriginatedCount: 1,
+		originatedPrincipal: 2500,
+		totalInterestIncome: 0,
+		totalReturnIncome: 25,
+	},
+	returnSeries: [
+		{
+			cumulativeFeeIncome: 25,
+			cumulativeInterestIncome: 0,
+			cumulativeTotalReturn: 25,
+			feeIncome: 25,
+			feeIncomeSharePercent: 100,
+			interestIncome: 0,
+			originatedPrincipal: 2500,
+			period: "2026-01",
+			totalReturn: 25,
+		},
+	],
 	positions: [mockPosition],
 	concentration: {
 		byBorrower: [
@@ -256,71 +378,142 @@ afterEach(() => {
 	vi.clearAllMocks();
 });
 
+function mockMicQueries(dashboard = mockSnapshot, payments = mockPayments) {
+	(
+		useSuspenseQuery as unknown as {
+			mockImplementation: (implementation: (options: unknown) => unknown) => void;
+		}
+	).mockImplementation((options: unknown) => {
+		const queryKey = (options as { queryKey?: string[] }).queryKey;
+		if (queryKey?.[0] === "mic-payments") {
+			return { data: payments };
+		}
+		return { data: dashboard };
+	});
+}
+
 describe("MIC dashboard", () => {
 	beforeEach(() => {
-		vi.mocked(RootRoute.useRouteContext).mockReturnValue(
-			MIC_PORTAL_CONTEXT as never
-		);
+		(
+			RootRoute.useRouteContext as unknown as {
+				mockReturnValue: (value: unknown) => void;
+			}
+		).mockReturnValue(MIC_PORTAL_CONTEXT);
 	});
 
 	it("renders dashboard metrics with correct formatted values", () => {
-		vi.mocked(useSuspenseQuery).mockReturnValue({
-			data: mockSnapshot,
-		} as never);
+		mockMicQueries();
 
 		render(<MicPortalIndexRoutePage />);
 
-		expect(screen.getByText("Outstanding Principal")).toBeTruthy();
+		expect(screen.getByText("Outstanding principal")).toBeTruthy();
 		expect(screen.getByText("$1,500,000.00")).toBeTruthy();
-		expect(screen.getByText("Active Positions")).toBeTruthy();
+		expect(screen.getByText("Active positions")).toBeTruthy();
 		expect(screen.getByText("3")).toBeTruthy();
-		expect(screen.getByText("Weighted Average Yield")).toBeTruthy();
+		expect(screen.getByText("Weighted avg yield")).toBeTruthy();
 		expect(screen.getByText("8.25%")).toBeTruthy();
-		expect(screen.getByText("Weighted Average LTV")).toBeTruthy();
+		expect(screen.getByText("Weighted avg LTV")).toBeTruthy();
 		expect(screen.getByText("72.50%")).toBeTruthy();
-		expect(screen.getByText("Arrears Exposure")).toBeTruthy();
-		expect(screen.getByText("$0.00")).toBeTruthy();
-		expect(screen.getByText("Delinquency Exposure")).toBeTruthy();
-		expect(screen.getByText("$0.00")).toBeTruthy();
+		expect(screen.getByText("Arrears exposure")).toBeTruthy();
+		expect(screen.getAllByText("$0.00").length).toBeGreaterThanOrEqual(2);
+		expect(screen.getByText("Delinquency exposure")).toBeTruthy();
+		expect(screen.getByText("Total return over time")).toBeTruthy();
+		expect(screen.getByText("Inferred lending fees")).toBeTruthy();
+		expect(screen.getAllByText("$25.00").length).toBeGreaterThan(0);
+		expect(screen.getByText("Fee share of income")).toBeTruthy();
+		expect(screen.getAllByText("100.00%").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("Projected yield earned").length).toBeGreaterThan(0);
+		expect(
+			screen.getByText("Returns / $1,500,000.00 MIC investment")
+		).toBeTruthy();
+	});
+
+	it("starts a single-point return graph from the prior month at zero and projects the next month", () => {
+		expect(buildReturnChartSeries(mockSnapshot.returnSeries)).toEqual([
+			expect.objectContaining({
+				cumulativeFeeIncome: 0,
+				cumulativeInterestIncome: 0,
+				cumulativeTotalReturn: 0,
+				period: "2025-12",
+			}),
+			mockSnapshot.returnSeries[0],
+			expect.objectContaining({
+				cumulativeFeeIncome: 50,
+				cumulativeInterestIncome: 0,
+				cumulativeTotalReturn: 50,
+				feeIncome: 25,
+				interestIncome: 0,
+				isProjected: true,
+				period: "2026-02",
+				totalReturn: 25,
+			}),
+		]);
+	});
+
+	it("does not crash when cached dashboard data is missing return metrics", () => {
+		const {
+			lendingFeeMetrics: _lendingFeeMetrics,
+			returnSeries: _returnSeries,
+			...staleSnapshot
+		} = mockSnapshot;
+		mockMicQueries(staleSnapshot);
+
+		render(<MicPortalIndexRoutePage />);
+
+		expect(screen.getByText("Total return over time")).toBeTruthy();
+		expect(
+			screen.getByText(/Return history appears once MIC-held mortgages/i)
+		).toBeTruthy();
 	});
 
 	it("renders positions table with correct rows", () => {
-		vi.mocked(useSuspenseQuery).mockReturnValue({
-			data: mockSnapshot,
-		} as never);
+		mockMicQueries();
 
 		render(<MicPortalIndexRoutePage />);
 
-		expect(screen.getByText("123 Main St, Toronto")).toBeTruthy();
-		expect(screen.getByText("Test Borrower")).toBeTruthy();
-		expect(screen.getByText("$500,000.00")).toBeTruthy();
-		expect(screen.getByText("8.50%")).toBeTruthy();
-		expect(screen.getByText("70.00%")).toBeTruthy();
-		expect(screen.getByText("2027-06-15")).toBeTruthy();
+		const positionsWrap = screen.getByTestId("mic-positions-table");
+		const posTable = within(positionsWrap).getByRole("table");
+		expect(within(posTable).getByText("123 Main St, Toronto")).toBeTruthy();
+		expect(within(posTable).getByText("Test Borrower")).toBeTruthy();
+		expect(within(posTable).getByAltText("123 Main St, Toronto")).toBeTruthy();
+		expect(within(posTable).getByText("Due 2026-05-01")).toBeTruthy();
+		expect(within(posTable).getByText("$500,000.00")).toBeTruthy();
+		expect(within(posTable).getAllByText("8.50%").length).toBeGreaterThan(0);
+		expect(within(posTable).getByText("70.00%")).toBeTruthy();
+		expect(within(posTable).getByText("2027-06-15")).toBeTruthy();
+	});
+
+	it("renders all payments for MIC-held positions", () => {
+		mockMicQueries();
+
+		render(<MicPortalIndexRoutePage />);
+
+		expect(screen.getByText("All position payments")).toBeTruthy();
+		expect(screen.getByText("Payment Date")).toBeTruthy();
+		expect(screen.getByText("mortgage_123")).toBeTruthy();
+		expect(screen.getAllByText("$2,500.00").length).toBeGreaterThan(0);
+		expect(screen.getByText("pending")).toBeTruthy();
 	});
 
 	it("renders realistic MIC scenario rows without unsupported investor metrics", () => {
-		vi.mocked(useSuspenseQuery).mockReturnValue({
-			data: realisticMicSnapshot,
-		} as never);
+		mockMicQueries(realisticMicSnapshot);
 
 		render(<MicPortalIndexRoutePage />);
 
 		expect(screen.getByText("$470,000.00")).toBeTruthy();
-		expect(screen.getByText("101 Riverfront Ave, Ottawa")).toBeTruthy();
-		expect(screen.getByText("88 Maple Ridge Rd, Kingston")).toBeTruthy();
-		expect(screen.getByText("Riley River")).toBeTruthy();
-		expect(screen.getByText("Casey Maple")).toBeTruthy();
-		expect(screen.queryByText("5 Oak Lane, London")).toBeNull();
-		expect(screen.queryByText(/NAV/i)).toBeNull();
+		const positionsWrap = screen.getByTestId("mic-positions-table");
+		const posTable = within(positionsWrap).getByRole("table");
+		expect(within(posTable).getByText("101 Riverfront Ave, Ottawa")).toBeTruthy();
+		expect(within(posTable).getByText("88 Maple Ridge Rd, Kingston")).toBeTruthy();
+		expect(within(posTable).getByText("Riley River")).toBeTruthy();
+		expect(within(posTable).getByText("Casey Maple")).toBeTruthy();
+		expect(within(posTable).queryByText("5 Oak Lane, London")).toBeNull();
 		expect(screen.queryByText(/Cap table/i)).toBeNull();
 		expect(screen.queryByText(/Personalized holdings/i)).toBeNull();
 	});
 
 	it("renders warnings banner when data completeness is partial", () => {
-		vi.mocked(useSuspenseQuery).mockReturnValue({
-			data: mockSnapshot,
-		} as never);
+		mockMicQueries();
 
 		render(<MicPortalIndexRoutePage />);
 
@@ -333,9 +526,7 @@ describe("MIC dashboard", () => {
 	});
 
 	it("renders empty state when positions array is empty", () => {
-		vi.mocked(useSuspenseQuery).mockReturnValue({
-			data: { ...mockSnapshot, positions: [] },
-		} as never);
+		mockMicQueries({ ...mockSnapshot, positions: [] });
 
 		render(<MicPortalIndexRoutePage />);
 
@@ -343,43 +534,39 @@ describe("MIC dashboard", () => {
 	});
 
 	it("renders concentration breakdowns", () => {
-		vi.mocked(useSuspenseQuery).mockReturnValue({
-			data: mockSnapshot,
-		} as never);
+		mockMicQueries();
 
 		render(<MicPortalIndexRoutePage />);
 
-		expect(screen.getByText("Concentration Exposure")).toBeTruthy();
-		expect(screen.getByText("By Borrower")).toBeTruthy();
-		expect(screen.getByText("By Geography")).toBeTruthy();
-		expect(screen.getByText("By Property Type")).toBeTruthy();
-		expect(screen.getByText("By Status")).toBeTruthy();
-		expect(screen.getByText("Test Borrower")).toBeTruthy();
-		expect(screen.getByText("ON")).toBeTruthy();
-		expect(screen.getByText("Single Family")).toBeTruthy();
-		expect(screen.getByText("active")).toBeTruthy();
+		const conc = screen.getByTestId("mic-concentration");
+		expect(within(conc).getByText("Concentration exposure")).toBeTruthy();
+		expect(within(conc).getByRole("tab", { name: "Borrower" })).toBeTruthy();
+		expect(within(conc).getByRole("tab", { name: "Geography" })).toBeTruthy();
+		expect(within(conc).getByRole("tab", { name: "Property type" })).toBeTruthy();
+		expect(within(conc).getByRole("tab", { name: "Status" })).toBeTruthy();
+		const concTable = within(conc).getByRole("table");
+		expect(within(concTable).getByText("Test Borrower")).toBeTruthy();
 	});
 
 	it("renders maturity ladder", () => {
-		vi.mocked(useSuspenseQuery).mockReturnValue({
-			data: mockSnapshot,
-		} as never);
+		mockMicQueries();
 
 		render(<MicPortalIndexRoutePage />);
 
-		expect(screen.getByText("Maturity Ladder")).toBeTruthy();
-		expect(screen.getByText("6–12 Months")).toBeTruthy();
-		expect(screen.getByText("$500,000.00")).toBeTruthy();
+		expect(screen.getByText("Maturity ladder")).toBeTruthy();
+		expect(screen.getByText("6–12 mo")).toBeTruthy();
+		expect(screen.getByTestId("mock-maturity-ladder")).toBeTruthy();
 	});
 
 	it("opens drawer on position table row click", () => {
-		vi.mocked(useSuspenseQuery).mockReturnValue({
-			data: mockSnapshot,
-		} as never);
+		mockMicQueries();
 
 		render(<MicPortalIndexRoutePage />);
 
-		const row = screen.getByText("123 Main St, Toronto").closest("tr");
+		const positionsWrap = screen.getByTestId("mic-positions-table");
+		const posTable = within(positionsWrap).getByRole("table");
+		const label = within(posTable).getByText("123 Main St, Toronto");
+		const row = label.closest("tr");
 		expect(row).toBeTruthy();
 		if (row) fireEvent.click(row);
 

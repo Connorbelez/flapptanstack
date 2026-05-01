@@ -135,7 +135,7 @@ export function PdfDesigner({
 
 	return (
 		<div
-			className={`h-[700px] w-full min-w-0 max-w-full overflow-hidden rounded-md border ${className ?? ""}`}
+			className={`h-[700px] w-full min-w-0 max-w-full overflow-hidden rounded-md border [contain:layout_paint] ${className ?? ""}`}
 			data-testid="pdfme-designer"
 			ref={containerRef}
 		/>

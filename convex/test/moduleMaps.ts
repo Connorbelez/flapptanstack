@@ -130,6 +130,16 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../components/auditTrail/schema.ts"),
 	"/convex/constants.ts": async () => await import("./../constants.ts"),
 	"/convex/convex.config.ts": async () => await import("./../convex.config.ts"),
+	"/convex/legalRepresentation/availability.ts": async () =>
+		await import("./../legalRepresentation/availability.ts"),
+	"/convex/legalRepresentation/sla.ts": async () =>
+		await import("./../legalRepresentation/sla.ts"),
+	"legalRepresentation/availability": async () =>
+		await import("./../legalRepresentation/availability.ts"),
+	"legalRepresentation/platformLawyers": async () =>
+		await import("./../legalRepresentation/platformLawyers.ts"),
+	"legalRepresentation/sla": async () =>
+		await import("./../legalRepresentation/sla.ts"),
 	"/convex/crm/activityQueries.ts": async () =>
 		await import("./../crm/activityQueries.ts"),
 	"/convex/crm/calendarQuery.ts": async () =>
