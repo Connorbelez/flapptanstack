@@ -13,6 +13,7 @@ import {
 	Users,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { LegalRepresentationStatusPanel } from "#/components/legal-representation/LegalRepresentationStatusPanel";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { api } from "../../../../convex/_generated/api";
@@ -267,6 +268,20 @@ export function DealOperationsConsole({
 			>
 				<BlockersPanel detail={detail} />
 			</Section>
+
+			{detail.legalRepresentation.showInDealViews ? (
+				<Section
+					description="Invitation, verification, access, and representation-management status."
+					icon={<Users className="size-5" />}
+					title="Legal Representation"
+				>
+					<LegalRepresentationStatusPanel
+						dealId={detail.deal.dealId}
+						projection={detail.legalRepresentation}
+						surface="admin"
+					/>
+				</Section>
+			) : null}
 
 			<Section
 				description="Normalized buyer, seller, lawyer, and scoped deal access from server contracts."

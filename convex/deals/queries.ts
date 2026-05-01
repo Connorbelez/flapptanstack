@@ -12,6 +12,10 @@ import { dealMachine } from "../engine/machines/deal.machine";
 import { deserializeState, serializeState } from "../engine/serialization";
 import { adminQuery, authedQuery, dealQuery } from "../fluent";
 import {
+	buildLegalRepresentationStatusProjection,
+	type LegalRepresentationStatusProjection,
+} from "../legalRepresentation/status";
+import {
 	projectFundsSourceForAdmin,
 	type projectFundsSourceForParticipant,
 	type SignedArchiveStatus,
@@ -185,6 +189,7 @@ export interface AdminDealOperationsCard {
 	filters: AdminDealOperationsFilter[];
 	fractionalShareDisplayPercent: number | null;
 	fractionalShareUnits: number;
+	legalRepresentation: LegalRepresentationStatusProjection;
 	lifecycle: {
 		phase: DealPhase;
 		status: string;
@@ -248,6 +253,7 @@ export interface AdminDealOperationsDetail {
 	};
 	documentInstances: PortalDealDocumentInstance[];
 	documentPackage: PortalDealDocumentPackage | null;
+	legalRepresentation: LegalRepresentationStatusProjection;
 	lifecycle: {
 		phase: DealPhase;
 		status: string;
@@ -480,6 +486,7 @@ export interface ParticipantDealWorkspace {
 	};
 	documentInstances: PortalDealDocumentInstance[];
 	documentPackage: PortalDealDocumentPackage | null;
+	legalRepresentation: LegalRepresentationStatusProjection;
 	mortgage: PortalDealDetail["mortgage"];
 	nextAction: string;
 	participants: DealParticipantProjection;
@@ -1113,6 +1120,7 @@ async function buildAdminDealOperationsDetail(
 		closeEvidence,
 		access,
 		auditTimeline,
+		legalRepresentation,
 	] = await Promise.all([
 		mortgage ? ctx.db.get(mortgage.propertyId) : Promise.resolve(null),
 		buildDealParticipantProjection(ctx, deal),
@@ -1123,6 +1131,7 @@ async function buildAdminDealOperationsDetail(
 		readCloseEvidenceProjection(ctx, deal._id),
 		readDealAccessProjection(ctx, deal._id),
 		readAuditTimeline(ctx, deal._id),
+		buildLegalRepresentationStatusProjection(ctx, { deal }),
 	]);
 	const signing = await readAdminSigningProjection(ctx, deal._id);
 	const blockers = buildAdminDealBlockers({
@@ -1165,6 +1174,7 @@ async function buildAdminDealOperationsDetail(
 			status: deal.status,
 			subState: subStateForStatus(deal.status),
 		},
+		legalRepresentation,
 		mortgage: mortgage
 			? {
 					maturityDate: mortgage.maturityDate,
@@ -1218,6 +1228,7 @@ async function buildAdminDealOperationsCard(
 		fractionalShareDisplayPercent:
 			detail.participants.fractionalShareDisplayPercent,
 		fractionalShareUnits: detail.participants.fractionalShareUnits,
+		legalRepresentation: detail.legalRepresentation,
 		lifecycle: detail.lifecycle,
 		mortgageId: deal.mortgageId,
 		nextAction: primaryActions[0] ?? null,
@@ -2002,13 +2013,19 @@ async function buildParticipantDealWorkspace(
 		return null;
 	}
 
-	const [property, participants, packageSurface, closeEvidence] =
-		await Promise.all([
-			ctx.db.get(mortgage.propertyId),
-			buildDealParticipantProjection(ctx, deal),
-			readDealDocumentPackageSurface(ctx, deal._id),
-			readCloseEvidenceProjection(ctx, deal._id),
-		]);
+	const [
+		property,
+		participants,
+		packageSurface,
+		closeEvidence,
+		legalRepresentation,
+	] = await Promise.all([
+		ctx.db.get(mortgage.propertyId),
+		buildDealParticipantProjection(ctx, deal),
+		readDealDocumentPackageSurface(ctx, deal._id),
+		readCloseEvidenceProjection(ctx, deal._id),
+		buildLegalRepresentationStatusProjection(ctx, { deal }),
+	]);
 	const signing = await readParticipantSigningTask(ctx, {
 		dealId: deal._id,
 		packageSurface,
@@ -2061,6 +2078,7 @@ async function buildParticipantDealWorkspace(
 		},
 		documentInstances: projectedDocuments,
 		documentPackage,
+		legalRepresentation,
 		mortgage: {
 			interestRate: mortgage.interestRate,
 			maturityDate: mortgage.maturityDate,

@@ -226,10 +226,12 @@ import type * as legalRepresentation_engagements from "../legalRepresentation/en
 import type * as legalRepresentation_fixtures from "../legalRepresentation/fixtures.js";
 import type * as legalRepresentation_gates from "../legalRepresentation/gates.js";
 import type * as legalRepresentation_invitations from "../legalRepresentation/invitations.js";
+import type * as legalRepresentation_management from "../legalRepresentation/management.js";
 import type * as legalRepresentation_normalization from "../legalRepresentation/normalization.js";
 import type * as legalRepresentation_platformLawyers from "../legalRepresentation/platformLawyers.js";
 import type * as legalRepresentation_profiles from "../legalRepresentation/profiles.js";
 import type * as legalRepresentation_providers from "../legalRepresentation/providers.js";
+import type * as legalRepresentation_status from "../legalRepresentation/status.js";
 import type * as legalRepresentation_tokenUtils from "../legalRepresentation/tokenUtils.js";
 import type * as legalRepresentation_validators from "../legalRepresentation/validators.js";
 import type * as legalRepresentation_verifications from "../legalRepresentation/verifications.js";
@@ -692,10 +694,12 @@ declare const fullApi: ApiFromModules<{
   "legalRepresentation/fixtures": typeof legalRepresentation_fixtures;
   "legalRepresentation/gates": typeof legalRepresentation_gates;
   "legalRepresentation/invitations": typeof legalRepresentation_invitations;
+  "legalRepresentation/management": typeof legalRepresentation_management;
   "legalRepresentation/normalization": typeof legalRepresentation_normalization;
   "legalRepresentation/platformLawyers": typeof legalRepresentation_platformLawyers;
   "legalRepresentation/profiles": typeof legalRepresentation_profiles;
   "legalRepresentation/providers": typeof legalRepresentation_providers;
+  "legalRepresentation/status": typeof legalRepresentation_status;
   "legalRepresentation/tokenUtils": typeof legalRepresentation_tokenUtils;
   "legalRepresentation/validators": typeof legalRepresentation_validators;
   "legalRepresentation/verifications": typeof legalRepresentation_verifications;
