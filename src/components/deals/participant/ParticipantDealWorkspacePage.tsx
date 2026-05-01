@@ -12,6 +12,7 @@ import {
 	Users,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
+import { LegalRepresentationStatusPanel } from "#/components/legal-representation/LegalRepresentationStatusPanel";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -104,6 +105,14 @@ export function ParticipantDealWorkspacePage({
 					value={formatDate(workspace.deal.closingDate)}
 				/>
 			</div>
+
+			{backTo === "/lender/deals" ? (
+				<LegalRepresentationStatusPanel
+					dealId={workspace.deal.dealId}
+					projection={workspace.legalRepresentation}
+					surface="lender"
+				/>
+			) : null}
 
 			<div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
 				<Panel

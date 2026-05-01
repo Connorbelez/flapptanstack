@@ -36,6 +36,12 @@ type GuestSelectedLawyerSnapshot = Extract<
 	{ type: "guest_lawyer" }
 >;
 
+export interface GuestInvitationDeliveryResult {
+	readonly invitationId: Id<"lawyerInvitations">;
+	readonly inviteUrl: string;
+	readonly token: string;
+}
+
 export type InvitationAcceptResult =
 	| {
 			readonly status: "verified";
@@ -152,6 +158,17 @@ async function revokeActiveInvitationsForDeal(
 	}
 }
 
+export async function revokeActiveGuestInvitationsForDeal(
+	ctx: LegalRepresentationMutationCtx,
+	args: {
+		readonly dealId: Id<"deals">;
+		readonly exceptInvitationId?: Id<"lawyerInvitations">;
+		readonly now: number;
+	}
+) {
+	await revokeActiveInvitationsForDeal(ctx, args);
+}
+
 async function getInvitationByToken(
 	ctx: LegalRepresentationQueryCtx,
 	token: string
@@ -170,6 +187,24 @@ function selectedLawyerFromInvitation(
 		throw new ConvexError("Invitation is not for a guest lawyer");
 	}
 	return invitation.selectedLawyerSnapshot;
+}
+
+export async function getLatestGuestInvitationForDeal(
+	ctx: LegalRepresentationQueryCtx,
+	dealId: Id<"deals">
+): Promise<Doc<"lawyerInvitations"> | null> {
+	const rows = await ctx.db
+		.query("lawyerInvitations")
+		.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+		.collect();
+	return (
+		rows.sort((left, right) => {
+			if (right.updatedAt !== left.updatedAt) {
+				return right.updatedAt - left.updatedAt;
+			}
+			return right.createdAt - left.createdAt;
+		})[0] ?? null
+	);
 }
 
 async function findProfileByAuthId(
@@ -445,6 +480,59 @@ async function revokeProvisionalEmailAccess(
 	}
 }
 
+export async function createGuestInvitationDelivery(
+	ctx: LegalRepresentationMutationCtx & {
+		readonly viewer?: { readonly authId: string };
+	},
+	args: {
+		readonly baseUrl?: string;
+		readonly createdBy?: string;
+		readonly deal: Doc<"deals">;
+		readonly expiresAt?: number;
+		readonly now: number;
+		readonly selectedLawyer?: GuestSelectedLawyerSnapshot;
+		readonly targetEmail?: string;
+		readonly ttlMs?: number;
+	}
+): Promise<GuestInvitationDeliveryResult> {
+	const selectedLawyer =
+		args.selectedLawyer ?? selectedLawyerFromDeal(args.deal);
+	const targetEmail = requiredText(
+		args.targetEmail ?? selectedLawyer.email,
+		"selectedLawyer.email"
+	);
+	const normalizedTargetEmail = normalizeLawyerEmail(targetEmail);
+	const token = await generateInvitationToken();
+	const selectedLawyerSnapshot = {
+		...selectedLawyer,
+		email: targetEmail,
+	};
+	const invitationId = await ctx.db.insert("lawyerInvitations", {
+		createdAt: args.now,
+		createdBy:
+			args.createdBy ?? ctx.viewer?.authId ?? `system:${String(args.deal._id)}`,
+		dealId: args.deal._id,
+		expiresAt:
+			args.expiresAt ??
+			calculateInvitationExpiry({
+				now: args.now,
+				ttlMs: args.ttlMs ?? DEFAULT_INVITATION_TTL_MS,
+			}),
+		lsoLawyerId: lsoLawyerIdFromSnapshot(selectedLawyerSnapshot),
+		normalizedTargetEmail,
+		selectedLawyerSnapshot,
+		status: "pending",
+		targetEmail,
+		tokenHash: token.tokenHash,
+		updatedAt: args.now,
+	});
+	return {
+		invitationId,
+		inviteUrl: inviteUrl({ baseUrl: args.baseUrl, token: token.token }),
+		token: token.token,
+	};
+}
+
 export const getInvitationStatusByToken = convex
 	.query()
 	.input({ now: v.optional(v.number()), token: v.string() })
@@ -496,28 +584,14 @@ export const createGuestInvitationForDeal = adminMutation
 			dealId: deal._id,
 			now,
 		});
-		const token = await generateInvitationToken();
-		const invitationId = await ctx.db.insert("lawyerInvitations", {
-			createdAt: now,
-			createdBy: ctx.viewer.authId,
-			dealId: deal._id,
-			expiresAt: calculateInvitationExpiry({
-				now,
-				ttlMs: args.ttlMs ?? DEFAULT_INVITATION_TTL_MS,
-			}),
-			lsoLawyerId: lsoLawyerIdFromSnapshot(selectedLawyer),
-			normalizedTargetEmail,
-			selectedLawyerSnapshot: selectedLawyer,
-			status: "pending",
+		return await createGuestInvitationDelivery(ctx, {
+			baseUrl: args.baseUrl,
+			deal,
+			now,
+			selectedLawyer,
 			targetEmail,
-			tokenHash: token.tokenHash,
-			updatedAt: now,
+			ttlMs: args.ttlMs,
 		});
-		return {
-			invitationId,
-			inviteUrl: inviteUrl({ baseUrl: args.baseUrl, token: token.token }),
-			token: token.token,
-		};
 	})
 	.public();
 
@@ -542,10 +616,13 @@ export const resendGuestInvitation = adminMutation
 		const token = await generateInvitationToken();
 		await ctx.db.patch(invitation._id, {
 			acceptedAt: undefined,
-			expiresAt: calculateInvitationExpiry({
-				now,
-				ttlMs: args.ttlMs ?? DEFAULT_INVITATION_TTL_MS,
-			}),
+			expiresAt:
+				args.ttlMs === undefined
+					? invitation.expiresAt
+					: calculateInvitationExpiry({
+							now,
+							ttlMs: args.ttlMs,
+						}),
 			resolvedAuthId: undefined,
 			status: "pending",
 			tokenHash: token.tokenHash,

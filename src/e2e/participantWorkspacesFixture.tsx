@@ -91,6 +91,45 @@ const baseWorkspace: ParticipantDealWorkspace = {
 		retryCount: 0,
 		status: "ready",
 	},
+	legalRepresentation: {
+		actions: {
+			changeGuestEmail: {
+				allowed: false,
+				reason: "Representation is already confirmed for this deal.",
+			},
+			replaceLawyer: {
+				allowed: false,
+				reason: "Representation is already confirmed for this deal.",
+			},
+			resendInvitation: {
+				allowed: false,
+				reason: "Only pending, unexpired guest invitations can be resent.",
+			},
+		},
+		activeLawyerAccessCount: 1,
+		currentInvitation: {
+			acceptedAt: null,
+			expiresAt: null,
+			invitationId: null,
+			status: "none",
+			targetEmail: null,
+			updatedAt: null,
+		},
+		gate: {
+			message: "Legal representation gate is satisfied.",
+			reasonCodes: [],
+		},
+		kind: "confirmed",
+		label: "Representation confirmed",
+		selectedLawyer: {
+			email: "lawyer@test.fairlend.ca",
+			lawyerId: "lawyer-auth",
+			name: "Laura Lawyer",
+			type: "guest_lawyer",
+		},
+		showInDealViews: false,
+		summary: "Laura Lawyer has confirmed representation for this deal.",
+	},
 	mortgage: {
 		interestRate: 9.5,
 		maturityDate: "2031-01-01",
