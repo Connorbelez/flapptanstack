@@ -1,10 +1,17 @@
 import { ConvexError, v } from "convex/values";
-import { authedQuery } from "../fluent";
+import { authedQuery, convex } from "../fluent";
 import {
 	assertFileWorkspaceCapability,
 	resolveFileWorkspacePrincipal,
 } from "./access";
+import {
+	collectBreadcrumbs,
+	getCurrentVisibleVersion,
+	hasDeletedAncestor,
+	requireActiveFolder,
+} from "./helpers";
 import { participantKeyForAuthId, participantKeyForEmail } from "./identity";
+import { insertFileWorkspaceSecurityEvent } from "./operations";
 import { FILE_WORKSPACE_SAFE_ERRORS } from "./securityEvents";
 
 interface BoxIndexSummary {
@@ -202,6 +209,149 @@ export const getCapabilityPreview = authedQuery
 				resolved.principal.kind === "authenticated"
 					? resolved.principal.role
 					: resolved.principal.kind,
+		};
+	})
+	.public();
+
+async function summarizeNodeForTree(
+	ctx: Parameters<typeof resolveFileWorkspacePrincipal>[0],
+	node: {
+		_id: string;
+		createdAt: number;
+		currentVersionId?: string;
+		displayName: string;
+		isRoot: boolean;
+		nodeType: "file" | "folder";
+		updatedAt: number;
+	}
+) {
+	const currentVersion =
+		node.nodeType === "file"
+			? await getCurrentVisibleVersion({
+					ctx,
+					node: node as never,
+				})
+			: null;
+	return {
+		createdAt: node.createdAt,
+		currentVersion: currentVersion
+			? {
+					contentType: currentVersion.contentType,
+					scanState: currentVersion.scanState,
+					sizeBytes: currentVersion.sizeBytes,
+					versionId: currentVersion._id,
+					versionNumber: currentVersion.versionNumber,
+				}
+			: null,
+		displayName: node.displayName,
+		isRoot: node.isRoot,
+		nodeId: node._id,
+		nodeType: node.nodeType,
+		updatedAt: node.updatedAt,
+	};
+}
+
+export const listNodes = authedQuery
+	.input({
+		boxId: v.id("fileBoxes"),
+		parentNodeId: v.id("fileNodes"),
+	})
+	.handler(async (ctx, args) => {
+		const resolved = await resolveFileWorkspacePrincipal(ctx, {
+			boxId: args.boxId,
+			viewer: ctx.viewer,
+		});
+		if (!resolved) {
+			throw new ConvexError(FILE_WORKSPACE_SAFE_ERRORS.ACCESS_DENIED);
+		}
+		assertFileWorkspaceCapability({
+			capability: "list_nodes",
+			principal: resolved.principal,
+		});
+		const parent = await requireActiveFolder(ctx, {
+			boxId: args.boxId,
+			nodeId: args.parentNodeId,
+		});
+		const children = await ctx.db
+			.query("fileNodes")
+			.withIndex("by_box_parent", (query) =>
+				query
+					.eq("boxId", args.boxId)
+					.eq("parentId", args.parentNodeId)
+					.eq("deletedAt", undefined)
+			)
+			.collect();
+		const visibleChildren: Awaited<ReturnType<typeof summarizeNodeForTree>>[] =
+			[];
+		for (const child of children) {
+			if (!(await hasDeletedAncestor({ ctx, node: child }))) {
+				visibleChildren.push(await summarizeNodeForTree(ctx, child));
+			}
+		}
+		return {
+			breadcrumbs: await collectBreadcrumbs({ ctx, node: parent }),
+			boxId: args.boxId,
+			nodes: visibleChildren.sort((left, right) => {
+				if (left.nodeType !== right.nodeType) {
+					return left.nodeType === "folder" ? -1 : 1;
+				}
+				return left.displayName.localeCompare(right.displayName);
+			}),
+			parentNodeId: args.parentNodeId,
+			principalKind: resolved.principal.kind,
+		};
+	})
+	.public();
+
+export const listBearerNodes = convex
+	.mutation()
+	.input({
+		parentNodeId: v.id("fileNodes"),
+		rawToken: v.string(),
+	})
+	.handler(async (ctx, args) => {
+		const resolved = await resolveFileWorkspacePrincipal(ctx, {
+			rawToken: args.rawToken,
+		});
+		if (!resolved) {
+			throw new ConvexError(FILE_WORKSPACE_SAFE_ERRORS.ACCESS_DENIED);
+		}
+		await insertFileWorkspaceSecurityEvent(ctx, {
+			boxId: resolved.box._id,
+			eventType: "link_opened",
+			linkId: resolved.link?._id,
+			outcome: "allowed",
+			principal: resolved.principal,
+		});
+		const parent = await requireActiveFolder(ctx, {
+			boxId: resolved.box._id,
+			nodeId: args.parentNodeId,
+		});
+		const children = await ctx.db
+			.query("fileNodes")
+			.withIndex("by_box_parent", (query) =>
+				query
+					.eq("boxId", resolved.box._id)
+					.eq("parentId", args.parentNodeId)
+					.eq("deletedAt", undefined)
+			)
+			.collect();
+		const visibleChildren: Awaited<ReturnType<typeof summarizeNodeForTree>>[] =
+			[];
+		for (const child of children) {
+			if (!(await hasDeletedAncestor({ ctx, node: child }))) {
+				const summarized = await summarizeNodeForTree(ctx, child);
+				if (summarized.nodeType === "folder" || summarized.currentVersion) {
+					visibleChildren.push(summarized);
+				}
+			}
+		}
+		return {
+			breadcrumbs: await collectBreadcrumbs({ ctx, node: parent }),
+			boxId: resolved.box._id,
+			linkKind: resolved.principal.kind,
+			nodes: visibleChildren,
+			parentNodeId: args.parentNodeId,
 		};
 	})
 	.public();

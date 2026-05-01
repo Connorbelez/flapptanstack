@@ -158,10 +158,11 @@ export async function insertFileWorkspaceActivity(
 	args: {
 		boxId: Id<"fileBoxes">;
 		eventType: FileActivityEventType;
+		metadata?: Record<string, string>;
 		nodeId?: Id<"fileNodes">;
 		principal: FileWorkspacePrincipal;
 		targetId?: string;
-		targetType: "box" | "node" | "participant";
+		targetType: "box" | "comment" | "node" | "participant" | "tag" | "version";
 	}
 ): Promise<Id<"fileActivityEvents">> {
 	const event = createFileWorkspaceActivityForPrincipal(args.principal, {
@@ -178,6 +179,7 @@ export async function insertFileWorkspaceActivity(
 		boxId: args.boxId,
 		createdAt: event.createdAt,
 		eventType: event.eventType,
+		metadata: args.metadata,
 		nodeId: args.nodeId,
 		targetId: event.targetId,
 		targetType: event.targetType,
@@ -189,6 +191,9 @@ export async function insertFileWorkspaceSecurityEvent(
 	args: {
 		boxId?: Id<"fileBoxes">;
 		eventType: FileSecurityEventType;
+		linkId?: Id<"fileShareLinks">;
+		metadata?: Record<string, string>;
+		nodeId?: Id<"fileNodes">;
 		outcome: "allowed" | "denied" | "blocked";
 		principal: FileWorkspacePrincipal;
 		reasonCode?: string;
@@ -199,6 +204,9 @@ export async function insertFileWorkspaceSecurityEvent(
 		boxId: args.boxId,
 		createdAt: currentFileWorkspaceTime(),
 		eventType: args.eventType,
+		linkId: args.linkId,
+		metadata: args.metadata,
+		nodeId: args.nodeId,
 		outcome: args.outcome,
 		reasonCode: args.reasonCode,
 	});
@@ -208,6 +216,9 @@ export async function insertFileWorkspaceSecurityEvent(
 		boxId: args.boxId,
 		createdAt: event.createdAt,
 		eventType: event.eventType,
+		linkId: args.linkId,
+		metadata: args.metadata,
+		nodeId: args.nodeId,
 		outcome: event.outcome,
 		reasonCode: event.reasonCode,
 	});

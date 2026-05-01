@@ -131,6 +131,7 @@ export const fileActivityEventTypeValidator = v.union(
 	v.literal("tag_assigned"),
 	v.literal("node_deleted"),
 	v.literal("node_restored"),
+	v.literal("node_permanently_deleted"),
 	v.literal("participant_invited"),
 	v.literal("participant_role_changed"),
 	v.literal("participant_removed")
@@ -151,6 +152,8 @@ export const fileSecurityEventTypeValidator = v.union(
 	v.literal("scan_state_changed"),
 	v.literal("scan_error_released"),
 	v.literal("retention_policy_changed"),
+	v.literal("retention_delete_blocked"),
+	v.literal("node_permanently_deleted"),
 	v.literal("access_denied")
 );
 
