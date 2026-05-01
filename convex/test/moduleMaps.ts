@@ -110,12 +110,28 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../fileWorkspace/scanActions.ts"),
 	"/convex/fileWorkspace/scanMutations.ts": async () =>
 		await import("./../fileWorkspace/scanMutations.ts"),
+	"/convex/fileWorkspace/scanScheduling.ts": async () =>
+		await import("./../fileWorkspace/scanScheduling.ts"),
 	"/convex/fileWorkspace/boxes.ts": async () =>
 		await import("./../fileWorkspace/boxes.ts"),
+	"/convex/fileWorkspace/comments.ts": async () =>
+		await import("./../fileWorkspace/comments.ts"),
+	"/convex/fileWorkspace/helpers.ts": async () =>
+		await import("./../fileWorkspace/helpers.ts"),
+	"/convex/fileWorkspace/nodes.ts": async () =>
+		await import("./../fileWorkspace/nodes.ts"),
 	"/convex/fileWorkspace/participants.ts": async () =>
 		await import("./../fileWorkspace/participants.ts"),
+	"/convex/fileWorkspace/retention.ts": async () =>
+		await import("./../fileWorkspace/retention.ts"),
 	"/convex/fileWorkspace/shareLinks.ts": async () =>
 		await import("./../fileWorkspace/shareLinks.ts"),
+	"/convex/fileWorkspace/tags.ts": async () =>
+		await import("./../fileWorkspace/tags.ts"),
+	"/convex/fileWorkspace/uploads.ts": async () =>
+		await import("./../fileWorkspace/uploads.ts"),
+	"/convex/fileWorkspace/versions.ts": async () =>
+		await import("./../fileWorkspace/versions.ts"),
 	"/convex/fileWorkspace/readModels.ts": async () =>
 		await import("./../fileWorkspace/readModels.ts"),
 	"/convex/fileWorkspace/identity.ts": async () =>

@@ -59,6 +59,7 @@ export const FILE_ACTIVITY_EVENT_TYPES = [
 	"tag_assigned",
 	"node_deleted",
 	"node_restored",
+	"node_permanently_deleted",
 	"participant_invited",
 	"participant_role_changed",
 	"participant_removed",
@@ -80,6 +81,8 @@ export const FILE_SECURITY_EVENT_TYPES = [
 	"scan_state_changed",
 	"scan_error_released",
 	"retention_policy_changed",
+	"retention_delete_blocked",
+	"node_permanently_deleted",
 	"access_denied",
 ] as const;
 export type FileSecurityEventType = (typeof FILE_SECURITY_EVENT_TYPES)[number];

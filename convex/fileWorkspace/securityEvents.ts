@@ -10,7 +10,9 @@ export const FILE_WORKSPACE_SAFE_ERRORS = {
 	DOWNLOADS_DISABLED: "Downloads are disabled for this link.",
 	FILE_STILL_SCANNING: "This file is still being scanned.",
 	FILE_TYPE_NOT_ALLOWED: "This file type is not allowed by workspace policy.",
+	FILE_VERSION_BLOCKED: "This file is not available for preview or download.",
 	LINK_EXPIRED: "This link has expired.",
+	NODE_NOT_FOUND: "File or folder not found.",
 	PERMANENT_DELETE_BLOCKED:
 		"Permanent deletion is blocked by retention policy.",
 	SCAN_UNVERIFIED: "This upload could not be verified and remains blocked.",

@@ -100,6 +100,10 @@ export const applyScanResult = convex
 				sha256: args.result.sha256,
 				sizeBytes: args.result.sizeBytes,
 			});
+			await ctx.db.patch(version.nodeId, {
+				currentVersionId: args.versionId,
+				updatedAt: now,
+			});
 		} else {
 			await ctx.db.patch(args.versionId, {
 				scanCompletedAt: now,
@@ -162,6 +166,10 @@ export const releaseScanError = adminMutation
 			releasedByAuthId: ctx.viewer.authId,
 			releaseReason: reason,
 			scanState: "released_by_admin",
+		});
+		await ctx.db.patch(version.nodeId, {
+			currentVersionId: args.versionId,
+			updatedAt: now,
 		});
 
 		await recordScanSecurityEvent({
