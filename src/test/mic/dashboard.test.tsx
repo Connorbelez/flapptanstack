@@ -6,7 +6,10 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { buildReturnChartSeries } from "#/components/mic/MicPortfolioCharts";
+import {
+	buildReturnAnalytics,
+	buildReturnChartSeries,
+} from "#/components/mic/MicPortfolioCharts";
 import { MicPortalIndexRoutePage } from "#/routes/portal/index";
 import { Route as RootRoute } from "#/routes/__root";
 
@@ -424,8 +427,9 @@ describe("MIC dashboard", () => {
 		expect(screen.getAllByText("100.00%").length).toBeGreaterThan(0);
 		expect(screen.getAllByText("Projected yield earned").length).toBeGreaterThan(0);
 		expect(
-			screen.getByText("Returns / $1,500,000.00 MIC investment")
+			screen.getByText("0.02% over $1,527,500.00 projected MIC investment")
 		).toBeTruthy();
+		expect(screen.getAllByText("$300.00").length).toBeGreaterThan(0);
 	});
 
 	it("starts a single-point return graph from the prior month at zero and projects the next month", () => {
@@ -448,6 +452,101 @@ describe("MIC dashboard", () => {
 				totalReturn: 25,
 			}),
 		]);
+	});
+
+	it("projects the next month with recurring interest plus another same-sized origination fee", () => {
+		const chartSeries = buildReturnChartSeries([
+			{
+				cumulativeFeeIncome: 4650,
+				cumulativeInterestIncome: 3460.75,
+				cumulativeTotalReturn: 8110.75,
+				feeIncome: 4650,
+				feeIncomeSharePercent: 57.33,
+				interestIncome: 3460.75,
+				originatedPrincipal: 465_000,
+				period: "2027-03",
+				totalReturn: 8110.75,
+			},
+		]);
+
+		expect(chartSeries.at(-1)).toEqual(
+			expect.objectContaining({
+				cumulativeFeeIncome: 9300,
+				cumulativeInterestIncome: 10_382.25,
+				cumulativeTotalReturn: 19_682.25,
+				feeIncome: 4650,
+				interestIncome: 6921.5,
+				isProjected: true,
+				period: "2027-04",
+				totalReturn: 11_571.5,
+			})
+		);
+	});
+
+	it("projects another month of growth using the last originated principal against the existing book", () => {
+		const chartSeries = buildReturnChartSeries([
+			{
+				cumulativeFeeIncome: 1000,
+				cumulativeInterestIncome: 100,
+				cumulativeTotalReturn: 1100,
+				feeIncome: 1000,
+				feeIncomeSharePercent: 90.91,
+				interestIncome: 100,
+				originatedPrincipal: 100_000,
+				period: "2027-01",
+				totalReturn: 1100,
+			},
+			{
+				cumulativeFeeIncome: 2000,
+				cumulativeInterestIncome: 300,
+				cumulativeTotalReturn: 2300,
+				feeIncome: 1000,
+				feeIncomeSharePercent: 86.96,
+				interestIncome: 200,
+				originatedPrincipal: 100_000,
+				period: "2027-02",
+				totalReturn: 1200,
+			},
+		]);
+
+		expect(chartSeries.at(-1)).toEqual(
+			expect.objectContaining({
+				cumulativeFeeIncome: 3000,
+				cumulativeInterestIncome: 600,
+				cumulativeTotalReturn: 3600,
+				feeIncome: 1000,
+				interestIncome: 300,
+				isProjected: true,
+				period: "2027-03",
+				totalReturn: 1300,
+			})
+		);
+	});
+
+	it("reports projected yield earned on a 12-month rolling basis", () => {
+		const analytics = buildReturnAnalytics({
+			metrics: {
+				...mockMetrics,
+				outstandingPrincipal: 465_000,
+			},
+			returnSeries: [
+				{
+					cumulativeFeeIncome: 4650,
+					cumulativeInterestIncome: 3158.13,
+					cumulativeTotalReturn: 7808.13,
+					feeIncome: 4650,
+					feeIncomeSharePercent: 59.55,
+					interestIncome: 3158.13,
+					originatedPrincipal: 465_000,
+					period: "2027-03",
+					totalReturn: 7808.13,
+				},
+			],
+		});
+
+		expect(analytics.projectedYieldEarned).toBe(5.41);
+		expect(analytics.projectedYieldInvestment).toBe(5_580_000);
+		expect(analytics.projectedYieldReturn).toBe(302_134.14);
 	});
 
 	it("does not crash when cached dashboard data is missing return metrics", () => {

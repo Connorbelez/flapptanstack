@@ -45,6 +45,7 @@ interface MockDocumensoOptions {
 	includeCompletionCertificate?: boolean;
 	recipientEmail?: string;
 	recipientName?: string;
+	recipientSigningOrder?: number;
 	recipientSigningStatus?: "SIGNED" | null;
 	signingUrl?: string;
 }
@@ -91,7 +92,7 @@ function installMockDocumensoFetch(options?: MockDocumensoOptions) {
 			recipientSigningStatus === "SIGNED"
 				? "2026-05-15T16:00:00.000Z"
 				: null,
-		signingOrder: 0,
+		signingOrder: options?.recipientSigningOrder ?? 1,
 		signingStatus: recipientSigningStatus,
 		signingUrl,
 		token: "token_1",
@@ -397,6 +398,11 @@ async function seedSystemVariable(
 }
 
 type PublishedTemplateField = {
+	fieldMeta?: {
+		helpText?: string;
+		placeholder?: string;
+		readOnly?: boolean;
+	};
 	id: string;
 	position: {
 		height: number;
@@ -481,6 +487,16 @@ async function insertListing(
 	});
 }
 
+async function setDealStatus(
+	t: ReturnType<typeof createTestConvex>,
+	dealId: Id<"deals">,
+	status: string
+) {
+	await t.run(async (ctx) => {
+		await ctx.db.patch(dealId, { status });
+	});
+}
+
 async function seedDealPackageFixture(
 	t: ReturnType<typeof createTestConvex>,
 	args?: {
@@ -488,7 +504,8 @@ async function seedDealPackageFixture(
 		includeListing?: boolean;
 		omitSignableSignatories?: boolean;
 		requireLawyerSignatory?: boolean;
-		signablePlatformRole?: "borrower_primary" | "lawyer_primary" | "lender_primary";
+		signableFieldPlatformRole?: string;
+		signablePlatformRole?: string;
 		templatedVariableKey?: string;
 	}
 ) {
@@ -615,8 +632,14 @@ async function seedDealPackageFixture(
 				id: "field_signable_1",
 				position: { height: 18, page: 0, width: 180, x: 72, y: 180 },
 				required: true,
+				fieldMeta: {
+					placeholder: "Sign here",
+				},
 				signableType: "SIGNATURE",
-				signatoryPlatformRole: args?.signablePlatformRole ?? "borrower_primary",
+				signatoryPlatformRole:
+					args?.signableFieldPlatformRole ??
+					args?.signablePlatformRole ??
+					"borrower_primary",
 				type: "signable",
 			},
 		],
@@ -897,7 +920,7 @@ async function seedDealPackageFixture(
 
 describe("documents/dealPackages", () => {
 	it("materializes every canonical system variable when a locked deal package is generated", async () => {
-		installMockDocumensoFetch();
+		const { fetchMock } = installMockDocumensoFetch();
 		const t = createTestConvex({ includeWorkflowComponents: false });
 		const fixture = await seedDealPackageFixture(t, {
 			includeFullVariableData: true,
@@ -939,16 +962,15 @@ describe("documents/dealPackages", () => {
 				}),
 				expect.objectContaining({
 					name: "Borrower signature packet",
-					signingStatus: "sent",
+					signingStatus: "draft",
 				}),
 			])
 		);
-		expect(signatureEnvelopes).toEqual([
-			expect.objectContaining({
-				providerCode: "documenso",
-				status: "sent",
-			}),
-		]);
+		expect(signatureEnvelopes).toHaveLength(0);
+		expect(fetchMock).not.toHaveBeenCalledWith(
+			expect.stringContaining("/envelope/create"),
+			expect.anything()
+		);
 		expect(variables).toMatchObject({
 			assigned_broker_email: "broker.phase7@test.fairlend.ca",
 			assigned_broker_full_name: "Brooke Broker",
@@ -996,6 +1018,78 @@ describe("documents/dealPackages", () => {
 		}
 	});
 
+	it("upgrades locked signable review documents into signing envelopes after approval retry", async () => {
+		installMockDocumensoFetch();
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		const retryResult = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: true,
+			}
+		);
+		const packageSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const allInstances = await t.run((ctx) =>
+			ctx.db
+				.query("dealDocumentInstances")
+				.withIndex("by_deal", (query) => query.eq("dealId", fixture.dealId))
+				.collect()
+		);
+		const signatureEnvelopes = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+
+		expect(retryResult.status).toBe("ready");
+		expect(signatureEnvelopes).toEqual([
+			expect.objectContaining({
+				dealId: fixture.dealId,
+				providerCode: "documenso",
+				status: "sent",
+			}),
+		]);
+		expect(packageSurface.instances).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					displayName: "Borrower signature packet",
+					signing: expect.objectContaining({
+						recipients: expect.arrayContaining([
+							expect.objectContaining({
+								email: "seller.phase7@test.fairlend.ca",
+								status: "pending",
+							}),
+						]),
+						status: "sent",
+					}),
+					status: "signature_sent",
+				}),
+			])
+		);
+		expect(
+			allInstances.filter(
+				(instance) =>
+					instance.sourceBlueprintSnapshot.displayName ===
+						"Borrower signature packet" &&
+					instance.status === "archived"
+			)
+		).toHaveLength(1);
+	});
+
 	it("materializes immutable deal packages from active private mortgage blueprints", async () => {
 		installMockDocumensoFetch();
 		const t = createTestConvex({ includeWorkflowComponents: false });
@@ -1003,6 +1097,7 @@ describe("documents/dealPackages", () => {
 			includeListing: true,
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		const result = await t.action(
 			internal.documents.dealPackages.runCreateDocumentPackageInternal,
@@ -1172,6 +1267,7 @@ describe("documents/dealPackages", () => {
 			requireLawyerSignatory: true,
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		const firstResult = await t.action(
 			internal.documents.dealPackages.runCreateDocumentPackageInternal,
@@ -1274,6 +1370,7 @@ describe("documents/dealPackages", () => {
 			includeListing: true,
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		const frozenBlueprints = await t.query(
 			internal.documents.dealPackages.listActivePackageBlueprintInputsInternal,
@@ -1399,6 +1496,54 @@ describe("documents/dealPackages", () => {
 		).toBe(false);
 	});
 
+	it("maps legacy FairLend broker signatory roles to deal broker data", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "broker.phase7@test.fairlend.ca",
+			recipientName: "Brooke Broker",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signableFieldPlatformRole: "broker_of_record",
+			signablePlatformRole: "fairlend_broker",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		const result = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: false,
+			}
+		);
+		const packageSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+
+		expect(result.status).toBe("ready");
+		expect(packageSurface.instances).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					displayName: "Borrower signature packet",
+					signing: expect.objectContaining({
+						recipients: [
+							expect.objectContaining({
+								email: "broker.phase7@test.fairlend.ca",
+								name: "Brooke Broker",
+								platformRole: "fairlend_broker",
+							}),
+						],
+					}),
+					status: "signature_sent",
+				}),
+			])
+		);
+	});
+
 	it("keeps signable documents pending when recipient resolution is incomplete", async () => {
 		installMockDocumensoFetch();
 		const t = createTestConvex({ includeWorkflowComponents: false });
@@ -1407,6 +1552,7 @@ describe("documents/dealPackages", () => {
 			signablePlatformRole: "lawyer_primary",
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		const result = await t.action(
 			internal.documents.dealPackages.runCreateDocumentPackageInternal,
@@ -1446,6 +1592,7 @@ describe("documents/dealPackages", () => {
 			omitSignableSignatories: true,
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		const result = await t.action(
 			internal.documents.dealPackages.runCreateDocumentPackageInternal,
@@ -1495,6 +1642,7 @@ describe("documents/dealPackages", () => {
 			includeListing: true,
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		const result = await t.action(
 			internal.documents.dealPackages.runCreateDocumentPackageInternal,
@@ -1545,6 +1693,7 @@ describe("documents/dealPackages", () => {
 			signablePlatformRole: "lender_primary",
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,
@@ -1567,6 +1716,11 @@ describe("documents/dealPackages", () => {
 		expect(payload.recipients[0]?.fields.length).toBeGreaterThan(0);
 		expect(payload.recipients[0]?.fields[0]).toMatchObject({
 			type: "SIGNATURE",
+			fieldMeta: {
+				placeholder: "Sign here",
+				required: true,
+				type: "signature",
+			},
 			page: expect.any(Number),
 			positionX: expect.any(Number),
 			positionY: expect.any(Number),
@@ -1583,11 +1737,101 @@ describe("documents/dealPackages", () => {
 					email: "lender.phase7@test.fairlend.ca",
 					name: "Lena Lender",
 					role: "SIGNER",
-					signingOrder: 0,
+					signingOrder: 1,
 				}),
 			],
 		});
 		expect(formData.get("files")).toBeInstanceOf(Blob);
+	});
+
+	it("stores provider recipient ids when Documenso echoes a zero-based signing order", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "seller.phase7@test.fairlend.ca",
+			recipientName: "Sam Seller",
+			recipientSigningOrder: 0,
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+		const packageSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+
+		expect(packageSurface.instances).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					displayName: "Borrower signature packet",
+					signing: expect.objectContaining({
+						recipients: [
+							expect.objectContaining({
+								email: "seller.phase7@test.fairlend.ca",
+								providerRecipientId: "doc_rcpt_1",
+							}),
+						],
+					}),
+					status: "signature_sent",
+				}),
+			])
+		);
+	});
+
+	it("rejects Documenso signer recipients without a signature field before creating an envelope", async () => {
+		const { fetchMock } = installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signableFieldPlatformRole: "borrower_primary",
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		const result = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: false,
+			}
+		);
+		const packageSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const signableInstance = packageSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+		const signatureEnvelopes = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+
+		expect(result.status).toBe("partial_failure");
+		expect(signableInstance).toMatchObject({
+			lastError: expect.stringContaining(
+				"Documenso signer recipients must have at least one SIGNATURE field"
+			),
+			status: "generation_failed",
+		});
+		expect(signatureEnvelopes).toHaveLength(0);
+		expect(fetchMock).not.toHaveBeenCalledWith(
+			expect.stringContaining("/envelope/create"),
+			expect.anything()
+		);
 	});
 
 	it("records interpolation inputs and maps the lender signer to the canonical user", async () => {
@@ -1602,6 +1846,7 @@ describe("documents/dealPackages", () => {
 			signablePlatformRole: "lender_primary",
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,
@@ -1639,6 +1884,7 @@ describe("documents/dealPackages", () => {
 			includeListing: true,
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		const initialResult = await t.action(
 			internal.documents.dealPackages.runCreateDocumentPackageInternal,
@@ -1674,7 +1920,9 @@ describe("documents/dealPackages", () => {
 
 		expect(initialResult.status).toBe("partial_failure");
 		expect(initialSignable).toMatchObject({
-			lastError: expect.stringContaining("/envelope/distribute"),
+			lastError: expect.stringMatching(
+				/\/envelope\/distribute[\s\S]*distribution failed/
+			),
 			status: "signature_draft",
 		});
 
@@ -1743,6 +1991,7 @@ describe("documents/dealPackages", () => {
 			includeListing: true,
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		const result = await t.action(
 			internal.documents.dealPackages.runCreateDocumentPackageInternal,
@@ -1791,6 +2040,7 @@ describe("documents/dealPackages", () => {
 			signablePlatformRole: "lender_primary",
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,
@@ -1874,6 +2124,53 @@ describe("documents/dealPackages", () => {
 		);
 	});
 
+	it("blocks embedded signing while the deal is locked for lawyer onboarding", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+		await setDealStatus(t, fixture.dealId, "lawyerOnboarding.verified");
+
+		const packageSurface = await t.withIdentity(fixture.lenderIdentity).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const signableInstance = packageSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+		if (!signableInstance) {
+			throw new Error("Expected a signable package instance");
+		}
+
+		expect(signableInstance.signing).toMatchObject({
+			canLaunchEmbeddedSigning: false,
+			status: "sent",
+		});
+		await expect(
+			t.withIdentity(fixture.lenderIdentity).action(
+				api.documents.signature.sessions.createEmbeddedSigningSession,
+				{
+					dealId: fixture.dealId,
+					instanceId: signableInstance.instanceId,
+				}
+			)
+		).rejects.toThrow(/lawyer representation is confirmed/i);
+	});
+
 	it("hides embedded signing until lower signing orders are completed", async () => {
 		installMockDocumensoFetch({
 			recipientEmail: "lender.phase7@test.fairlend.ca",
@@ -1885,6 +2182,7 @@ describe("documents/dealPackages", () => {
 			signablePlatformRole: "lender_primary",
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,
@@ -1978,6 +2276,7 @@ describe("documents/dealPackages", () => {
 			includeListing: true,
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,
 			retry: false,
@@ -2035,6 +2334,7 @@ describe("documents/dealPackages", () => {
 			includeListing: true,
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,
 			retry: false,
@@ -2102,6 +2402,7 @@ describe("documents/dealPackages", () => {
 			signablePlatformRole: "lender_primary",
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,
@@ -2177,6 +2478,7 @@ describe("documents/dealPackages", () => {
 			signablePlatformRole: "lender_primary",
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,
@@ -2295,6 +2597,18 @@ describe("documents/dealPackages", () => {
 					`/envelope/item/${completedDocumenso.completionCertificateItemId}/download`
 				)
 			);
+		const archivedSignableFinalPdfUrl =
+			archivedSignable?.archivedSigning?.finalPdfUrl;
+		const portalDealSignableFinalPdfUrl =
+			portalDealSignable?.archivedSigning?.finalPdfUrl;
+		const adminDealSignableFinalPdfUrl =
+			adminDealSignable?.archivedSigning?.finalPdfUrl;
+		const archivedSignableUrl = archivedSignable?.url;
+		const portalDealSignableUrl = portalDealSignable?.url;
+		const adminDealSignableUrl = adminDealSignable?.url;
+		const finalPdfByteLength = firstDocumentState.finalPdfByteLength;
+		const storedCertificateByteLength =
+			firstDocumentState.storedCertificateByteLength;
 
 		expect(archivedSignable).toMatchObject({
 			archivedSigning: {
@@ -2326,13 +2640,11 @@ describe("documents/dealPackages", () => {
 			status: "archived",
 			url: expect.any(String),
 		});
-		expect(archivedSignable?.url).toBe(archivedSignable?.archivedSigning?.finalPdfUrl);
-		expect(portalDealSignable?.url).toBe(
-			portalDealSignable?.archivedSigning?.finalPdfUrl
+		expect(String(archivedSignableUrl)).toBe(String(archivedSignableFinalPdfUrl));
+		expect(String(portalDealSignableUrl)).toBe(
+			String(portalDealSignableFinalPdfUrl)
 		);
-		expect(adminDealSignable?.url).toBe(
-			adminDealSignable?.archivedSigning?.finalPdfUrl
-		);
+		expect(String(adminDealSignableUrl)).toBe(String(adminDealSignableFinalPdfUrl));
 		expect(afterFirstArchive.package).toMatchObject({
 			archivedAt: expect.any(Number),
 			status: "archived",
@@ -2344,8 +2656,8 @@ describe("documents/dealPackages", () => {
 			signingStatus: "completed",
 			storedCertificateByteLength: expect.any(Number),
 		});
-		expect(firstDocumentState.finalPdfByteLength).toBeGreaterThan(0);
-		expect(firstDocumentState.storedCertificateByteLength).toBeGreaterThan(0);
+		expect(finalPdfByteLength).toBeGreaterThan(0);
+		expect(storedCertificateByteLength).toBeGreaterThan(0);
 		expect(secondDocumentState).toEqual({
 			completionCertificateStorageId:
 				firstDocumentState.completionCertificateStorageId,
@@ -2367,6 +2679,7 @@ describe("documents/dealPackages", () => {
 			signablePlatformRole: "lender_primary",
 			templatedVariableKey: "borrower_primary_full_name",
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
 
 		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
 			dealId: fixture.dealId,

@@ -680,12 +680,66 @@ describe("demo/dealClosingPipeline", () => {
 			const state = await t
 				.withIdentity(DEMO_LENDER)
 				.query(api.demo.dealClosingPipeline.getState, {});
+			const demoDealId = await t.run(async (ctx) => {
+				const deal = await ctx.db
+					.query("deals")
+					.filter((query) =>
+						query.eq(query.field("createdBy"), "demo-deal-closing-pipeline")
+					)
+					.first();
+				if (!deal) {
+					throw new Error("Demo deal was not created");
+				}
+				return deal._id;
+			});
+			const variables = await t.query(
+				internal.documents.dealPackages.resolveDealDocumentVariablesInternal,
+				{
+					dealId: demoDealId,
+				}
+			);
+			const signatories = await t.query(
+				internal.documents.dealPackages.resolveDealDocumentSignatoriesInternal,
+				{
+					dealId: demoDealId,
+				}
+			);
+			const signatureEnvelopes = await t.run((ctx) =>
+				ctx.db.query("signatureEnvelopes").collect()
+			);
+
+			expect(variables).toMatchObject({
+				borrower_primary_email: "borrower.demo-deal@test.fairlend.ca",
+				borrower_primary_full_name: "Bailey Borrower",
+				lawyer_primary_email: "lawyer.demo-deal@test.fairlend.ca",
+				lawyer_primary_full_name: "Layla Lawyer",
+				test_str_n72b_pv2: "Demo package value",
+			});
+			expect(signatories).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						email: "borrower.demo-deal@test.fairlend.ca",
+						name: "Bailey Borrower",
+						platformRole: "borrower_primary",
+					}),
+					expect.objectContaining({
+						email: "lawyer.demo-deal@test.fairlend.ca",
+						name: "Layla Lawyer",
+						platformRole: "lawyer_primary",
+					}),
+				])
+			);
+			expect(signatureEnvelopes).toHaveLength(0);
+			expect(state.deal).toMatchObject({
+				id: demoDealId,
+				status: "lawyerOnboarding.pending",
+			});
 			expect(state.auditTrail).toEqual(
 				expect.arrayContaining([
 					expect.objectContaining({
 						eventType: "demo_package_reset_started",
 						newState: "reset_started",
-						previousState: "ready",
+						previousState: "initiated",
 					}),
 					expect.objectContaining({
 						eventType: "demo_package_generation_succeeded",
@@ -702,6 +756,221 @@ describe("demo/dealClosingPipeline", () => {
 				delete process.env.DISABLE_GT_HASHCHAIN;
 			} else {
 				process.env.DISABLE_GT_HASHCHAIN = previousHashChainSetting;
+			}
+		}
+	});
+
+	it("reset moves an already open demo deal back to the locked lawyer gate", async () => {
+		const previousHashChainSetting = process.env.DISABLE_GT_HASHCHAIN;
+		process.env.DISABLE_GT_HASHCHAIN = "true";
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		await seedReadyDemoPackage(t);
+
+		try {
+			const firstReset = await t
+				.withIdentity(DEMO_LENDER)
+				.action(api.demo.dealClosingPipeline.resetAndRegenerate, {});
+			await t.run(async (ctx) => {
+				await ctx.db.patch(firstReset.dealId, {
+					status: "documentReview.pending",
+				});
+			});
+
+			const secondReset = await t
+				.withIdentity(DEMO_LENDER)
+				.action(api.demo.dealClosingPipeline.resetAndRegenerate, {});
+			const state = await t
+				.withIdentity(DEMO_LENDER)
+				.query(api.demo.dealClosingPipeline.getState, {});
+			const signatureEnvelopes = await t.run((ctx) =>
+				ctx.db.query("signatureEnvelopes").collect()
+			);
+
+			expect(secondReset.dealId).toBe(firstReset.dealId);
+			expect(state.deal).toMatchObject({
+				id: firstReset.dealId,
+				status: "lawyerOnboarding.pending",
+			});
+			expect(signatureEnvelopes).toHaveLength(0);
+		} finally {
+			if (previousHashChainSetting === undefined) {
+				delete process.env.DISABLE_GT_HASHCHAIN;
+			} else {
+				process.env.DISABLE_GT_HASHCHAIN = previousHashChainSetting;
+			}
+		}
+	});
+
+	it("admin approval advances the demo from lawyer onboarding into document signing", async () => {
+		const previousHashChainSetting = process.env.DISABLE_GT_HASHCHAIN;
+		process.env.DISABLE_GT_HASHCHAIN = "true";
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		await seedReadyDemoPackage(t);
+
+		try {
+			const resetResult = await t
+				.withIdentity(DEMO_LENDER)
+				.action(api.demo.dealClosingPipeline.resetAndRegenerate, {});
+
+			const approvalResult = await t
+				.withIdentity(DEMO_LENDER)
+				.action(api.demo.dealClosingPipeline.approveLegalGateAndOpenSigning, {});
+
+			expect(approvalResult).toMatchObject({
+				dealId: resetResult.dealId,
+				ok: true,
+				previousState: "lawyerOnboarding.pending",
+				status: "demo_admin_approval_gate_approved",
+			});
+			expect(approvalResult.newState).toBe("documentReview.pending");
+
+			const state = await t
+				.withIdentity(DEMO_LENDER)
+				.query(api.demo.dealClosingPipeline.getState, {});
+
+			expect(state.deal).toMatchObject({
+				id: resetResult.dealId,
+				status: "documentReview.pending",
+			});
+			expect(state.auditTrail).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						eventType: "demo_admin_approval_gate_approved",
+						newState: "documentReview.pending",
+						previousState: "lawyerOnboarding.pending",
+					}),
+				])
+			);
+
+			const governedTransitionAudit = await t.run(async (ctx) => {
+				return await ctx.db
+					.query("auditJournal")
+					.withIndex("by_entity", (query) =>
+						query.eq("entityType", "deal").eq("entityId", resetResult.dealId)
+					)
+					.filter((query) =>
+						query.eq(query.field("eventType"), "REPRESENTATION_CONFIRMED")
+					)
+					.first();
+			});
+
+			expect(governedTransitionAudit).toMatchObject({
+				eventCategory: "governed_transition",
+				newState: "documentReview.pending",
+				previousState: "lawyerOnboarding.verified",
+			});
+
+			const packageRows = await t.run(async (ctx) => {
+				return await ctx.db
+					.query("dealDocumentPackages")
+					.withIndex("by_deal", (query) =>
+						query.eq("dealId", resetResult.dealId)
+					)
+					.collect();
+			});
+			expect(packageRows).toHaveLength(1);
+		} finally {
+			if (previousHashChainSetting === undefined) {
+				delete process.env.DISABLE_GT_HASHCHAIN;
+			} else {
+				process.env.DISABLE_GT_HASHCHAIN = previousHashChainSetting;
+			}
+		}
+	});
+
+	it("creates a demo admin embedded signing session for the next pending recipient", async () => {
+		const previousToken = process.env.DOCUMENSO_API_TOKEN;
+		process.env.DOCUMENSO_API_TOKEN = "documenso_test_token";
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockImplementation(async (input: RequestInfo | URL) => {
+				if (String(input).includes("/envelope/recipient/doc_rcpt_admin")) {
+					return new Response(
+						JSON.stringify({
+							email: "signer.demo@test.fairlend.ca",
+							id: "doc_rcpt_admin",
+							name: "Demo Signer",
+							role: "SIGNER",
+							signingOrder: 1,
+							signingStatus: null,
+							signingUrl: "https://documenso.test/sign/demo-token",
+							token: "demo-token",
+						}),
+						{ status: 200 }
+					);
+				}
+				return new Response(JSON.stringify({ error: "unexpected request" }), {
+					status: 404,
+				});
+			});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDemoDealAuditFixture(t);
+		const existing = await seedExistingDemoProviderEnvelope(t, {
+			dealId: fixture.dealId,
+			lenderUserId: fixture.lenderUserId,
+			mortgageId: fixture.mortgageId,
+			providerEnvelopeId: "env_demo_admin_signing",
+			sourceClass: "private_templated_signable",
+			status: "signature_draft",
+		});
+
+		try {
+			await t.run(async (ctx) => {
+				await ctx.db.patch(fixture.dealId, {
+					status: "documentReview.pending",
+				});
+				await ctx.db.patch(existing.oldInstanceId, {
+					generatedDocumentId: existing.generatedDocumentId,
+					lastError: undefined,
+					status: "signature_sent",
+				});
+				await ctx.db.patch(existing.generatedDocumentId, {
+					signingStatus: "sent",
+				});
+				await ctx.db.patch(existing.envelopeId, {
+					lastError: undefined,
+					providerEnvelopeId: "env_demo_admin_signing",
+					status: "sent",
+				});
+				await ctx.db.insert("signatureRecipients", {
+					createdAt: Date.now(),
+					declinedAt: undefined,
+					email: "signer.demo@test.fairlend.ca",
+					envelopeId: existing.envelopeId,
+					name: "Demo Signer",
+					openedAt: undefined,
+					platformRole: "borrower_primary",
+					providerRecipientId: "doc_rcpt_admin",
+					providerRole: "SIGNER",
+					signedAt: undefined,
+					signingOrder: 1,
+					status: "pending",
+					updatedAt: Date.now(),
+					userId: undefined,
+				});
+			});
+
+			const session = await t
+				.withIdentity(DEMO_LENDER)
+				.action(api.demo.dealClosingPipeline.createDemoEmbeddedSigningSession, {
+					dealId: fixture.dealId,
+					instanceId: existing.oldInstanceId,
+				});
+
+			expect(session).toEqual({
+				expiresAt: expect.any(Number),
+				url: "https://documenso.test/sign/demo-token",
+			});
+			expect(fetchMock).toHaveBeenCalledWith(
+				expect.stringContaining("/envelope/recipient/doc_rcpt_admin"),
+				expect.anything()
+			);
+		} finally {
+			fetchMock.mockRestore();
+			if (previousToken === undefined) {
+				delete process.env.DOCUMENSO_API_TOKEN;
+			} else {
+				process.env.DOCUMENSO_API_TOKEN = previousToken;
 			}
 		}
 	});
@@ -985,6 +1254,46 @@ describe("demo/dealClosingPipeline", () => {
 				process.env.DOCUMENSO_API_KEY = previousApiKey;
 			}
 		}
+	});
+
+	it("archives cleaned local signing instances when Documenso cannot delete the remote envelope", async () => {
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDemoDealAuditFixture(t);
+		const existing = await seedExistingDemoProviderEnvelope(t, {
+			dealId: fixture.dealId,
+			lenderUserId: fixture.lenderUserId,
+			mortgageId: fixture.mortgageId,
+			providerEnvelopeId: "env_not_deletable_local_instance",
+			sourceClass: "private_templated_signable",
+			status: "signature_draft",
+		});
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(existing.oldInstanceId, {
+				generatedDocumentId: existing.generatedDocumentId,
+				lastError: undefined,
+				status: "signature_sent",
+			});
+		});
+
+		await t.mutation(
+			internal.demo.dealClosingPipeline.markDemoProviderEnvelopeCleanedInternal,
+			{
+				dealId: fixture.dealId,
+				providerEnvelopeId: "env_not_deletable_local_instance",
+				status: "not_deletable",
+			}
+		);
+
+		const instance = await t.run(async (ctx) => {
+			return await ctx.db.get(existing.oldInstanceId);
+		});
+
+		expect(instance).toMatchObject({
+			archivedAt: expect.any(Number),
+			lastError: "Documenso cleanup ended with status not_deletable",
+			status: "archived",
+		});
 	});
 
 	it("preserves package row diagnostics for non-throw generation failures", () => {

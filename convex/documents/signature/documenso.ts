@@ -81,6 +81,26 @@ interface DocumensoDeleteEnvelopeResponse {
 	success: boolean;
 }
 
+type DocumensoFieldMetaType =
+	| "checkbox"
+	| "date"
+	| "dropdown"
+	| "email"
+	| "free_signature"
+	| "initials"
+	| "name"
+	| "number"
+	| "radio"
+	| "signature"
+	| "text";
+
+interface DocumensoFieldMeta {
+	placeholder?: string;
+	readOnly?: boolean;
+	required: boolean;
+	type: DocumensoFieldMetaType;
+}
+
 export class DocumensoConfigError extends Error {
 	name = "DocumensoConfigError";
 }
@@ -259,6 +279,79 @@ function mapDocumensoProviderRole(
 	return "SIGNER";
 }
 
+function toDocumensoFieldMetaType(type: string): DocumensoFieldMetaType {
+	switch (type.toUpperCase()) {
+		case "CHECKBOX":
+			return "checkbox";
+		case "DATE":
+			return "date";
+		case "DROPDOWN":
+			return "dropdown";
+		case "EMAIL":
+			return "email";
+		case "FREE_SIGNATURE":
+			return "free_signature";
+		case "INITIALS":
+			return "initials";
+		case "NAME":
+			return "name";
+		case "NUMBER":
+			return "number";
+		case "RADIO":
+			return "radio";
+		case "SIGNATURE":
+			return "signature";
+		case "TEXT":
+			return "text";
+		default:
+			throw new DocumensoConfigError(
+				`Unsupported Documenso field type "${type}"`
+			);
+	}
+}
+
+function toDocumensoFieldMeta(
+	field: SignatureProviderField
+): DocumensoFieldMeta {
+	return {
+		...(field.fieldMeta?.placeholder
+			? { placeholder: field.fieldMeta.placeholder }
+			: {}),
+		...(field.fieldMeta?.readOnly !== undefined
+			? { readOnly: field.fieldMeta.readOnly }
+			: {}),
+		required: field.required,
+		type: toDocumensoFieldMetaType(field.type),
+	};
+}
+
+function isDocumensoSignatureField(field: SignatureProviderField) {
+	const type = field.type.toUpperCase();
+	return type === "SIGNATURE" || type === "FREE_SIGNATURE";
+}
+
+function validateDocumensoEnvelopeRecipients(
+	recipients: SignatureProviderRecipientInput[]
+) {
+	const invalidSigners = recipients.filter(
+		(recipient) =>
+			recipient.providerRole === "SIGNER" &&
+			!recipient.fields.some(isDocumensoSignatureField)
+	);
+	if (invalidSigners.length === 0) {
+		return;
+	}
+
+	throw new DocumensoConfigError(
+		`Documenso signer recipients must have at least one SIGNATURE field: ${invalidSigners
+			.map(
+				(recipient) =>
+					`${recipient.name} <${recipient.email}> (${recipient.platformRole})`
+			)
+			.join(", ")}`
+	);
+}
+
 function toDocumensoField(field: SignatureProviderField) {
 	return {
 		identifier: field.identifier ?? 0,
@@ -269,7 +362,7 @@ function toDocumensoField(field: SignatureProviderField) {
 		width: field.width,
 		height: field.height,
 		required: field.required,
-		...(field.fieldMeta ? { fieldMeta: field.fieldMeta } : {}),
+		fieldMeta: toDocumensoFieldMeta(field),
 	};
 }
 
@@ -287,14 +380,19 @@ function matchProviderRecipient(
 	input: SignatureProviderRecipientInput,
 	providerRecipients: DocumensoRecipientResponse[]
 ) {
-	return providerRecipients.find((recipient) => {
-		const recipientRole = recipient.role?.toUpperCase();
-		return (
-			recipient.email.toLowerCase() === input.email.toLowerCase() &&
-			recipientRole === input.providerRole &&
-			recipient.signingOrder === input.signingOrder
-		);
-	});
+	const sameEmailAndRole = (recipient: DocumensoRecipientResponse) =>
+		recipient.email.toLowerCase() === input.email.toLowerCase() &&
+		recipient.role?.toUpperCase() === input.providerRole;
+
+	return (
+		providerRecipients.find(
+			(recipient) =>
+				sameEmailAndRole(recipient) &&
+				(recipient.signingOrder === undefined ||
+					recipient.signingOrder === null ||
+					recipient.signingOrder === input.signingOrder)
+		) ?? providerRecipients.find(sameEmailAndRole)
+	);
 }
 
 async function readResponseText(response: Response) {
@@ -303,6 +401,26 @@ async function readResponseText(response: Response) {
 	} catch {
 		return "";
 	}
+}
+
+function summarizeResponseText(responseText: string) {
+	const trimmed = responseText.trim();
+	if (trimmed.length === 0) {
+		return "";
+	}
+	return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
+}
+
+function buildDocumensoApiErrorMessage(args: {
+	method: string;
+	path: string;
+	responseText: string;
+	status: number;
+}) {
+	const responseSummary = summarizeResponseText(args.responseText);
+	return `Documenso ${args.method} ${args.path} failed with status ${args.status}${
+		responseSummary ? `: ${responseSummary}` : ""
+	}`;
 }
 
 async function requestJson<T>(
@@ -327,7 +445,12 @@ async function requestJson<T>(
 
 		if (!response.ok) {
 			throw new DocumensoApiError({
-				message: `Documenso ${method} ${path} failed with status ${response.status}`,
+				message: buildDocumensoApiErrorMessage({
+					method,
+					path,
+					responseText,
+					status: response.status,
+				}),
 				method,
 				path,
 				responseText,
@@ -374,7 +497,12 @@ async function requestBytes(
 		if (!response.ok) {
 			const responseText = await readResponseText(response);
 			throw new DocumensoApiError({
-				message: `Documenso ${method} ${path} failed with status ${response.status}`,
+				message: buildDocumensoApiErrorMessage({
+					method,
+					path,
+					responseText,
+					status: response.status,
+				}),
 				method,
 				path,
 				responseText,
@@ -441,6 +569,8 @@ async function createAndOptionallyDistributeEnvelope(
 	recipients: DocumensoRecipientResponse[];
 	status: "draft" | "sent";
 }> {
+	validateDocumensoEnvelopeRecipients(input.recipients);
+
 	const pdfBlob = await config.getStorageBlob(input.pdfStorageId);
 	if (!pdfBlob) {
 		throw new DocumensoRequestError({

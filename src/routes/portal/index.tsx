@@ -31,18 +31,6 @@ const SECTION_NAV = [
 
 export const Route = createFileRoute("/portal/")({
 	component: MicPortalIndexRoutePage,
-	loader: async ({ context }) => {
-		const portalId = assertActivePortalId(
-			context.portalContext,
-			"MIC portal requires an active portal host."
-		);
-		await context.queryClient.ensureQueryData(
-			micDashboardSnapshotQueryOptions(portalId)
-		);
-		await context.queryClient.ensureQueryData(
-			micPaymentsHistoryQueryOptions(portalId)
-		);
-	},
 });
 
 export function MicPortalIndexRoutePage() {

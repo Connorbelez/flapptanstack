@@ -25,6 +25,9 @@ type PortalDocumentPackageState = FunctionReturnType<
 	typeof api.documents.dealPackages.getPortalDocumentPackage
 >;
 type PortalPackageInstance = PortalDocumentPackageState["instances"][number];
+type PortalPackageParticipants = NonNullable<
+	PortalDocumentPackageState["participants"]
+>;
 type Recipient = NonNullable<
 	PortalPackageInstance["signing"]
 >["recipients"][number];
@@ -49,7 +52,10 @@ export interface DealClosingPipelineCreateSigningSessionArgs {
 }
 
 interface DealClosingPipelineDemoProps {
+	approvalError?: string | null;
+	approvalPending?: boolean;
 	data?: unknown;
+	onApproveAdminGate?: () => Promise<void> | void;
 	onCreateSigningSession?: (
 		args: DealClosingPipelineCreateSigningSessionArgs
 	) => Promise<void>;
@@ -80,6 +86,8 @@ const panelClassName = "island-shell rounded-xl p-6";
 const panelHeadingClassName =
 	"font-semibold text-[var(--sea-ink)] text-sm uppercase tracking-[0.04em]";
 const mutedTextClassName = "text-[var(--sea-ink-soft)]";
+const embeddedSigningOpenDealStatus = "documentReview.pending";
+const enumLabelSplitPattern = /[_.]/;
 
 function formatEnumLabel(value: string | null | undefined) {
 	if (!value) {
@@ -87,7 +95,7 @@ function formatEnumLabel(value: string | null | undefined) {
 	}
 
 	return value
-		.split("_")
+		.split(enumLabelSplitPattern)
 		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
 		.join(" ");
 }
@@ -160,7 +168,10 @@ function currentStageForState(state: DealClosingPipelineState): ClosingStage {
 	if (packageStatus === "archived") {
 		return "completed";
 	}
-	if (packageStatus === "ready") {
+	if (state.deal?.status !== embeddedSigningOpenDealStatus) {
+		return state.deal ? "locked" : "lawyer";
+	}
+	if (state.portalDocumentPackage?.package) {
 		return "documents";
 	}
 	if (state.deal) {
@@ -171,6 +182,47 @@ function currentStageForState(state: DealClosingPipelineState): ClosingStage {
 
 function isSignableInstance(instance: PortalPackageInstance) {
 	return instance.class === "private_templated_signable";
+}
+
+function canDealLaunchEmbeddedSigning(state: DealClosingPipelineState) {
+	return state.deal?.status === embeddedSigningOpenDealStatus;
+}
+
+function canDemoAdminLaunchEmbeddedSigning(
+	state: DealClosingPipelineState,
+	instance: PortalPackageInstance
+) {
+	if (!canDealLaunchEmbeddedSigning(state)) {
+		return false;
+	}
+	const signing = instance.signing;
+	if (!(signing?.status === "sent" || signing?.status === "partially_signed")) {
+		return false;
+	}
+
+	return signing.recipients.some((recipient) => {
+		if (
+			!recipient.providerRecipientId ||
+			recipient.status === "signed" ||
+			recipient.status === "declined"
+		) {
+			return false;
+		}
+
+		return !signing.recipients.some(
+			(previousRecipient) =>
+				previousRecipient.signingOrder < recipient.signingOrder &&
+				previousRecipient.status !== "signed"
+		);
+	});
+}
+
+function isAdminApprovalGateActive(state: DealClosingPipelineState) {
+	return Boolean(
+		state.deal &&
+			state.portalDocumentPackage?.package &&
+			!canDealLaunchEmbeddedSigning(state)
+	);
 }
 
 function findCurrentRecipient(
@@ -184,6 +236,9 @@ function findCurrentRecipient(
 }
 
 export function DealClosingPipelineDemo({
+	approvalError = null,
+	approvalPending = false,
+	onApproveAdminGate = () => undefined,
 	onCreateSigningSession = async () => undefined,
 	onReset = () => undefined,
 	resetPending = false,
@@ -198,7 +253,13 @@ export function DealClosingPipelineDemo({
 	>(null);
 	const [embedMessage, setEmbedMessage] = useState<string | null>(null);
 	const [embedError, setEmbedError] = useState<string | null>(null);
-	const instances = state?.portalDocumentPackage?.instances ?? [];
+	const instances = useMemo(
+		() =>
+			state?.portalDocumentPackage?.instances.filter(
+				(instance) => !(instance.archivedAt || instance.status === "archived")
+			) ?? [],
+		[state?.portalDocumentPackage?.instances]
+	);
 	const effectiveSelectedInstanceId =
 		selectedInstanceId ??
 		(signingSession?.instanceId !== dismissedSigningInstanceId
@@ -216,11 +277,13 @@ export function DealClosingPipelineDemo({
 			? signingSession
 			: null;
 	const activeSignableInstance =
-		instances.find(
-			(instance) =>
-				isSignableInstance(instance) &&
-				instance.signing?.canLaunchEmbeddedSigning
-		) ?? null;
+		state && canDealLaunchEmbeddedSigning(state)
+			? (instances.find(
+					(instance) =>
+						isSignableInstance(instance) &&
+						canDemoAdminLaunchEmbeddedSigning(state, instance)
+				) ?? null)
+			: null;
 
 	const launchSigning = (instance: PortalPackageInstance) => {
 		if (!state?.deal) {
@@ -280,7 +343,20 @@ export function DealClosingPipelineDemo({
 						<div className="grid gap-6 xl:grid-cols-[minmax(0,948px)_340px]">
 							<div className="space-y-6">
 								<SetupAndPackage state={state} />
-								<DealContext state={state} />
+								<DealContext
+									onReset={onReset}
+									resetPending={resetPending}
+									state={state}
+								/>
+								{isAdminApprovalGateActive(state) ? (
+									<AdminApprovalGate
+										approvalError={approvalError}
+										approvalPending={approvalPending}
+										documents={instances}
+										onApprove={onApproveAdminGate}
+										state={state}
+									/>
+								) : null}
 								<PackageInstances
 									instances={instances}
 									onLaunchSigning={launchSigning}
@@ -333,6 +409,183 @@ export function DealClosingPipelineDemo({
 	);
 }
 
+function participantRows(participants: PortalPackageParticipants | null) {
+	if (!participants) {
+		return [];
+	}
+
+	return [
+		{
+			email: participants.buyer.email,
+			label: "Buyer",
+			name: participants.buyer.displayName,
+			status: participants.buyer.accessRole,
+		},
+		{
+			email: participants.seller.email,
+			label: "Seller",
+			name: participants.seller.displayName,
+			status: participants.seller.accessRole,
+		},
+		{
+			email: participants.lawyer.email,
+			label: "Lawyer",
+			name: participants.lawyer.displayName ?? "Unassigned",
+			status: participants.lawyer.hasActiveDealAccess
+				? "active_access"
+				: (participants.lawyer.lawyerType ?? "awaiting_access"),
+		},
+	];
+}
+
+function AdminApprovalGate({
+	approvalError,
+	approvalPending,
+	documents,
+	onApprove,
+	state,
+}: {
+	approvalError: string | null;
+	approvalPending: boolean;
+	documents: PortalPackageInstance[];
+	onApprove: () => Promise<void> | void;
+	state: DealClosingPipelineState;
+}) {
+	const participants = state.portalDocumentPackage?.participants ?? null;
+	const lawyer = participants?.lawyer ?? null;
+
+	return (
+		<section className={panelClassName}>
+			<div className="flex flex-wrap items-start justify-between gap-4">
+				<div>
+					<h2 className={panelHeadingClassName}>Admin Approval Gate</h2>
+					<p className={cn(mutedTextClassName, "mt-2 max-w-3xl text-sm")}>
+						Documents are prepared for review. Signing unlocks after lawyer
+						representation is confirmed.
+					</p>
+					{approvalError ? (
+						<p className="mt-2 max-w-3xl text-red-600 text-sm">
+							{approvalError}
+						</p>
+					) : null}
+				</div>
+				<div className="flex flex-wrap items-center justify-end gap-2">
+					<StatusBadge status={state.deal?.status} />
+					<Button
+						disabled={approvalPending}
+						onClick={() => {
+							void onApprove();
+						}}
+						size="sm"
+						type="button"
+					>
+						<ShieldCheck className="mr-2 size-4" />
+						{approvalPending ? "Approving..." : "Approve and open signing"}
+					</Button>
+				</div>
+			</div>
+
+			<div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+				<div className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/72 p-4">
+					<div className="flex items-start gap-3">
+						<div className="grid size-10 shrink-0 place-items-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--palm)]">
+							<ShieldCheck className="size-5" />
+						</div>
+						<div className="min-w-0">
+							<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
+								Selected lawyer
+							</p>
+							<p className="mt-1 truncate font-semibold text-sm">
+								{lawyer?.displayName ?? "Awaiting lawyer selection"}
+							</p>
+							<p className={cn(mutedTextClassName, "mt-1 truncate text-xs")}>
+								{lawyer?.email ?? "No lawyer email available"}
+							</p>
+						</div>
+					</div>
+					<div className="mt-4 flex flex-wrap gap-2">
+						<StatusBadge
+							status={
+								lawyer?.hasActiveDealAccess
+									? "active_access"
+									: (lawyer?.lawyerType ?? "awaiting_access")
+							}
+						/>
+					</div>
+				</div>
+
+				<div className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/72 p-4">
+					<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
+						Participants
+					</p>
+					<div className="mt-3 grid gap-2 sm:grid-cols-3">
+						{participantRows(participants).map((participant) => (
+							<div
+								className="min-w-0 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/64 px-3 py-2"
+								key={participant.label}
+							>
+								<p className={cn(mutedTextClassName, "text-xs")}>
+									{participant.label}
+								</p>
+								<p className="mt-1 truncate font-semibold text-sm">
+									{participant.name}
+								</p>
+								<p className={cn(mutedTextClassName, "mt-1 truncate text-xs")}>
+									{participant.email ?? "No email available"}
+								</p>
+								<p className={cn(mutedTextClassName, "mt-1 truncate text-xs")}>
+									{formatEnumLabel(participant.status)}
+								</p>
+							</div>
+						))}
+					</div>
+				</div>
+			</div>
+
+			<div className="mt-6">
+				<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
+					Documents
+				</p>
+				<div className="mt-3 divide-y divide-[var(--line)] rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/72">
+					{documents.map((document) => (
+						<div
+							className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"
+							key={document.instanceId}
+						>
+							<div className="flex min-w-0 items-center gap-3">
+								<div className="grid size-9 shrink-0 place-items-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--lagoon-deep)]">
+									<FileText className="size-4" />
+								</div>
+								<div className="min-w-0">
+									<p className="truncate font-semibold text-sm">
+										{document.displayName}
+									</p>
+									<p className={cn(mutedTextClassName, "truncate text-xs")}>
+										{formatEnumLabel(document.class)}
+									</p>
+								</div>
+							</div>
+							<div className="flex shrink-0 flex-wrap items-center gap-2">
+								<StatusBadge status={document.status} />
+								{document.url ? (
+									<a
+										className="inline-flex h-8 items-center rounded-md border border-[var(--line)] px-3 font-semibold text-[var(--sea-ink)] text-xs no-underline hover:bg-[var(--surface-strong)]"
+										href={document.url}
+										rel="noreferrer"
+										target="_blank"
+									>
+										View PDF
+									</a>
+								) : null}
+							</div>
+						</div>
+					))}
+				</div>
+			</div>
+		</section>
+	);
+}
+
 function DealHeader({ state }: { state: DealClosingPipelineState }) {
 	const property = state.deal?.property;
 	const title = property
@@ -379,6 +632,7 @@ function Lifecycle({ currentStage }: { currentStage: ClosingStage }) {
 						<div className="contents" key={stage.id}>
 							<div className="flex w-[90px] shrink-0 flex-col items-center gap-2">
 								<div
+									aria-current={isCurrent ? "step" : undefined}
 									className={cn(
 										"grid size-8 place-items-center rounded-full",
 										isComplete && "bg-[var(--palm)] text-white",
@@ -387,6 +641,7 @@ function Lifecycle({ currentStage }: { currentStage: ClosingStage }) {
 										!(isComplete || isCurrent) &&
 											"bg-[color-mix(in_oklab,var(--sea-ink-soft)_18%,transparent)] text-[var(--sea-ink-soft)]"
 									)}
+									data-testid={`closing-stage-${stage.id}`}
 								>
 									{isComplete ? (
 										<Check className="size-4" />
@@ -554,12 +809,43 @@ function SetupAndPackage({ state }: { state: DealClosingPipelineState }) {
 	);
 }
 
-function DealContext({ state }: { state: DealClosingPipelineState }) {
+function DealContext({
+	onReset,
+	resetPending,
+	state,
+}: {
+	onReset: () => Promise<void> | void;
+	resetPending: boolean;
+	state: DealClosingPipelineState;
+}) {
 	const property = state.deal?.property;
 
 	return (
 		<section className={panelClassName}>
-			<h2 className={panelHeadingClassName}>Deal Context</h2>
+			<div className="flex flex-wrap items-start justify-between gap-4">
+				<div>
+					<h2 className={panelHeadingClassName}>Deal Context</h2>
+					{state.deal ? null : (
+						<p className={cn(mutedTextClassName, "mt-2 text-sm")}>
+							The fixed package is ready. Initialize the demo deal to generate
+							the package documents and signing envelopes.
+						</p>
+					)}
+				</div>
+				{state.deal ? null : (
+					<Button
+						disabled={resetPending || !state.canReset}
+						onClick={() => void onReset()}
+						size="sm"
+						variant="outline"
+					>
+						<RefreshCw
+							className={cn("mr-2 size-4", resetPending && "animate-spin")}
+						/>
+						{resetPending ? "Initializing..." : "Initialize demo deal"}
+					</Button>
+				)}
+			</div>
 			<div className="mt-6 grid gap-x-12 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
 				<InfoTile label="Deal id" value={state.deal?.id ?? "No demo deal"} />
 				<InfoTile
@@ -628,7 +914,9 @@ function PackageInstances({
 					{instances.map((instance) => (
 						<InstanceRow
 							canLaunch={Boolean(
-								state.deal && instance.signing?.canLaunchEmbeddedSigning
+								state.deal &&
+									canDealLaunchEmbeddedSigning(state) &&
+									canDemoAdminLaunchEmbeddedSigning(state, instance)
 							)}
 							instance={instance}
 							key={instance.instanceId}

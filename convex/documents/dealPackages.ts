@@ -30,6 +30,7 @@ import {
 	signatureRecipientStatusValidator,
 } from "./contracts";
 import { listMortgageBlueprintRows } from "./mortgageBlueprints";
+import { isDealStatusOpenForEmbeddedSigning } from "./signature/gates";
 import {
 	getSignatureProvider,
 	mapEnvelopeStatusToDealDocumentInstanceStatus,
@@ -55,6 +56,12 @@ interface SignatoryParticipant {
 	name: string;
 	platformRole: string;
 	userId?: Id<"users">;
+}
+
+interface SignatoryMapping {
+	email: string;
+	name: string;
+	platformRole: string;
 }
 
 interface PackageInstanceSigningRecipientSurface {
@@ -111,6 +118,7 @@ interface ParticipantSnapshot {
 		userId: Id<"users">;
 	};
 	dealParticipants: DealParticipantProjection;
+	dealStatus: string;
 	latestValuationSnapshot: Doc<"mortgageValuationSnapshots"> | null;
 	listing?: Doc<"listings"> | null;
 	mortgage: Doc<"mortgages">;
@@ -189,6 +197,7 @@ interface DealPackageActionArgs {
 
 interface DealPackageRuntimeState {
 	dealId: Id<"deals">;
+	dealStatus: string;
 	mortgageId: Id<"mortgages">;
 	packageId: Id<"dealDocumentPackages">;
 	signatories: Array<{
@@ -431,6 +440,7 @@ async function buildParticipantSnapshot(
 		assignedBroker,
 		borrowers,
 		brokerOfRecord,
+		dealStatus: deal.status,
 		dealParticipants,
 		latestValuationSnapshot,
 		listing,
@@ -454,6 +464,42 @@ function projectionContact(participant: {
 		return undefined;
 	}
 	return { email, fullName };
+}
+
+const LEGACY_TEMPLATE_SIGNATORY_ROLE_ALIASES: Record<string, string> = {
+	borrower: "borrower_primary",
+	borrower_lawyer: "lawyer_primary",
+	fairlend_broker: "broker_of_record",
+	lender: "lender_primary",
+	lender_lawyer: "lawyer_primary",
+	seller_lawyer: "lawyer_primary",
+};
+
+function hasResolvedSignatoryContact(entry: SignatoryMapping): boolean {
+	return entry.email.trim().length > 0 && entry.name.trim().length > 0;
+}
+
+function appendLegacyTemplateRoleAliases<T extends SignatoryMapping>(
+	participants: T[]
+): T[] {
+	const participantsByRole = new Map(
+		participants.map((participant) => [participant.platformRole, participant])
+	);
+	const aliases: T[] = [];
+
+	for (const [legacyRole, canonicalRole] of Object.entries(
+		LEGACY_TEMPLATE_SIGNATORY_ROLE_ALIASES
+	)) {
+		if (participantsByRole.has(legacyRole)) {
+			continue;
+		}
+		const participant = participantsByRole.get(canonicalRole);
+		if (participant) {
+			aliases.push({ ...participant, platformRole: legacyRole });
+		}
+	}
+
+	return [...participants, ...aliases];
 }
 
 function buildDealVariableBag(snapshot: ParticipantSnapshot) {
@@ -513,6 +559,7 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 		valuation_value_as_is: String(
 			snapshot.latestValuationSnapshot?.valueAsIs ?? 0
 		),
+		test_str_n72b_pv2: "Demo package value",
 	};
 }
 
@@ -524,7 +571,7 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 		(borrower) => borrower.role === "co_borrower"
 	);
 
-	return [
+	const mappings: SignatoryMapping[] = [
 		...(lenderPrimary
 			? [
 					{
@@ -584,9 +631,9 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 					},
 				]
 			: []),
-	].filter(
-		(entry) => entry.email.trim().length > 0 && entry.name.trim().length > 0
-	);
+	].filter(hasResolvedSignatoryContact);
+
+	return appendLegacyTemplateRoleAliases(mappings);
 }
 
 function buildSignatoryParticipants(
@@ -602,7 +649,7 @@ function buildSignatoryParticipants(
 		(borrower) => borrower.role === "co_borrower"
 	);
 
-	return [
+	const participants: SignatoryParticipant[] = [
 		...(lenderPrimary
 			? [
 					{
@@ -670,12 +717,13 @@ function buildSignatoryParticipants(
 					},
 				]
 			: []),
-	].filter(
-		(entry) => entry.email.trim().length > 0 && entry.name.trim().length > 0
-	);
+	].filter(hasResolvedSignatoryContact);
+
+	return appendLegacyTemplateRoleAliases(participants);
 }
 
 function canLaunchEmbeddedSigning(args: {
+	dealStatus: string | null;
 	envelopeStatus: EnvelopeRow["status"] | null;
 	providerRecipientId: string | null;
 	recipientStatus: RecipientRow["status"];
@@ -687,6 +735,10 @@ function canLaunchEmbeddedSigning(args: {
 	userId: Id<"users"> | null;
 	viewer?: DealPackageViewerContext;
 }) {
+	if (!isDealStatusOpenForEmbeddedSigning(args.dealStatus)) {
+		return false;
+	}
+
 	if (!(args.viewer?.userId && args.userId)) {
 		return false;
 	}
@@ -728,6 +780,7 @@ async function buildSigningSurface(
 		"generatedDocumentId" | "sourceBlueprintSnapshot"
 	>,
 	viewer?: DealPackageViewerContext,
+	dealStatus?: string | null,
 	generatedDocumentOverride?: GeneratedDocumentRow | null
 ): Promise<PackageInstanceSigningSurface | null> {
 	if (instance.sourceBlueprintSnapshot.class !== "private_templated_signable") {
@@ -775,6 +828,7 @@ async function buildSigningSurface(
 	return {
 		canLaunchEmbeddedSigning: recipients.some((recipient) =>
 			canLaunchEmbeddedSigning({
+				dealStatus: dealStatus ?? null,
 				envelopeStatus: envelope?.status ?? null,
 				providerRecipientId: recipient.providerRecipientId,
 				recipients,
@@ -855,6 +909,7 @@ async function buildPackageSurface(
 					ctx,
 					row,
 					viewer,
+					deal?.status ?? null,
 					generatedDocument
 				);
 				let archivedSigning: PackageInstanceArchivedSigningSurface | null =
@@ -890,7 +945,11 @@ async function buildPackageSurface(
 					if (
 						row.sourceBlueprintSnapshot.class === "private_templated_signable"
 					) {
-						url = archivedSigning?.finalPdfUrl ?? null;
+						url =
+							archivedSigning?.finalPdfUrl ??
+							(isDealStatusOpenForEmbeddedSigning(deal?.status)
+								? null
+								: await ctx.storage.getUrl(generatedDocument.pdfStorageId));
 					} else {
 						url = await ctx.storage.getUrl(generatedDocument.pdfStorageId);
 					}
@@ -1743,6 +1802,7 @@ export const getSignableDocumentEnvelopeByInstanceInternal = convex
 		if (!generatedDocument) {
 			return null;
 		}
+		const deal = await ctx.db.get(instance.dealId);
 
 		const envelope = await ctx.db
 			.query("signatureEnvelopes")
@@ -1761,6 +1821,7 @@ export const getSignableDocumentEnvelopeByInstanceInternal = convex
 
 		return {
 			dealId: instance.dealId,
+			dealStatus: deal?.status ?? null,
 			envelope: {
 				envelopeId: envelope._id,
 				providerCode: envelope.providerCode,
@@ -2216,6 +2277,7 @@ function isInstanceForSnapshot(
 
 function buildPackageWorkItems(args: {
 	blueprintSnapshots: DealPackageBlueprintSnapshot[];
+	dealStatus: string | null | undefined;
 	existingInstances: InstanceRow[];
 }): PackageWorkItem[] {
 	const retryItems = args.existingInstances
@@ -2225,7 +2287,11 @@ function buildPackageWorkItems(args: {
 				instance.status === "signature_pending_recipient_resolution" ||
 				instance.status === "signature_draft" ||
 				instance.status === "signature_declined" ||
-				instance.status === "signature_voided"
+				instance.status === "signature_voided" ||
+				(args.dealStatus === "documentReview.pending" &&
+					instance.status === "available" &&
+					instance.sourceBlueprintSnapshot.class ===
+						"private_templated_signable")
 		)
 		.map((instance) => ({
 			instance,
@@ -2848,6 +2914,19 @@ async function createSignableGeneratedInstance(
 				templateVersionUsed: generationResult.templateVersionUsed,
 			}
 		);
+		if (!isDealStatusOpenForEmbeddedSigning(runtime.dealStatus)) {
+			await createPackageInstance(ctx, {
+				dealId: runtime.dealId,
+				generatedDocumentId,
+				kind: "generated",
+				mortgageId: runtime.mortgageId,
+				packageId: runtime.packageId,
+				sourceBlueprintId: getWorkItemSourceBlueprintId(workItem),
+				sourceBlueprintSnapshot,
+				status: "available",
+			});
+			return;
+		}
 		if (signatureRecipients.length === 0) {
 			await createPackageInstance(ctx, {
 				dealId: runtime.dealId,
@@ -3185,6 +3264,7 @@ async function prepareDealPackageRuntime(
 		packageId,
 		runtime: {
 			dealId: args.dealId,
+			dealStatus: snapshot.dealStatus,
 			mortgageId: snapshot.mortgage._id,
 			packageId,
 			signatories,
@@ -3193,6 +3273,7 @@ async function prepareDealPackageRuntime(
 		},
 		workItems: buildPackageWorkItems({
 			blueprintSnapshots,
+			dealStatus: snapshot.dealStatus,
 			existingInstances,
 		}),
 	};

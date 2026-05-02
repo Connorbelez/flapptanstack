@@ -107,10 +107,12 @@ const readonlyInstanceId = "instance_readonly_789";
 
 function buildPipelineState(
 	options: {
+		dealStatus?: string;
 		signableCanLaunch?: boolean;
 		signableCurrentViewer?: boolean;
 	} = {}
 ): DealClosingPipelineState {
+	const dealStatus = options.dealStatus ?? "documentReview.pending";
 	const signableCanLaunch = options.signableCanLaunch ?? true;
 	const signableCurrentViewer = options.signableCurrentViewer ?? true;
 
@@ -144,7 +146,7 @@ function buildPipelineState(
 				streetAddress: "123 King St W",
 				unit: "Suite 1201",
 			},
-			status: "initiated",
+			status: dealStatus,
 		},
 		lender: {
 			authId: "user_01KJ6BJXS10933HSV7KYJ9HXMN",
@@ -334,12 +336,88 @@ function buildPipelineState(
 	};
 }
 
+function buildLockedApprovalGateState() {
+	const state = buildPipelineState({
+		dealStatus: "lawyerOnboarding.verified",
+		signableCanLaunch: false,
+	});
+	state.portalDocumentPackage!.participants = {
+		buyer: {
+			accessRole: "lender",
+			authId: "user_buyer_123",
+			displayName: "Connor Belez",
+			email: "connor.belez@gmail.com",
+			lenderId: "lender_123" as never,
+			userId: "user_row_buyer_123" as never,
+		},
+		dealId: dealId as never,
+		fractionalShareDisplayPercent: 25,
+		fractionalShareStatus: {
+			fractionalShareDisplayPercent: 25,
+			fractionalShareUnits: 2500,
+			isValid: true,
+			validationError: null,
+		},
+		fractionalShareUnits: 2500,
+		lawyer: {
+			authId: "user_lawyer_123",
+			displayName: "Layla Lawyer",
+			email: "layla.lawyer@example.com",
+			hasActiveDealAccess: false,
+			lawyerType: "platform_lawyer",
+		},
+		personas: {
+			admin: "admin",
+			buyer: "buyer",
+			lawyer: "lawyer",
+			seller: "seller",
+		},
+		seller: {
+			accessRole: "borrower",
+			authId: "user_seller_123",
+			borrowerId: "borrower_123" as never,
+			displayName: "Sam Seller",
+			email: "sam.seller@example.com",
+			lenderId: null,
+			userId: "user_row_seller_123" as never,
+		},
+	};
+	state.portalDocumentPackage!.instances = state.portalDocumentPackage!.instances.map(
+		(instance) =>
+			instance.class === "private_templated_signable"
+				? {
+						...instance,
+						signing: instance.signing
+							? {
+									...instance.signing,
+									canLaunchEmbeddedSigning: false,
+									envelopeId: null,
+									generatedDocumentSigningStatus: "draft",
+									lastProviderSyncAt: null,
+									providerCode: null,
+									providerEnvelopeId: null,
+									recipients: [],
+									status: null,
+								}
+							: null,
+						signingState: null,
+						status: "available",
+						url: `https://example.com/${instance.packageKey}.pdf`,
+					}
+				: instance
+	);
+
+	return state;
+}
+
 function renderDemo(
 	options: {
 		onCreateSigningSession?: (
 			args: DealClosingPipelineCreateSigningSessionArgs
 		) => Promise<void>;
+		onApproveAdminGate?: () => Promise<void> | void;
 		onReset?: () => Promise<void> | void;
+		approvalPending?: boolean;
 		resetPending?: boolean;
 		signingSession?: DealClosingPipelineSigningSession | null;
 		state?: DealClosingPipelineState;
@@ -347,6 +425,8 @@ function renderDemo(
 ) {
 	return render(
 		<DealClosingPipelineDemo
+			approvalPending={options.approvalPending ?? false}
+			onApproveAdminGate={options.onApproveAdminGate ?? vi.fn()}
 			onCreateSigningSession={
 				options.onCreateSigningSession ?? vi.fn(async () => undefined)
 			}
@@ -356,6 +436,22 @@ function renderDemo(
 			state={options.state ?? buildPipelineState()}
 		/>
 	);
+}
+
+function buildUninitializedPipelineState(): DealClosingPipelineState {
+	return {
+		...buildPipelineState(),
+		auditTrail: [],
+		deal: null,
+		lender: {
+			...buildPipelineState().lender,
+			fixedUserIdMatches: false,
+			linkedUserId: null,
+			userId: null,
+		},
+		package: null,
+		portalDocumentPackage: null,
+	};
 }
 
 describe("DealClosingPipelineDemo", () => {
@@ -384,6 +480,26 @@ describe("DealClosingPipelineDemo", () => {
 		).toBe(false);
 	});
 
+	it("hides archived retry attempts from the package instance list", () => {
+		const state = buildPipelineState();
+		const archivedInstance = {
+			...state.portalDocumentPackage!.instances[0],
+			archivedAt: Date.parse("2026-04-30T14:20:00.000Z"),
+			displayName: "Archived Investment Agreement",
+			instanceId: "instance_archived_001" as never,
+			status: "archived" as const,
+		};
+		state.portalDocumentPackage!.instances = [
+			...state.portalDocumentPackage!.instances,
+			archivedInstance,
+		];
+
+		const view = renderDemo({ state });
+
+		expect(view.getByText("3 instances")).toBeTruthy();
+		expect(view.queryByText("Archived Investment Agreement")).toBeNull();
+	});
+
 	it("calls reset and respects the pending disabled state", () => {
 		const onReset = vi.fn();
 		const view = renderDemo({ onReset });
@@ -406,6 +522,19 @@ describe("DealClosingPipelineDemo", () => {
 			(view.getByRole("button", { name: /regenerating/i }) as HTMLButtonElement)
 				.disabled
 		).toBe(true);
+	});
+
+	it("shows an in-page initialize action when no fixed demo deal exists", () => {
+		const onReset = vi.fn();
+		const view = renderDemo({
+			onReset,
+			state: buildUninitializedPipelineState(),
+		});
+
+		expect(view.getByText("No demo deal")).toBeTruthy();
+		fireEvent.click(view.getByRole("button", { name: /initialize demo deal/i }));
+
+		expect(onReset).toHaveBeenCalledTimes(1);
 	});
 
 	it("opens an eligible signer via dealId and instanceId and renders the Documenso token", async () => {
@@ -499,12 +628,16 @@ describe("DealClosingPipelineDemo", () => {
 	});
 
 	it("does not expose a signing launch for non-current or ineligible instances", () => {
-		const view = renderDemo({
-			state: buildPipelineState({
-				signableCanLaunch: false,
-				signableCurrentViewer: false,
-			}),
+		const state = buildPipelineState({
+			dealStatus: "documentReview.pending",
+			signableCanLaunch: false,
+			signableCurrentViewer: false,
 		});
+		state.portalDocumentPackage!.instances[0]!.signing!.recipients[0]!.providerRecipientId =
+			null;
+		state.portalDocumentPackage!.instances[1]!.signing!.recipients[0]!.providerRecipientId =
+			null;
+		const view = renderDemo({ state });
 
 		expect(
 			view.queryByRole("button", { name: "Sign Investment Agreement" })
@@ -515,6 +648,100 @@ describe("DealClosingPipelineDemo", () => {
 			within(blockedRow).queryByRole("button", {
 				name: "Sign Borrower Disclosure",
 			})
+		).toBeNull();
+	});
+
+	it("exposes a demo admin signing launch for the next pending recipient", async () => {
+		const onCreateSigningSession = vi.fn(async () => undefined);
+		const view = renderDemo({
+			onCreateSigningSession,
+			state: buildPipelineState({
+				dealStatus: "documentReview.pending",
+				signableCanLaunch: false,
+				signableCurrentViewer: false,
+			}),
+		});
+
+		await act(async () => {
+			fireEvent.click(
+				view.getAllByRole("button", { name: "Sign Investment Agreement" })[0]
+			);
+		});
+
+		expect(onCreateSigningSession).toHaveBeenCalledWith({
+			dealId,
+			instanceId: signableInstanceId,
+		});
+	});
+
+	it("renders a locked admin approval gate with documents and participants", () => {
+		const view = renderDemo({
+			state: buildLockedApprovalGateState(),
+		});
+
+		expect(view.getByText("Admin Approval Gate")).toBeTruthy();
+		expect(view.getAllByText("Layla Lawyer").length).toBeGreaterThan(0);
+		expect(
+			view.getAllByText("layla.lawyer@example.com").length
+		).toBeGreaterThan(0);
+		expect(view.getAllByText("Connor Belez").length).toBeGreaterThan(0);
+		expect(view.getByText("Sam Seller")).toBeTruthy();
+		expect(view.getAllByText("Investment Agreement").length).toBeGreaterThan(0);
+		expect(view.getAllByText("Borrower Disclosure").length).toBeGreaterThan(0);
+		expect(view.getAllByRole("link", { name: "View PDF" })).toHaveLength(3);
+		expect(
+			view.queryByRole("button", { name: "Sign Investment Agreement" })
+		).toBeNull();
+	});
+
+	it("launches the admin approval action from the locked gate", async () => {
+		const onApproveAdminGate = vi.fn(async () => undefined);
+		const view = renderDemo({
+			onApproveAdminGate,
+			state: buildLockedApprovalGateState(),
+		});
+
+		await act(async () => {
+			fireEvent.click(
+				view.getByRole("button", { name: "Approve and open signing" })
+			);
+		});
+
+		expect(onApproveAdminGate).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps the admin approval action clickable after reset-created locked states", async () => {
+		const onApproveAdminGate = vi.fn(async () => undefined);
+		const resetLockedState = buildLockedApprovalGateState();
+		resetLockedState.deal!.status = "initiated";
+		const view = renderDemo({
+			onApproveAdminGate,
+			state: resetLockedState,
+		});
+
+		await act(async () => {
+			fireEvent.click(
+				view.getByRole("button", { name: "Approve and open signing" })
+			);
+		});
+
+		expect(onApproveAdminGate).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows the documents stage once signing is legally unlocked even while package retry state settles", () => {
+		const unlockedState = buildPipelineState({
+			dealStatus: "documentReview.pending",
+			signableCanLaunch: false,
+		});
+		unlockedState.portalDocumentPackage!.package!.status = "partial_failure";
+
+		const view = renderDemo({ state: unlockedState });
+
+		expect(
+			view.getByTestId("closing-stage-documents").getAttribute("aria-current")
+		).toBe("step");
+		expect(
+			view.getByTestId("closing-stage-locked").getAttribute("aria-current")
 		).toBeNull();
 	});
 });

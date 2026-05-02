@@ -1,9 +1,9 @@
 import { type ReactNode, useMemo } from "react";
 import {
 	Area,
-	AreaChart,
 	CartesianGrid,
 	Cell,
+	ComposedChart,
 	Legend,
 	Line,
 	Pie,
@@ -81,6 +81,8 @@ export interface MicReturnAnalytics {
 	currentMonthPeriod: string | null;
 	currentMonthReturn: number;
 	projectedYieldEarned: number | null;
+	projectedYieldInvestment: number;
+	projectedYieldReturn: number;
 	totalInvestment: number;
 	ytdApr: number | null;
 	ytdPeriodLabel: string;
@@ -113,6 +115,10 @@ function roundPercentValue(value: number) {
 	return Math.round(value * 100) / 100;
 }
 
+function roundCurrencyValue(value: number) {
+	return Math.round(value * 100) / 100;
+}
+
 function calculateReturnPercent(returnValue: number, investment: number) {
 	if (investment <= 0) {
 		return null;
@@ -129,6 +135,47 @@ function annualizeReturnPercent(
 		return null;
 	}
 	return roundPercentValue((returnValue / investment) * (12 / months) * 100);
+}
+
+function calculateProjectedRolling12Return(
+	series: readonly MicReturnSeriesRow[],
+	totalInvestment: number
+): { investment: number; returnValue: number } {
+	if (series.length === 0) {
+		return { investment: totalInvestment, returnValue: 0 };
+	}
+	if (series.length >= 12) {
+		return {
+			investment: totalInvestment,
+			returnValue: series
+				.slice(-12)
+				.reduce((sum, row) => sum + row.totalReturn, 0),
+		};
+	}
+	const latest = series.at(-1);
+	const projectedMonthlyPrincipal = latest?.originatedPrincipal ?? 0;
+	const projectedMonthlyFeeIncome = latest?.feeIncome ?? 0;
+	const projectedMonthlyInterestIncrement =
+		totalInvestment > 0 && latest
+			? roundCurrencyValue(
+					latest.interestIncome * (projectedMonthlyPrincipal / totalInvestment)
+				)
+			: 0;
+	let returnValue = 0;
+	for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+		returnValue = roundCurrencyValue(
+			returnValue +
+				projectedMonthlyFeeIncome +
+				(latest?.interestIncome ?? 0) +
+				projectedMonthlyInterestIncrement * monthIndex
+		);
+	}
+	return {
+		investment: roundCurrencyValue(
+			totalInvestment + projectedMonthlyPrincipal * 11
+		),
+		returnValue,
+	};
 }
 
 export function buildReturnChartSeries(
@@ -158,18 +205,47 @@ export function buildReturnChartSeries(
 	if (!latest) {
 		return rows;
 	}
+	const cumulativeOriginatedPrincipal = series.reduce(
+		(sum, row) => sum + row.originatedPrincipal,
+		0
+	);
+	const projectedFeeIncome = latest.feeIncome;
+	const projectedNewInterestIncome =
+		cumulativeOriginatedPrincipal > 0
+			? roundCurrencyValue(
+					latest.interestIncome *
+						(latest.originatedPrincipal / cumulativeOriginatedPrincipal)
+				)
+			: 0;
+	const projectedInterestIncome = roundCurrencyValue(
+		latest.interestIncome + projectedNewInterestIncome
+	);
+	const projectedTotalReturn = roundCurrencyValue(
+		projectedFeeIncome + projectedInterestIncome
+	);
+	const projectedCumulativeFeeIncome = roundCurrencyValue(
+		latest.cumulativeFeeIncome + projectedFeeIncome
+	);
+	const projectedCumulativeInterestIncome = roundCurrencyValue(
+		latest.cumulativeInterestIncome + projectedInterestIncome
+	);
+	const projectedCumulativeTotalReturn = roundCurrencyValue(
+		projectedCumulativeFeeIncome + projectedCumulativeInterestIncome
+	);
 	rows.push({
-		cumulativeFeeIncome: latest.cumulativeFeeIncome + latest.feeIncome,
-		cumulativeInterestIncome:
-			latest.cumulativeInterestIncome + latest.interestIncome,
-		cumulativeTotalReturn: latest.cumulativeTotalReturn + latest.totalReturn,
-		feeIncome: latest.feeIncome,
-		feeIncomeSharePercent: latest.feeIncomeSharePercent,
-		interestIncome: latest.interestIncome,
+		cumulativeFeeIncome: projectedCumulativeFeeIncome,
+		cumulativeInterestIncome: projectedCumulativeInterestIncome,
+		cumulativeTotalReturn: projectedCumulativeTotalReturn,
+		feeIncome: projectedFeeIncome,
+		feeIncomeSharePercent: calculateReturnPercent(
+			projectedCumulativeFeeIncome,
+			projectedCumulativeTotalReturn
+		),
+		interestIncome: projectedInterestIncome,
 		isProjected: true,
 		originatedPrincipal: latest.originatedPrincipal,
 		period: nextPeriod(latest.period),
-		totalReturn: latest.totalReturn,
+		totalReturn: projectedTotalReturn,
 	});
 	return rows;
 }
@@ -192,6 +268,10 @@ export function buildReturnAnalytics({
 	const latest = series.at(-1);
 	const currentMonthReturn = latest?.totalReturn ?? 0;
 	const currentMonthPeriod = latest?.period ?? null;
+	const projectedRolling12 = calculateProjectedRolling12Return(
+		series,
+		totalInvestment
+	);
 	const currentMonthApr = annualizeReturnPercent(
 		currentMonthReturn,
 		totalInvestment,
@@ -211,9 +291,11 @@ export function buildReturnAnalytics({
 		currentMonthPeriod,
 		currentMonthReturn,
 		projectedYieldEarned: calculateReturnPercent(
-			fees.totalReturnIncome,
-			totalInvestment
+			projectedRolling12.returnValue,
+			projectedRolling12.investment
 		),
+		projectedYieldInvestment: projectedRolling12.investment,
+		projectedYieldReturn: projectedRolling12.returnValue,
 		totalInvestment,
 		ytdApr: annualizeReturnPercent(ytdReturn, totalInvestment, ytdMonths),
 		ytdPeriodLabel: currentYear ? `${currentYear} YTD` : "YTD",
@@ -586,7 +668,7 @@ export function MicReturnSeriesChart({
 						className="h-[320px] w-full"
 						config={RETURN_CHART_CONFIG}
 					>
-						<AreaChart
+						<ComposedChart
 							accessibilityLayer
 							data={chartSeries}
 							margin={{ bottom: 8, left: 4, right: 16, top: 16 }}
@@ -668,7 +750,7 @@ export function MicReturnSeriesChart({
 								strokeWidth={2}
 								type="monotone"
 							/>
-						</AreaChart>
+						</ComposedChart>
 					</ChartContainer>
 				</div>
 
@@ -692,9 +774,9 @@ export function MicReturnSeriesChart({
 						value={formatCurrency(fees.totalReturnIncome)}
 					/>
 					<FeeMetric
-						aside={`${formatCurrency(analytics.totalInvestment)} total MIC investment basis`}
+						aside={`${formatPercent(analytics.projectedYieldEarned)} over ${formatCurrency(analytics.projectedYieldInvestment)} projected MIC investment basis`}
 						label="Projected yield earned"
-						value={formatPercent(analytics.projectedYieldEarned)}
+						value={formatCurrency(analytics.projectedYieldReturn)}
 					/>
 				</aside>
 			</div>

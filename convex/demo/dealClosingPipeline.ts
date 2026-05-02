@@ -3,11 +3,13 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { dealDocumentPackageStatusValidator } from "../documents/contracts";
+import { isDealStatusOpenForEmbeddedSigning } from "../documents/signature/gates";
 import {
 	getSignatureProvider,
 	type SignatureProviderCleanupEnvelopeResult,
 } from "../documents/signature/provider";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
+import { executeTransition } from "../engine/transition";
 import { authedAction, authedQuery, convex, type Viewer } from "../fluent";
 
 const DEMO_PACKAGE_DEFINITION_ID =
@@ -20,6 +22,18 @@ const DEMO_LENDER = {
 	authId: "user_01KJ6BJXS10933HSV7KYJ9HXMN",
 	email: "connor.belez@gmail.com",
 	name: "Connor Belez",
+};
+const DEMO_BORROWER = {
+	authId: "user_demo_deal_borrower",
+	email: "borrower.demo-deal@test.fairlend.ca",
+	firstName: "Bailey",
+	lastName: "Borrower",
+};
+const DEMO_LAWYER = {
+	authId: "user_demo_deal_lawyer",
+	email: "lawyer.demo-deal@test.fairlend.ca",
+	firstName: "Layla",
+	lastName: "Lawyer",
 };
 
 type DemoPackageDefinition = Pick<
@@ -71,6 +85,83 @@ type DemoPackageGenerationStatus =
 type DemoResetStatus =
 	| "demo_package_generation_succeeded"
 	| "demo_package_generation_failed";
+type DemoApprovalStatus =
+	| "demo_admin_approval_gate_approved"
+	| "demo_admin_approval_gate_already_open";
+type DemoApprovalStartState =
+	| "initiated"
+	| "lawyerOnboarding.pending"
+	| "lawyerOnboarding.verified";
+
+interface DemoApprovalResult {
+	dealId: Id<"deals">;
+	mortgageId: Id<"mortgages">;
+	newState: string;
+	ok: true;
+	packageGeneration: DemoGenerationResult | null;
+	previousState: string;
+	status: DemoApprovalStatus;
+}
+
+interface DemoSignableEnvelopeRecipient {
+	providerRecipientId: string | null;
+	signingOrder: number;
+	status: "declined" | "opened" | "pending" | "signed";
+}
+
+interface DemoSignableEnvelopeDocument {
+	dealId: Id<"deals">;
+	dealStatus: string | null;
+	envelope: {
+		providerCode: "documenso";
+		providerEnvelopeId: string;
+		status:
+			| "completed"
+			| "declined"
+			| "draft"
+			| "partially_signed"
+			| "provider_error"
+			| "sent"
+			| "voided";
+	};
+	recipients: DemoSignableEnvelopeRecipient[];
+}
+
+function canStartDemoAdminApproval(
+	state: string
+): state is DemoApprovalStartState {
+	return (
+		state === "initiated" ||
+		state === "lawyerOnboarding.pending" ||
+		state === "lawyerOnboarding.verified"
+	);
+}
+
+function findNextDemoSigningRecipient(
+	document: DemoSignableEnvelopeDocument
+): DemoSignableEnvelopeRecipient | null {
+	const orderedRecipients = [...document.recipients].sort(
+		(left, right) => left.signingOrder - right.signingOrder
+	);
+
+	return (
+		orderedRecipients.find((recipient) => {
+			if (
+				!recipient.providerRecipientId ||
+				recipient.status === "signed" ||
+				recipient.status === "declined"
+			) {
+				return false;
+			}
+
+			return !orderedRecipients.some(
+				(previousRecipient) =>
+					previousRecipient.signingOrder < recipient.signingOrder &&
+					previousRecipient.status !== "signed"
+			);
+		}) ?? null
+	);
+}
 
 const signatureProviderCleanupStatusValidator = v.union(
 	v.literal("deleted"),
@@ -398,6 +489,54 @@ async function ensureFixedDemoUser(ctx: MutationCtx): Promise<Doc<"users">> {
 	return user;
 }
 
+async function ensureDemoUserByAuth(
+	ctx: MutationCtx,
+	user: {
+		authId: string;
+		email: string;
+		firstName: string;
+		lastName: string;
+	}
+): Promise<Doc<"users">> {
+	const existing = await ctx.db
+		.query("users")
+		.withIndex("authId", (query) => query.eq("authId", user.authId))
+		.first();
+	if (existing) {
+		const patch: Partial<Doc<"users">> = {};
+		if (existing.email !== user.email) {
+			patch.email = user.email;
+		}
+		if (existing.firstName !== user.firstName) {
+			patch.firstName = user.firstName;
+		}
+		if (existing.lastName !== user.lastName) {
+			patch.lastName = user.lastName;
+		}
+		if (Object.keys(patch).length > 0) {
+			await ctx.db.patch(existing._id, patch);
+			const updated = await ctx.db.get(existing._id);
+			if (!updated) {
+				throw new Error("Demo user disappeared during update");
+			}
+			return updated;
+		}
+		return existing;
+	}
+
+	const userId = await ctx.db.insert("users", {
+		authId: user.authId,
+		email: user.email,
+		firstName: user.firstName,
+		lastName: user.lastName,
+	});
+	const created = await ctx.db.get(userId);
+	if (!created) {
+		throw new Error("Failed to create demo user");
+	}
+	return created;
+}
+
 async function findDemoDealGraph(
 	ctx: Pick<QueryCtx, "db">
 ): Promise<DemoDealGraph | null> {
@@ -490,10 +629,151 @@ async function ensureDemoLender(
 	return lender;
 }
 
+async function ensureDemoBorrower(
+	ctx: MutationCtx,
+	userId: Id<"users">
+): Promise<Doc<"borrowers">> {
+	const existing = await ctx.db
+		.query("borrowers")
+		.withIndex("by_user", (query) => query.eq("userId", userId))
+		.first();
+	if (existing) {
+		return existing;
+	}
+
+	const now = Date.now();
+	const borrowerId = await ctx.db.insert("borrowers", {
+		createdAt: now,
+		creationSource: "demo_deal_closing_pipeline",
+		lastTransitionAt: now,
+		orgId: DEMO_ORG_ID,
+		status: "active",
+		userId,
+		workflowSourceKey: "demo_deal_closing_pipeline",
+	});
+	const borrower = await ctx.db.get(borrowerId);
+	if (!borrower) {
+		throw new Error("Failed to create demo borrower");
+	}
+	return borrower;
+}
+
+async function ensureDemoDealAccess(
+	ctx: MutationCtx,
+	args: {
+		dealId: Id<"deals">;
+		role: Doc<"dealAccess">["role"];
+		userId: string;
+	}
+) {
+	const existing = await ctx.db
+		.query("dealAccess")
+		.withIndex("by_user_and_deal", (query) =>
+			query.eq("userId", args.userId).eq("dealId", args.dealId)
+		)
+		.first();
+	if (existing) {
+		if (existing.role !== args.role || existing.status !== "active") {
+			await ctx.db.patch(existing._id, {
+				revokedAt: undefined,
+				role: args.role,
+				status: "active",
+			});
+		}
+		return;
+	}
+
+	await ctx.db.insert("dealAccess", {
+		dealId: args.dealId,
+		grantedAt: Date.now(),
+		grantedBy: DEMO_ACTOR_ID,
+		role: args.role,
+		status: "active",
+		userId: args.userId,
+	});
+}
+
+async function ensureDemoDealParticipants(
+	ctx: MutationCtx,
+	graph: DemoDealGraph
+): Promise<DemoDealGraph> {
+	const now = Date.now();
+	const borrowerUser = await ensureDemoUserByAuth(ctx, DEMO_BORROWER);
+	await ensureDemoUserByAuth(ctx, DEMO_LAWYER);
+	const borrower = await ensureDemoBorrower(ctx, borrowerUser._id);
+
+	const borrowerLinks = await ctx.db
+		.query("mortgageBorrowers")
+		.withIndex("by_mortgage", (query) =>
+			query.eq("mortgageId", graph.mortgage._id)
+		)
+		.collect();
+	if (!borrowerLinks.some((link) => link.borrowerId === borrower._id)) {
+		await ctx.db.insert("mortgageBorrowers", {
+			addedAt: now,
+			borrowerId: borrower._id,
+			mortgageId: graph.mortgage._id,
+			role: "primary",
+		});
+	}
+
+	const assignments = await ctx.db
+		.query("closingTeamAssignments")
+		.withIndex("by_mortgage", (query) =>
+			query.eq("mortgageId", graph.mortgage._id)
+		)
+		.collect();
+	if (
+		!assignments.some(
+			(assignment) =>
+				assignment.role === "closing_lawyer" &&
+				assignment.userId === DEMO_LAWYER.authId
+		)
+	) {
+		await ctx.db.insert("closingTeamAssignments", {
+			assignedAt: now,
+			assignedBy: DEMO_ACTOR_ID,
+			mortgageId: graph.mortgage._id,
+			role: "closing_lawyer",
+			userId: DEMO_LAWYER.authId,
+		});
+	}
+
+	await ensureDemoDealAccess(ctx, {
+		dealId: graph.deal._id,
+		role: "borrower",
+		userId: DEMO_BORROWER.authId,
+	});
+	await ensureDemoDealAccess(ctx, {
+		dealId: graph.deal._id,
+		role: "platform_lawyer",
+		userId: DEMO_LAWYER.authId,
+	});
+
+	const dealPatch: Partial<Doc<"deals">> = {};
+	if (graph.deal.sellerId !== DEMO_BORROWER.authId) {
+		dealPatch.sellerId = DEMO_BORROWER.authId;
+	}
+	if (graph.deal.lawyerId !== DEMO_LAWYER.authId) {
+		dealPatch.lawyerId = DEMO_LAWYER.authId;
+	}
+	if (graph.deal.lawyerType !== "platform_lawyer") {
+		dealPatch.lawyerType = "platform_lawyer";
+	}
+	if (Object.keys(dealPatch).length > 0) {
+		await ctx.db.patch(graph.deal._id, dealPatch);
+	}
+	const deal = await ctx.db.get(graph.deal._id);
+	if (!deal) {
+		throw new Error("Demo deal disappeared during participant setup");
+	}
+	return { ...graph, deal };
+}
+
 async function ensureDemoDealGraph(ctx: MutationCtx): Promise<DemoDealGraph> {
 	const existing = await findDemoDealGraph(ctx);
 	if (existing) {
-		return existing;
+		return await ensureDemoDealParticipants(ctx, existing);
 	}
 
 	const now = Date.now();
@@ -547,7 +827,7 @@ async function ensureDemoDealGraph(ctx: MutationCtx): Promise<DemoDealGraph> {
 		lenderId: lender._id,
 		mortgageId,
 		orgId: DEMO_ORG_ID,
-		sellerId: "demo_seller_lender",
+		sellerId: DEMO_BORROWER.authId,
 		status: "initiated",
 	});
 
@@ -558,7 +838,13 @@ async function ensureDemoDealGraph(ctx: MutationCtx): Promise<DemoDealGraph> {
 		throw new Error("Failed to create demo deal graph");
 	}
 
-	return { deal, lender, mortgage, property, user };
+	return await ensureDemoDealParticipants(ctx, {
+		deal,
+		lender,
+		mortgage,
+		property,
+		user,
+	});
 }
 
 async function appendDemoAuditEvent(
@@ -881,6 +1167,13 @@ export const ensureDemoDealBootstrapInternal = convex
 	})
 	.handler(async (ctx, args) => {
 		const graph = await ensureDemoDealGraph(ctx);
+		const resetStartedAt = Date.now();
+		if (graph.deal.status !== "lawyerOnboarding.pending") {
+			await ctx.db.patch(graph.deal._id, {
+				lastTransitionAt: resetStartedAt,
+				status: "lawyerOnboarding.pending",
+			});
+		}
 
 		await appendDemoAuditEvent(ctx, {
 			dealId: graph.deal._id,
@@ -892,7 +1185,7 @@ export const ensureDemoDealBootstrapInternal = convex
 			},
 			mortgageId: graph.mortgage._id,
 			newState: "reset_started",
-			previousState: "ready",
+			previousState: graph.deal.status,
 		});
 
 		const packageApplicationId = await ensureActivePackageApplication(ctx, {
@@ -983,12 +1276,13 @@ export const markDemoProviderEnvelopeCleanedInternal = convex
 			if (envelope.dealId !== args.dealId) {
 				continue;
 			}
+			const lastError =
+				args.status === "deleted"
+					? undefined
+					: `Documenso cleanup ended with status ${args.status}`;
 
 			await ctx.db.patch(envelope._id, {
-				lastError:
-					args.status === "deleted"
-						? undefined
-						: `Documenso cleanup ended with status ${args.status}`,
+				lastError,
 				status: signingStatus,
 				updatedAt: now,
 			});
@@ -997,6 +1291,24 @@ export const markDemoProviderEnvelopeCleanedInternal = convex
 				signingStatus,
 				updatedAt: now,
 			});
+			const instances = await ctx.db
+				.query("dealDocumentInstances")
+				.withIndex("by_deal", (query) => query.eq("dealId", args.dealId))
+				.collect();
+			for (const instance of instances) {
+				if (
+					instance.generatedDocumentId !== envelope.generatedDocumentId ||
+					instance.status === "archived"
+				) {
+					continue;
+				}
+				await ctx.db.patch(instance._id, {
+					archivedAt: now,
+					lastError,
+					status: "archived",
+					updatedAt: now,
+				});
+			}
 		}
 	})
 	.internal();
@@ -1038,6 +1350,114 @@ export const appendDemoGenerationResultAuditInternal = convex
 	})
 	.internal();
 
+export const approveLegalGateAndOpenSigningInternal = convex
+	.mutation()
+	.input({})
+	.handler(async (ctx): Promise<DemoApprovalResult> => {
+		const graph = await ensureDemoDealGraph(ctx);
+		const previousState = graph.deal.status;
+
+		if (previousState === "documentReview.pending") {
+			return {
+				ok: true,
+				dealId: graph.deal._id,
+				mortgageId: graph.mortgage._id,
+				newState: previousState,
+				previousState,
+				packageGeneration: null,
+				status:
+					"demo_admin_approval_gate_already_open" satisfies DemoApprovalStatus,
+			};
+		}
+
+		if (!canStartDemoAdminApproval(previousState)) {
+			throw new ConvexError({
+				code: "DEMO_APPROVAL_GATE_NOT_READY",
+				message:
+					"Demo admin approval is only available while the deal is locked for legal onboarding.",
+				currentState: previousState,
+			});
+		}
+
+		if (previousState !== "lawyerOnboarding.verified") {
+			await ctx.db.patch(graph.deal._id, {
+				lastTransitionAt: Date.now(),
+				status: "lawyerOnboarding.verified",
+			});
+			await appendDemoAuditEvent(ctx, {
+				dealId: graph.deal._id,
+				eventType: "demo_admin_approval_gate_lawyer_verified",
+				message:
+					"Demo admin approval gate marked lawyer onboarding verified before opening signing.",
+				metadata: {
+					reason:
+						"Demo reset prepares documents directly and skips the full marketplace onboarding flow.",
+				},
+				mortgageId: graph.mortgage._id,
+				newState: "lawyerOnboarding.verified",
+				previousState,
+			});
+		}
+
+		const transition = await executeTransition(ctx, {
+			entityId: graph.deal._id,
+			entityType: "deal",
+			eventType: "REPRESENTATION_CONFIRMED",
+			source: {
+				actorId: DEMO_ACTOR_ID,
+				actorType: "admin",
+				channel: "admin_dashboard",
+			},
+		});
+
+		if (!transition.success) {
+			throw new ConvexError({
+				code: "DEMO_APPROVAL_GATE_TRANSITION_REJECTED",
+				message:
+					transition.reason ??
+					"Demo admin approval could not advance the deal.",
+				currentState: transition.previousState,
+			});
+		}
+
+		await appendDemoAuditEvent(ctx, {
+			dealId: graph.deal._id,
+			eventType: "demo_admin_approval_gate_approved",
+			message:
+				"Demo admin approval gate approved. Document signing is now unlocked.",
+			metadata: {
+				governedTransitionEvent: "REPRESENTATION_CONFIRMED",
+				transitionJournalEntryId: transition.journalEntryId ?? null,
+			},
+			mortgageId: graph.mortgage._id,
+			newState: transition.newState,
+			previousState,
+		});
+
+		return {
+			ok: true,
+			dealId: graph.deal._id,
+			mortgageId: graph.mortgage._id,
+			newState: transition.newState,
+			packageGeneration: null,
+			previousState,
+			status: "demo_admin_approval_gate_approved" satisfies DemoApprovalStatus,
+		};
+	})
+	.internal();
+
+export const ensureDemoDealGraphForSigningInternal = convex
+	.mutation()
+	.input({})
+	.handler(async (ctx) => {
+		const graph = await ensureDemoDealGraph(ctx);
+		return {
+			dealId: graph.deal._id,
+			mortgageId: graph.mortgage._id,
+		};
+	})
+	.internal();
+
 export const getState = authedQuery
 	.input({})
 	.handler(async (ctx) => {
@@ -1061,6 +1481,120 @@ export const getState = authedQuery
 			package: buildPackageSurface(graph, lookup),
 			auditTrail,
 		};
+	})
+	.public();
+
+export const approveLegalGateAndOpenSigning = authedAction
+	.input({})
+	.handler(async (ctx): Promise<DemoApprovalResult> => {
+		assertCanOperateDemoReset(ctx.viewer);
+
+		const approval = await ctx.runMutation(
+			internal.demo.dealClosingPipeline.approveLegalGateAndOpenSigningInternal,
+			{}
+		);
+		if (approval.newState !== "documentReview.pending") {
+			return approval;
+		}
+
+		let packageGeneration: DemoGenerationResult;
+		try {
+			const generationResult = await ctx.runAction(
+				internal.documents.dealPackages.runCreateDocumentPackageInternal,
+				{
+					dealId: approval.dealId,
+					retry: true,
+				}
+			);
+			const packageRow = await ctx.runQuery(
+				internal.demo.dealClosingPipeline
+					.getPackageGenerationDiagnosticsInternal,
+				{
+					packageId: generationResult.packageId,
+				}
+			);
+			packageGeneration = buildDemoGenerationResult({
+				generationResult,
+				packageRow,
+			});
+		} catch (error) {
+			packageGeneration = {
+				error: error instanceof Error ? error.message : String(error),
+				packageId: null,
+				status: "generation_failed",
+			};
+		}
+
+		return {
+			...approval,
+			packageGeneration,
+		};
+	})
+	.public();
+
+export const createDemoEmbeddedSigningSession = authedAction
+	.input({
+		dealId: v.id("deals"),
+		instanceId: v.id("dealDocumentInstances"),
+	})
+	.handler(async (ctx, args): Promise<{ expiresAt: number; url: string }> => {
+		assertCanOperateDemoReset(ctx.viewer);
+
+		const graph = await ctx.runMutation(
+			internal.demo.dealClosingPipeline.ensureDemoDealGraphForSigningInternal,
+			{}
+		);
+		if (args.dealId !== graph.dealId) {
+			throw new ConvexError(
+				"Forbidden: demo signing is only available for the fixed demo deal"
+			);
+		}
+
+		const signableDocument = (await ctx.runQuery(
+			internal.documents.dealPackages
+				.getSignableDocumentEnvelopeByInstanceInternal,
+			{
+				dealId: args.dealId,
+				instanceId: args.instanceId,
+			}
+		)) as DemoSignableEnvelopeDocument | null;
+
+		if (!signableDocument) {
+			throw new ConvexError("Signable document envelope not found");
+		}
+		if (!isDealStatusOpenForEmbeddedSigning(signableDocument.dealStatus)) {
+			throw new ConvexError(
+				"Embedded signing is locked until lawyer representation is confirmed."
+			);
+		}
+		if (
+			signableDocument.envelope.status !== "sent" &&
+			signableDocument.envelope.status !== "partially_signed"
+		) {
+			throw new ConvexError(
+				"Embedded signing is not available for the current envelope state"
+			);
+		}
+
+		const recipient = findNextDemoSigningRecipient(signableDocument);
+		if (!recipient?.providerRecipientId) {
+			throw new ConvexError(
+				"No pending Documenso recipient is available for demo signing"
+			);
+		}
+
+		const provider = getSignatureProvider(
+			signableDocument.envelope.providerCode,
+			{
+				fetchFn: fetch,
+				getStorageBlob: async () => null,
+			}
+		);
+
+		return provider.createEmbeddedSigningSession({
+			providerEnvelopeId: signableDocument.envelope.providerEnvelopeId,
+			providerRecipientId: recipient.providerRecipientId,
+		});
 	})
 	.public();
 
