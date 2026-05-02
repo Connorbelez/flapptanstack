@@ -14,6 +14,8 @@ const ROUTE_HOST_POLICY_REGISTRY = [
 	{ prefix: "/authenticated", policy: "shared" },
 	{ prefix: "/about", policy: "marketing" },
 	{ prefix: "/admin", policy: "admin" },
+	{ prefix: "/files/public", policy: "shared" },
+	{ prefix: "/files", policy: "portal" },
 	{ prefix: "/listings", policy: "portal" },
 	{ prefix: "/broker", policy: "portal" },
 	{ prefix: "/borrower", policy: "portal" },

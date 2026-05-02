@@ -44,6 +44,20 @@ async function assertShareLinkManager(
 	return principal;
 }
 
+async function getRootNodeId(
+	ctx: Pick<MutationCtx, "db">,
+	boxId: Id<"fileBoxes">
+) {
+	const root = await ctx.db
+		.query("fileNodes")
+		.withIndex("by_box_parent", (query) =>
+			query.eq("boxId", boxId).eq("parentId", undefined)
+		)
+		.filter((query) => query.eq(query.field("isRoot"), true))
+		.first();
+	return root?._id;
+}
+
 async function insertUniqueShareLink(args: {
 	boxId: Id<"fileBoxes">;
 	ctx: Pick<MutationCtx, "db">;
@@ -202,6 +216,7 @@ export const resolveBearerLink = convex
 			linkId: link._id,
 			linkKind: link.linkKind,
 			principalKind: link.linkKind,
+			rootNodeId: await getRootNodeId(ctx, box._id),
 			viewEnabled: true,
 		};
 	})

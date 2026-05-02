@@ -64,6 +64,8 @@ describe("route host policy", () => {
 		expect(resolveRouteHostPolicy("/sign-out/local")).toBe("shared");
 		expect(resolveRouteHostPolicy("/about")).toBe("marketing");
 		expect(resolveRouteHostPolicy("/listings/abc")).toBe("portal");
+		expect(resolveRouteHostPolicy("/files/box_123")).toBe("portal");
+		expect(resolveRouteHostPolicy("/files/public/token_123")).toBe("shared");
 		expect(resolveRouteHostPolicy("/admin/settings")).toBe("admin");
 		expect(resolveRouteHostPolicy("/demo/listings")).toBeNull();
 		expect(resolveRouteHostPolicy("/e2e/session")).toBeNull();

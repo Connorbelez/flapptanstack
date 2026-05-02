@@ -149,12 +149,13 @@ function RootComponent() {
 	});
 	const { portalContext } = Route.useRouteContext();
 	const isAdminRoute = isAdminPathname(pathname);
+	const isPublicFileShareRoute = pathname.startsWith("/files/public/");
 
 	return (
 		<RootDocument>
 			<PortalStateBoundary portalContext={portalContext}>
 				<div className="flex h-dvh max-h-dvh min-h-0 w-full min-w-0 flex-col overflow-hidden">
-					{isAdminRoute ? null : <Header />}
+					{isAdminRoute || isPublicFileShareRoute ? null : <Header />}
 					<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
 						<Outlet />
 					</div>
