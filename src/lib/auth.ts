@@ -127,6 +127,11 @@ export const ROUTE_AUTHORIZATION_RULES = {
 		kind: "permission",
 		permission: "listing:view",
 	},
+	files: {
+		kind: "anyPermission",
+		options: { allowAdminOverride: true },
+		permissions: ["admin:access", "broker:access"],
+	},
 	borrower: {
 		kind: "permission",
 		permission: "borrower:access",
