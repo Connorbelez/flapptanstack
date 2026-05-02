@@ -286,10 +286,12 @@ export function MicDashboardMetrics({
 			<MetricFrame className="p-5 lg:col-span-3" delay={120}>
 				<ValueLabel
 					label="Projected yield earned"
-					value={formatPercent(analytics.projectedYieldEarned)}
+					value={formatCurrency(analytics.projectedYieldReturn)}
 				/>
 				<p className="mt-2 text-muted-foreground text-xs">
-					Returns / {formatCurrency(analytics.totalInvestment)} MIC investment
+					{formatPercent(analytics.projectedYieldEarned)} over{" "}
+					{formatCurrency(analytics.projectedYieldInvestment)} projected MIC
+					investment
 				</p>
 				<HorizontalGauge
 					label="Projected yield earned gauge"

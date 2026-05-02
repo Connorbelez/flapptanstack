@@ -117,15 +117,6 @@ function monthPeriodFromBusinessDate(date: string) {
 	return date.slice(0, 7);
 }
 
-function previousMonthPeriodFromBusinessDate(date: string) {
-	const parsed = new Date(`${date}T00:00:00.000Z`);
-	if (Number.isNaN(parsed.getTime())) {
-		return monthPeriodFromBusinessDate(date);
-	}
-	parsed.setUTCMonth(parsed.getUTCMonth() - 1);
-	return parsed.toISOString().slice(0, 7);
-}
-
 function maturityBucket(
 	maturityDate: string,
 	generatedAt: number
@@ -557,18 +548,11 @@ function emptyReturnBucket(period: string) {
 	};
 }
 
-function isInterestIncomePayment(payment: MicPaymentHistoryRow) {
-	return payment.type.toLowerCase().includes("interest");
-}
-
-function calculateExpectedMicInterest(payment: MicPaymentHistoryRow) {
-	if (!isInterestIncomePayment(payment)) {
-		return 0;
-	}
-	if (payment.grossAmount <= 0) {
-		return 0;
-	}
-	return payment.micShareAmount;
+function calculateProjectedMonthlyInterest(position: MicPositionProjection) {
+	const principal = centsToDollars(position.mortgage.principal);
+	return roundCurrency(
+		(principal * (position.mortgage.interestRate / 100)) / 12
+	);
 }
 
 function buildReturnSeries(
@@ -601,20 +585,6 @@ function buildReturnSeries(
 		originationBucket.feeIncome = roundCurrency(
 			originationBucket.feeIncome + feeIncome
 		);
-
-		for (const payment of position.payments) {
-			const expectedInterest = calculateExpectedMicInterest(payment);
-			if (expectedInterest <= 0) {
-				continue;
-			}
-			const interestPeriod = previousMonthPeriodFromBusinessDate(
-				payment.dueDate
-			);
-			const paymentBucket = bucketFor(interestPeriod);
-			paymentBucket.interestIncome = roundCurrency(
-				paymentBucket.interestIncome + expectedInterest
-			);
-		}
 	}
 
 	let cumulativeFeeIncome = 0;
@@ -624,7 +594,17 @@ function buildReturnSeries(
 		.sort((left, right) => left.period.localeCompare(right.period))
 		.map((bucket) => {
 			const feeIncome = roundCurrency(bucket.feeIncome);
-			const interestIncome = roundCurrency(bucket.interestIncome);
+			const interestIncome = roundCurrency(
+				positions.reduce((sum, position) => {
+					const originatedPeriod = monthPeriodFromBusinessDate(
+						position.mortgage.termStartDate
+					);
+					if (originatedPeriod > bucket.period) {
+						return sum;
+					}
+					return sum + calculateProjectedMonthlyInterest(position);
+				}, 0)
+			);
 			const totalReturn = roundCurrency(feeIncome + interestIncome);
 			cumulativeFeeIncome = roundCurrency(cumulativeFeeIncome + feeIncome);
 			cumulativeInterestIncome = roundCurrency(

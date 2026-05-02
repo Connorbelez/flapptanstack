@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	type DealClosingPipelineCreateSigningSessionArgs,
 	DealClosingPipelineDemo,
@@ -61,12 +61,18 @@ function DealClosingPipelineRoute() {
 	const resetAndRegenerate = useAction(
 		api.demo.dealClosingPipeline.resetAndRegenerate
 	);
-	const createEmbeddedSigningSession = useAction(
-		api.documents.signature.sessions.createEmbeddedSigningSession
+	const approveLegalGateAndOpenSigning = useAction(
+		api.demo.dealClosingPipeline.approveLegalGateAndOpenSigning
 	);
+	const createEmbeddedSigningSession = useAction(
+		api.demo.dealClosingPipeline.createDemoEmbeddedSigningSession
+	);
+	const [approvalPending, setApprovalPending] = useState(false);
+	const [approvalError, setApprovalError] = useState<string | null>(null);
 	const [resetPending, setResetPending] = useState(false);
 	const [signingSession, setSigningSession] =
 		useState<DealClosingPipelineSigningSession | null>(null);
+	const hasAutoRegeneratedRef = useRef(false);
 
 	const renderedState = useMemo(() => {
 		if (!state) {
@@ -81,6 +87,7 @@ function DealClosingPipelineRoute() {
 
 	const handleReset = useCallback(async () => {
 		setResetPending(true);
+		setApprovalError(null);
 		setSigningSession(null);
 		try {
 			await resetAndRegenerate({});
@@ -88,6 +95,37 @@ function DealClosingPipelineRoute() {
 			setResetPending(false);
 		}
 	}, [resetAndRegenerate]);
+
+	const handleApproveAdminGate = useCallback(async () => {
+		setApprovalPending(true);
+		setApprovalError(null);
+		setSigningSession(null);
+		try {
+			await approveLegalGateAndOpenSigning({});
+		} catch (error) {
+			setApprovalError(
+				error instanceof Error
+					? error.message
+					: "Failed to approve the admin gate."
+			);
+		} finally {
+			setApprovalPending(false);
+		}
+	}, [approveLegalGateAndOpenSigning]);
+
+	useEffect(() => {
+		if (
+			hasAutoRegeneratedRef.current ||
+			resetPending ||
+			!state?.canReset ||
+			state.deal
+		) {
+			return;
+		}
+
+		hasAutoRegeneratedRef.current = true;
+		void handleReset();
+	}, [handleReset, resetPending, state?.canReset, state?.deal]);
 
 	const handleCreateSigningSession = useCallback(
 		async ({
@@ -141,6 +179,9 @@ function DealClosingPipelineRoute() {
 
 	return (
 		<DealClosingPipelineDemo
+			approvalError={approvalError}
+			approvalPending={approvalPending}
+			onApproveAdminGate={handleApproveAdminGate}
 			onCreateSigningSession={handleCreateSigningSession}
 			onReset={handleReset}
 			resetPending={resetPending}

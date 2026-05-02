@@ -171,6 +171,7 @@ import type * as documents_dealPackages from "../documents/dealPackages.js";
 import type * as documents_mortgageBlueprints from "../documents/mortgageBlueprints.js";
 import type * as documents_mortgagePackages from "../documents/mortgagePackages.js";
 import type * as documents_signature_documenso from "../documents/signature/documenso.js";
+import type * as documents_signature_gates from "../documents/signature/gates.js";
 import type * as documents_signature_provider from "../documents/signature/provider.js";
 import type * as documents_signature_sessions from "../documents/signature/sessions.js";
 import type * as documents_signature_webhooks from "../documents/signature/webhooks.js";
@@ -642,6 +643,7 @@ declare const fullApi: ApiFromModules<{
   "documents/mortgageBlueprints": typeof documents_mortgageBlueprints;
   "documents/mortgagePackages": typeof documents_mortgagePackages;
   "documents/signature/documenso": typeof documents_signature_documenso;
+  "documents/signature/gates": typeof documents_signature_gates;
   "documents/signature/provider": typeof documents_signature_provider;
   "documents/signature/sessions": typeof documents_signature_sessions;
   "documents/signature/webhooks": typeof documents_signature_webhooks;

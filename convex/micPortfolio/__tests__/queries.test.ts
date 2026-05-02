@@ -144,11 +144,14 @@ function buildListingDoc(
 async function createMicFixture(
 	t: ReturnType<typeof createHarness>,
 	options?: {
+		firstPaymentDate?: string;
 		includeMicPosition?: boolean;
 		isPublished?: boolean;
 		micLenderAuthId?: string;
+		obligationDueDateMs?: number;
 		portalStatus?: Doc<"portals">["status"];
 		settledInterestCents?: number;
+		termStartDate?: string;
 	}
 ) {
 	await seedFromIdentity(t, MIC_INVESTOR);
@@ -244,7 +247,7 @@ async function createMicFixture(
 			assignedBrokerId: brokerId,
 			brokerOfRecordId: brokerId,
 			createdAt: FIXTURE_TIME,
-			firstPaymentDate: "2026-02-01",
+			firstPaymentDate: options?.firstPaymentDate ?? "2026-02-01",
 			fundedAt: undefined,
 			interestAdjustmentDate: "2026-01-01",
 			interestRate: 8.5,
@@ -264,7 +267,7 @@ async function createMicFixture(
 			simulationId: undefined,
 			status: "active",
 			termMonths: 12,
-			termStartDate: "2026-01-01",
+			termStartDate: options?.termStartDate ?? "2026-01-01",
 		});
 		await ctx.db.insert("mortgageBorrowers", {
 			addedAt: FIXTURE_TIME,
@@ -287,7 +290,7 @@ async function createMicFixture(
 			amountSettled: settledInterestCents,
 			borrowerId,
 			createdAt: FIXTURE_TIME + 100,
-			dueDate: Date.UTC(2026, 1, 1),
+			dueDate: options?.obligationDueDateMs ?? Date.UTC(2026, 1, 1),
 			feeCode: undefined,
 			gracePeriodEnd: Date.UTC(2026, 1, 5),
 			lastTransitionAt: undefined,
@@ -394,33 +397,33 @@ describe("MIC portfolio queries", () => {
 			arrearsExposure: 1500,
 			delinquencyExposure: 1500,
 			inferredLendingFeeIncome: 25,
-			lendingFeeIncomeSharePercent: 3.23,
+			lendingFeeIncomeSharePercent: 58.53,
 			outstandingPrincipal: 1500,
-			totalReturnIncome: 775,
+			totalReturnIncome: 42.71,
 			weightedAverageLtv: 0.65,
 			weightedAverageYield: 8.5,
 		});
 		expect(dashboard.returnSeries).toEqual([
 			{
 				cumulativeFeeIncome: 25,
-				cumulativeInterestIncome: 750,
-				cumulativeTotalReturn: 775,
+				cumulativeInterestIncome: 17.71,
+				cumulativeTotalReturn: 42.71,
 				feeIncome: 25,
-				feeIncomeSharePercent: 3.23,
-				interestIncome: 750,
+				feeIncomeSharePercent: 58.53,
+				interestIncome: 17.71,
 				originatedPrincipal: 2500,
 				period: "2026-01",
-				totalReturn: 775,
+				totalReturn: 42.71,
 			},
 		]);
 		expect(dashboard.lendingFeeMetrics).toEqual({
 			feeBasisPoints: 100,
 			inferredLendingFeeIncome: 25,
-			lendingFeeIncomeSharePercent: 3.23,
+			lendingFeeIncomeSharePercent: 58.53,
 			mortgageOriginatedCount: 1,
 			originatedPrincipal: 2500,
-			totalInterestIncome: 750,
-			totalReturnIncome: 775,
+			totalInterestIncome: 17.71,
+			totalReturnIncome: 42.71,
 		});
 		expect(dashboard.positions).toHaveLength(1);
 		expect(dashboard.positions[0]).toMatchObject({
@@ -458,7 +461,7 @@ describe("MIC portfolio queries", () => {
 		);
 	});
 
-	it("keeps settled interest projection at the expected MIC share", async () => {
+	it("keeps return projection independent of settlement state", async () => {
 		const t = createHarness();
 		const micInvestor = t.withIdentity(MIC_INVESTOR);
 		const { portalId } = await createMicFixture(t, {
@@ -472,18 +475,45 @@ describe("MIC portfolio queries", () => {
 
 		expect(dashboard.lendingFeeMetrics).toMatchObject({
 			inferredLendingFeeIncome: 25,
-			lendingFeeIncomeSharePercent: 3.23,
-			totalInterestIncome: 750,
-			totalReturnIncome: 775,
+			lendingFeeIncomeSharePercent: 58.53,
+			totalInterestIncome: 17.71,
+			totalReturnIncome: 42.71,
 		});
 		expect(dashboard.returnSeries).toEqual([
 			expect.objectContaining({
-				cumulativeInterestIncome: 750,
-				cumulativeTotalReturn: 775,
+				cumulativeInterestIncome: 17.71,
+				cumulativeTotalReturn: 42.71,
 				feeIncome: 25,
-				feeIncomeSharePercent: 3.23,
-				interestIncome: 750,
-				totalReturn: 775,
+				feeIncomeSharePercent: 58.53,
+				interestIncome: 17.71,
+				totalReturn: 42.71,
+			}),
+		]);
+	});
+
+	it("projects each period from originated fees plus monthly interest on active mortgages", async () => {
+		const t = createHarness();
+		const micInvestor = t.withIdentity(MIC_INVESTOR);
+		const { portalId } = await createMicFixture(t, {
+			firstPaymentDate: "2026-04-01",
+			obligationDueDateMs: Date.UTC(2026, 3, 1),
+			termStartDate: "2026-04-01",
+		});
+
+		const dashboard = await micInvestor.query(
+			micPortfolioApi.getMicDashboardSnapshot,
+			{ portalId }
+		);
+
+		expect(dashboard.returnSeries).toEqual([
+			expect.objectContaining({
+				cumulativeFeeIncome: 25,
+				cumulativeInterestIncome: 17.71,
+				cumulativeTotalReturn: 42.71,
+				feeIncome: 25,
+				interestIncome: 17.71,
+				period: "2026-04",
+				totalReturn: 42.71,
 			}),
 		]);
 	});
