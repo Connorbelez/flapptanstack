@@ -45,7 +45,6 @@ const missingBrokerSnapshot: PortfolioCommandCenterSnapshot = {
 	...activeRailSnapshot,
 	brokerCoordination: {
 		...activeRailSnapshot.brokerCoordination,
-		assignedBroker: null,
 		availabilityState: "missing_broker",
 		fallbackContactCta: null,
 	},
