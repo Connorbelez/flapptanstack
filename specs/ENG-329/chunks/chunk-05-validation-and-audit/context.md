@@ -23,4 +23,4 @@
 - `bun typecheck`
 - `bun run test -- src/test/lender/portfolio-rail.test.tsx src/test/routes/lender-portfolio-route.test.tsx`
 - `$linear-pr-spec-audit`
-- `python3 /Users/connor/.codex/skills/linear-implement-v2/scripts/validate_execution_artifacts.py ENG-329 --repo-root "/Users/connor/.codex/worktrees/6886/fairlendapp" --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`
+- `python3 "$LINEAR_IMPLEMENT_V2_ROOT/scripts/validate_execution_artifacts.py" ENG-329 --repo-root "$REPO_ROOT" --stage final --require-audit --require-all-tasks-closed --require-all-checklist-closed`
