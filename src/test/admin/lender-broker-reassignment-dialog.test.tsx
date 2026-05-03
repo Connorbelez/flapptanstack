@@ -232,6 +232,17 @@ describe("BrokerReassignmentDialog", () => {
 
 		expect(await view.findByText("meridian.localhost:3000")).not.toBeNull();
 		expect(view.getByText("app.localhost:3000")).not.toBeNull();
+		expect(view.getByText("Meridian Capital")).not.toBeNull();
+		expect(view.getByText("org_meridian")).not.toBeNull();
+		expect(view.getAllByText("FairLend MIC").length).toBeGreaterThanOrEqual(1);
+		expect(view.getByText("org_fairlend_brokerage")).not.toBeNull();
+		expect(view.getByText("Portal host changes")).not.toBeNull();
+		expect(
+			view.getByText("Add lender role in target WorkOS org")
+		).not.toBeNull();
+		expect(
+			view.getByText("Remove lender role from current WorkOS org")
+		).not.toBeNull();
 		expect(
 			view.getByText(/WorkOS membership to the target broker organization/i)
 		).not.toBeNull();
@@ -276,7 +287,7 @@ describe("BrokerReassignmentDialog", () => {
 		).toBe(true);
 	});
 
-	it("submits expected ids, shows success toast, and closes the dialog", async () => {
+	it("submits expected ids, refreshes the parent, shows success toast, and closes the dialog", async () => {
 		const user = userEvent.setup({ document: dom.window.document });
 		const reassignBroker = mock(async () => ({
 			attemptId: "attempt_1",
@@ -286,10 +297,11 @@ describe("BrokerReassignmentDialog", () => {
 			targetPortalId: "portal_app",
 		}));
 		const onOpenChange = mock(() => undefined);
+		const onReassigned = mock(async () => undefined);
 		mockDialogQueries();
 		useActionMock.mockReturnValue(reassignBroker);
 
-		const view = renderDialog({ onOpenChange });
+		const view = renderDialog({ onOpenChange, onReassigned });
 
 		await user.click(
 			await view.findByRole("button", { name: /FairLend MIC/i })
@@ -309,8 +321,40 @@ describe("BrokerReassignmentDialog", () => {
 				targetBrokerId: "broker_target",
 			});
 		});
+		await waitFor(() => {
+			expect(onReassigned).toHaveBeenCalledTimes(1);
+		});
 		expect(toastSuccessMock).toHaveBeenCalledWith("Lender broker reassigned");
 		expect(onOpenChange).toHaveBeenCalledWith(false);
+	});
+
+	it("shows actionable reassignment failures without closing the dialog", async () => {
+		const user = userEvent.setup({ document: dom.window.document });
+		const reassignBroker = mock(async () => {
+			throw new Error(
+				"WorkOS transfer incomplete. Lender assignment was not changed."
+			);
+		});
+		const onOpenChange = mock(() => undefined);
+		mockDialogQueries();
+		useActionMock.mockReturnValue(reassignBroker);
+
+		const view = renderDialog({ onOpenChange });
+
+		await user.click(
+			await view.findByRole("button", { name: /FairLend MIC/i })
+		);
+		await view.findByText("app.localhost:3000");
+		await user.click(
+			view.getByRole("button", { name: "Confirm reassignment" })
+		);
+
+		await waitFor(() => {
+			expect(toastErrorMock).toHaveBeenCalledWith(
+				"WorkOS transfer incomplete. Lender assignment was not changed."
+			);
+		});
+		expect(onOpenChange).not.toHaveBeenCalledWith(false);
 	});
 
 	it("clears selected broker when search changes so stale hidden targets cannot submit", async () => {

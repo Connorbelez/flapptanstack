@@ -83,6 +83,16 @@ export const completeReassignment = convex
 	.mutation()
 	.input({
 		attemptId: v.id("lenderBrokerReassignmentAttempts"),
+		currentMembershipId: v.optional(v.string()),
+		currentMembershipOperation: v.optional(
+			v.union(
+				v.literal("not_found"),
+				v.literal("deactivated"),
+				v.literal("role_removed")
+			)
+		),
+		currentMembershipRoleSlugsAfter: v.optional(v.array(v.string())),
+		currentMembershipRoleSlugsBefore: v.optional(v.array(v.string())),
 		expectedCurrentBrokerId: v.id("brokers"),
 		expectedCurrentOrgId: v.optional(v.string()),
 		lenderId: v.id("lenders"),
@@ -113,14 +123,42 @@ export const completeReassignment = convex
 		await ctx.db.patch(args.lenderUserId, {
 			homePortalId: args.targetPortalId,
 		});
-		await ctx.db.patch(args.attemptId, {
+		const attemptPatch: Partial<{
+			completedAt: number;
+			currentMembershipId: string;
+			currentMembershipOperation: "not_found" | "deactivated" | "role_removed";
+			currentMembershipRoleSlugsAfter: string[];
+			currentMembershipRoleSlugsBefore: string[];
+			status: "succeeded";
+			targetMembershipId: string;
+			targetMembershipWasPreexisting: boolean;
+			targetPortalId: typeof args.targetPortalId;
+			updatedAt: number;
+		}> = {
 			completedAt: now,
 			status: "succeeded",
-			targetMembershipId: args.targetMembershipId,
 			targetMembershipWasPreexisting: args.targetMembershipWasPreexisting,
 			targetPortalId: args.targetPortalId,
 			updatedAt: now,
-		});
+		};
+		if (args.currentMembershipId) {
+			attemptPatch.currentMembershipId = args.currentMembershipId;
+		}
+		if (args.currentMembershipOperation) {
+			attemptPatch.currentMembershipOperation = args.currentMembershipOperation;
+		}
+		if (args.currentMembershipRoleSlugsAfter) {
+			attemptPatch.currentMembershipRoleSlugsAfter =
+				args.currentMembershipRoleSlugsAfter;
+		}
+		if (args.currentMembershipRoleSlugsBefore) {
+			attemptPatch.currentMembershipRoleSlugsBefore =
+				args.currentMembershipRoleSlugsBefore;
+		}
+		if (args.targetMembershipId) {
+			attemptPatch.targetMembershipId = args.targetMembershipId;
+		}
+		await ctx.db.patch(args.attemptId, attemptPatch);
 		return args.attemptId;
 	})
 	.internal();
@@ -129,6 +167,16 @@ export const markReassignmentFailed = convex
 	.mutation()
 	.input({
 		attemptId: v.id("lenderBrokerReassignmentAttempts"),
+		currentMembershipId: v.optional(v.string()),
+		currentMembershipOperation: v.optional(
+			v.union(
+				v.literal("not_found"),
+				v.literal("deactivated"),
+				v.literal("role_removed")
+			)
+		),
+		currentMembershipRoleSlugsAfter: v.optional(v.array(v.string())),
+		currentMembershipRoleSlugsBefore: v.optional(v.array(v.string())),
 		failureMessage: v.string(),
 		failurePhase: v.union(
 			v.literal("target_membership"),
@@ -149,6 +197,10 @@ export const markReassignmentFailed = convex
 	})
 	.handler(async (ctx, args) => {
 		const patch: Partial<{
+			currentMembershipId: string;
+			currentMembershipOperation: "not_found" | "deactivated" | "role_removed";
+			currentMembershipRoleSlugsAfter: string[];
+			currentMembershipRoleSlugsBefore: string[];
 			failureMessage: string;
 			failurePhase:
 				| "target_membership"
@@ -173,6 +225,20 @@ export const markReassignmentFailed = convex
 		if (args.targetMembershipWasPreexisting !== undefined) {
 			patch.targetMembershipWasPreexisting =
 				args.targetMembershipWasPreexisting;
+		}
+		if (args.currentMembershipId) {
+			patch.currentMembershipId = args.currentMembershipId;
+		}
+		if (args.currentMembershipOperation) {
+			patch.currentMembershipOperation = args.currentMembershipOperation;
+		}
+		if (args.currentMembershipRoleSlugsBefore) {
+			patch.currentMembershipRoleSlugsBefore =
+				args.currentMembershipRoleSlugsBefore;
+		}
+		if (args.currentMembershipRoleSlugsAfter) {
+			patch.currentMembershipRoleSlugsAfter =
+				args.currentMembershipRoleSlugsAfter;
 		}
 		await ctx.db.patch(args.attemptId, patch);
 	})

@@ -1,6 +1,6 @@
 "use client";
 
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ChevronDown } from "lucide-react";
@@ -5396,6 +5396,7 @@ export function LendersDedicatedDetails({
 	readonly onNavigateRelation?: (target: AdminRelationNavigationTarget) => void;
 	readonly record: UnifiedRecord;
 }) {
+	const router = useRouter();
 	const lenderId = record._id as Id<"lenders">;
 	const [brokerReassignmentOpen, setBrokerReassignmentOpen] = useState(false);
 	const detailContext = useQuery(
@@ -5662,6 +5663,7 @@ export function LendersDedicatedDetails({
 					currentOrgId={currentOrgId}
 					lenderId={lenderId}
 					onOpenChange={setBrokerReassignmentOpen}
+					onReassigned={() => router.invalidate()}
 					open={brokerReassignmentOpen}
 				/>
 			) : null}

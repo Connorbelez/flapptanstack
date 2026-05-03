@@ -2,7 +2,7 @@
 
 import { useAction, useQuery } from "convex/react";
 import { makeFunctionReference } from "convex/server";
-import { Search } from "lucide-react";
+import { ArrowRight, CheckCircle2, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
@@ -27,6 +27,7 @@ interface BrokerReassignmentDialogProps {
 	readonly currentOrgId?: string;
 	readonly lenderId: Id<"lenders">;
 	readonly onOpenChange: (open: boolean) => void;
+	readonly onReassigned?: () => Promise<void> | void;
 	readonly open: boolean;
 }
 
@@ -76,6 +77,54 @@ function formatPortalHost(
 	return portal?.host ?? fallback;
 }
 
+function workosActionLabels(preview: BrokerReassignmentPreview) {
+	const labels: string[] = [];
+	if (preview.workosOperations.addTargetMembership) {
+		labels.push(
+			`Add ${preview.workosOperations.roleSlug} role in target WorkOS org`
+		);
+	}
+	if (preview.workosOperations.deactivateCurrentMembership) {
+		labels.push(
+			`Remove ${preview.workosOperations.roleSlug} role from current WorkOS org`
+		);
+	}
+	return labels.length > 0
+		? labels
+		: ["No WorkOS membership movement is required"];
+}
+
+function PartyPreview({
+	label,
+	party,
+}: {
+	readonly label: string;
+	readonly party: BrokerReassignmentPartySummary;
+}) {
+	return (
+		<div className="space-y-2">
+			<p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.08em]">
+				{label}
+			</p>
+			<div className="space-y-1">
+				<p className="font-medium text-sm">{party.displayName}</p>
+				<dl className="space-y-1 text-xs">
+					<div>
+						<dt className="text-muted-foreground">WorkOS org</dt>
+						<dd className="break-all">{party.orgId}</dd>
+					</div>
+					<div>
+						<dt className="text-muted-foreground">Portal host</dt>
+						<dd className="break-all">
+							{formatPortalHost(party.portal, "No active portal")}
+						</dd>
+					</div>
+				</dl>
+			</div>
+		</div>
+	);
+}
+
 function TargetRow({
 	onSelect,
 	selected,
@@ -115,6 +164,7 @@ export function BrokerReassignmentDialog({
 	currentOrgId,
 	lenderId,
 	onOpenChange,
+	onReassigned,
 	open,
 }: BrokerReassignmentDialogProps) {
 	const [search, setSearch] = useState("");
@@ -163,6 +213,11 @@ export function BrokerReassignmentDialog({
 				lenderId,
 				targetBrokerId,
 			});
+			try {
+				await onReassigned?.();
+			} catch {
+				// The reassignment succeeded; stale UI recovery should not report it as failed.
+			}
 			toast.success("Lender broker reassigned");
 			onOpenChange(false);
 		} catch (error) {
@@ -218,34 +273,43 @@ export function BrokerReassignmentDialog({
 
 					{preview ? (
 						<div className="space-y-4 rounded-md border bg-muted/20 p-4">
-							<div className="grid gap-4 sm:grid-cols-2">
-								<div className="space-y-1">
-									<p className="text-muted-foreground text-xs uppercase tracking-[0.08em]">
-										Current access host
-									</p>
-									<p className="break-all font-medium text-sm">
-										{formatPortalHost(
-											preview.current.portal,
-											"No active portal"
-										)}
-									</p>
+							<div className="grid items-start gap-3 sm:grid-cols-[1fr_auto_1fr]">
+								<PartyPreview label="Current broker" party={preview.current} />
+								<div className="hidden h-full items-center sm:flex">
+									<ArrowRight className="size-4 text-muted-foreground" />
 								</div>
-								<div className="space-y-1">
-									<p className="text-muted-foreground text-xs uppercase tracking-[0.08em]">
-										New access host
-									</p>
-									<p className="break-all font-medium text-sm">
-										{formatPortalHost(
-											preview.target.portal,
-											"No active portal"
-										)}
-									</p>
-									{preview.target.portal?.willEnsure ? (
-										<p className="text-muted-foreground text-xs">
-											Portal will be ensured during reassignment.
-										</p>
-									) : null}
-								</div>
+								<PartyPreview label="Target broker" party={preview.target} />
+							</div>
+
+							<div className="flex flex-wrap items-center gap-2">
+								<Badge
+									variant={
+										preview.portalHostWillChange ? "default" : "secondary"
+									}
+								>
+									{preview.portalHostWillChange
+										? "Portal host changes"
+										: "Portal host unchanged"}
+								</Badge>
+								{preview.target.portal?.willEnsure ? (
+									<Badge variant="secondary">
+										Global app portal will be ensured
+									</Badge>
+								) : null}
+							</div>
+
+							<div className="space-y-2">
+								<p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.08em]">
+									WorkOS membership actions
+								</p>
+								<ul className="space-y-1 text-sm">
+									{workosActionLabels(preview).map((action) => (
+										<li className="flex items-start gap-2" key={action}>
+											<CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+											<span>{action}</span>
+										</li>
+									))}
+								</ul>
 							</div>
 
 							<p className="text-muted-foreground text-sm">

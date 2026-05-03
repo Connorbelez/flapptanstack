@@ -26,6 +26,10 @@ interface PreviewArgs extends Record<string, unknown> {
 	targetBrokerId: Id<"brokers">;
 }
 
+interface SearchArgs extends Record<string, unknown> {
+	search?: string;
+}
+
 interface ReassignBrokerArgs extends Record<string, unknown> {
 	expectedCurrentBrokerId: Id<"brokers">;
 	expectedCurrentOrgId?: string;
@@ -73,6 +77,12 @@ const previewBrokerReassignmentRef = makeFunctionReference<
 	PreviewArgs,
 	PreviewResult
 >("admin/lenders/reassignment:previewBrokerReassignment");
+
+const searchActiveBrokerTargetsRef = makeFunctionReference<
+	"query",
+	SearchArgs,
+	PartySummary[]
+>("admin/lenders/reassignment:searchActiveBrokerTargets");
 
 const reassignBrokerRef = makeFunctionReference<
 	"action",
@@ -559,6 +569,37 @@ describe("previewBrokerReassignment", () => {
 		expect(preview.target.portal).toBeNull();
 	});
 
+	it("blocks inactive target brokers before reassignment can run", async () => {
+		const t = createTestHarness();
+		const { lenderId } = await seedBaseReassignmentFixture(t);
+		const targetBrokerUserId = await insertUser(t, {
+			authId: "user_inactive_broker",
+			email: "inactive-broker@fairlend.test",
+			firstName: "Inactive",
+			lastName: "Broker",
+		});
+		const targetBrokerId = await insertBroker(t, {
+			brokerageName: "Inactive Brokerage",
+			orgId: "org_inactive_brokerage",
+			status: "inactive",
+			userId: targetBrokerUserId,
+		});
+		await insertPortal(t, {
+			brokerId: targetBrokerId,
+			localHost: "inactive.localhost:3000",
+			orgId: "org_inactive_brokerage",
+			portalType: "broker",
+			productionHost: "inactive.fairlend.ca",
+			slug: "inactive",
+		});
+
+		const preview = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(previewBrokerReassignmentRef, { lenderId, targetBrokerId });
+
+		expect(preview.blockingReasons).toContain("Target broker is not active.");
+	});
+
 	it("blocks selecting the lender's currently assigned broker", async () => {
 		const t = createTestHarness();
 		const { currentBrokerId, lenderId } = await seedBaseReassignmentFixture(t);
@@ -573,6 +614,64 @@ describe("previewBrokerReassignment", () => {
 		expect(preview.blockingReasons).toContain(
 			"Target broker is already assigned to this lender."
 		);
+	});
+});
+
+describe("searchActiveBrokerTargets", () => {
+	it("includes active brokers across organizations and excludes inactive brokers", async () => {
+		const t = createTestHarness();
+		const { currentBrokerId } = await seedBaseReassignmentFixture(t);
+		const activeExternal = await seedExternalTargetBroker(t, {
+			brokerageName: "External Active Brokerage",
+			orgId: "org_external_active",
+			portalSlug: "external-active",
+		});
+		const inactiveBrokerUserId = await insertUser(t, {
+			authId: "user_inactive_search_broker",
+			email: "inactive-search-broker@fairlend.test",
+			firstName: "Inactive",
+			lastName: "Search",
+		});
+		const inactiveBrokerId = await insertBroker(t, {
+			brokerageName: "Inactive Search Brokerage",
+			orgId: "org_inactive_search",
+			status: "inactive",
+			userId: inactiveBrokerUserId,
+		});
+
+		const allTargets = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(searchActiveBrokerTargetsRef, {});
+
+		expect(allTargets.map((target) => target.brokerId)).toEqual(
+			expect.arrayContaining([currentBrokerId, activeExternal.targetBrokerId])
+		);
+		expect(allTargets.map((target) => target.brokerId)).not.toContain(
+			inactiveBrokerId
+		);
+		expect(
+			allTargets.find(
+				(target) => target.brokerId === activeExternal.targetBrokerId
+			)?.orgId
+		).toBe("org_external_active");
+	});
+
+	it("searches active broker targets by organization id", async () => {
+		const t = createTestHarness();
+		await seedBaseReassignmentFixture(t);
+		const target = await seedExternalTargetBroker(t, {
+			brokerageName: "Queryable Brokerage",
+			orgId: "org_queryable_target",
+			portalSlug: "queryable",
+		});
+
+		const results = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(searchActiveBrokerTargetsRef, { search: "queryable_target" });
+
+		expect(results.map((result) => result.brokerId)).toEqual([
+			target.targetBrokerId,
+		]);
 	});
 });
 
@@ -645,6 +744,10 @@ describe("reassignBroker", () => {
 		expect(attempt?.targetBrokerId).toBe(target.targetBrokerId);
 		expect(attempt?.targetOrgId).toBe(target.orgId);
 		expect(attempt?.targetPortalId).toBe(target.targetPortalId);
+		expect(attempt?.currentMembershipId).toBe("om_old");
+		expect(attempt?.currentMembershipOperation).toBe("deactivated");
+		expect(attempt?.currentMembershipRoleSlugsBefore).toEqual(["lender"]);
+		expect(attempt?.currentMembershipRoleSlugsAfter).toEqual([]);
 	});
 
 	it("adds the lender role to an existing active target membership before reassignment", async () => {
@@ -714,12 +817,14 @@ describe("reassignBroker", () => {
 		});
 		setWorkosProvisioningForTests(provisioning);
 
-		await t.withIdentity(FAIRLEND_ADMIN).action(reassignBrokerRef, {
-			expectedCurrentBrokerId: currentBrokerId,
-			expectedCurrentOrgId: "org_current_brokerage",
-			lenderId,
-			targetBrokerId: target.targetBrokerId,
-		});
+		const result = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.action(reassignBrokerRef, {
+				expectedCurrentBrokerId: currentBrokerId,
+				expectedCurrentOrgId: "org_current_brokerage",
+				lenderId,
+				targetBrokerId: target.targetBrokerId,
+			});
 
 		expect(
 			provisioning.deactivateOrganizationMembership
@@ -734,6 +839,14 @@ describe("reassignBroker", () => {
 		});
 		expect(lender?.brokerId).toBe(target.targetBrokerId);
 		expect(user?.homePortalId).toBe(target.targetPortalId);
+		const attempt = await readAttempt(t, result.attemptId);
+		expect(attempt?.currentMembershipId).toBe("om_old_multi");
+		expect(attempt?.currentMembershipOperation).toBe("role_removed");
+		expect(attempt?.currentMembershipRoleSlugsBefore).toEqual([
+			"borrower",
+			"lender",
+		]);
+		expect(attempt?.currentMembershipRoleSlugsAfter).toEqual(["borrower"]);
 	});
 
 	it("ignores unrelated old-org memberships that do not have the lender role", async () => {
@@ -966,6 +1079,10 @@ describe("reassignBroker", () => {
 		expect(attempt?.status).toBe("failed");
 		expect(attempt?.failurePhase).toBe("old_membership_removal");
 		expect(attempt?.rollbackStatus).toBe("succeeded");
+		expect(attempt?.currentMembershipId).toBe("om_old");
+		expect(attempt?.currentMembershipOperation).toBe("deactivated");
+		expect(attempt?.currentMembershipRoleSlugsBefore).toEqual(["lender"]);
+		expect(attempt?.currentMembershipRoleSlugsAfter).toEqual([]);
 	});
 
 	it("marks repair needed when rollback of a newly-created target membership fails", async () => {
@@ -1011,6 +1128,10 @@ describe("reassignBroker", () => {
 		expect(attempt?.rollbackStatus).toBe("failed");
 		expect(attempt?.targetMembershipId).toBe("om_target");
 		expect(attempt?.targetMembershipWasPreexisting).toBe(false);
+		expect(attempt?.currentMembershipId).toBe("om_old");
+		expect(attempt?.currentMembershipOperation).toBe("deactivated");
+		expect(attempt?.currentMembershipRoleSlugsBefore).toEqual(["lender"]);
+		expect(attempt?.currentMembershipRoleSlugsAfter).toEqual([]);
 		expect(attempt?.failureMessage).toContain("WorkOS deactivate failed");
 		expect(attempt?.failureMessage).toContain("WorkOS rollback delete failed");
 	});

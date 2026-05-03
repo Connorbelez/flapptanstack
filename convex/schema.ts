@@ -511,6 +511,16 @@ export default defineSchema({
 		completedAt: v.optional(v.number()),
 		createdAt: v.number(),
 		currentBrokerId: v.id("brokers"),
+		currentMembershipId: v.optional(v.string()),
+		currentMembershipOperation: v.optional(
+			v.union(
+				v.literal("not_found"),
+				v.literal("deactivated"),
+				v.literal("role_removed")
+			)
+		),
+		currentMembershipRoleSlugsAfter: v.optional(v.array(v.string())),
+		currentMembershipRoleSlugsBefore: v.optional(v.array(v.string())),
 		currentOrgId: v.optional(v.string()),
 		currentPortalHost: v.optional(v.string()),
 		currentPortalId: v.optional(v.id("portals")),

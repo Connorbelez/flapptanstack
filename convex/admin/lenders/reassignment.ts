@@ -47,6 +47,10 @@ interface MarkReassignmentStartedArgs extends Record<string, unknown> {
 
 interface CompleteReassignmentArgs extends Record<string, unknown> {
 	attemptId: Id<"lenderBrokerReassignmentAttempts">;
+	currentMembershipId?: string;
+	currentMembershipOperation?: CurrentMembershipOperation;
+	currentMembershipRoleSlugsAfter?: string[];
+	currentMembershipRoleSlugsBefore?: string[];
 	expectedCurrentBrokerId: Id<"brokers">;
 	expectedCurrentOrgId?: string;
 	lenderId: Id<"lenders">;
@@ -60,6 +64,10 @@ interface CompleteReassignmentArgs extends Record<string, unknown> {
 
 interface MarkReassignmentFailedArgs extends Record<string, unknown> {
 	attemptId: Id<"lenderBrokerReassignmentAttempts">;
+	currentMembershipId?: string;
+	currentMembershipOperation?: CurrentMembershipOperation;
+	currentMembershipRoleSlugsAfter?: string[];
+	currentMembershipRoleSlugsBefore?: string[];
 	failureMessage: string;
 	failurePhase:
 		| "target_membership"
@@ -91,6 +99,15 @@ interface TargetMembershipTransferResult {
 		  };
 	targetMembershipId?: string;
 	targetMembershipWasPreexisting: boolean;
+}
+
+type CurrentMembershipOperation = "not_found" | "deactivated" | "role_removed";
+
+interface CurrentMembershipRemovalResult {
+	currentMembershipId?: string;
+	currentMembershipOperation: CurrentMembershipOperation;
+	currentMembershipRoleSlugsAfter?: string[];
+	currentMembershipRoleSlugsBefore?: string[];
 }
 
 type ActionMutationCtx = Pick<ActionCtx, "runMutation">;
@@ -266,7 +283,10 @@ async function removeCurrentMembership(args: {
 	ctx: ActionMutationCtx;
 	provisioning: WorkosProvisioning;
 	targetMembership: TargetMembershipTransferResult;
-}) {
+}): Promise<CurrentMembershipRemovalResult> {
+	let currentMembershipRemoval: CurrentMembershipRemovalResult = {
+		currentMembershipOperation: "not_found",
+	};
 	try {
 		const oldMemberships = await args.provisioning.listOrganizationMemberships({
 			organizationId: args.actionContext.currentBroker.orgId ?? "",
@@ -276,24 +296,36 @@ async function removeCurrentMembership(args: {
 		const oldMembership = oldMemberships.find((membership) =>
 			hasMembershipRole(membership, LENDER_ROLE_SLUG)
 		);
-		if (oldMembership) {
-			const remainingRoleSlugs = membershipRoleSlugs(oldMembership).filter(
-				(roleSlug) => roleSlug !== LENDER_ROLE_SLUG
-			);
-			if (remainingRoleSlugs.length > 0) {
-				await args.provisioning.updateOrganizationMembership(oldMembership.id, {
-					roleSlugs: remainingRoleSlugs,
-				});
-			} else {
-				await args.provisioning.deactivateOrganizationMembership(
-					oldMembership.id
-				);
-			}
+		if (!oldMembership) {
+			return currentMembershipRemoval;
 		}
+
+		const previousRoleSlugs = membershipRoleSlugs(oldMembership);
+		const remainingRoleSlugs = previousRoleSlugs.filter(
+			(roleSlug) => roleSlug !== LENDER_ROLE_SLUG
+		);
+		currentMembershipRemoval = {
+			currentMembershipId: oldMembership.id,
+			currentMembershipOperation:
+				remainingRoleSlugs.length > 0 ? "role_removed" : "deactivated",
+			currentMembershipRoleSlugsAfter: remainingRoleSlugs,
+			currentMembershipRoleSlugsBefore: previousRoleSlugs,
+		};
+		if (remainingRoleSlugs.length > 0) {
+			await args.provisioning.updateOrganizationMembership(oldMembership.id, {
+				roleSlugs: remainingRoleSlugs,
+			});
+		} else {
+			await args.provisioning.deactivateOrganizationMembership(
+				oldMembership.id
+			);
+		}
+		return currentMembershipRemoval;
 	} catch (error) {
 		const rollback = await rollbackCreatedTargetMembership(args);
 		await markAttemptFailed(args.ctx, {
 			attemptId: args.attemptId,
+			...currentMembershipRemoval,
 			failureMessage:
 				rollback.status === "failed"
 					? `${errorMessage(error)} Rollback delete failed: ${rollback.failureMessage}`
@@ -465,6 +497,7 @@ export const reassignBroker = adminAction
 			rollback: { kind: "none" },
 			targetMembershipWasPreexisting: false,
 		};
+		let currentMembershipRemoval: CurrentMembershipRemovalResult | undefined;
 
 		if (preview.workosOperations.addTargetMembership) {
 			targetMembership = await transferTargetMembership({
@@ -478,7 +511,7 @@ export const reassignBroker = adminAction
 		}
 
 		if (preview.workosOperations.deactivateCurrentMembership) {
-			await removeCurrentMembership({
+			currentMembershipRemoval = await removeCurrentMembership({
 				actionContext,
 				attemptId,
 				ctx,
@@ -494,6 +527,7 @@ export const reassignBroker = adminAction
 				expectedCurrentOrgId: actionContext.lender.orgId,
 				lenderId: actionContext.lender._id,
 				lenderUserId: actionContext.lenderUser._id,
+				...(currentMembershipRemoval ?? {}),
 				targetBrokerId: actionContext.targetBroker._id,
 				targetMembershipId: targetMembership.targetMembershipId,
 				targetMembershipWasPreexisting:
@@ -504,6 +538,7 @@ export const reassignBroker = adminAction
 		} catch (error) {
 			await markAttemptFailed(ctx, {
 				attemptId,
+				...(currentMembershipRemoval ?? {}),
 				failureMessage: errorMessage(error),
 				failurePhase: "convex_patch",
 				repairNeeded: true,
