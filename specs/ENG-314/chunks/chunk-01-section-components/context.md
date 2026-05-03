@@ -10,7 +10,7 @@
 - "Drill-down reuses the existing lender listing detail route rather than creating a parallel marketplace surface."
 
 ## Implementation notes
-- The command-center contract already provides `suggestedOpportunities.rows`, `excludedOwnedMortgageCount`, and `generatedAt`; the component layer should render those values rather than deriving new scoring or filter logic.
+- The command-center contract already provides `suggestedOpportunities.availabilityState: "ready" | "unavailable"`, `suggestedOpportunities.unavailableReason?: string`, `suggestedOpportunities.rows`, `suggestedOpportunities.excludedOwnedMortgageCount`, and parent `snapshot.generatedAt`; the component layer should render those values rather than deriving new availability, scoring, or filter logic.
 - The section should explicitly support loading, empty, unavailable, and stale-data presentation even though the route currently uses a suspense query for the page as a whole.
 - Stale-data presentation should be derived from `snapshot.generatedAt`, because the current contract does not expose a dedicated stale flag for suggestions.
 
