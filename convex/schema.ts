@@ -505,6 +505,50 @@ export default defineSchema({
 		.index("by_org", ["orgId"])
 		.index("by_org_status", ["orgId", "status"]),
 
+	lenderBrokerReassignmentAttempts: defineTable({
+		adminAuthId: v.string(),
+		adminUserId: v.optional(v.id("users")),
+		completedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		currentBrokerId: v.id("brokers"),
+		currentOrgId: v.optional(v.string()),
+		currentPortalHost: v.optional(v.string()),
+		currentPortalId: v.optional(v.id("portals")),
+		failureMessage: v.optional(v.string()),
+		failurePhase: v.optional(
+			v.union(
+				v.literal("target_membership"),
+				v.literal("old_membership_removal"),
+				v.literal("rollback"),
+				v.literal("convex_patch")
+			)
+		),
+		lenderId: v.id("lenders"),
+		lenderUserId: v.id("users"),
+		rollbackStatus: v.optional(
+			v.union(
+				v.literal("not_needed"),
+				v.literal("succeeded"),
+				v.literal("failed")
+			)
+		),
+		status: v.union(
+			v.literal("started"),
+			v.literal("succeeded"),
+			v.literal("failed"),
+			v.literal("repair_needed")
+		),
+		targetBrokerId: v.id("brokers"),
+		targetMembershipId: v.optional(v.string()),
+		targetMembershipWasPreexisting: v.optional(v.boolean()),
+		targetOrgId: v.string(),
+		targetPortalHost: v.optional(v.string()),
+		targetPortalId: v.optional(v.id("portals")),
+		updatedAt: v.number(),
+	})
+		.index("by_lender_created_at", ["lenderId", "createdAt"])
+		.index("by_status_created_at", ["status", "createdAt"]),
+
 	investmentVehicles: defineTable({
 		lenderId: v.id("lenders"),
 		name: v.string(),

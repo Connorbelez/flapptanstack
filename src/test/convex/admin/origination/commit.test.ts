@@ -32,6 +32,16 @@ function createProvisioningMock(overrides?: {
 			vi
 				.fn()
 				.mockResolvedValue({ email: "borrower.new@test.fairlend.ca", id: "user_new" }),
+		deactivateOrganizationMembership: vi.fn().mockResolvedValue({
+			id: "om_old",
+			organizationId: "org_old",
+			roleSlug: "lender",
+			roleSlugs: ["lender"],
+			status: "inactive",
+			userId: "user_lender",
+		}),
+		deleteOrganizationMembership: vi.fn().mockResolvedValue(undefined),
+		listOrganizationMemberships: vi.fn().mockResolvedValue([]),
 		listUsers: overrides?.listUsers ?? vi.fn().mockResolvedValue([]),
 	};
 }

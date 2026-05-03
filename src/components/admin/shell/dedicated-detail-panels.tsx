@@ -14,6 +14,7 @@ import {
 	type DocumentRemediationPanelDocument,
 } from "#/components/admin/deals/DocumentRemediationPanel";
 import { FeeValue } from "#/components/admin/fees/fee-value";
+import { BrokerReassignmentDialog } from "#/components/admin/lenders/BrokerReassignmentDialog";
 import { MortgagePackageApplyButton } from "#/components/admin/mortgages/MortgagePackageApplyButton";
 import {
 	Accordion,
@@ -5396,6 +5397,7 @@ export function LendersDedicatedDetails({
 	readonly record: UnifiedRecord;
 }) {
 	const lenderId = record._id as Id<"lenders">;
+	const [brokerReassignmentOpen, setBrokerReassignmentOpen] = useState(false);
 	const detailContext = useQuery(
 		api.crm.detailContextQueries.getLenderDetailContext,
 		{
@@ -5403,6 +5405,12 @@ export function LendersDedicatedDetails({
 		}
 	);
 	const detailFields = filterDetailFields(fields, ["brokerId", "userId"]);
+	const currentBrokerId =
+		typeof record.fields.brokerId === "string"
+			? (record.fields.brokerId as Id<"brokers">)
+			: null;
+	const currentOrgId =
+		typeof record.fields.orgId === "string" ? record.fields.orgId : undefined;
 	const relatedGroups: RelatedEntityGroup[] = [
 		{
 			description: "The sponsoring broker record for this lender.",
@@ -5597,6 +5605,24 @@ export function LendersDedicatedDetails({
 							]}
 						/>
 					) : null}
+					{currentBrokerId ? (
+						<div className="flex items-center justify-between gap-3 rounded-md border border-border/70 p-3">
+							<div className="space-y-1">
+								<p className="font-medium text-sm">Broker assignment</p>
+								<p className="text-muted-foreground text-sm">
+									Update the lender's sponsoring broker and portal access.
+								</p>
+							</div>
+							<Button
+								onClick={() => setBrokerReassignmentOpen(true)}
+								size="sm"
+								type="button"
+								variant="outline"
+							>
+								Change broker
+							</Button>
+						</div>
+					) : null}
 					<RelatedEntityExplorer
 						groups={relatedGroups}
 						objectDefs={objectDefs}
@@ -5629,6 +5655,16 @@ export function LendersDedicatedDetails({
 					}}
 				/>
 			</DetailSectionShell>
+
+			{currentBrokerId ? (
+				<BrokerReassignmentDialog
+					currentBrokerId={currentBrokerId}
+					currentOrgId={currentOrgId}
+					lenderId={lenderId}
+					onOpenChange={setBrokerReassignmentOpen}
+					open={brokerReassignmentOpen}
+				/>
+			) : null}
 		</div>
 	);
 }

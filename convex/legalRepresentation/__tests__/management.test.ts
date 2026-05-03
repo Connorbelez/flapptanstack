@@ -71,12 +71,22 @@ function installWorkosManagementCapture() {
 			email: args.email,
 			id: "user_unused",
 		}),
+		deactivateOrganizationMembership: async () => ({
+			id: "om_old",
+			organizationId: "org_old",
+			roleSlug: "lender",
+			roleSlugs: ["lender"],
+			status: "inactive",
+			userId: "user_lender",
+		}),
+		deleteOrganizationMembership: async () => undefined,
 		findInvitationByToken: async (token: string) => ({
 			email: "riley.guest@example.test",
 			id: `workos_${token}`,
 			state: "pending",
 			token,
 		}),
+		listOrganizationMemberships: async () => [],
 		listUsers: async () => [],
 		resendInvitation: async (invitationId: string) => {
 			resentInvitationIds.push(invitationId);
