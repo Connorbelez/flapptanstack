@@ -3,19 +3,21 @@
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
-import { AlertTriangle, Sparkles } from "lucide-react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { ActionsRail } from "./actions-rail";
+import { BrokerChatPanel } from "./broker-chat-panel";
 import { PaymentActivityTable } from "./payment-activity-table";
 import { PaymentSheet } from "./payment-sheet";
 import { PortfolioCockpit } from "./portfolio-cockpit";
 import { PortfolioExportStrip } from "./portfolio-export-strip";
-import { formatPortfolioEnumLabel } from "./portfolio-formatters";
 import { PortfolioShell, PortfolioSlotHost } from "./portfolio-shell";
 import type {
 	LenderPortfolioSearchState,
 	PortfolioAsyncState,
+	PortfolioBrokerContextSource,
 	PortfolioCommandCenterSnapshot,
+	PortfolioDetailType,
 	PortfolioExportAsyncState,
 	PortfolioHistoricalSeries,
 	PortfolioSearchUpdater,
@@ -26,6 +28,7 @@ import { PositionsTable } from "./positions-table";
 import {
 	applyPortfolioPaymentSearch,
 	applyPortfolioPositionSearch,
+	buildPortfolioBrokerPrefillSearch,
 	buildPortfolioDetailSearch,
 	clearPortfolioDetailSelection,
 } from "./search";
@@ -94,6 +97,20 @@ export function LenderPortfolioPage({
 		search.detailType === "position" ? search.detailId : undefined;
 	const selectedPaymentId =
 		search.detailType === "payment" ? search.detailId : undefined;
+	const brokerPrefillEntries = buildPortfolioBrokerPrefillEntries(snapshot);
+	const selectedBrokerPrefillEntry =
+		search.brokerContextSource &&
+		search.brokerContextType &&
+		search.brokerSubjectId
+			? (brokerPrefillEntries.find(
+					(entry) =>
+						entry.source === search.brokerContextSource &&
+						entry.context.contextType === search.brokerContextType &&
+						entry.context.subjectId === search.brokerSubjectId
+				) ?? null)
+			: null;
+	const selectedBrokerPrefillContext =
+		selectedBrokerPrefillEntry?.context ?? null;
 
 	return (
 		<>
@@ -217,43 +234,57 @@ export function LenderPortfolioPage({
 					<PortfolioSlotHost
 						className="h-fit"
 						dataTestId="sticky-rail-slot-host"
-						description="ENG-311 owns the rail host placement and command-center data boundary. Actions and broker chat leaf rendering land in ENG-329."
+						description="Actions Required stays above broker coordination and keeps the command-center rail visible across all-clear, fallback-contact, and missing-broker states."
 						eyebrow="Sticky rail slot"
 						summary={
 							snapshot.actionsRequired.allClear
 								? "All clear"
 								: `${snapshot.actionsRequired.items.length} active items`
 						}
-						title="Actions and broker coordination"
+						title="Fast response lane"
 					>
 						<div className="space-y-3">
-							<div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-								<div className="flex items-center gap-2 font-medium text-sm">
-									<AlertTriangle className="size-4 text-muted-foreground" />
-									Actions required host
-								</div>
-								<p className="mt-2 text-muted-foreground text-sm leading-6">
-									{snapshot.actionsRequired.allClear
-										? "No urgent lender actions are currently queued in the upstream contract."
-										: `${snapshot.actionsRequired.items.length} route-scoped action items are ready for the downstream rail surface.`}
-								</p>
-							</div>
-							<div className="rounded-lg border border-border/70 border-dashed bg-background px-4 py-3">
-								<div className="flex items-center gap-2 font-medium text-sm">
-									<Sparkles className="size-4 text-muted-foreground" />
-									Broker chat host
-								</div>
-								<p className="mt-2 text-muted-foreground text-sm leading-6">
-									Broker availability is{" "}
-									{formatPortfolioEnumLabel(
-										snapshot.brokerCoordination.availabilityState
-									)}
-									. Assigned broker:{" "}
-									{snapshot.brokerCoordination.assignedBroker?.name ??
-										"Unavailable"}
-									.
-								</p>
-							</div>
+							<ActionsRail
+								actionsRequired={snapshot.actionsRequired}
+								onOpenDetails={(action) => {
+									const detailSearch = buildPortfolioActionDetailSearch(action);
+									if (!detailSearch) {
+										return;
+									}
+
+									setSearch((current) =>
+										buildPortfolioDetailSearch(current, detailSearch)
+									);
+								}}
+								onPrefill={(context) =>
+									setSearch((current) =>
+										buildPortfolioBrokerPrefillSearch(current, {
+											brokerContextSource: "action",
+											brokerContextType: context.contextType,
+											brokerSubjectId: context.subjectId,
+										})
+									)
+								}
+								selectedPrefillContext={
+									selectedBrokerPrefillEntry?.source === "action"
+										? selectedBrokerPrefillContext
+										: null
+								}
+							/>
+							<BrokerChatPanel
+								brokerCoordination={snapshot.brokerCoordination}
+								onSelectPrefillContext={(context) =>
+									setSearch((current) =>
+										buildPortfolioBrokerPrefillSearch(current, {
+											brokerContextSource: "broker",
+											brokerContextType: context.contextType,
+											brokerSubjectId: context.subjectId,
+										})
+									)
+								}
+								selectedPrefillContext={selectedBrokerPrefillContext}
+								selectedPrefillSource={selectedBrokerPrefillEntry?.source}
+							/>
 						</div>
 					</PortfolioSlotHost>
 				}
@@ -316,6 +347,12 @@ function ConnectedPortfolioCockpit({
 			portalId,
 		}),
 	});
+	let historyState: PortfolioAsyncState = "ready";
+	if (historyQuery.isPending) {
+		historyState = "loading";
+	} else if (historyQuery.isError) {
+		historyState = "error";
+	}
 
 	return (
 		<PortfolioCockpit
@@ -327,13 +364,7 @@ function ConnectedPortfolioCockpit({
 					: undefined
 			}
 			historySeries={historyQuery.data ?? null}
-			historyState={
-				historyQuery.isPending
-					? "loading"
-					: historyQuery.isError
-						? "error"
-						: "ready"
-			}
+			historyState={historyState}
 		/>
 	);
 }
@@ -354,15 +385,18 @@ function ConnectedPortfolioExportStrip({
 		enabled: !loading && canExportTax,
 	});
 
-	const exportState: PortfolioExportAsyncState = loading
-		? "loading"
-		: canExportTax
-			? exportQuery.isPending
-				? "loading"
-				: exportQuery.isError
-					? "error"
-					: "ready"
-			: "forbidden";
+	let exportState: PortfolioExportAsyncState = "forbidden";
+	if (loading) {
+		exportState = "loading";
+	} else if (canExportTax) {
+		if (exportQuery.isPending) {
+			exportState = "loading";
+		} else if (exportQuery.isError) {
+			exportState = "error";
+		} else {
+			exportState = "ready";
+		}
+	}
 	const visibleExportContract =
 		exportState === "ready" ? (exportQuery.data ?? null) : null;
 	const visibleExportErrorMessage =
@@ -378,4 +412,67 @@ function ConnectedPortfolioExportStrip({
 			limitsStrip={snapshot.limitsStrip}
 		/>
 	);
+}
+
+type PortfolioActionItem =
+	PortfolioCommandCenterSnapshot["actionsRequired"]["items"][number];
+type PortfolioBrokerPrefillContext = PortfolioActionItem["prefillContext"];
+
+interface PortfolioBrokerPrefillEntry {
+	context: PortfolioBrokerPrefillContext;
+	source: PortfolioBrokerContextSource;
+}
+
+function buildPortfolioActionDetailSearch(action: PortfolioActionItem): {
+	detailId: string;
+	detailType: PortfolioDetailType;
+} | null {
+	if (action.kind === "deal_action") {
+		return null;
+	}
+
+	if (action.obligationId) {
+		return {
+			detailId: action.obligationId,
+			detailType: "payment",
+		};
+	}
+
+	if (action.mortgageId) {
+		return {
+			detailId: action.mortgageId,
+			detailType: "position",
+		};
+	}
+
+	return null;
+}
+
+function buildPortfolioBrokerPrefillEntries(
+	snapshot: PortfolioCommandCenterSnapshot
+): PortfolioBrokerPrefillEntry[] {
+	return [
+		...snapshot.actionsRequired.items.map((action) => ({
+			context: action.prefillContext,
+			source: "action" as const,
+		})),
+		...snapshot.brokerCoordination.prefillContextPayloads.mortgageFollowUps.map(
+			(context) => ({
+				context,
+				source: "broker" as const,
+			})
+		),
+		...snapshot.brokerCoordination.prefillContextPayloads.paymentFollowUps.map(
+			(context) => ({
+				context,
+				source: "broker" as const,
+			})
+		),
+		...snapshot.brokerCoordination.prefillContextPayloads.dealFollowUps.map(
+			(context) => ({
+				context,
+				source: "broker" as const,
+			})
+		),
+	];
 }

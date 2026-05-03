@@ -4,6 +4,18 @@ import type { api } from "../../../../convex/_generated/api";
 export const PORTFOLIO_DETAIL_TYPES = ["payment", "position"] as const;
 export type PortfolioDetailType = (typeof PORTFOLIO_DETAIL_TYPES)[number];
 
+export const PORTFOLIO_BROKER_CONTEXT_TYPES = [
+	"deal",
+	"mortgage",
+	"payment",
+] as const;
+export type PortfolioBrokerContextType =
+	(typeof PORTFOLIO_BROKER_CONTEXT_TYPES)[number];
+
+export const PORTFOLIO_BROKER_CONTEXT_SOURCES = ["action", "broker"] as const;
+export type PortfolioBrokerContextSource =
+	(typeof PORTFOLIO_BROKER_CONTEXT_SOURCES)[number];
+
 export const PORTFOLIO_POSITION_SORT_KEYS = [
 	"next-payment-soonest",
 	"next-payment-latest",
@@ -25,6 +37,9 @@ export type PortfolioPaymentSortKey =
 	(typeof PORTFOLIO_PAYMENT_SORT_KEYS)[number];
 
 export interface LenderPortfolioSearchState {
+	brokerContextSource?: PortfolioBrokerContextSource;
+	brokerContextType?: PortfolioBrokerContextType;
+	brokerSubjectId?: string;
 	detailId?: string;
 	detailType?: PortfolioDetailType;
 	paymentDateFrom?: string;
