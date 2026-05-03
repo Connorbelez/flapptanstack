@@ -138,10 +138,14 @@ export const convexModules: ModuleMap = withModuleAliases({
 	"/convex/convex.config.ts": async () => await import("./../convex.config.ts"),
 	"/convex/legalRepresentation/availability.ts": async () =>
 		await import("./../legalRepresentation/availability.ts"),
+	"/convex/legalRepresentation/lsoRegistry.ts": async () =>
+		await import("./../legalRepresentation/lsoRegistry.ts"),
 	"/convex/legalRepresentation/sla.ts": async () =>
 		await import("./../legalRepresentation/sla.ts"),
 	"legalRepresentation/availability": async () =>
 		await import("./../legalRepresentation/availability.ts"),
+	"legalRepresentation/lsoRegistry": async () =>
+		await import("./../legalRepresentation/lsoRegistry.ts"),
 	"legalRepresentation/platformLawyers": async () =>
 		await import("./../legalRepresentation/platformLawyers.ts"),
 	"legalRepresentation/sla": async () =>
@@ -474,6 +478,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../legalRepresentation/management.ts"),
 	"/convex/legalRepresentation/normalization.ts": async () =>
 		await import("./../legalRepresentation/normalization.ts"),
+	"/convex/legalRepresentation/onboarding.ts": async () =>
+		await import("./../legalRepresentation/onboarding.ts"),
 	"/convex/legalRepresentation/platformLawyers.ts": async () =>
 		await import("./../legalRepresentation/platformLawyers.ts"),
 	"/convex/legalRepresentation/profiles.ts": async () =>

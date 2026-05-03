@@ -142,4 +142,9 @@ describe("no references to deprecated roles", () => {
 	it("ROLE_PERMISSIONS has no 'uw_manager' key", () => {
 		expect(ROLE_PERMISSIONS).not.toHaveProperty("uw_manager");
 	});
+
+	it("does not define WorkOS platform_lawyer or guest_lawyer roles", () => {
+		expect(ROLE_PERMISSIONS).not.toHaveProperty("platform_lawyer");
+		expect(ROLE_PERMISSIONS).not.toHaveProperty("guest_lawyer");
+	});
 });

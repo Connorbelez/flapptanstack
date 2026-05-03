@@ -91,6 +91,7 @@ describe("parseSelectedLawyerSnapshot", () => {
 					barNumber: "LSO123",
 					jurisdiction: "ON",
 					licensingStatus: "licensed",
+					lsoLawyerId: "lsoLawyer_test",
 					restrictionStatus: "clear",
 					source: "test",
 					sourceFetchedAt: 123,
@@ -105,6 +106,7 @@ describe("parseSelectedLawyerSnapshot", () => {
 				barNumber: "LSO123",
 				jurisdiction: "ON",
 				licensingStatus: "licensed",
+				lsoLawyerId: "lsoLawyer_test",
 				restrictionStatus: "clear",
 				source: "test",
 				sourceFetchedAt: 123,
@@ -131,6 +133,25 @@ describe("parseSelectedLawyerSnapshot", () => {
 				email: "guest@example.com",
 			})
 		).toThrow("LSO-backed guest lawyer snapshots must include lso");
+	});
+
+	it("rejects LSO-backed guest lawyer snapshots without registry identity fields", () => {
+		expect(() =>
+			parseSelectedLawyerSnapshot({
+				type: "guest_lawyer",
+				source: "lso_search",
+				name: "Guest Counsel",
+				email: "guest@example.com",
+				lso: {
+					barNumber: "LSO123",
+					jurisdiction: "ON",
+					licensingStatus: "licensed",
+					restrictionStatus: "clear",
+				},
+			})
+		).toThrow(
+			"LSO-backed guest lawyer snapshots must include lsoLawyerId, barNumber, and jurisdiction"
+		);
 	});
 
 	it("accepts an LSO-enriched platform lawyer snapshot", () => {

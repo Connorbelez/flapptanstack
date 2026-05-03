@@ -1,4 +1,14 @@
-import { describe, expect, it } from "vitest";
+/**
+ * @vitest-environment jsdom
+ */
+
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { useNavigate } from "@tanstack/react-router";
+import { useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { useAction } from "convex/react";
+import type { ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { LawyerWorkosInvitationRouteContent } from "#/routes/lawyer/invitation";
 import {
 	buildLawyerWorkosInvitationPath,
 } from "#/routes/lawyer/invitation";
@@ -8,6 +18,34 @@ import {
 	buildVerifiedLawyerReturnPath,
 	getLawyerVerifyTerminalCopy,
 } from "#/routes/lawyer/verify.$token";
+
+vi.mock("@tanstack/react-router", async () => {
+	const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
+		"@tanstack/react-router"
+	);
+
+	return {
+		...actual,
+		useNavigate: vi.fn(),
+	};
+});
+
+vi.mock("@workos/authkit-tanstack-react-start/client", () => ({
+	useAuth: vi.fn(),
+}));
+
+vi.mock("convex/react", () => ({
+	Authenticated: ({ children }: { children: ReactNode }) => <>{children}</>,
+	AuthLoading: ({ children }: { children: ReactNode }) => <>{children}</>,
+	useAction: vi.fn(),
+	useMutation: vi.fn(),
+	useQuery: vi.fn(),
+}));
+
+afterEach(() => {
+	cleanup();
+	vi.clearAllMocks();
+});
 
 describe("lawyer verification route helpers", () => {
 	it("builds safe verification redirect paths for AuthKit resume", () => {
@@ -57,5 +95,48 @@ describe("lawyer verification route helpers", () => {
 		expect(getLawyerVerifyTerminalCopy("used")).toMatchObject({
 			title: "Invitation already used",
 		});
+	});
+});
+
+describe("lawyer WorkOS invitation route", () => {
+	it("routes WorkOS invitation completion into lawyer onboarding", async () => {
+		const mockNavigate = vi.fn().mockResolvedValue(undefined);
+		const completeInvitation = vi.fn().mockResolvedValue({
+			dealId: "deal_123",
+			invitationId: "invitation_123",
+			onboardingSessionId: "session_123",
+			returnPath: "/deals/deal_123",
+			status: "onboarding_required",
+			targetEmail: "guest@example.test",
+		});
+		const resolveInvitation = vi.fn().mockResolvedValue({
+			dealId: "deal_123",
+			emailMatches: true,
+			onboardingSessionId: "session_123",
+			status: "pending",
+			targetEmail: "guest@example.test",
+		});
+
+		vi.mocked(useNavigate).mockReturnValue(mockNavigate);
+		vi.mocked(useAuth).mockReturnValue({
+			loading: false,
+			user: { id: "user_123" },
+		} as never);
+		let actionCallIndex = 0;
+		vi.mocked(useAction).mockImplementation(() => {
+			actionCallIndex += 1;
+			return actionCallIndex % 2 === 1 ? completeInvitation : resolveInvitation;
+		});
+
+		render(
+			<LawyerWorkosInvitationRouteContent invitationToken="workos_token" />
+		);
+
+		await screen.findByText(/Preparing invitation/i);
+		await waitFor(() =>
+			expect(mockNavigate).toHaveBeenCalledWith({
+				href: "/lawyer/onboarding/session_123",
+			})
+		);
 	});
 });

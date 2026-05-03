@@ -192,6 +192,9 @@ export function ListingDetailPage({
 	const [selectedLawyerId, setSelectedLawyerId] = useState<string | undefined>(
 		checkout?.lawyers[0]?.id
 	);
+	const [selectedLsoLawyerId, setSelectedLsoLawyerId] = useState<
+		string | undefined
+	>(checkout?.lsoLawyerSearchResults?.[0]?.lsoLawyerId);
 	const [lawyerMode, setLawyerMode] = useState<"guest" | "platform">(
 		checkout?.lawyers[0] ? "platform" : "guest"
 	);
@@ -205,12 +208,14 @@ export function ListingDetailPage({
 	const firstHeroImageId = listing.heroImages[0]?.id;
 	const firstDocumentId = listing.documents[0]?.id;
 	const firstLawyerId = checkout?.lawyers[0]?.id;
+	const firstLsoLawyerId = checkout?.lsoLawyerSearchResults?.[0]?.lsoLawyerId;
 	const hasFirstLawyer = firstLawyerId !== undefined;
 
 	useEffect(() => {
 		setSelectedImageId(firstHeroImageId);
 		setSelectedDocumentId(firstDocumentId);
 		setSelectedLawyerId(firstLawyerId);
+		setSelectedLsoLawyerId(firstLsoLawyerId);
 		setLawyerMode(hasFirstLawyer ? "platform" : "guest");
 		setGuestLawyerName("");
 		setGuestLawyerEmail("");
@@ -224,6 +229,7 @@ export function ListingDetailPage({
 		firstDocumentId,
 		firstHeroImageId,
 		firstLawyerId,
+		firstLsoLawyerId,
 		hasFirstLawyer,
 	]);
 
@@ -238,6 +244,9 @@ export function ListingDetailPage({
 	);
 	const selectedLawyer = checkout?.lawyers.find(
 		(lawyer) => lawyer.id === selectedLawyerId
+	);
+	const selectedLsoLawyer = checkout?.lsoLawyerSearchResults?.find(
+		(lawyer) => lawyer.lsoLawyerId === selectedLsoLawyerId
 	);
 	const maximumCheckoutFractions =
 		checkout?.maximumFractions ?? listing.investment.availableFractions;
@@ -272,9 +281,14 @@ export function ListingDetailPage({
 		guestEmail: guestLawyerEmail,
 		guestName: guestLawyerName,
 		lawyerMode,
+		selectedLsoLawyer,
 		selectedLawyer,
 	});
-	const lawyerError = getLawyerError(lawyerMode, selectedLawyerSnapshot);
+	const lawyerError = getLawyerError({
+		lawyerMode,
+		selectedLawyerSnapshot,
+		selectedLsoLawyer,
+	});
 	const canStartCheckout =
 		isInteractive &&
 		fractionError === null &&
@@ -569,9 +583,11 @@ export function ListingDetailPage({
 						onGuestLawyerFirmChange={setGuestLawyerFirm}
 						onGuestLawyerNameChange={setGuestLawyerName}
 						onLawyerModeChange={setLawyerMode}
+						onLsoLawyerSelect={setSelectedLsoLawyerId}
 						onPlatformLawyerSelect={setSelectedLawyerId}
 						onStartCheckout={handleStartCheckout}
 						selectedLawyer={selectedLawyer}
+						selectedLsoLawyer={selectedLsoLawyer}
 					/>
 				) : (
 					<ReadOnlyMarketplaceNotice
@@ -861,9 +877,11 @@ export function ListingDetailPage({
 						onGuestLawyerFirmChange={setGuestLawyerFirm}
 						onGuestLawyerNameChange={setGuestLawyerName}
 						onLawyerModeChange={setLawyerMode}
+						onLsoLawyerSelect={setSelectedLsoLawyerId}
 						onPlatformLawyerSelect={setSelectedLawyerId}
 						onStartCheckout={handleStartCheckout}
 						selectedLawyer={selectedLawyer}
+						selectedLsoLawyer={selectedLsoLawyer}
 					/>
 				) : (
 					<ReadOnlyMarketplaceNotice
@@ -1303,8 +1321,10 @@ function HostedCheckoutLauncher({
 	onGuestLawyerFirmChange,
 	onGuestLawyerNameChange,
 	onLawyerModeChange,
+	onLsoLawyerSelect,
 	onPlatformLawyerSelect,
 	onStartCheckout,
+	selectedLsoLawyer,
 	selectedLawyer,
 }: {
 	availableFractions: number;
@@ -1331,8 +1351,12 @@ function HostedCheckoutLauncher({
 	onGuestLawyerFirmChange: (value: string) => void;
 	onGuestLawyerNameChange: (value: string) => void;
 	onLawyerModeChange: (value: "guest" | "platform") => void;
+	onLsoLawyerSelect: (lsoLawyerId: string) => void;
 	onPlatformLawyerSelect: (lawyerId: string) => void;
 	onStartCheckout: () => void;
+	selectedLsoLawyer?: NonNullable<
+		NonNullable<ListingDetailData["checkout"]>["lsoLawyerSearchResults"]
+	>[number];
 	selectedLawyer?: NonNullable<
 		ListingDetailData["checkout"]
 	>["lawyers"][number];
@@ -1342,7 +1366,11 @@ function HostedCheckoutLauncher({
 	const guestNameId = `${idBase}-guest-name`;
 	const guestEmailId = `${idBase}-guest-email`;
 	const guestFirmId = `${idBase}-guest-firm`;
-	const canUseManualGuestFallback = checkout.lawyers.length === 0;
+	const lsoLawyers = checkout.lsoLawyerSearchResults ?? [];
+	const hasLsoLawyers = lsoLawyers.length > 0;
+	const canUseManualGuestFallback =
+		checkout.lawyers.length === 0 && !hasLsoLawyers;
+	const canUseGuestMode = hasLsoLawyers || canUseManualGuestFallback;
 	let lawyerSelection: ReactNode;
 	if (lawyerMode === "platform") {
 		lawyerSelection =
@@ -1359,6 +1387,30 @@ function HostedCheckoutLauncher({
 			) : (
 				<EmptySelectionState message="No platform lawyers are currently configured." />
 			);
+	} else if (hasLsoLawyers) {
+		lawyerSelection = (
+			<div className="space-y-3">
+				<div className="grid gap-2">
+					{lsoLawyers.map((lawyer) => (
+						<LsoLawyerOptionCard
+							isSelected={lawyer.lsoLawyerId === selectedLsoLawyer?.lsoLawyerId}
+							key={lawyer.lsoLawyerId}
+							lawyer={lawyer}
+							onSelect={onLsoLawyerSelect}
+						/>
+					))}
+				</div>
+				{selectedLsoLawyer?.email ? null : (
+					<FieldInput
+						id={guestEmailId}
+						label="Contact email"
+						onChange={onGuestLawyerEmailChange}
+						type="email"
+						value={guestLawyerEmail}
+					/>
+				)}
+			</div>
+		);
 	} else if (canUseManualGuestFallback) {
 		lawyerSelection = (
 			<div className="grid gap-3 sm:grid-cols-2">
@@ -1507,7 +1559,7 @@ function HostedCheckoutLauncher({
 							<div
 								className={cn(
 									"grid gap-1 rounded-lg border border-border/70 bg-muted/25 p-1",
-									canUseManualGuestFallback ? "grid-cols-2" : "grid-cols-1"
+									canUseGuestMode ? "grid-cols-2" : "grid-cols-1"
 								)}
 							>
 								<SegmentButton
@@ -1516,12 +1568,12 @@ function HostedCheckoutLauncher({
 								>
 									Platform lawyer
 								</SegmentButton>
-								{canUseManualGuestFallback ? (
+								{canUseGuestMode ? (
 									<SegmentButton
 										isSelected={lawyerMode === "guest"}
 										onClick={() => onLawyerModeChange("guest")}
 									>
-										Guest lawyer fallback
+										{hasLsoLawyers ? "LSO lawyer" : "Guest lawyer fallback"}
 									</SegmentButton>
 								) : null}
 							</div>
@@ -1550,7 +1602,9 @@ function HostedCheckoutLauncher({
 				onStartCheckout={onStartCheckout}
 				selectedLawyerLabel={
 					lawyerMode === "guest"
-						? guestLawyerName || "Guest lawyer"
+						? selectedLsoLawyer?.displayName ||
+							guestLawyerName ||
+							"Guest lawyer"
 						: selectedLawyer?.label
 				}
 			/>
@@ -1975,17 +2029,51 @@ function buildSelectedLawyerSnapshot({
 	guestFirm,
 	guestName,
 	lawyerMode,
+	selectedLsoLawyer,
 	selectedLawyer,
 }: {
 	guestEmail: string;
 	guestFirm: string;
 	guestName: string;
 	lawyerMode: "guest" | "platform";
+	selectedLsoLawyer?: NonNullable<
+		NonNullable<ListingDetailData["checkout"]>["lsoLawyerSearchResults"]
+	>[number];
 	selectedLawyer?: NonNullable<
 		ListingDetailData["checkout"]
 	>["lawyers"][number];
 }): ListingCheckoutSelectedLawyer | null {
 	if (lawyerMode === "guest") {
+		if (selectedLsoLawyer) {
+			if (!selectedLsoLawyer.selectable) {
+				return null;
+			}
+			const contactEmail = selectedLsoLawyer.email ?? guestEmail.trim();
+			if (!EMAIL_PATTERN.test(contactEmail)) {
+				return null;
+			}
+			return {
+				type: "guest_lawyer",
+				source: "lso_search",
+				name: selectedLsoLawyer.displayName,
+				email: contactEmail,
+				...(selectedLsoLawyer.firmName
+					? { firm: selectedLsoLawyer.firmName }
+					: {}),
+				lso: {
+					barNumber: selectedLsoLawyer.barNumber,
+					jurisdiction: selectedLsoLawyer.jurisdiction,
+					licensingStatus: selectedLsoLawyer.licensingStatus,
+					lsoLawyerId: selectedLsoLawyer.lsoLawyerId,
+					restrictionStatus: selectedLsoLawyer.restrictionStatus,
+					...(selectedLsoLawyer.restrictionSummary
+						? { restrictionSummary: selectedLsoLawyer.restrictionSummary }
+						: {}),
+					source: selectedLsoLawyer.source,
+					sourceFetchedAt: selectedLsoLawyer.sourceFetchedAt,
+				},
+			};
+		}
 		const name = guestName.trim();
 		const email = guestEmail.trim();
 		const firm = guestFirm.trim();
@@ -2029,14 +2117,27 @@ function buildSelectedLawyerSnapshot({
 	};
 }
 
-function getLawyerError(
-	lawyerMode: "guest" | "platform",
-	selectedLawyerSnapshot: ListingCheckoutSelectedLawyer | null
-): string | null {
+function getLawyerError({
+	lawyerMode,
+	selectedLawyerSnapshot,
+	selectedLsoLawyer,
+}: {
+	lawyerMode: "guest" | "platform";
+	selectedLawyerSnapshot: ListingCheckoutSelectedLawyer | null;
+	selectedLsoLawyer?: NonNullable<
+		NonNullable<ListingDetailData["checkout"]>["lsoLawyerSearchResults"]
+	>[number];
+}): string | null {
 	if (selectedLawyerSnapshot !== null) {
 		return null;
 	}
 	if (lawyerMode === "guest") {
+		if (selectedLsoLawyer && !selectedLsoLawyer.selectable) {
+			return "Select an eligible LSO lawyer.";
+		}
+		if (selectedLsoLawyer && !selectedLsoLawyer.email) {
+			return "Enter a contact email for the selected LSO lawyer.";
+		}
 		return "Enter a guest lawyer name and valid email.";
 	}
 	return "Select a platform lawyer.";
@@ -2358,6 +2459,71 @@ function LawyerOptionCard({
 						</span>
 					) : null}
 				</div>
+			</div>
+		</button>
+	);
+}
+
+function LsoLawyerOptionCard({
+	isSelected,
+	lawyer,
+	onSelect,
+}: {
+	isSelected: boolean;
+	lawyer: NonNullable<
+		NonNullable<ListingDetailData["checkout"]>["lsoLawyerSearchResults"]
+	>[number];
+	onSelect: (lsoLawyerId: string) => void;
+}) {
+	return (
+		<button
+			aria-disabled={!lawyer.selectable}
+			aria-pressed={isSelected}
+			className={cn(
+				"flex w-full items-start gap-3 rounded-xl border px-4 py-4 text-left transition-colors",
+				isSelected
+					? "border-primary/45 bg-primary/10 dark:border-primary/55 dark:bg-primary/15"
+					: "border-border/80 bg-background/40 hover:bg-muted/45 dark:bg-background/25",
+				!lawyer.selectable &&
+					"cursor-not-allowed opacity-60 hover:bg-background/40"
+			)}
+			disabled={!lawyer.selectable}
+			onClick={() => onSelect(lawyer.lsoLawyerId)}
+			type="button"
+		>
+			<div
+				className={cn(
+					"mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+					isSelected
+						? "border-[var(--palm)] bg-[var(--palm)] text-white"
+						: "border-muted-foreground/35 bg-card text-transparent"
+				)}
+			>
+				<Check className="size-3" />
+			</div>
+			<div className="min-w-0 flex-1">
+				<div className="flex flex-wrap items-center gap-2">
+					<p className="font-medium text-sm">{lawyer.displayName}</p>
+					<span
+						className={cn(
+							"rounded-full px-2 py-0.5 font-medium text-[11px]",
+							lawyer.selectable
+								? "bg-[#E7F6EA] text-[#2E7D4F]"
+								: "bg-[#F8EAEA] text-[#7A271A]"
+						)}
+					>
+						{lawyer.selectable ? "LSO clear" : "Not selectable"}
+					</span>
+				</div>
+				<p className="mt-1 text-[13px] text-muted-foreground">
+					{lawyer.firmName ?? "Independent counsel"} · {lawyer.barNumber} ·{" "}
+					{lawyer.jurisdiction}
+				</p>
+				{lawyer.restrictionSummary ? (
+					<p className="mt-2 text-[#7A271A] text-xs">
+						{lawyer.restrictionSummary}
+					</p>
+				) : null}
 			</div>
 		</button>
 	);

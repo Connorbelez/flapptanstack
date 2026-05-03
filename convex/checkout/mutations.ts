@@ -159,7 +159,46 @@ async function assertCheckoutLawyerSelectable(
 	}
 ): Promise<CheckoutSessionDoc["selectedLawyer"]> {
 	if (args.selectedLawyer.type === "guest_lawyer") {
-		return args.selectedLawyer;
+		if (args.selectedLawyer.source !== "lso_search") {
+			return args.selectedLawyer;
+		}
+		const lsoLawyerId = args.selectedLawyer.lso?.lsoLawyerId;
+		if (!lsoLawyerId) {
+			throw new ConvexError(
+				"LSO-backed guest lawyer selection requires lsoLawyerId"
+			);
+		}
+		const lsoRow = await ctx.db.get(lsoLawyerId);
+		if (
+			!lsoRow ||
+			lsoRow.licenseeType !== "lawyer" ||
+			!lsoRow.entitledToPractise ||
+			lsoRow.licensingStatus !== "licensed" ||
+			lsoRow.restrictionStatus !== "clear"
+		) {
+			throw new ConvexError(
+				"Selected guest lawyer is not eligible for checkout"
+			);
+		}
+		return {
+			type: "guest_lawyer",
+			source: "lso_search",
+			name: lsoRow.displayName,
+			email: args.selectedLawyer.email,
+			...(lsoRow.firmName ? { firm: lsoRow.firmName } : {}),
+			lso: {
+				barNumber: lsoRow.barNumber,
+				jurisdiction: lsoRow.jurisdiction,
+				licensingStatus: lsoRow.licensingStatus,
+				lsoLawyerId: lsoRow._id,
+				restrictionStatus: lsoRow.restrictionStatus,
+				...(lsoRow.restrictionSummary
+					? { restrictionSummary: lsoRow.restrictionSummary }
+					: {}),
+				source: lsoRow.source,
+				sourceFetchedAt: lsoRow.sourceFetchedAt,
+			},
+		};
 	}
 	const option = await assertPlatformLawyerAuthSelectableForCheckout(ctx, {
 		authId: args.selectedLawyer.lawyerId,
@@ -326,8 +365,8 @@ function assertListingAvailableForCheckout(
 	return listing as ProductionListingDoc;
 }
 
-function isFailureResult(
-	value: ListingDoc | StartMarketplaceCheckoutResult
+function isFailureResult<T extends object>(
+	value: T | StartMarketplaceCheckoutResult
 ): value is StartMarketplaceCheckoutResult {
 	return "ok" in value;
 }
@@ -385,6 +424,29 @@ async function validateSelectedLawyerForCheckout(
 	}
 }
 
+async function resolveSelectedLawyerForCheckout(
+	ctx: MutationCtx,
+	args: {
+		now: number;
+		selectedLawyer: unknown;
+	}
+): Promise<
+	CheckoutSessionDoc["selectedLawyer"] | StartMarketplaceCheckoutResult
+> {
+	try {
+		const parsedLawyer = parseSelectedLawyerSnapshot(args.selectedLawyer);
+		return await assertCheckoutLawyerSelectable(ctx, {
+			now: args.now,
+			selectedLawyer: parsedLawyer,
+		});
+	} catch (error) {
+		return checkoutFailure(
+			"invalid_lawyer",
+			error instanceof Error ? error.message : "Invalid lawyer"
+		);
+	}
+}
+
 export const prepareMarketplaceCheckout = convex
 	.mutation()
 	.input(prepareMarketplaceCheckoutArgsValidator)
@@ -402,25 +464,14 @@ export const prepareMarketplaceCheckout = convex
 				error instanceof Error ? error.message : "Invalid fractions"
 			);
 		}
-		try {
-			selectedLawyer = parseSelectedLawyerSnapshot(args.selectedLawyer);
-		} catch (error) {
-			return checkoutFailure(
-				"invalid_lawyer",
-				error instanceof Error ? error.message : "Invalid lawyer"
-			);
+		const selectedLawyerResult = await resolveSelectedLawyerForCheckout(ctx, {
+			now,
+			selectedLawyer: args.selectedLawyer,
+		});
+		if (isFailureResult(selectedLawyerResult)) {
+			return selectedLawyerResult;
 		}
-		try {
-			selectedLawyer = await assertCheckoutLawyerSelectable(ctx, {
-				now,
-				selectedLawyer,
-			});
-		} catch (error) {
-			return checkoutFailure(
-				"invalid_lawyer",
-				error instanceof Error ? error.message : "Invalid lawyer"
-			);
-		}
+		selectedLawyer = selectedLawyerResult;
 		const lawyerValidationFailure = await validateSelectedLawyerForCheckout(
 			ctx,
 			{

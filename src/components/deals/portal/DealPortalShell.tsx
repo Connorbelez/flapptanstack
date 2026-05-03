@@ -7,6 +7,26 @@ import { PaymentScreen } from "./PaymentScreen";
 import { RepresentationScreen } from "./RepresentationScreen";
 import type { DealPortalWorkspace } from "./types";
 
+function renderActiveDealPortalContent(workspace: DealPortalWorkspace) {
+	return (
+		<>
+			{workspace.activeScreen === "representation" ? (
+				<RepresentationScreen workspace={workspace} />
+			) : null}
+			{workspace.activeScreen === "documents" ? (
+				<DocumentsScreen workspace={workspace} />
+			) : null}
+			{workspace.activeScreen === "payment" ? (
+				<PaymentScreen workspace={workspace} />
+			) : null}
+			{workspace.activeScreen === "complete" ||
+			workspace.activeScreen === "failed" ? (
+				<CompleteScreen workspace={workspace} />
+			) : null}
+		</>
+	);
+}
+
 export function DealPortalShell({
 	workspace,
 }: {
@@ -105,19 +125,27 @@ export function DealPortalShell({
 						</div>
 					) : null}
 
-					{workspace.activeScreen === "representation" ? (
-						<RepresentationScreen workspace={workspace} />
-					) : null}
-					{workspace.activeScreen === "documents" ? (
-						<DocumentsScreen workspace={workspace} />
-					) : null}
-					{workspace.activeScreen === "payment" ? (
-						<PaymentScreen workspace={workspace} />
-					) : null}
-					{workspace.activeScreen === "complete" ||
-					workspace.activeScreen === "failed" ? (
-						<CompleteScreen workspace={workspace} />
-					) : null}
+					{workspace.onboarding.required ? (
+						<section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+							<h2 className="font-semibold text-xl">
+								Complete legal onboarding
+							</h2>
+							<p className="mt-2 text-slate-600 text-sm leading-6">
+								Finish identity, LSO, and representation checks before this deal
+								can show lawyer actions.
+							</p>
+							{workspace.onboarding.nextRoute ? (
+								<a
+									className="mt-4 inline-flex rounded-md bg-slate-950 px-3 py-2 font-medium text-sm text-white"
+									href={workspace.onboarding.nextRoute}
+								>
+									Continue onboarding
+								</a>
+							) : null}
+						</section>
+					) : (
+						renderActiveDealPortalContent(workspace)
+					)}
 				</section>
 			</div>
 		</main>

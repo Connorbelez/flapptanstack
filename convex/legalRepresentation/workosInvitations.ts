@@ -292,6 +292,8 @@ export const resolveWorkosInvitationToken = convex
 			| {
 					readonly dealId: Id<"deals">;
 					readonly emailMatches: boolean;
+					readonly nextRoute?: string;
+					readonly onboardingSessionId?: Id<"lawyerOnboardingSessions">;
 					readonly status: Doc<"lawyerInvitations">["status"];
 					readonly targetEmail: string;
 			  }
@@ -314,9 +316,16 @@ export const resolveWorkosInvitationToken = convex
 			const emailMatches =
 				normalizeLawyerEmail(workosInvitation.email) ===
 				localInvitation.normalizedTargetEmail;
+			const onboarding = await ctx.runMutation(
+				internal.legalRepresentation.onboarding
+					.startOrResumeForInvitationInternal,
+				{ invitationId: localInvitation._id }
+			);
 			return {
 				dealId: localInvitation.dealId,
 				emailMatches,
+				nextRoute: onboarding.session.nextRoute,
+				onboardingSessionId: onboarding.session._id,
 				status: localInvitation.status,
 				targetEmail: localInvitation.targetEmail,
 			};
@@ -336,7 +345,7 @@ export const completeWorkosGuestInvitation = authedAction
 		const workosInvitation = await findInvitationByToken(args.invitationToken);
 		return await ctx.runMutation(
 			internal.legalRepresentation.invitations
-				.acceptGuestInvitationByWorkosInvitationInternal,
+				.acceptWorkosInvitationForOnboardingInternal,
 			{
 				invitationEmail: workosInvitation.email,
 				now: args.now,

@@ -5,6 +5,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { getListingDetailMock } from "#/components/demo/listings/listing-detail-mock-data";
 import { ListingDetailPage } from "#/components/listings/ListingDetailPage";
 import type {
@@ -358,6 +359,104 @@ describe("listing detail hosted checkout launcher", () => {
 		expect(
 			screen.getAllByText("Enter a guest lawyer name and valid email.").length
 		).toBeGreaterThan(0);
+	});
+
+	it("renders LSO search rows, disables restricted lawyers, and requires email when missing", () => {
+		const listing = getListing({
+			checkout: {
+				...listingWithoutPlatformLawyers().checkout!,
+				lsoLawyerSearchResults: [
+					{
+						barNumber: "L12345",
+						displayName: "Jane Eligible",
+						email: null,
+						firmName: "Eligible LLP",
+						jurisdiction: "ON",
+						licensingStatus: "licensed",
+						lsoLawyerId: "lso_eligible" as Id<"lsoLawyers">,
+						restrictionStatus: "clear",
+						restrictionSummary: null,
+						selectable: true,
+						source: "lso_import",
+						sourceFetchedAt: 1_710_000_000_000,
+					},
+					{
+						barNumber: "L99999",
+						displayName: "Rita Restricted",
+						email: "rita@example.test",
+						firmName: "Restricted LLP",
+						jurisdiction: "ON",
+						licensingStatus: "suspended",
+						lsoLawyerId: "lso_restricted" as Id<"lsoLawyers">,
+						restrictionStatus: "suspended",
+						restrictionSummary: "Suspended by LSO",
+						selectable: false,
+						source: "manual_admin",
+						sourceFetchedAt: 1_710_000_000_000,
+					},
+				],
+			},
+		});
+		renderInteractiveListing({ listing });
+
+		expect(screen.getAllByText("Jane Eligible").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("Rita Restricted").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("Not selectable").length).toBeGreaterThan(0);
+		expect(screen.getAllByLabelText("Contact email").length).toBeGreaterThan(0);
+		expect(firstCheckoutButton().disabled).toBe(true);
+	});
+
+	it("starts checkout with an LSO-backed guest lawyer selection", async () => {
+		const onStartCheckout = vi.fn().mockResolvedValue({
+			ok: true,
+			checkoutSessionId: "checkout_123",
+			expiresAt: Date.now() + 300_000,
+			stripeCheckoutUrl: "https://checkout.stripe.test/session",
+		});
+		const listing = getListing({
+			checkout: {
+				...listingWithoutPlatformLawyers().checkout!,
+				lsoLawyerSearchResults: [
+					{
+						barNumber: "L12345",
+						displayName: "Jane Eligible",
+						email: "jane@example.test",
+						firmName: "Eligible LLP",
+						jurisdiction: "ON",
+						licensingStatus: "licensed",
+						lsoLawyerId: "lso_eligible" as Id<"lsoLawyers">,
+						restrictionStatus: "clear",
+						restrictionSummary: null,
+						selectable: true,
+						source: "lso_import",
+						sourceFetchedAt: 1_710_000_000_000,
+					},
+				],
+			},
+		});
+		renderInteractiveListing({ listing, onStartCheckout });
+
+		fireEvent.click(firstCheckoutButton());
+
+		await waitFor(() => {
+			expect(onStartCheckout).toHaveBeenCalledWith(
+				expect.objectContaining({
+					selectedLawyer: expect.objectContaining({
+						type: "guest_lawyer",
+						source: "lso_search",
+						name: "Jane Eligible",
+						email: "jane@example.test",
+						lso: expect.objectContaining({
+							barNumber: "L12345",
+							jurisdiction: "ON",
+							lsoLawyerId: "lso_eligible",
+							source: "lso_import",
+							sourceFetchedAt: 1_710_000_000_000,
+						}),
+					}),
+				})
+			);
+		});
 	});
 
 	it("starts checkout with explicit manual guest fallback when no platform lawyer is configured", async () => {

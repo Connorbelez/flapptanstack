@@ -31,10 +31,7 @@ const PLATFORM_CHECK_TYPES = [
 ] as const;
 
 const PLATFORM_EVIDENCE_TTL_MS = 1000 * 60 * 60 * 24 * 90;
-const PLATFORM_LAWYER_WORKOS_ROLE_SLUGS = [
-	"lawyer",
-	"platform_lawyer",
-] as const;
+const CANONICAL_LAWYER_WORKOS_ROLE_SLUG = "lawyer";
 
 export type PlatformLawyerEligibilityStatus =
 	| "eligible"
@@ -157,9 +154,7 @@ function hasLawyerRole(
 	]);
 	return (
 		membership.status === "active" &&
-		PLATFORM_LAWYER_WORKOS_ROLE_SLUGS.some((roleSlug) =>
-			roleSlugs.has(roleSlug)
-		)
+		roleSlugs.has(CANONICAL_LAWYER_WORKOS_ROLE_SLUG)
 	);
 }
 
@@ -199,7 +194,7 @@ async function assertCanonicalWorkosLawyerIdentity(
 		.collect();
 	if (!memberships.some(hasLawyerRole)) {
 		throw new ConvexError(
-			"Platform lawyer authId must have an active WorkOS platform lawyer role"
+			"Platform lawyer authId must have an active WorkOS lawyer role"
 		);
 	}
 }

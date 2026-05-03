@@ -11,6 +11,10 @@ type AcceptResult =
 			readonly dealId?: string;
 	  }
 	| {
+			readonly onboardingSessionId: string;
+			readonly status: "onboarding_required";
+	  }
+	| {
 			readonly dealId?: string;
 			readonly reason: string;
 			readonly status:
@@ -79,6 +83,10 @@ export function buildLawyerOnboardingPath(dealId: string): string {
 		redirect: buildVerifiedLawyerReturnPath(dealId),
 	});
 	return `/onboard?${search.toString()}`;
+}
+
+export function buildLawyerOnboardingSessionPath(sessionId: string): string {
+	return `/lawyer/onboarding/${encodeURIComponent(sessionId)}`;
 }
 
 export function getLawyerVerifyTerminalCopy(
@@ -179,6 +187,17 @@ export function LawyerVerifyRouteContent({
 		setPhase("accepting");
 		void acceptInvitation({ token })
 			.then(async (nextResult) => {
+				if (
+					"onboardingSessionId" in nextResult &&
+					typeof nextResult.onboardingSessionId === "string"
+				) {
+					await navigate({
+						href: buildLawyerOnboardingSessionPath(
+							nextResult.onboardingSessionId
+						),
+					});
+					return;
+				}
 				if (
 					nextResult.status === "verified" &&
 					"dealId" in nextResult &&
@@ -309,6 +328,15 @@ export function LawyerVerifyRouteContent({
 				}
 				body="Your WorkOS lawyer identity is linked to the invited deal."
 				title="Invitation verified"
+			/>
+		);
+	}
+
+	if (result?.status === "onboarding_required") {
+		return (
+			<LawyerVerifyShell
+				body="Opening the lawyer onboarding session for this representation."
+				title="Preparing lawyer onboarding"
 			/>
 		);
 	}

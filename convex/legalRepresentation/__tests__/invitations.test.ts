@@ -237,7 +237,7 @@ describe("guest lawyer invitations", () => {
 		).resolves.toMatchObject({ dealId, status: "pending" });
 	});
 
-	it("accepts a valid token, records evidence, and migrates provisional email access to auth ID", async () => {
+	it("routes a valid raw token into lawyer onboarding without granting deal access", async () => {
 		const t = createHarness();
 		await insertSyncedLawyerIdentity(t);
 		const lsoLawyerId = await t.run(async (ctx) =>
@@ -262,8 +262,11 @@ describe("guest lawyer invitations", () => {
 				token: created.token,
 			});
 
-		expect(accepted.status).toBe("verified");
-		expect(accepted).toMatchObject({ dealId });
+		expect(accepted).toMatchObject({
+			dealId,
+			status: "onboarding_required",
+			targetEmail: "riley.guest@example.test",
+		});
 		const rows = await t.run(async (ctx) => {
 			const deal = await ctx.db.get(dealId);
 			const provisional = await ctx.db.get(provisionalAccessId);
@@ -277,36 +280,32 @@ describe("guest lawyer invitations", () => {
 				authAccess,
 				deal,
 				invitations: await ctx.db.query("lawyerInvitations").collect(),
+				onboardingSession:
+					"onboardingSessionId" in accepted
+						? await ctx.db.get(accepted.onboardingSessionId)
+						: null,
 				profiles: await ctx.db.query("lawyerProfiles").collect(),
 				provisional,
 				verifications: await ctx.db.query("lawyerVerifications").collect(),
 			};
 		});
 		expect(rows.provisional).toMatchObject({
-			status: "revoked",
+			status: "active",
 			userId: normalizedEmail,
 		});
-		expect(rows.authAccess).toHaveLength(1);
-		expect(rows.authAccess[0]).toMatchObject({
-			role: "guest_lawyer",
-			status: "active",
-			userId: "user_guest_lawyer",
-		});
-		expect(rows.deal?.lawyerId).toBe("user_guest_lawyer");
+		expect(rows.authAccess).toHaveLength(0);
+		expect(rows.deal?.lawyerId).toBe(normalizedEmail);
 		expect(rows.invitations[0]).toMatchObject({
 			resolvedAuthId: "user_guest_lawyer",
-			status: "verified",
+			status: "accepted",
 		});
-		expect(rows.profiles).toHaveLength(1);
-		expect(rows.profiles[0]).toMatchObject({
-			authId: "user_guest_lawyer",
-			profileKind: "guest",
+		expect(rows.onboardingSession).toMatchObject({
+			dealId,
+			normalizedTargetEmail: normalizedEmail,
+			status: "auth_pending",
 		});
-		expect(rows.verifications).toHaveLength(1);
-		expect(rows.verifications[0]).toMatchObject({
-			outcome: "eligible",
-			reasonCodes: ["active_license"],
-		});
+		expect(rows.profiles).toHaveLength(0);
+		expect(rows.verifications).toHaveLength(0);
 
 		const reused = await t
 			.withIdentity(lawyerIdentity())
@@ -314,13 +313,19 @@ describe("guest lawyer invitations", () => {
 				now: NOW + 2,
 				token: created.token,
 			});
-		expect(reused).toMatchObject({ dealId, status: "used" });
-		await expect(
-			t.run(async (ctx) => ctx.db.query("lawyerProfiles").collect())
-		).resolves.toHaveLength(1);
+		expect(reused).toMatchObject({
+			dealId,
+			status: "onboarding_required",
+		});
+		if (
+			!("onboardingSessionId" in accepted && "onboardingSessionId" in reused)
+		) {
+			throw new Error("Expected onboarding session result");
+		}
+		expect(reused.onboardingSessionId).toBe(accepted.onboardingSessionId);
 	});
 
-	it("accepts a matching WorkOS invitation token and migrates provisional email access", async () => {
+	it("routes a matching WorkOS invitation token into lawyer onboarding", async () => {
 		const t = createHarness();
 		installWorkosInvitationLookup();
 		await insertSyncedLawyerIdentity(t);
@@ -354,7 +359,11 @@ describe("guest lawyer invitations", () => {
 				now: NOW + 1,
 			});
 
-		expect(accepted).toMatchObject({ dealId, status: "verified" });
+		expect(accepted).toMatchObject({
+			dealId,
+			status: "onboarding_required",
+			targetEmail: "riley.guest@example.test",
+		});
 		const rows = await t.run(async (ctx) => ({
 			authAccess: await ctx.db
 				.query("dealAccess")
@@ -363,20 +372,122 @@ describe("guest lawyer invitations", () => {
 				)
 				.collect(),
 			invitation: await ctx.db.get(created.invitationId),
+			onboardingSession:
+				"onboardingSessionId" in accepted
+					? await ctx.db.get(accepted.onboardingSessionId)
+					: null,
 			provisional: await ctx.db.get(provisionalAccessId),
 		}));
-		expect(rows.provisional).toMatchObject({ status: "revoked" });
-		expect(rows.authAccess).toEqual([
-			expect.objectContaining({
-				role: "guest_lawyer",
-				status: "active",
-				userId: "user_guest_lawyer",
-			}),
-		]);
+		expect(rows.provisional).toMatchObject({ status: "active" });
+		expect(rows.authAccess).toEqual([]);
 		expect(rows.invitation).toMatchObject({
 			resolvedAuthId: "user_guest_lawyer",
-			status: "verified",
+			status: "accepted",
 		});
+		expect(rows.onboardingSession).toMatchObject({
+			dealId,
+			normalizedTargetEmail: "riley.guest@example.test",
+			status: "auth_pending",
+		});
+
+		const reloaded = await t
+			.withIdentity(lawyerIdentity())
+			.action(workosInvitationsApi.completeWorkosGuestInvitation, {
+				invitationToken: "workos_token_1",
+				now: NOW + 2,
+			});
+		expect(reloaded).toMatchObject({
+			dealId,
+			status: "onboarding_required",
+		});
+		if (
+			!("onboardingSessionId" in accepted && "onboardingSessionId" in reloaded)
+		) {
+			throw new Error("Expected onboarding session result");
+		}
+		expect(reloaded.onboardingSessionId).toBe(accepted.onboardingSessionId);
+	});
+
+	it("keeps legacy WorkOS internal acceptance on onboarding without granting final access", async () => {
+		const t = createHarness();
+		await insertSyncedLawyerIdentity(t);
+		const lsoLawyerId = await t.run(async (ctx) =>
+			ctx.db.insert(
+				"lsoLawyers",
+				buildEligiblePlatformLsoLawyerFixture({ now: NOW })
+			)
+		);
+		const { dealId, normalizedEmail, provisionalAccessId } =
+			await insertGuestDeal(t, {
+				lsoLawyerId,
+			});
+		const created = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(invitationsApi.createGuestInvitationForDeal, {
+				dealId,
+				now: NOW,
+			});
+		await t.run((ctx) =>
+			ctx.db.patch(created.invitationId, {
+				deliveryProvider: "workos",
+				deliveryStatus: "sent",
+				workosInvitationId: "workos_invitation_legacy",
+			})
+		);
+
+		const accepted = await t.mutation(
+			invitationsApi.acceptGuestInvitationByWorkosInvitationInternal,
+			{
+				invitationEmail: "riley.guest@example.test",
+				now: NOW + 1,
+				viewer: {
+					authId: "user_guest_lawyer",
+					email: "riley.guest@example.test",
+					permissions: ["lawyer:access", "deal:view"],
+					role: "lawyer",
+					roles: ["lawyer"],
+					verifiedEmail: "riley.guest@example.test",
+				},
+				workosInvitationId: "workos_invitation_legacy",
+			}
+		);
+
+		expect(accepted).toMatchObject({
+			dealId,
+			status: "onboarding_required",
+			targetEmail: "riley.guest@example.test",
+		});
+		const rows = await t.run(async (ctx) => ({
+			authAccess: await ctx.db
+				.query("dealAccess")
+				.withIndex("by_user_and_deal", (query) =>
+					query.eq("userId", "user_guest_lawyer").eq("dealId", dealId)
+				)
+				.collect(),
+			deal: await ctx.db.get(dealId),
+			invitation: await ctx.db.get(created.invitationId),
+			onboardingSession:
+				"onboardingSessionId" in accepted
+					? await ctx.db.get(accepted.onboardingSessionId)
+					: null,
+			profiles: await ctx.db.query("lawyerProfiles").collect(),
+			provisional: await ctx.db.get(provisionalAccessId),
+			verifications: await ctx.db.query("lawyerVerifications").collect(),
+		}));
+		expect(rows.authAccess).toEqual([]);
+		expect(rows.deal?.lawyerId).toBe(normalizedEmail);
+		expect(rows.invitation).toMatchObject({
+			resolvedAuthId: "user_guest_lawyer",
+			status: "accepted",
+		});
+		expect(rows.onboardingSession).toMatchObject({
+			dealId,
+			normalizedTargetEmail: normalizedEmail,
+			status: "auth_pending",
+		});
+		expect(rows.profiles).toEqual([]);
+		expect(rows.provisional).toMatchObject({ status: "active" });
+		expect(rows.verifications).toEqual([]);
 	});
 
 	it("rejects WorkOS invitation completion when the WorkOS email does not match the FairLend invitation", async () => {
@@ -518,7 +629,7 @@ describe("guest lawyer invitations", () => {
 		).resolves.toEqual([]);
 	});
 
-	it("resolves returning guest profiles without duplicating identities", async () => {
+	it("does not mutate returning guest profiles before onboarding completion", async () => {
 		const t = createHarness();
 		await insertSyncedLawyerIdentity(t);
 		const { dealId } = await insertGuestDeal(t);
@@ -550,20 +661,20 @@ describe("guest lawyer invitations", () => {
 			});
 
 		expect(accepted).toMatchObject({
-			lawyerProfileId: existingProfileId,
-			status: "verified",
+			status: "onboarding_required",
 		});
 		const profiles = await t.run(async (ctx) =>
 			ctx.db.query("lawyerProfiles").collect()
 		);
 		expect(profiles).toHaveLength(1);
+		expect(profiles[0]?.authId).toBeUndefined();
 		expect(profiles[0]).toMatchObject({
-			authId: "user_guest_lawyer",
-			displayName: "Riley Guest",
+			_id: existingProfileId,
+			displayName: "Old Riley",
 		});
 	});
 
-	it("records failed evidence and does not grant auth ID access for restricted lawyers", async () => {
+	it("routes restricted selected lawyers into onboarding without granting auth ID access", async () => {
 		const t = createHarness();
 		await insertSyncedLawyerIdentity(t);
 		const lsoLawyerId = await t.run(async (ctx) =>
@@ -584,7 +695,7 @@ describe("guest lawyer invitations", () => {
 				token: created.token,
 			});
 
-		expect(accepted).toMatchObject({ status: "failed" });
+		expect(accepted).toMatchObject({ status: "onboarding_required" });
 		const rows = await t.run(async (ctx) => ({
 			access: await ctx.db
 				.query("dealAccess")
@@ -593,14 +704,18 @@ describe("guest lawyer invitations", () => {
 				)
 				.collect(),
 			invitation: await ctx.db.get(created.invitationId),
+			onboardingSessions: await ctx.db
+				.query("lawyerOnboardingSessions")
+				.collect(),
 			verifications: await ctx.db.query("lawyerVerifications").collect(),
 		}));
 		expect(rows.access).toEqual([]);
-		expect(rows.invitation).toMatchObject({ status: "failed" });
-		expect(rows.verifications[0]).toMatchObject({
-			outcome: "ineligible",
-			reasonCodes: ["license_restricted", "restriction_current"],
+		expect(rows.invitation).toMatchObject({ status: "accepted" });
+		expect(rows.onboardingSessions).toHaveLength(1);
+		expect(rows.onboardingSessions[0]).toMatchObject({
+			status: "auth_pending",
 		});
+		expect(rows.verifications).toEqual([]);
 	});
 
 	it("rejects signed-in lawyers whose verified email does not match the invite", async () => {

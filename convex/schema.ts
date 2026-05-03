@@ -117,6 +117,8 @@ import {
 } from "./fees/validators";
 import {
 	lawyerInvitationStatusValidator,
+	lawyerOnboardingPathValidator,
+	lawyerOnboardingStatusValidator,
 	lawyerVerificationCheckTypeValidator,
 	lawyerVerificationOutcomeValidator,
 	lawyerVerificationProviderValidator,
@@ -124,7 +126,11 @@ import {
 	legalRepresentationPlatformStatusValidator,
 	legalRepresentationProfileKindValidator,
 	legalSourceSnapshotValidator,
+	lsoImportBatchStatusValidator,
+	lsoLicenseeTypeValidator,
 	lsoLicensingStatusValidator,
+	lsoRefreshRequestStatusValidator,
+	lsoRegistrySourceValidator,
 	lsoRestrictionStatusValidator,
 	platformLawyerAvailabilityExceptionKindValidator,
 	platformLawyerAvailabilityWindowStatusValidator,
@@ -2740,19 +2746,100 @@ export default defineSchema({
 		displayName: v.string(),
 		barNumber: v.string(),
 		jurisdiction: v.string(),
+		licenseeType: lsoLicenseeTypeValidator,
+		entitledToPractise: v.boolean(),
 		licensingStatus: lsoLicensingStatusValidator,
 		restrictionStatus: lsoRestrictionStatusValidator,
 		restrictionSummary: v.optional(v.string()),
 		primaryEmail: v.optional(v.string()),
 		firmName: v.optional(v.string()),
-		source: v.string(),
+		businessAddress: v.optional(v.string()),
+		city: v.optional(v.string()),
+		postalCode: v.optional(v.string()),
+		phone: v.optional(v.string()),
+		regulatoryHistorySummary: v.optional(v.string()),
+		directoryUrl: v.optional(v.string()),
+		source: lsoRegistrySourceValidator,
 		sourceSnapshot: legalSourceSnapshotValidator,
 		sourceFetchedAt: v.number(),
+		sourceVersion: v.optional(v.string()),
+		lastRefreshedAt: v.optional(v.number()),
+		rawSnapshotHash: v.optional(v.string()),
+		rawSnapshotStorageId: v.optional(v.id("_storage")),
 		updatedAt: v.number(),
 	})
 		.index("by_normalized_name", ["normalizedName"])
 		.index("by_bar_jurisdiction", ["barNumber", "jurisdiction"])
 		.index("by_restriction_status", ["restrictionStatus"]),
+
+	lsoLawyerSearchTokens: defineTable({
+		lsoLawyerId: v.id("lsoLawyers"),
+		token: v.string(),
+		tokenKind: v.union(
+			v.literal("name"),
+			v.literal("bar_number"),
+			v.literal("bar_digits")
+		),
+		createdAt: v.number(),
+	})
+		.index("by_token", ["token", "lsoLawyerId"])
+		.index("by_lso_lawyer", ["lsoLawyerId"]),
+
+	lsoImportBatches: defineTable({
+		checksum: v.string(),
+		createdAt: v.number(),
+		errorCount: v.number(),
+		importedBy: v.string(),
+		rowCount: v.number(),
+		sourceName: v.string(),
+		status: lsoImportBatchStatusValidator,
+		updatedAt: v.number(),
+	})
+		.index("by_status_created", ["status", "createdAt"])
+		.index("by_checksum", ["checksum"]),
+
+	lsoImportRowErrors: defineTable({
+		batchId: v.id("lsoImportBatches"),
+		errorCode: v.string(),
+		message: v.string(),
+		normalizedKey: v.optional(v.string()),
+		rawRowHash: v.optional(v.string()),
+		rowNumber: v.number(),
+	})
+		.index("by_batch", ["batchId"])
+		.index("by_error_code", ["errorCode"]),
+
+	lsoLookupAttempts: defineTable({
+		actorAuthId: v.string(),
+		createdAt: v.number(),
+		dealId: v.optional(v.id("deals")),
+		durationMs: v.optional(v.number()),
+		failureReason: v.optional(v.string()),
+		provider: v.string(),
+		query: v.string(),
+		resultCount: v.number(),
+		selectedLsoLawyerId: v.optional(v.id("lsoLawyers")),
+		status: v.union(v.literal("success"), v.literal("failed")),
+	})
+		.index("by_actor_created", ["actorAuthId", "createdAt"])
+		.index("by_deal_created", ["dealId", "createdAt"]),
+
+	lsoRefreshRequests: defineTable({
+		completedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		createdBy: v.string(),
+		dealId: v.optional(v.id("deals")),
+		error: v.optional(v.string()),
+		idempotencyKey: v.string(),
+		lawyerProfileId: v.optional(v.id("lawyerProfiles")),
+		lsoLawyerId: v.optional(v.id("lsoLawyers")),
+		status: lsoRefreshRequestStatusValidator,
+		updatedAt: v.number(),
+		verificationId: v.optional(v.id("lawyerVerifications")),
+	})
+		.index("by_status_created", ["status", "createdAt"])
+		.index("by_lso_lawyer", ["lsoLawyerId", "createdAt"])
+		.index("by_idempotency", ["idempotencyKey"]),
 
 	lawyerProfiles: defineTable({
 		authId: v.optional(v.string()),
@@ -2963,6 +3050,34 @@ export default defineSchema({
 		.index("by_workos_invitation", ["workosInvitationId"])
 		.index("by_target_email_status", ["normalizedTargetEmail", "status"])
 		.index("by_status_expires_at", ["status", "expiresAt"]),
+
+	lawyerOnboardingSessions: defineTable({
+		acceptedEngagementAt: v.optional(v.number()),
+		authCompletedAt: v.optional(v.number()),
+		blockedReasonCodes: v.optional(v.array(v.string())),
+		completedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		currentStep: v.string(),
+		dealId: v.id("deals"),
+		engagementAcceptedAt: v.optional(v.number()),
+		idvCompletedAt: v.optional(v.number()),
+		identityConfirmedAt: v.optional(v.number()),
+		invitationId: v.optional(v.id("lawyerInvitations")),
+		lawyerProfileId: v.optional(v.id("lawyerProfiles")),
+		lsoSubmittedAt: v.optional(v.number()),
+		lsoVerifiedAt: v.optional(v.number()),
+		nextRoute: v.optional(v.string()),
+		normalizedTargetEmail: v.optional(v.string()),
+		path: lawyerOnboardingPathValidator,
+		returnPath: v.string(),
+		status: lawyerOnboardingStatusValidator,
+		updatedAt: v.number(),
+		workosUserId: v.optional(v.string()),
+	})
+		.index("by_deal_status", ["dealId", "status"])
+		.index("by_invitation", ["invitationId"])
+		.index("by_workos_deal", ["workosUserId", "dealId"])
+		.index("by_target_email_deal", ["normalizedTargetEmail", "dealId"]),
 
 	representationEngagements: defineTable({
 		dealId: v.id("deals"),

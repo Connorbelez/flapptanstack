@@ -42,6 +42,11 @@ const baseWorkspace = {
 		status: "lawyerOnboarding.pending",
 	},
 	documents: { instances: [], package: null, participants: null },
+	onboarding: {
+		nextRoute: null,
+		required: false,
+		sessionId: null,
+	},
 	participants: {
 		buyer: { displayName: "Lena Lender" },
 		dealId: "deal_test",
@@ -201,6 +206,43 @@ describe("DealPortalShell", () => {
 		).toBeTruthy();
 		expect(screen.getByRole("button", { name: /send invite/i })).toBeTruthy();
 		expect(screen.getByText("Target email")).toBeTruthy();
+	});
+
+	it("renders onboarding-required state without lender or lawyer controls", () => {
+		render(
+			<DealPortalShell
+				workspace={
+					{
+						...baseWorkspace,
+						capabilities: ["representation.onboarding.resume"],
+						onboarding: {
+							nextRoute: "/lawyer/onboarding/session_test",
+							required: true,
+							sessionId: "session_test",
+						},
+						viewer: {
+							...baseWorkspace.viewer,
+							authId: "lawyer-auth",
+							persona: "selected_lawyer_onboarding_required",
+						},
+					} as never
+				}
+			/>
+		);
+
+		expect(
+			screen.getByRole("heading", { name: /complete legal onboarding/i })
+		).toBeTruthy();
+		expect(
+			screen
+				.getByRole("link", { name: /continue onboarding/i })
+				.getAttribute("href")
+		).toBe("/lawyer/onboarding/session_test");
+		expect(screen.queryByRole("button", { name: /send invite/i })).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /confirm representation/i })
+		).toBeNull();
+		expect(screen.queryByRole("button", { name: /upload proof/i })).toBeNull();
 	});
 
 	it("renders all deal parties below the portal header", () => {

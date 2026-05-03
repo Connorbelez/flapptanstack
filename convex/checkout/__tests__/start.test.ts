@@ -259,8 +259,8 @@ async function setupCheckoutFixture(t: ReturnType<typeof createHarness>) {
 			await ctx.db.insert("organizationMemberships", {
 				organizationName: "Checkout Law Firm",
 				organizationWorkosId: "org_checkout_lawfirm",
-				roleSlug: "platform_lawyer",
-				roleSlugs: ["platform_lawyer"],
+				roleSlug: "lawyer",
+				roleSlugs: ["lawyer"],
 				status: "active",
 				userWorkosId: lawyer.authId,
 				workosId: `om_${lawyer.authId}`,
@@ -331,12 +331,44 @@ async function setupCheckoutFixture(t: ReturnType<typeof createHarness>) {
 			"listings",
 			listingFixture({ mortgageId })
 		);
+		const eligibleLsoLawyerId = await ctx.db.insert("lsoLawyers", {
+			normalizedName: "jane eligible",
+			displayName: "Jane Eligible",
+			barNumber: "L12345",
+			jurisdiction: "ON",
+			licenseeType: "lawyer",
+			entitledToPractise: true,
+			licensingStatus: "licensed",
+			restrictionStatus: "clear",
+			primaryEmail: "jane@example.test",
+			firmName: "Eligible LLP",
+			source: "lso_import",
+			sourceSnapshot: { source: "checkout-test" },
+			sourceFetchedAt: 1_710_000_000_000,
+			updatedAt: 1_710_000_000_000,
+		});
+		const restrictedLsoLawyerId = await ctx.db.insert("lsoLawyers", {
+			normalizedName: "rita restricted",
+			displayName: "Rita Restricted",
+			barNumber: "L99999",
+			jurisdiction: "ON",
+			licenseeType: "lawyer",
+			entitledToPractise: false,
+			licensingStatus: "suspended",
+			restrictionStatus: "suspended",
+			source: "manual_admin",
+			sourceSnapshot: { source: "checkout-test" },
+			sourceFetchedAt: 1_710_000_000_000,
+			updatedAt: 1_710_000_000_000,
+		});
 		return {
+			eligibleLsoLawyerId,
 			lenderId,
 			listingId,
 			mortgageId,
 			platformLawyerProfileId,
 			portalId,
+			restrictedLsoLawyerId,
 		};
 	});
 }
@@ -772,6 +804,75 @@ describe("checkout start internal mutations", () => {
 			checkouts: (await ctx.db.query("checkoutSessions").collect()).length,
 		}));
 		expect(counts).toEqual({ reservations: 0, checkouts: 0 });
+	});
+
+	it("rejects restricted LSO-backed guest lawyer checkout", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const selectedLawyer = {
+			type: "guest_lawyer" as const,
+			source: "lso_search" as const,
+			name: "Rita Restricted",
+			email: "rita@example.test",
+			lso: {
+				barNumber: "L99999",
+				jurisdiction: "ON",
+				licensingStatus: "suspended" as const,
+				restrictionStatus: "suspended" as const,
+				lsoLawyerId: fixture.restrictedLsoLawyerId,
+			},
+		};
+
+		const result = await prepare(t, { ...fixture, selectedLawyer });
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.message).toContain("Selected guest lawyer is not eligible");
+		}
+	});
+
+	it("canonicalizes LSO-backed guest lawyer snapshots from the referenced row", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const selectedLawyer = {
+			type: "guest_lawyer" as const,
+			source: "lso_search" as const,
+			name: "Spoofed Name",
+			email: "contact@example.test",
+			firm: "Spoofed LLP",
+			lso: {
+				barNumber: "L00000",
+				jurisdiction: "BC",
+				licensingStatus: "suspended" as const,
+				restrictionStatus: "suspended" as const,
+				lsoLawyerId: fixture.eligibleLsoLawyerId,
+				sourceFetchedAt: 1,
+			},
+		};
+
+		const result = await prepare(t, { ...fixture, selectedLawyer });
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) {
+			throw new Error(result.message);
+		}
+		const checkout = await t.run((ctx) => ctx.db.get(result.checkoutSessionId));
+		expect(checkout?.selectedLawyer).toMatchObject({
+			type: "guest_lawyer",
+			source: "lso_search",
+			name: "Jane Eligible",
+			email: "contact@example.test",
+			firm: "Eligible LLP",
+			lso: {
+				barNumber: "L12345",
+				jurisdiction: "ON",
+				licensingStatus: "licensed",
+				lsoLawyerId: fixture.eligibleLsoLawyerId,
+				restrictionStatus: "clear",
+				source: "lso_import",
+				sourceFetchedAt: 1_710_000_000_000,
+			},
+		});
 	});
 
 	it("replays duplicate active starts without creating a second reservation", async () => {

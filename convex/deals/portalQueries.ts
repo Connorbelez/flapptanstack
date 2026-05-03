@@ -24,6 +24,7 @@ import {
 type PortalQueryCtx = Pick<QueryCtx, "db" | "storage"> & { viewer: Viewer };
 type DealAccessRow = Doc<"dealAccess">;
 type DealPaymentProofRow = Doc<"dealPaymentProofs">;
+type LawyerOnboardingSessionRow = Doc<"lawyerOnboardingSessions">;
 type DealDocumentPackageSurface = Awaited<
 	ReturnType<typeof readDealDocumentPackageSurface>
 >;
@@ -102,6 +103,12 @@ interface CompletionProjection {
 	completedAt: number | null;
 }
 
+interface OnboardingProjection {
+	nextRoute: string | null;
+	required: boolean;
+	sessionId: Id<"lawyerOnboardingSessions"> | null;
+}
+
 interface DealPortalWorkspace {
 	activeScreen: DealPortalScreen;
 	blockers: PortalBlocker[];
@@ -109,6 +116,7 @@ interface DealPortalWorkspace {
 	completion: CompletionProjection;
 	deal: PortalDealProjection;
 	documents: DealDocumentPackageSurface;
+	onboarding: OnboardingProjection;
 	participants: DealParticipantProjection;
 	payment: PaymentProjection;
 	representation: LegalRepresentationStatusProjection;
@@ -129,6 +137,52 @@ async function getViewerUserIdByAuthId(
 		.withIndex("authId", (query) => query.eq("authId", authId))
 		.first();
 	return user?._id ?? null;
+}
+
+async function getActiveOnboardingSessionForViewer(
+	ctx: Pick<QueryCtx, "db">,
+	args: {
+		dealId: Id<"deals">;
+		viewer: Viewer;
+	}
+): Promise<LawyerOnboardingSessionRow | null> {
+	const matchingSessions: LawyerOnboardingSessionRow[] = [];
+	const email = normalizeEmail(args.viewer.verifiedEmail ?? args.viewer.email);
+	if (email) {
+		const byEmail = await ctx.db
+			.query("lawyerOnboardingSessions")
+			.withIndex("by_target_email_deal", (query) =>
+				query.eq("normalizedTargetEmail", email).eq("dealId", args.dealId)
+			)
+			.collect();
+		matchingSessions.push(...byEmail);
+	}
+	const byWorkos = await ctx.db
+		.query("lawyerOnboardingSessions")
+		.withIndex("by_workos_deal", (query) =>
+			query.eq("workosUserId", args.viewer.authId).eq("dealId", args.dealId)
+		)
+		.collect();
+	matchingSessions.push(...byWorkos);
+
+	const byId = new Map<
+		Id<"lawyerOnboardingSessions">,
+		LawyerOnboardingSessionRow
+	>();
+	for (const session of matchingSessions) {
+		byId.set(session._id, session);
+	}
+	return (
+		[...byId.values()].sort((left, right) => {
+			if (right.updatedAt !== left.updatedAt) {
+				return right.updatedAt - left.updatedAt;
+			}
+			if (right.createdAt !== left.createdAt) {
+				return right.createdAt - left.createdAt;
+			}
+			return String(right._id).localeCompare(String(left._id));
+		})[0] ?? null
+	);
 }
 
 function activeAccessRowsForViewer(
@@ -181,6 +235,7 @@ function selectedLawyerMatchesViewer(deal: Doc<"deals">, viewer: Viewer) {
 function resolveViewerPersona(args: {
 	activeAccessRows: readonly DealAccessRow[];
 	deal: Doc<"deals">;
+	onboardingSession: LawyerOnboardingSessionRow | null;
 	viewer: Viewer;
 }): DealPortalPersona {
 	if (args.viewer.isFairLendAdmin) {
@@ -192,14 +247,21 @@ function resolveViewerPersona(args: {
 	) {
 		return "lender";
 	}
-	if (
-		hasActiveRole(
-			args.activeAccessRows,
-			new Set(["guest_lawyer", "platform_lawyer"])
-		) ||
-		selectedLawyerMatchesViewer(args.deal, args.viewer)
-	) {
+	const selectedLawyerMatches = selectedLawyerMatchesViewer(
+		args.deal,
+		args.viewer
+	);
+	const hasActiveLawyerDealAccess = hasActiveRole(
+		args.activeAccessRows,
+		new Set(["guest_lawyer", "platform_lawyer"])
+	);
+	if (hasActiveLawyerDealAccess) {
 		return "selected_lawyer";
+	}
+	if (selectedLawyerMatches) {
+		return args.onboardingSession?.status === "complete"
+			? "selected_lawyer"
+			: "selected_lawyer_onboarding_required";
 	}
 	if (
 		hasActiveRole(
@@ -233,6 +295,11 @@ function buildCapabilities(args: {
 	representation: LegalRepresentationStatusProjection;
 }): DealPortalCapability[] {
 	const capabilities = new Set<DealPortalCapability>();
+
+	if (args.persona === "selected_lawyer_onboarding_required") {
+		addCapability(capabilities, "representation.onboarding.resume");
+		return [...capabilities].sort();
+	}
 
 	if (args.persona === "admin") {
 		for (const capability of [
@@ -359,7 +426,11 @@ async function readPaymentProjection(
 function buildBlockers(args: {
 	activeScreen: DealPortalScreen;
 	payment: PaymentProjection;
+	persona: DealPortalPersona;
 }): PortalBlocker[] {
+	if (args.persona === "selected_lawyer_onboarding_required") {
+		return [];
+	}
 	if (
 		args.activeScreen === "payment" &&
 		!(args.payment.hasApprovedProof || args.payment.hasPendingProof)
@@ -414,6 +485,10 @@ export const getDealPortalWorkspace = authedQuery
 					.collect(),
 				getViewerUserIdByAuthId(ctx, ctx.viewer.authId),
 			]);
+			const onboardingSession = await getActiveOnboardingSessionForViewer(ctx, {
+				dealId: deal._id,
+				viewer: ctx.viewer,
+			});
 			const activeViewerAccessRows = activeAccessRowsForViewer(
 				accessRows,
 				ctx.viewer
@@ -421,6 +496,7 @@ export const getDealPortalWorkspace = authedQuery
 			const persona = resolveViewerPersona({
 				activeAccessRows: activeViewerAccessRows,
 				deal,
+				onboardingSession,
 				viewer: ctx.viewer,
 			});
 
@@ -441,7 +517,7 @@ export const getDealPortalWorkspace = authedQuery
 
 			return {
 				activeScreen,
-				blockers: buildBlockers({ activeScreen, payment }),
+				blockers: buildBlockers({ activeScreen, payment, persona }),
 				capabilities: buildCapabilities({
 					activeScreen,
 					deal,
@@ -457,6 +533,15 @@ export const getDealPortalWorkspace = authedQuery
 				},
 				deal: projectDeal({ deal, participants }),
 				documents,
+				onboarding: {
+					nextRoute:
+						onboardingSession?.nextRoute ??
+						(onboardingSession
+							? `/lawyer/onboarding/${String(onboardingSession._id)}`
+							: null),
+					required: persona === "selected_lawyer_onboarding_required",
+					sessionId: onboardingSession?._id ?? null,
+				},
 				participants,
 				payment,
 				representation,

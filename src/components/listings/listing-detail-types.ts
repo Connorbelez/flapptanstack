@@ -1,3 +1,5 @@
+import type { Id } from "../../../convex/_generated/dataModel";
+
 export type ListingValueTone = "default" | "positive" | "warning";
 
 export interface ListingBadge {
@@ -104,6 +106,41 @@ export interface ListingLawyerOption {
 	type: "guest_lawyer" | "platform_lawyer";
 }
 
+export type ListingLsoLicensingStatus =
+	| "administratively_suspended"
+	| "licensed"
+	| "retired"
+	| "revoked"
+	| "suspended"
+	| "unknown";
+
+export type ListingLsoRestrictionStatus =
+	| "clear"
+	| "requires_review"
+	| "restricted"
+	| "suspended"
+	| "unknown";
+
+export type ListingLsoRegistrySource =
+	| "lso_import"
+	| "lso_live_refresh"
+	| "manual_admin";
+
+export interface ListingLsoLawyerSearchResult {
+	barNumber: string;
+	displayName: string;
+	email: string | null;
+	firmName: string | null;
+	jurisdiction: string;
+	licensingStatus: ListingLsoLicensingStatus;
+	lsoLawyerId: Id<"lsoLawyers">;
+	restrictionStatus: ListingLsoRestrictionStatus;
+	restrictionSummary: string | null;
+	selectable: boolean;
+	source: ListingLsoRegistrySource;
+	sourceFetchedAt: number;
+}
+
 export interface ListingSimilarCard {
 	badges: ListingBadge[];
 	href?: string;
@@ -134,6 +171,7 @@ export interface ListingDetailData {
 		disabledReason?: string | null;
 		isEligible: boolean;
 		lawyers: ListingLawyerOption[];
+		lsoLawyerSearchResults?: ListingLsoLawyerSearchResult[];
 		lockFee: {
 			amountCents: number;
 			currency: string;
@@ -203,6 +241,23 @@ export type ListingCheckoutSelectedLawyer =
 			lawyerId?: string;
 			name: string;
 			type: "platform_lawyer";
+	  }
+	| {
+			email: string;
+			firm?: string;
+			lso: {
+				barNumber: string;
+				jurisdiction: string;
+				licensingStatus?: ListingLsoLicensingStatus;
+				lsoLawyerId: Id<"lsoLawyers">;
+				restrictionStatus?: ListingLsoRestrictionStatus;
+				restrictionSummary?: string;
+				source: ListingLsoRegistrySource;
+				sourceFetchedAt: number;
+			};
+			name: string;
+			source: "lso_search";
+			type: "guest_lawyer";
 	  }
 	| {
 			email: string;
