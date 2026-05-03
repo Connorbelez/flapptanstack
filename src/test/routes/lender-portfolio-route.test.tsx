@@ -47,6 +47,19 @@ vi.mock("@tanstack/react-router", async () => {
 
 	return {
 		...actual,
+		Link: ({
+			children,
+			params,
+			to,
+		}: {
+			children: ReactNode;
+			params?: { listingId?: string };
+			to: string;
+		}) => (
+			<a href={to.replace("$listingId", params?.listingId ?? "")}>
+				{children}
+			</a>
+		),
 		useNavigate: vi.fn(),
 	};
 });
@@ -420,7 +433,7 @@ describe("lender portfolio page", () => {
 
 		expect(screen.getByText("No active positions yet")).toBeTruthy();
 		expect(screen.getByText("No payment activity yet")).toBeTruthy();
-		expect(screen.getByText("No historical trend data yet")).toBeTruthy();
+		expect(screen.getAllByText("No historical trend data yet").length).toBe(2);
 		expect(screen.getByTestId("suggested-slot-host")).toBeTruthy();
 		expect(screen.getAllByTestId("sticky-rail-slot-host")).toHaveLength(2);
 	});

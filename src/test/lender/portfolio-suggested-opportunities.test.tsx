@@ -3,7 +3,8 @@
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import type { ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	emptyPortfolioCommandCenterFixture,
 	noSuggestedOpportunitiesFixture,
@@ -15,6 +16,29 @@ import {
 	SuggestedOpportunities,
 	type SuggestedOpportunitiesState,
 } from "#/components/lender/portfolio/suggested-opportunities";
+
+vi.mock("@tanstack/react-router", async () => {
+	const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
+		"@tanstack/react-router"
+	);
+
+	return {
+		...actual,
+		Link: ({
+			children,
+			params,
+			to,
+		}: {
+			children: ReactNode;
+			params?: { listingId?: string };
+			to: string;
+		}) => (
+			<a href={to.replace("$listingId", params?.listingId ?? "")}>
+				{children}
+			</a>
+		),
+	};
+});
 
 afterEach(() => {
 	cleanup();
