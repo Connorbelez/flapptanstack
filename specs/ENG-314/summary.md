@@ -19,8 +19,9 @@
 - Respect `excludedOwnedMortgageCount`, server-owned broker constraints, and listing visibility exactly as delivered by the command-center contract.
 - Reuse the existing listing drill-down runtime under `src/routes/listings/$listingId.tsx`; do not create a parallel marketplace or portfolio-specific detail route.
 - Keep the section anchored at the bottom of `/lender/portfolio`, below the lower export strip and below the positions/payment work surfaces.
-- Do not take ownership of `src/routes/lender.portfolio.tsx`, shared portfolio query-option builders, or the baseline route test surface that belongs to `ENG-311`.
+- Do not take broad ownership of `src/routes/lender.portfolio.tsx`, shared portfolio query-option builders, or the baseline route test surface that belongs to `ENG-311`; targeted loading/refetch behavior and route coverage changes are permitted only when required to integrate the suggested-opportunities consumer.
 - Treat `snapshot.generatedAt` as the available freshness signal for stale-data presentation; do not introduce a new backend contract for this UI-only slice unless implementation proves it is required.
+- Raise markdown findings only when they reveal actual architectural drift or implementation inconsistencies relative to the codebase.
 
 ## Open questions
 - none
