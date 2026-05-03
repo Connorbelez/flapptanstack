@@ -564,6 +564,7 @@ describe("portfolio portal queries", () => {
 		expect(result.positions.rows).toEqual([]);
 		expect(result.paymentActivity.rows).toEqual([]);
 		expect(result.suggestedOpportunities.rows).toEqual([]);
+		expect(result.suggestedOpportunities.availabilityState).toBe("ready");
 		expect(result.emptyStates).toEqual({
 			hasActions: false,
 			hasPayments: false,
@@ -614,12 +615,13 @@ describe("portfolio portal queries", () => {
 		);
 		expect(result.limitsStrip).toMatchObject({
 			hasConstraints: true,
-			suggestionSeedCount: 2,
+			suggestionSeedCount: 3,
 			constraints: {
 				allowedMortgageTypes: ["First"],
 				allowedPropertyTypes: ["Detached Home"],
 			},
 		});
+		expect(result.suggestedOpportunities.availabilityState).toBe("ready");
 		expect(result.suggestedOpportunities.excludedOwnedMortgageCount).toBe(1);
 		expect(
 			result.suggestedOpportunities.rows.map((row) => row.listingId)
@@ -674,6 +676,7 @@ describe("portfolio portal queries", () => {
 			searchQuery: undefined,
 		});
 		expect(result.suggestedOpportunities).toEqual({
+			availabilityState: "ready",
 			excludedOwnedMortgageCount: 0,
 			rows: [],
 		});
@@ -726,6 +729,7 @@ describe("portfolio portal queries", () => {
 		);
 
 		expect(result.suggestedOpportunities.excludedOwnedMortgageCount).toBe(25);
+		expect(result.suggestedOpportunities.availabilityState).toBe("ready");
 		expect(
 			result.suggestedOpportunities.rows.map((row) => row.listingId)
 		).toEqual([
@@ -736,6 +740,50 @@ describe("portfolio portal queries", () => {
 			String(additionalSuggestionIds[2]),
 		]);
 		expect(result.suggestedOpportunities.rows).toHaveLength(5);
+		expect(result.limitsStrip.suggestionSeedCount).toBe(32);
+	});
+
+	it("reports suggestion seed matches when every candidate is already owned", async () => {
+		const t = createHarness();
+		const lender = t.withIdentity(LENDER);
+		const { lenderId, mortgageId, portalId } = await createPortfolioFixture(t);
+
+		await t.run(async (ctx) => {
+			const listings = await ctx.db.query("listings").collect();
+			await Promise.all(
+				listings.map((listing) =>
+					ctx.db.patch(listing._id, {
+						mortgageId,
+					})
+				)
+			);
+
+			const [constraint] = await ctx.db
+				.query("lenderFilterConstraints")
+				.withIndex("by_lender", (query) => query.eq("lenderId", lenderId))
+				.collect();
+			if (!constraint) {
+				throw new Error("Expected lender constraint fixture");
+			}
+			await ctx.db.patch(constraint._id, {
+				loanAmountRange: { max: 300_000, min: 250_000 },
+			});
+		});
+
+		const result = await lender.query(
+			portfolioApi.getLenderPortfolioCommandCenter,
+			{
+				portalId,
+			}
+		);
+
+		expect(result.suggestedOpportunities).toEqual({
+			availabilityState: "ready",
+			excludedOwnedMortgageCount: 3,
+			rows: [],
+		});
+		expect(result.limitsStrip.suggestionSeedCount).toBe(3);
+		expect(result.emptyStates.hasSuggestions).toBe(false);
 	});
 
 	it("rejects lender portfolio reads when the portal does not belong to the lender's broker context", async () => {

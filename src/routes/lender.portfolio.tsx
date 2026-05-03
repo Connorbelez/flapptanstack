@@ -93,6 +93,10 @@ function LenderPortfolioRouteContent() {
 	const { data } = useSuspenseQuery(
 		lenderPortfolioCommandCenterQueryOptions(portalId)
 	);
+	const suggestedOpportunitiesState: "ready" | "unavailable" =
+		data.suggestedOpportunities.availabilityState === "unavailable"
+			? "unavailable"
+			: "ready";
 
 	return (
 		<LenderPortfolioPage
@@ -108,6 +112,7 @@ function LenderPortfolioRouteContent() {
 				})
 			}
 			snapshot={data}
+			suggestedOpportunitiesState={suggestedOpportunitiesState}
 		/>
 	);
 }

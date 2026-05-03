@@ -16,6 +16,7 @@ import {
 	portfolioPaymentDetailFixture,
 	portfolioPositionDetailFixture,
 	portfolioTaxExportFixture,
+	unavailableSuggestedOpportunitiesFixture,
 } from "#/components/lender/portfolio/fixtures";
 import { LenderPortfolioPage } from "#/components/lender/portfolio/LenderPortfolioPage";
 import {
@@ -46,6 +47,19 @@ vi.mock("@tanstack/react-router", async () => {
 
 	return {
 		...actual,
+		Link: ({
+			children,
+			params,
+			to,
+		}: {
+			children: ReactNode;
+			params?: { listingId?: string };
+			to: string;
+		}) => (
+			<a href={to.replace("$listingId", params?.listingId ?? "")}>
+				{children}
+			</a>
+		),
 		useNavigate: vi.fn(),
 	};
 });
@@ -268,6 +282,7 @@ describe("lender portfolio route", () => {
 		} as never);
 		vi.mocked(useSuspenseQuery).mockReturnValue({
 			data: portfolioCommandCenterFixture,
+			isFetching: false,
 		} as never);
 		render(<LenderPortfolioRouteComponent />);
 
@@ -323,6 +338,78 @@ describe("lender portfolio route", () => {
 			}) as HTMLButtonElement).disabled
 		).toBe(true);
 	});
+
+	it("keeps valid empty suggestions visible during command-center refresh", () => {
+		const navigate = vi.fn();
+
+		vi.spyOn(Route, "useSearch").mockReturnValue(
+			DEFAULT_LENDER_PORTFOLIO_SEARCH as never
+		);
+		vi.spyOn(RootRoute, "useRouteContext").mockReturnValue(
+			ROOT_ROUTE_CONTEXT as never
+		);
+		vi.mocked(useNavigate).mockReturnValue(navigate);
+		vi.mocked(useIsMobile).mockReturnValue(false);
+		vi.mocked(useAuth).mockReturnValue({
+			loading: false,
+			permissions: ["portfolio:view"],
+		} as never);
+		vi.mocked(lenderPortfolioCommandCenterQueryOptions).mockReturnValue(
+			COMMAND_CENTER_QUERY_OPTIONS as never
+		);
+		vi.mocked(useQuery).mockReturnValue({
+			data: portfolioHistoricalSeriesFixture,
+			error: null,
+			isError: false,
+			isPending: false,
+		} as never);
+		vi.mocked(useSuspenseQuery).mockReturnValue({
+			data: emptyPortfolioCommandCenterFixture,
+			isFetching: true,
+		} as never);
+
+		render(<LenderPortfolioRouteComponent />);
+
+		expect(screen.getByTestId("suggested-opportunities-empty")).toBeTruthy();
+		expect(screen.queryByTestId("suggested-opportunities-loading")).toBeNull();
+	});
+
+	it("routes backend unavailable suggestions into the unavailable state", () => {
+		const navigate = vi.fn();
+
+		vi.spyOn(Route, "useSearch").mockReturnValue(
+			DEFAULT_LENDER_PORTFOLIO_SEARCH as never
+		);
+		vi.spyOn(RootRoute, "useRouteContext").mockReturnValue(
+			ROOT_ROUTE_CONTEXT as never
+		);
+		vi.mocked(useNavigate).mockReturnValue(navigate);
+		vi.mocked(useIsMobile).mockReturnValue(false);
+		vi.mocked(useAuth).mockReturnValue({
+			loading: false,
+			permissions: ["portfolio:view"],
+		} as never);
+		vi.mocked(lenderPortfolioCommandCenterQueryOptions).mockReturnValue(
+			COMMAND_CENTER_QUERY_OPTIONS as never
+		);
+		vi.mocked(useQuery).mockReturnValue({
+			data: portfolioHistoricalSeriesFixture,
+			error: null,
+			isError: false,
+			isPending: false,
+		} as never);
+		vi.mocked(useSuspenseQuery).mockReturnValue({
+			data: unavailableSuggestedOpportunitiesFixture,
+			isFetching: false,
+		} as never);
+
+		render(<LenderPortfolioRouteComponent />);
+
+		expect(
+			screen.getByTestId("suggested-opportunities-unavailable")
+		).toBeTruthy();
+		expect(screen.queryByTestId("suggested-opportunities-empty")).toBeNull();
+	});
 });
 
 describe("lender portfolio page", () => {
@@ -346,7 +433,7 @@ describe("lender portfolio page", () => {
 
 		expect(screen.getByText("No active positions yet")).toBeTruthy();
 		expect(screen.getByText("No payment activity yet")).toBeTruthy();
-		expect(screen.getByText("No historical trend data yet")).toBeTruthy();
+		expect(screen.getAllByText("No historical trend data yet").length).toBe(2);
 		expect(screen.getByTestId("suggested-slot-host")).toBeTruthy();
 		expect(screen.getAllByTestId("sticky-rail-slot-host")).toHaveLength(2);
 	});
