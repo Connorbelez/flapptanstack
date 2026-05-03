@@ -466,6 +466,7 @@ async function loadSuggestedOpportunityCandidates(
 ): Promise<{
 	excludedOwnedMortgageCount: number;
 	rows: MarketplaceSuggestionRow[];
+	suggestionSeedCount: number;
 }> {
 	const candidates = await collectMarketplaceListingCandidates(
 		ctx,
@@ -486,9 +487,8 @@ async function loadSuggestedOpportunityCandidates(
 			excludedOwnedMortgageCount += 1;
 			continue;
 		}
-		selectedListings.push(listing);
-		if (selectedListings.length >= SUGGESTED_OPPORTUNITY_LIMIT) {
-			break;
+		if (selectedListings.length < SUGGESTED_OPPORTUNITY_LIMIT) {
+			selectedListings.push(listing);
 		}
 	}
 
@@ -537,7 +537,11 @@ async function loadSuggestedOpportunityCandidates(
 		})
 	);
 
-	return { excludedOwnedMortgageCount, rows };
+	return {
+		excludedOwnedMortgageCount,
+		rows,
+		suggestionSeedCount: filtered.length,
+	};
 }
 
 async function buildSuggestedOpportunitiesSection(
@@ -561,36 +565,39 @@ async function buildSuggestedOpportunitiesSection(
 			atTime: args.generatedAt,
 			portalId: ctx.portal.portalId,
 		});
-			const { excludedOwnedMortgageCount, rows: suggestedOpportunityCandidates } =
-				await loadSuggestedOpportunityCandidates(ctx, {
-					filters: args.effectiveFilters,
-					heldMortgageIds: args.heldMortgageIds,
-					pricingPolicy:
-						pricingSelection.kind === "ready" ? pricingSelection.policy : null,
-				});
-			const rows: PortfolioSuggestedOpportunity[] =
-				suggestedOpportunityCandidates.map((suggestion) => ({
-					explanationTags: buildSuggestionReasonTags({
-						heldMortgageTypes: args.heldMortgageTypes,
-						heldPropertyTypes: args.heldPropertyTypes,
-						interestRateBenchmark: args.interestRateBenchmark,
-						interestRate: suggestion.interestRate,
-						mortgageType: suggestion.mortgageTypeLabel,
-						propertyType: suggestion.propertyTypeLabel,
-					}),
-					heroImageUrl: suggestion.heroImageUrl,
+		const {
+			excludedOwnedMortgageCount,
+			rows: suggestedOpportunityCandidates,
+			suggestionSeedCount,
+		} = await loadSuggestedOpportunityCandidates(ctx, {
+			filters: args.effectiveFilters,
+			heldMortgageIds: args.heldMortgageIds,
+			pricingPolicy:
+				pricingSelection.kind === "ready" ? pricingSelection.policy : null,
+		});
+		const rows: PortfolioSuggestedOpportunity[] =
+			suggestedOpportunityCandidates.map((suggestion) => ({
+				explanationTags: buildSuggestionReasonTags({
+					heldMortgageTypes: args.heldMortgageTypes,
+					heldPropertyTypes: args.heldPropertyTypes,
+					interestRateBenchmark: args.interestRateBenchmark,
 					interestRate: suggestion.interestRate,
-					listingId: suggestion.id,
-					locationLabel: suggestion.locationLabel,
-					ltvRatio: suggestion.ltvRatio,
-					marketplaceCopy: suggestion.marketplaceCopy,
-					maturityDate: suggestion.maturityDate,
-					mortgageId: suggestion.mortgageId,
-					mortgageTypeLabel: suggestion.mortgageTypeLabel,
-					principal: suggestion.principal,
-					propertyTypeLabel: suggestion.propertyTypeLabel,
-					title: suggestion.title,
-				}));
+					mortgageType: suggestion.mortgageTypeLabel,
+					propertyType: suggestion.propertyTypeLabel,
+				}),
+				heroImageUrl: suggestion.heroImageUrl,
+				interestRate: suggestion.interestRate,
+				listingId: suggestion.id,
+				locationLabel: suggestion.locationLabel,
+				ltvRatio: suggestion.ltvRatio,
+				marketplaceCopy: suggestion.marketplaceCopy,
+				maturityDate: suggestion.maturityDate,
+				mortgageId: suggestion.mortgageId,
+				mortgageTypeLabel: suggestion.mortgageTypeLabel,
+				principal: suggestion.principal,
+				propertyTypeLabel: suggestion.propertyTypeLabel,
+				title: suggestion.title,
+			}));
 
 		return {
 			section: {
@@ -598,7 +605,7 @@ async function buildSuggestedOpportunitiesSection(
 				excludedOwnedMortgageCount,
 				rows,
 			},
-			suggestionSeedCount: suggestedOpportunityCandidates.length,
+			suggestionSeedCount,
 		};
 	} catch (error) {
 		console.error("Failed to build portfolio suggested opportunities", error);
