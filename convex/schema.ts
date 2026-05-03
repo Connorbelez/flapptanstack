@@ -2860,6 +2860,39 @@ export default defineSchema({
 		.index("by_bar_jurisdiction", ["barNumber", "jurisdiction"])
 		.index("by_platform_status", ["platformStatus"]),
 
+	platformLawyerInvitations: defineTable({
+		lawyerProfileId: v.id("lawyerProfiles"),
+		email: v.string(),
+		normalizedEmail: v.string(),
+		displayName: v.string(),
+		firmName: v.optional(v.string()),
+		barNumber: v.optional(v.string()),
+		jurisdiction: v.optional(v.string()),
+		status: v.union(
+			v.literal("pending"),
+			v.literal("sent"),
+			v.literal("failed"),
+			v.literal("canceled"),
+			v.literal("accepted")
+		),
+		deliveryStatus: v.union(
+			v.literal("pending"),
+			v.literal("sent"),
+			v.literal("failed")
+		),
+		workosInvitationId: v.optional(v.string()),
+		acceptInvitationUrl: v.optional(v.string()),
+		deliveryError: v.optional(v.string()),
+		deliveredAt: v.optional(v.number()),
+		lastDeliveryAttemptAt: v.optional(v.number()),
+		createdBy: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_profile_status", ["lawyerProfileId", "status"])
+		.index("by_email_status", ["normalizedEmail", "status"])
+		.index("by_workos_invitation", ["workosInvitationId"]),
+
 	platformLawyerSlaTiers: defineTable({
 		name: v.string(),
 		description: v.optional(v.string()),

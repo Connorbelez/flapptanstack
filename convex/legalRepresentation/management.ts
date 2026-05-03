@@ -363,6 +363,99 @@ export const adminOverrideRepresentationConfirmation = adminMutation
 	})
 	.public();
 
+export const adminVerifyRepresentationConfirmation = adminMutation
+	.input({
+		attachmentIds: v.optional(v.array(v.id("documentAssets"))),
+		dealId: v.id("deals"),
+		evidenceNote: v.string(),
+		reason: v.string(),
+	})
+	.handler(async (ctx, args) => {
+		const reason = requireNonEmptyTrimmed(args.reason, "Verification reason");
+		const evidenceNote = requireNonEmptyTrimmed(
+			args.evidenceNote,
+			"Verification evidence note"
+		);
+		const attachmentIds = args.attachmentIds ?? [];
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal) {
+			throw new ConvexError("Deal not found");
+		}
+		if (deal.status !== "lawyerOnboarding.verified") {
+			throw new ConvexError(
+				`Admin representation verification requires deal status lawyerOnboarding.verified; found ${deal.status}`
+			);
+		}
+		if (!deal.selectedLawyer) {
+			throw new ConvexError(
+				"Admin representation verification requires a selected lawyer"
+			);
+		}
+		const lawyerAuthId = resolveSelectedLawyerAuthId(deal);
+		if (!lawyerAuthId) {
+			throw new ConvexError(
+				"Admin representation verification requires selected lawyer auth identity"
+			);
+		}
+		await assertDocumentAssetsExist(ctx, attachmentIds);
+		const now = Date.now();
+		const engagementId = await recordSignedRepresentationEngagementRow(ctx, {
+			createdAt: now,
+			dealId: args.dealId,
+			evidenceHash: `sha256:admin-verify:${args.dealId}:${now}:${evidenceNote.length}`,
+			lawyerAuthId,
+			provider: "manual_admin",
+			signedAt: now,
+		});
+		const gateDeal =
+			deal.lawyerId === lawyerAuthId
+				? deal
+				: { ...deal, lawyerId: lawyerAuthId };
+		const gate = await evaluateDealLegalGate(ctx, {
+			access: { requireActiveAccess: true },
+			checkpoint: "REPRESENTATION_CONFIRMED",
+			deal: gateDeal,
+		});
+		if (gate.decision !== "allow") {
+			throwLegalGateBlocked(gate);
+		}
+		const transition = await executeTransition(ctx, {
+			entityId: args.dealId,
+			entityType: "deal",
+			eventType: "REPRESENTATION_CONFIRMED",
+			source: buildSource(ctx.viewer, "admin_dashboard"),
+		});
+		if (!transition.success) {
+			throw new ConvexError(
+				transition.reason ?? "Representation confirmation transition rejected"
+			);
+		}
+		await recordLegalManagementAudit(ctx, {
+			afterState: {
+				engagementId: String(engagementId),
+				kind: "representation_verified",
+			},
+			beforeState: { kind: "lawyerOnboarding.verified" },
+			deal,
+			eventType: "LEGAL_REPRESENTATION_CONFIRMED_BY_ADMIN",
+			linkedRecordIds: {
+				attachmentIds: attachmentIds.map(String),
+				engagementId: String(engagementId),
+				transitionJournalEntryId: transition.journalEntryId,
+			},
+			now,
+			payload: {
+				evidenceNote,
+				reason,
+			},
+		});
+		return {
+			engagementId,
+			transition,
+		};
+	})
+	.public();
+
 export const resendLegalRepresentationInvitation = authedMutation
 	.input({
 		baseUrl: v.optional(v.string()),

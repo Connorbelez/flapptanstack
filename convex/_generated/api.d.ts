@@ -233,6 +233,7 @@ import type * as ledger_sequenceCounter from "../ledger/sequenceCounter.js";
 import type * as ledger_types from "../ledger/types.js";
 import type * as ledger_validation from "../ledger/validation.js";
 import type * as ledger_validators from "../ledger/validators.js";
+import type * as legalRepresentation_adminLawyers from "../legalRepresentation/adminLawyers.js";
 import type * as legalRepresentation_availability from "../legalRepresentation/availability.js";
 import type * as legalRepresentation_engagements from "../legalRepresentation/engagements.js";
 import type * as legalRepresentation_fixtures from "../legalRepresentation/fixtures.js";
@@ -726,6 +727,7 @@ declare const fullApi: ApiFromModules<{
   "ledger/types": typeof ledger_types;
   "ledger/validation": typeof ledger_validation;
   "ledger/validators": typeof ledger_validators;
+  "legalRepresentation/adminLawyers": typeof legalRepresentation_adminLawyers;
   "legalRepresentation/availability": typeof legalRepresentation_availability;
   "legalRepresentation/engagements": typeof legalRepresentation_engagements;
   "legalRepresentation/fixtures": typeof legalRepresentation_fixtures;

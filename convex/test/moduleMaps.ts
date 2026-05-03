@@ -140,8 +140,12 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../legalRepresentation/availability.ts"),
 	"/convex/legalRepresentation/lsoRegistry.ts": async () =>
 		await import("./../legalRepresentation/lsoRegistry.ts"),
+	"/convex/legalRepresentation/adminLawyers.ts": async () =>
+		await import("./../legalRepresentation/adminLawyers.ts"),
 	"/convex/legalRepresentation/sla.ts": async () =>
 		await import("./../legalRepresentation/sla.ts"),
+	"legalRepresentation/adminLawyers": async () =>
+		await import("./../legalRepresentation/adminLawyers.ts"),
 	"legalRepresentation/availability": async () =>
 		await import("./../legalRepresentation/availability.ts"),
 	"legalRepresentation/lsoRegistry": async () =>
