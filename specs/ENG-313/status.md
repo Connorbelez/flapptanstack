@@ -13,7 +13,7 @@
 
 ## Notes
 - ENG-311 already shipped the `/lender/portfolio` route, layout order, slot-host placeholders, and baseline route coverage; ENG-313 should stay inside the leaf cockpit/export slice.
-- ENG-310 already shipped the historical-series and tax-export backend contracts, including completeness metadata and the exact CSV export field names expected by the plan.
+- ENG-310 already shipped the historical-series and tax-export backend contracts, including completeness metadata and the exact CSV export field names expected by the plan; ENG-313 extends the lender tax CSV with `projectedAggregateEarnings` so the export contract matches the projected earnings surface.
 - `LenderPortfolioPage` now renders a connected `PortfolioCockpit` at the top of the page and a connected `PortfolioExportStrip` above suggested opportunities while preserving the existing route shell and detail-host ownership.
 - The upstream portfolio snapshot and historical-series contracts now include `projectedAggregateEarnings`, computed from snapshot balance through mortgage maturity so the UI can render the approved projection surface without doing financial math in React.
 - `python3 /Users/connor/.codex/skills/linear-implement-v2/scripts/validate_execution_artifacts.py ENG-313 --repo-root "/Users/connor/.codex/worktrees/2c44/fairlendapp" --stage ready-to-edit` passed.

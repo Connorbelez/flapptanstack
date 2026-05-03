@@ -47,7 +47,10 @@ describe("portfolio tax export", () => {
 			expect(first.filename).toBe("lender-portfolio-tax-export-2026.csv");
 			expect(first.periodLabel).toBe("2026 tax year");
 			expect(first.csv).toBeDefined();
-			expect(first.csv).toContain("period_label,snapshot_date,mortgage_id");
+			expect(first.csv).toContain(
+				"period_label,snapshot_date,mortgage_id,mortgage_status,period_income,cumulative_income,projected_aggregate_earnings,ending_balance_units,ending_estimated_value,data_completeness"
+			);
+			expect(first.csv).toContain("snapshot_complete");
 			expect(first.csv).toContain("2026 tax year,2026-12-31");
 			expect(second.csv).toBe(first.csv);
 		} finally {

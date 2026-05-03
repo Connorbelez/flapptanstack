@@ -216,8 +216,12 @@ function buildCockpitSummary(
 		return "Loading trend data";
 	}
 
-	if (historyState === "error" || !historySeries) {
+	if (historyState === "error") {
 		return "Trend data unavailable";
+	}
+
+	if (!historySeries || historySeries.points.length === 0) {
+		return "No historical trend data yet";
 	}
 
 	if (

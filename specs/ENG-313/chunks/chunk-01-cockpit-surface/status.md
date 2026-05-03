@@ -1,6 +1,6 @@
 # Status: chunk-01-cockpit-surface
 
-- Result: complete
+- Result: complete, superseded by final validation
 - Last updated: 2026-04-22T21:03:47Z
 
 ## Completed tasks
@@ -12,6 +12,8 @@
 - `bun run test -- src/test/lender/portfolio-cockpit.test.tsx src/test/routes/lender-portfolio-route.test.tsx`: passed
 - `bun check`: failed for unrelated repo-wide Biome complexity diagnostics outside the cockpit slice
 - `bun typecheck`: passed
+
+This chunk snapshot is superseded by `specs/ENG-313/status.md` and `specs/ENG-313/audit.md`, where the final closeout records passing `bun check`, `bun typecheck`, and `bunx convex codegen` gates for the completed ENG-313 slice.
 
 ## Notes
 - `ready-to-edit` validation passed.

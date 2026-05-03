@@ -355,7 +355,7 @@ export const emptyPortfolioHistoricalSeriesFixture: PortfolioHistoricalSeries =
 	};
 
 export const portfolioTaxExportFixture: PortfolioTaxExport = {
-	csv: "period_label,snapshot_date,mortgage_id\n2026 year-to-date,2026-04-21,mortgage_king",
+	csv: "period_label,snapshot_date,mortgage_id,mortgage_status,period_income,cumulative_income,projected_aggregate_earnings,ending_balance_units,ending_estimated_value,data_completeness\n2026 year-to-date,2026-04-21,mortgage_king,active,9000,18100,45400,10,360000,live_fallback",
 	dataCompleteness: "live_fallback",
 	filename: "lender-portfolio-tax-export-2026-ytd.csv",
 	generatedAt: 1_710_000_500_000,

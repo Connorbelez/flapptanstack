@@ -3,7 +3,7 @@
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	emptyPortfolioHistoricalSeriesFixture,
 	portfolioCommandCenterFixture,
@@ -53,22 +53,52 @@ class ResizeObserverMock {
 	unobserve() {}
 }
 
-vi.stubGlobal("ResizeObserver", ResizeObserverMock);
-vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-	() => TEST_CHART_RECT
+const originalClientHeightDescriptor = Object.getOwnPropertyDescriptor(
+	HTMLElement.prototype,
+	"clientHeight"
 );
-Object.defineProperty(HTMLElement.prototype, "clientHeight", {
-	configurable: true,
-	get: () => TEST_CHART_RECT.height,
-});
-Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-	configurable: true,
-	get: () => TEST_CHART_RECT.width,
+const originalClientWidthDescriptor = Object.getOwnPropertyDescriptor(
+	HTMLElement.prototype,
+	"clientWidth"
+);
+
+function restoreHTMLElementDescriptor(
+	propertyName: "clientHeight" | "clientWidth",
+	descriptor: PropertyDescriptor | undefined
+) {
+	if (descriptor) {
+		Object.defineProperty(HTMLElement.prototype, propertyName, descriptor);
+		return;
+	}
+
+	delete HTMLElement.prototype[propertyName];
+}
+
+beforeEach(() => {
+	vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+	vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+		() => TEST_CHART_RECT
+	);
+	Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+		configurable: true,
+		get: () => TEST_CHART_RECT.height,
+	});
+	Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+		configurable: true,
+		get: () => TEST_CHART_RECT.width,
+	});
 });
 
 afterEach(() => {
 	cleanup();
 	vi.clearAllMocks();
+	vi.restoreAllMocks();
+	vi.unstubAllGlobals();
+	restoreHTMLElementDescriptor(
+		"clientHeight",
+		originalClientHeightDescriptor
+	);
+	restoreHTMLElementDescriptor("clientWidth", originalClientWidthDescriptor);
 });
 
 function buildLeafStateOverrides(
@@ -130,7 +160,7 @@ describe("lender portfolio cockpit and export strip", () => {
 			},
 		});
 
-		expect(screen.getByText("No historical trend data yet")).toBeTruthy();
+		expect(screen.getAllByText("No historical trend data yet")).toHaveLength(2);
 		expect(screen.getByText("Portfolio breakdown visuals")).toBeTruthy();
 	});
 
@@ -202,7 +232,7 @@ describe("lender portfolio cockpit and export strip", () => {
 
 		expect(downloadCsv).toHaveBeenCalledWith(
 			"lender-portfolio-tax-export-2026-ytd.csv",
-			"period_label,snapshot_date,mortgage_id\n2026 year-to-date,2026-04-21,mortgage_king"
+			"period_label,snapshot_date,mortgage_id,mortgage_status,period_income,cumulative_income,projected_aggregate_earnings,ending_balance_units,ending_estimated_value,data_completeness\n2026 year-to-date,2026-04-21,mortgage_king,active,9000,18100,45400,10,360000,live_fallback"
 		);
 	});
 });
