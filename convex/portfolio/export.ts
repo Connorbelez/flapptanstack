@@ -20,6 +20,7 @@ interface PortfolioTaxExportRow {
 	mortgageStatus: string;
 	periodIncome: number;
 	periodLabel: string;
+	projectedAggregateEarnings: number;
 	snapshotDate: string;
 }
 
@@ -43,6 +44,7 @@ function buildPortfolioTaxExportCsv(rows: PortfolioTaxExportRow[]) {
 		"mortgage_status",
 		"period_income",
 		"cumulative_income",
+		"projected_aggregate_earnings",
 		"ending_balance_units",
 		"ending_estimated_value",
 		"data_completeness",
@@ -58,6 +60,7 @@ function buildPortfolioTaxExportCsv(rows: PortfolioTaxExportRow[]) {
 				row.mortgageStatus,
 				row.periodIncome,
 				row.cumulativeIncome,
+				row.projectedAggregateEarnings,
 				row.endingBalanceUnits,
 				row.endingEstimatedValue,
 				row.dataCompleteness,
@@ -100,6 +103,7 @@ function toExportRows(args: {
 			mortgageStatus: position.mortgageStatus,
 			periodIncome: position.periodIncome,
 			periodLabel: args.periodLabel,
+			projectedAggregateEarnings: position.projectedAggregateEarnings,
 			snapshotDate: args.snapshotDate,
 		}));
 }

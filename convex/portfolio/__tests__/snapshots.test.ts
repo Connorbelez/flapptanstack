@@ -86,6 +86,7 @@ describe("portfolio snapshots", () => {
 		expect(snapshot?.totalPositions).toBe(0);
 		expect(snapshot?.totalFractions).toBe(0);
 		expect(snapshot?.periodIncome).toBe(0);
+		expect(snapshot?.projectedAggregateEarnings).toBe(0);
 		expect(snapshot?.positions).toEqual([]);
 	});
 
@@ -121,9 +122,13 @@ describe("portfolio snapshots", () => {
 
 		expect(snapshot?.totalPositions).toBe(0);
 		expect(snapshot?.periodIncome ?? 0).toBeGreaterThan(0);
+		expect(snapshot?.projectedAggregateEarnings ?? 0).toBeGreaterThan(0);
 		expect(snapshot?.positions).toHaveLength(1);
 		expect(snapshot?.positions[0]?.balance).toBe(0);
 		expect(snapshot?.positions[0]?.periodIncome ?? 0).toBeGreaterThan(0);
+		expect(snapshot?.positions[0]?.projectedAggregateEarnings ?? 0).toBe(
+			snapshot?.positions[0]?.cumulativeIncome
+		);
 	});
 
 	it("returns snapshot-backed completed months and live fallback for the current month", async () => {
@@ -159,8 +164,14 @@ describe("portfolio snapshots", () => {
 			expect(history.points[0]?.dataCompleteness).toBe("live_fallback");
 			expect(history.points[1]?.periodEndDate).toBe("2026-03-31");
 			expect(history.points[1]?.dataCompleteness).toBe("snapshot_complete");
+			expect(
+				history.points[1]?.projectedAggregateEarnings ?? 0
+			).toBeGreaterThan(history.points[1]?.cumulativeIncome ?? 0);
 			expect(history.points[2]?.periodEndDate).toBe("2026-04-21");
 			expect(history.points[2]?.dataCompleteness).toBe("live_fallback");
+			expect(
+				history.points[2]?.projectedAggregateEarnings ?? 0
+			).toBeGreaterThan(history.points[2]?.cumulativeIncome ?? 0);
 			expect(history.snapshotBackedThrough).toBe("2026-03-31");
 			expect(history.liveFallbackPeriodLabel).toBe("Apr 2026");
 		} finally {
@@ -188,6 +199,9 @@ describe("portfolio snapshots", () => {
 			expect(history.points).toHaveLength(1);
 			expect(history.points[0]?.periodEndDate).toBe("2026-04-21");
 			expect(history.points[0]?.dataCompleteness).toBe("live_fallback");
+			expect(
+				history.points[0]?.projectedAggregateEarnings ?? 0
+			).toBeGreaterThan(history.points[0]?.cumulativeIncome ?? 0);
 			expect(history.snapshotBackedThrough).toBeUndefined();
 			expect(history.liveFallbackPeriodLabel).toBe("Apr 2026");
 		} finally {

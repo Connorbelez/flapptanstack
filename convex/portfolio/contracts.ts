@@ -36,6 +36,7 @@ export const portfolioHistoricalPointValidator = v.object({
 		v.literal("live_fallback"),
 		v.literal("monthly_snapshot")
 	),
+	projectedAggregateEarnings: v.number(),
 	totalFractions: v.number(),
 	totalInvestedValue: v.number(),
 	totalPositions: v.number(),

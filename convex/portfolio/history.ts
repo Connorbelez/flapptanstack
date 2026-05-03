@@ -34,6 +34,7 @@ function toHistoricalPoint(args: {
 		periodIncome: args.snapshot.periodIncome,
 		periodLabel: monthLabelFor(args.periodEndDate),
 		periodSource: args.periodSource,
+		projectedAggregateEarnings: args.snapshot.projectedAggregateEarnings,
 		totalFractions: args.snapshot.totalFractions,
 		totalInvestedValue: args.snapshot.totalInvestedValue,
 		totalPositions: args.snapshot.totalPositions,

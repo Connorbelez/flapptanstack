@@ -1,20 +1,25 @@
 "use client";
 
-import {
-	AlertTriangle,
-	CandlestickChart,
-	ShieldCheck,
-	Sparkles,
-} from "lucide-react";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { AlertTriangle, Sparkles } from "lucide-react";
+import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { PaymentActivityTable } from "./payment-activity-table";
 import { PaymentSheet } from "./payment-sheet";
+import { PortfolioCockpit } from "./portfolio-cockpit";
+import { PortfolioExportStrip } from "./portfolio-export-strip";
 import { formatPortfolioEnumLabel } from "./portfolio-formatters";
 import { PortfolioShell, PortfolioSlotHost } from "./portfolio-shell";
 import type {
 	LenderPortfolioSearchState,
+	PortfolioAsyncState,
 	PortfolioCommandCenterSnapshot,
+	PortfolioExportAsyncState,
+	PortfolioHistoricalSeries,
 	PortfolioSearchUpdater,
+	PortfolioTaxExport,
 } from "./portfolio-types";
 import { PositionSheet } from "./position-sheet";
 import { PositionsTable } from "./positions-table";
@@ -25,7 +30,24 @@ import {
 	clearPortfolioDetailSelection,
 } from "./search";
 
+const COCKPIT_HISTORY_MONTHS = 6;
+
+export interface LenderPortfolioPageLeafStateOverrides {
+	cockpit?: {
+		historyErrorMessage?: string;
+		historySeries: PortfolioHistoricalSeries | null;
+		historyState: PortfolioAsyncState;
+	};
+	exportStrip?: {
+		canExportTax: boolean;
+		exportContract: PortfolioTaxExport | null;
+		exportErrorMessage?: string;
+		exportState: PortfolioExportAsyncState;
+	};
+}
+
 export interface LenderPortfolioPageProps {
+	leafStateOverrides?: LenderPortfolioPageLeafStateOverrides;
 	portalId: Id<"portals">;
 	search: LenderPortfolioSearchState;
 	setSearch: (updater: PortfolioSearchUpdater) => void;
@@ -33,6 +55,7 @@ export interface LenderPortfolioPageProps {
 }
 
 export function LenderPortfolioPage({
+	leafStateOverrides,
 	portalId,
 	search,
 	setSearch,
@@ -61,104 +84,39 @@ export function LenderPortfolioPage({
 		<>
 			<PortfolioShell
 				cockpitSlot={
-					<PortfolioSlotHost
-						dataTestId="cockpit-slot-host"
-						description="The route owns the page-level host and keeps the cockpit data visible for downstream chart and export work without absorbing ENG-313."
-						eyebrow="Cockpit slot"
-						summary={`${snapshot.cockpit.metrics.activePositionCount} active positions`}
-						title="Portfolio command center"
-					>
-						<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-							<div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-								<p className="text-muted-foreground text-xs uppercase tracking-[0.16em]">
-									YTD accrued
-								</p>
-								<p className="mt-2 font-semibold text-2xl">
-									{snapshot.cockpit.metrics.ytdAccruedInterest.toLocaleString(
-										"en-CA",
-										{ maximumFractionDigits: 0 }
-									)}
-								</p>
-							</div>
-							<div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-								<p className="text-muted-foreground text-xs uppercase tracking-[0.16em]">
-									Monthly accrued
-								</p>
-								<p className="mt-2 font-semibold text-2xl">
-									{snapshot.cockpit.metrics.monthlyAccruedInterest.toLocaleString(
-										"en-CA",
-										{ maximumFractionDigits: 0 }
-									)}
-								</p>
-							</div>
-							<div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-								<p className="text-muted-foreground text-xs uppercase tracking-[0.16em]">
-									Payment exceptions
-								</p>
-								<p className="mt-2 font-semibold text-2xl">
-									{snapshot.cockpit.metrics.paymentExceptionCount}
-								</p>
-							</div>
-							<div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-								<p className="text-muted-foreground text-xs uppercase tracking-[0.16em]">
-									Renewals due soon
-								</p>
-								<p className="mt-2 font-semibold text-2xl">
-									{snapshot.cockpit.metrics.renewalsDueSoonCount}
-								</p>
-							</div>
-						</div>
-					</PortfolioSlotHost>
+					leafStateOverrides?.cockpit ? (
+						<PortfolioCockpit
+							cockpit={snapshot.cockpit}
+							generatedAt={snapshot.generatedAt}
+							historyErrorMessage={
+								leafStateOverrides.cockpit.historyErrorMessage
+							}
+							historySeries={leafStateOverrides.cockpit.historySeries}
+							historyState={leafStateOverrides.cockpit.historyState}
+						/>
+					) : (
+						<ConnectedPortfolioCockpit
+							portalId={portalId}
+							snapshot={snapshot}
+						/>
+					)
 				}
 				exportStripSlot={
-					<PortfolioSlotHost
-						dataTestId="export-strip-slot-host"
-						description="This lower strip host keeps broker-imposed constraints visible and reserves the export surface for ENG-313."
-						eyebrow="Lower strip slot"
-						summary={
-							snapshot.limitsStrip.hasConstraints
-								? "Broker constraints active"
-								: "No broker limits configured"
-						}
-						title="Broker guardrails and export host"
-					>
-						<div className="grid gap-3 md:grid-cols-2">
-							<div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-								<div className="flex items-center gap-2 font-medium text-sm">
-									<ShieldCheck className="size-4 text-muted-foreground" />
-									Constraint summary
-								</div>
-								<p className="mt-2 text-muted-foreground text-sm leading-6">
-									Types:{" "}
-									{snapshot.limitsStrip.constraints.allowedMortgageTypes
-										.length > 0
-										? snapshot.limitsStrip.constraints.allowedMortgageTypes.join(
-												", "
-											)
-										: "Unspecified"}
-									. Property classes:{" "}
-									{snapshot.limitsStrip.constraints.allowedPropertyTypes
-										.length > 0
-										? snapshot.limitsStrip.constraints.allowedPropertyTypes.join(
-												", "
-											)
-										: "Unspecified"}
-									.
-								</p>
-							</div>
-							<div className="rounded-lg border border-border/70 border-dashed bg-background px-4 py-3">
-								<div className="flex items-center gap-2 font-medium text-sm">
-									<CandlestickChart className="size-4 text-muted-foreground" />
-									Export slot reserved
-								</div>
-								<p className="mt-2 text-muted-foreground text-sm leading-6">
-									CSV tax export is intentionally reserved for the downstream
-									leaf slice while this route owns the placement and data
-									boundary.
-								</p>
-							</div>
-						</div>
-					</PortfolioSlotHost>
+					leafStateOverrides?.exportStrip ? (
+						<PortfolioExportStrip
+							exportContract={leafStateOverrides.exportStrip.exportContract}
+							exportErrorMessage={
+								leafStateOverrides.exportStrip.exportErrorMessage
+							}
+							exportState={leafStateOverrides.exportStrip.exportState}
+							limitsStrip={snapshot.limitsStrip}
+						/>
+					) : (
+						<ConnectedPortfolioExportStrip
+							portalId={portalId}
+							snapshot={snapshot}
+						/>
+					)
 				}
 				paymentActivitySection={
 					<PaymentActivityTable
@@ -341,5 +299,82 @@ export function LenderPortfolioPage({
 				/>
 			) : null}
 		</>
+	);
+}
+
+function ConnectedPortfolioCockpit({
+	portalId,
+	snapshot,
+}: {
+	portalId: Id<"portals">;
+	snapshot: PortfolioCommandCenterSnapshot;
+}) {
+	const historyQuery = useQuery({
+		...convexQuery(api.portfolio.queries.getLenderPortfolioHistoricalSeries, {
+			months: COCKPIT_HISTORY_MONTHS,
+			portalId,
+		}),
+	});
+
+	return (
+		<PortfolioCockpit
+			cockpit={snapshot.cockpit}
+			generatedAt={snapshot.generatedAt}
+			historyErrorMessage={
+				historyQuery.error instanceof Error
+					? historyQuery.error.message
+					: undefined
+			}
+			historySeries={historyQuery.data ?? null}
+			historyState={
+				historyQuery.isPending
+					? "loading"
+					: historyQuery.isError
+						? "error"
+						: "ready"
+			}
+		/>
+	);
+}
+
+function ConnectedPortfolioExportStrip({
+	portalId,
+	snapshot,
+}: {
+	portalId: Id<"portals">;
+	snapshot: PortfolioCommandCenterSnapshot;
+}) {
+	const { loading, permissions } = useAuth();
+	const canExportTax = permissions?.includes("portfolio:export_tax") ?? false;
+	const exportQuery = useQuery({
+		...convexQuery(api.portfolio.queries.getLenderPortfolioTaxExport, {
+			portalId,
+		}),
+		enabled: !loading && canExportTax,
+	});
+
+	const exportState: PortfolioExportAsyncState = loading
+		? "loading"
+		: canExportTax
+			? exportQuery.isPending
+				? "loading"
+				: exportQuery.isError
+					? "error"
+					: "ready"
+			: "forbidden";
+	const visibleExportContract =
+		exportState === "ready" ? (exportQuery.data ?? null) : null;
+	const visibleExportErrorMessage =
+		exportState === "error" && exportQuery.error instanceof Error
+			? exportQuery.error.message
+			: undefined;
+
+	return (
+		<PortfolioExportStrip
+			exportContract={visibleExportContract}
+			exportErrorMessage={visibleExportErrorMessage}
+			exportState={exportState}
+			limitsStrip={snapshot.limitsStrip}
+		/>
 	);
 }

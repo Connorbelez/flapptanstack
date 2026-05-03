@@ -2,7 +2,13 @@ import { ConvexError, type Infer, v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { calculateAccrualForPeriods, dayBefore } from "../accrual/interestMath";
+import {
+	calculateAccrualForPeriods,
+	calculatePeriodAccrual,
+	dayAfter,
+	dayBefore,
+	daysBetween,
+} from "../accrual/interestMath";
 import { getOwnershipPeriods } from "../accrual/ownershipPeriods";
 import { convex } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
@@ -113,6 +119,33 @@ function balanceUnitsToFractions(balanceUnits: number) {
 
 function calculateEstimatedValue(balanceUnits: number, principal: number) {
 	return roundCurrency((balanceUnits / Number(TOTAL_SUPPLY)) * principal);
+}
+
+function calculateProjectedAggregateEarnings(args: {
+	annualRateDecimal: number;
+	balanceUnits: number;
+	cumulativeIncome: number;
+	maturityDate: string;
+	principal: number;
+	snapshotDate: string;
+}) {
+	if (args.balanceUnits <= 0 || args.snapshotDate >= args.maturityDate) {
+		return roundCurrency(args.cumulativeIncome);
+	}
+
+	const remainingStartDate = dayAfter(args.snapshotDate);
+	if (remainingStartDate > args.maturityDate) {
+		return roundCurrency(args.cumulativeIncome);
+	}
+
+	const projectedRemainingIncome = calculatePeriodAccrual(
+		args.annualRateDecimal,
+		args.balanceUnits / Number(TOTAL_SUPPLY),
+		args.principal,
+		daysBetween(remainingStartDate, args.maturityDate)
+	);
+
+	return roundCurrency(args.cumulativeIncome + projectedRemainingIncome);
 }
 
 function activeBalanceUnitsAtDate(
@@ -279,8 +312,21 @@ async function buildSnapshotPositionRows(
 				args.snapshotDate
 			)
 		);
+		const projectedAggregateEarnings = calculateProjectedAggregateEarnings({
+			annualRateDecimal,
+			balanceUnits: balance,
+			cumulativeIncome,
+			maturityDate: mortgage.maturityDate,
+			principal: mortgage.principal,
+			snapshotDate: args.snapshotDate,
+		});
 
-		if (balance <= 0 && periodIncome <= 0 && cumulativeIncome <= 0) {
+		if (
+			balance <= 0 &&
+			periodIncome <= 0 &&
+			cumulativeIncome <= 0 &&
+			projectedAggregateEarnings <= 0
+		) {
 			continue;
 		}
 
@@ -292,6 +338,7 @@ async function buildSnapshotPositionRows(
 			mortgageId: String(mortgageId),
 			mortgageStatus: mortgage.status,
 			periodIncome,
+			projectedAggregateEarnings,
 		});
 	}
 
@@ -326,6 +373,12 @@ export async function buildLivePortfolioSnapshot(
 		),
 		cumulativeIncome: roundCurrency(
 			positions.reduce((sum, position) => sum + position.cumulativeIncome, 0)
+		),
+		projectedAggregateEarnings: roundCurrency(
+			positions.reduce(
+				(sum, position) => sum + position.projectedAggregateEarnings,
+				0
+			)
 		),
 		positions,
 	};
