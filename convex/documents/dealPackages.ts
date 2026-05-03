@@ -1144,6 +1144,7 @@ export const createDealDocumentInstance = convex
 		lastError: v.optional(v.string()),
 		mortgageId: v.id("mortgages"),
 		packageId: v.id("dealDocumentPackages"),
+		remediationAction: v.optional(v.string()),
 		sourceBlueprintId: v.optional(v.id("mortgageDocumentBlueprints")),
 		sourceBlueprintSnapshot: v.object({
 			category: v.optional(v.string()),
@@ -1151,12 +1152,16 @@ export const createDealDocumentInstance = convex
 			description: v.optional(v.string()),
 			displayName: v.string(),
 			displayOrder: v.number(),
+			envelopeBoundaryKey: v.optional(v.string()),
+			packageItemKind: v.optional(v.string()),
 			packageKey: v.optional(v.string()),
 			packageLabel: v.optional(v.string()),
+			packageVersionId: v.optional(v.string()),
 			templateId: v.optional(v.id("documentTemplates")),
 			templateVersion: v.optional(v.number()),
 		}),
 		status: dealDocumentInstanceStatusValidator,
+		supersededByInstanceId: v.optional(v.id("dealDocumentInstances")),
 		updatedAt: v.number(),
 	})
 	.handler(async (ctx, args) => {

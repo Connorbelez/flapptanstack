@@ -7,7 +7,11 @@ import { Input } from "#/components/ui/input";
 import { cn } from "#/lib/utils";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { OPERATOR_LABELS } from "../../../../convex/crm/filterConstants";
-import type { RecordFilter, RecordSort } from "../../../../convex/crm/types";
+import type {
+	RecordFilter,
+	RecordSort,
+	SavedViewFieldId,
+} from "../../../../convex/crm/types";
 import { AdminTableColumnVisibilityPopover } from "./AdminTableColumnVisibilityPopover";
 import type { AdminViewSchemaColumn } from "./admin-view-types";
 
@@ -15,7 +19,7 @@ interface AdminTableHeaderControlsProps {
 	readonly activeFilters: readonly RecordFilter[];
 	readonly activeSort?: RecordSort;
 	readonly columns: readonly AdminViewSchemaColumn[];
-	readonly defaultVisibleFieldIds: readonly Id<"fieldDefs">[];
+	readonly defaultVisibleFieldIds: readonly SavedViewFieldId[];
 	readonly disabled?: boolean;
 	readonly onClearAll: () => void;
 	readonly onClearFieldFilter: (fieldDefId: Id<"fieldDefs">) => void;

@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import type { Doc, Id } from "../_generated/dataModel";
 import { authedQuery, convex } from "../fluent";
 import {
 	assertFileWorkspaceCapability,
@@ -216,22 +217,25 @@ export const getCapabilityPreview = authedQuery
 async function summarizeNodeForTree(
 	ctx: Parameters<typeof resolveFileWorkspacePrincipal>[0],
 	node: {
-		_id: string;
+		_id: Id<"fileNodes">;
 		createdAt: number;
-		currentVersionId?: string;
+		currentVersionId?: Id<"fileVersions">;
 		displayName: string;
 		isRoot: boolean;
 		nodeType: "file" | "folder";
 		updatedAt: number;
-	}
+	},
+	options: { includeBlockedCurrentVersion: boolean }
 ) {
-	const currentVersion =
-		node.nodeType === "file"
-			? await getCurrentVisibleVersion({
+	let currentVersion: Doc<"fileVersions"> | null = null;
+	if (node.nodeType === "file" && node.currentVersionId) {
+		currentVersion = options.includeBlockedCurrentVersion
+			? await ctx.db.get(node.currentVersionId)
+			: await getCurrentVisibleVersion({
 					ctx,
 					node: node as never,
-				})
-			: null;
+				});
+	}
 	return {
 		createdAt: node.createdAt,
 		currentVersion: currentVersion
@@ -285,7 +289,11 @@ export const listNodes = authedQuery
 			[];
 		for (const child of children) {
 			if (!(await hasDeletedAncestor({ ctx, node: child }))) {
-				visibleChildren.push(await summarizeNodeForTree(ctx, child));
+				visibleChildren.push(
+					await summarizeNodeForTree(ctx, child, {
+						includeBlockedCurrentVersion: true,
+					})
+				);
 			}
 		}
 		return {
@@ -340,7 +348,9 @@ export const listBearerNodes = convex
 			[];
 		for (const child of children) {
 			if (!(await hasDeletedAncestor({ ctx, node: child }))) {
-				const summarized = await summarizeNodeForTree(ctx, child);
+				const summarized = await summarizeNodeForTree(ctx, child, {
+					includeBlockedCurrentVersion: false,
+				});
 				if (summarized.nodeType === "folder" || summarized.currentVersion) {
 					visibleChildren.push(summarized);
 				}

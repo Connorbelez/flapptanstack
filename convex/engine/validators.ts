@@ -37,6 +37,9 @@ export const entityTypeValidator = v.union(
 	v.literal("lender"),
 	v.literal("investmentVehicle"),
 	v.literal("investmentVehicleWorkspace"),
+	// Legacy auditJournal rows in shared dev deployments use this value even
+	// though the corresponding workspace tables are not present in this branch.
+	v.literal("velocityPackageWorkspace"),
 	v.literal("lenderOnboarding"),
 	v.literal("platformSetting"),
 	v.literal("provisionalOffer"),

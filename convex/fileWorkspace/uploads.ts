@@ -145,6 +145,12 @@ export const finalizeUpload = authedMutation
 			uploadedAt: now,
 			scanState: "pending_scan",
 		});
+		if (!existingSibling) {
+			await ctx.db.patch(nodeId, {
+				currentVersionId: versionId,
+				updatedAt: now,
+			});
+		}
 		if (existingSibling) {
 			await insertFileWorkspaceActivity(ctx, {
 				boxId: args.boxId,

@@ -25,6 +25,7 @@ import type {
 	NormalizedFieldDefinition,
 	RecordFilter,
 	RecordSort,
+	SavedViewFieldId,
 	TableFooterAggregateResult,
 } from "../../../../convex/crm/types";
 import { AdminTableAggregateFooter } from "./AdminTableAggregateFooter";
@@ -54,7 +55,7 @@ interface AdminEntityTableViewProps {
 		"entityType" | "titleFieldName"
 	>;
 	readonly columns: readonly AdminViewColumn[];
-	readonly defaultVisibleFieldIds: readonly Id<"fieldDefs">[];
+	readonly defaultVisibleFieldIds: readonly SavedViewFieldId[];
 	readonly fields: readonly NormalizedFieldDefinition[];
 	readonly footerAggregates: readonly TableFooterAggregateResult[];
 	readonly isMutating?: boolean;

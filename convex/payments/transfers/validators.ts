@@ -63,6 +63,7 @@ export const providerCodeValidator = v.union(
 	v.literal("pad_rotessa"),
 	v.literal("eft_vopay"),
 	v.literal("e_transfer"),
+	v.literal("stripe"),
 	v.literal("wire"),
 	v.literal("plaid_transfer")
 );

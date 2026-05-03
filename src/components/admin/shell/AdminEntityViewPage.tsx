@@ -25,6 +25,7 @@ import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type {
 	RecordFilter,
 	RecordSort,
+	SavedViewFieldId,
 	UserSavedViewDefinition,
 } from "../../../../convex/crm/types";
 import { AdminEntityKanbanView } from "./AdminEntityKanbanView";
@@ -423,7 +424,7 @@ export function AdminEntityViewPage({
 	async function persistTableSavedViewState(args: {
 		filters?: readonly RecordFilter[];
 		sort?: RecordSort | null;
-		visibleFieldIds?: readonly Id<"fieldDefs">[];
+		visibleFieldIds?: readonly SavedViewFieldId[];
 	}) {
 		if (
 			!(activeViewMode === "table" && objectDef && activeSourceView && schema)

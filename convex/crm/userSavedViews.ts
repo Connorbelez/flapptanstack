@@ -4,6 +4,7 @@ import type { MutationCtx } from "../_generated/server";
 import { auditLog } from "../auditLog";
 import { crmMutation, crmQuery } from "../fluent";
 import { isValidOperatorForFieldType } from "./filterOperatorValidation";
+import type { SavedViewFieldId } from "./types";
 import {
 	aggregatePresetValidator,
 	recordSortValidator,
@@ -31,6 +32,13 @@ function validateSavedViewName(name: string): string {
 		);
 	}
 	return trimmed;
+}
+
+function realFieldDefIds(fieldIds: SavedViewFieldId[]): Id<"fieldDefs">[] {
+	return fieldIds.filter(
+		(fieldId): fieldId is Id<"fieldDefs"> =>
+			!fieldId.toString().startsWith("computed:")
+	);
 }
 
 async function validateObjectAccess(
@@ -279,7 +287,9 @@ export const createUserSavedView = crmMutation
 		sourceViewDefId: v.optional(v.id("viewDefs")),
 		name: v.string(),
 		viewType: viewTypeValidator,
-		visibleFieldIds: v.optional(v.array(v.id("fieldDefs"))),
+		visibleFieldIds: v.optional(
+			v.array(v.union(v.id("fieldDefs"), v.string()))
+		),
 		fieldOrder: v.optional(v.array(v.id("fieldDefs"))),
 		filters: v.optional(v.array(savedViewFilterValidator)),
 		groupByFieldId: v.optional(v.id("fieldDefs")),
@@ -317,7 +327,7 @@ export const createUserSavedView = crmMutation
 		const fieldOrder = args.fieldOrder ?? baseSavedView.fieldOrder;
 		await validateFieldOwnership(ctx, {
 			objectDefId: args.objectDefId,
-			fieldIds: [...visibleFieldIds, ...fieldOrder],
+			fieldIds: realFieldDefIds([...visibleFieldIds, ...fieldOrder]),
 		});
 		await validateSavedViewFilters(ctx, {
 			objectDefId: args.objectDefId,
@@ -386,7 +396,9 @@ export const updateUserSavedView = crmMutation
 	.input({
 		userSavedViewId: v.id("userSavedViews"),
 		name: v.optional(v.string()),
-		visibleFieldIds: v.optional(v.array(v.id("fieldDefs"))),
+		visibleFieldIds: v.optional(
+			v.array(v.union(v.id("fieldDefs"), v.string()))
+		),
 		fieldOrder: v.optional(v.array(v.id("fieldDefs"))),
 		filters: v.optional(v.array(savedViewFilterValidator)),
 		groupByFieldId: v.optional(v.id("fieldDefs")),
@@ -407,7 +419,10 @@ export const updateUserSavedView = crmMutation
 
 		await validateFieldOwnership(ctx, {
 			objectDefId: before.objectDefId,
-			fieldIds: [...(args.visibleFieldIds ?? []), ...(args.fieldOrder ?? [])],
+			fieldIds: realFieldDefIds([
+				...(args.visibleFieldIds ?? []),
+				...(args.fieldOrder ?? []),
+			]),
 		});
 		await validateSavedViewFilters(ctx, {
 			objectDefId: before.objectDefId,

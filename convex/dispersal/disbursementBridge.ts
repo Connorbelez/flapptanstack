@@ -34,6 +34,7 @@ import {
 	InvalidDomainEntityIdError,
 	toDomainEntityId,
 } from "../payments/transfers/types";
+import { providerCodeValidator } from "../payments/transfers/validators";
 
 // ═══════════════════════════════════════════════════════════════════════
 // Constants & Types
@@ -184,20 +185,7 @@ export const findEligibleEntriesInternal = internalQuery({
 export const processSingleDisbursement = internalMutation({
 	args: {
 		dispersalEntryId: v.id("dispersalEntries"),
-		providerCode: v.optional(
-			v.union(
-				v.literal("manual"),
-				v.literal("manual_review"),
-				v.literal("mock_pad"),
-				v.literal("mock_eft"),
-				v.literal("pad_vopay"),
-				v.literal("pad_rotessa"),
-				v.literal("eft_vopay"),
-				v.literal("e_transfer"),
-				v.literal("wire"),
-				v.literal("plaid_transfer")
-			)
-		),
+		providerCode: v.optional(providerCodeValidator),
 	},
 	handler: async (
 		ctx,

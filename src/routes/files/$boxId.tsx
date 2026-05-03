@@ -52,11 +52,21 @@ export function FileWorkspaceBoxRoutePage() {
 		null
 	);
 	const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
+	const [uploadError, setUploadError] = useState<string | null>(null);
+	const [participantStatus, setParticipantStatus] = useState<string | null>(
+		null
+	);
 	const [viewMode, setViewMode] = useState<FileWorkspaceViewMode>("table");
 	const createFolder = useMutation(api.fileWorkspace.nodes.createFolder);
 	const restoreNode = useMutation(api.fileWorkspace.nodes.restoreNode);
 	const requestUpload = useMutation(api.fileWorkspace.uploads.requestUpload);
 	const finalizeUpload = useMutation(api.fileWorkspace.uploads.finalizeUpload);
+	const upsertParticipant = useMutation(
+		api.fileWorkspace.participants.upsertParticipant
+	);
+	const removeParticipant = useMutation(
+		api.fileWorkspace.participants.removeParticipant
+	);
 	const createShareLink = useMutation(
 		api.fileWorkspace.shareLinks.createShareLink
 	);
@@ -189,32 +199,61 @@ export function FileWorkspaceBoxRoutePage() {
 	}
 
 	async function handleUploadFile(file: File) {
+		setUploadError(null);
 		const declaredFile = {
 			contentType: file.type || undefined,
 			name: file.name,
 			sizeBytes: file.size,
 		};
-		const request = await requestUpload({
-			boxId: boxIdValue,
-			declaredFile,
-			parentNodeId: nodeList.parentNodeId as Id<"fileNodes">,
-		});
-		const response = await fetch(request.uploadUrl, {
-			body: file,
-			headers: { "Content-Type": file.type || "application/octet-stream" },
-			method: "POST",
-		});
-		if (!response.ok) {
-			throw new Error("Upload failed.");
+		try {
+			const request = await requestUpload({
+				boxId: boxIdValue,
+				declaredFile,
+				parentNodeId: nodeList.parentNodeId as Id<"fileNodes">,
+			});
+			const response = await fetch(request.uploadUrl, {
+				body: file,
+				headers: { "Content-Type": file.type || "application/octet-stream" },
+				method: "POST",
+			});
+			if (!response.ok) {
+				throw new Error("Upload failed.");
+			}
+			const uploaded = (await response.json()) as { storageId: string };
+			await finalizeUpload({
+				boxId: boxIdValue,
+				declaredFile,
+				parentNodeId: nodeList.parentNodeId as Id<"fileNodes">,
+				storageId: uploaded.storageId as Id<"_storage">,
+			});
+			await invalidateFileWorkspaceQueries();
+		} catch (error) {
+			setUploadError(error instanceof Error ? error.message : "Upload failed.");
 		}
-		const uploaded = (await response.json()) as { storageId: string };
-		await finalizeUpload({
+	}
+
+	async function handleUpsertParticipant(grant: {
+		authId?: string;
+		email?: string;
+		role: "viewer" | "editor" | "manager";
+	}) {
+		setParticipantStatus(null);
+		await upsertParticipant({
 			boxId: boxIdValue,
-			declaredFile,
-			parentNodeId: nodeList.parentNodeId as Id<"fileNodes">,
-			storageId: uploaded.storageId as Id<"_storage">,
+			grant,
 		});
 		await invalidateFileWorkspaceQueries();
+		setParticipantStatus("Participant settings updated.");
+	}
+
+	async function handleRemoveParticipant(participantId: string) {
+		setParticipantStatus(null);
+		await removeParticipant({
+			boxId: boxIdValue,
+			participantId: participantId as Id<"fileBoxParticipants">,
+		});
+		await invalidateFileWorkspaceQueries();
+		setParticipantStatus("Participant removed.");
 	}
 
 	return (
@@ -230,6 +269,7 @@ export function FileWorkspaceBoxRoutePage() {
 				onCreateLink={handleCreateLink}
 				onDownload={handleDownload}
 				onPreview={handlePreview}
+				onRemoveParticipant={handleRemoveParticipant}
 				onRestore={handleRestore}
 				onSelectNode={handleSelectNode}
 				onShare={handleCreateLink}
@@ -245,9 +285,12 @@ export function FileWorkspaceBoxRoutePage() {
 					})
 				}
 				onUpload={() => fileInputRef.current?.click()}
+				onUpsertParticipant={handleUpsertParticipant}
 				onViewModeChange={setViewMode}
+				participantStatus={participantStatus}
 				selectedNodeId={selectedNode?.nodeId}
 				tags={tags}
+				uploadError={uploadError}
 				versions={versions}
 				viewMode={viewMode}
 			/>

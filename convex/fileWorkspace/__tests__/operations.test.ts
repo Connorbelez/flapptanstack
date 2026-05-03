@@ -191,6 +191,21 @@ describe("File Workspace operations", () => {
 			denied: true,
 			reasonCode: "file_version_blocked",
 		});
+		await expect(
+			t.withIdentity(MANAGER).query(readModelsApi.listNodes, {
+				boxId: box.boxId,
+				parentNodeId: box.rootNodeId,
+			})
+		).resolves.toMatchObject({
+			nodes: [
+				expect.objectContaining({
+					currentVersion: expect.objectContaining({
+						scanState: "pending_scan",
+					}),
+					displayName: "Commitment Letter.pdf",
+				}),
+			],
+		});
 
 		await t.mutation(anyApi.fileWorkspace.scanMutations.applyScanResult, {
 			expectedStorageId: initialStorageId,
