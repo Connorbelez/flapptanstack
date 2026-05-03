@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import {
 	ArrowRight,
 	CalendarDays,
@@ -142,10 +143,13 @@ export function SuggestedOpportunityCard({
 					</p>
 				</div>
 				<Button asChild>
-					<a href={buildListingHref(opportunity.listingId)}>
+					<Link
+						params={{ listingId: opportunity.listingId }}
+						to="/listings/$listingId"
+					>
 						Open listing
 						<ArrowRight className="size-4" />
-					</a>
+					</Link>
 				</Button>
 			</CardFooter>
 		</Card>
@@ -168,8 +172,4 @@ function MetricTile({ icon, label, value }: MetricTileProps) {
 			<p className="mt-2 font-semibold text-sm">{value}</p>
 		</div>
 	);
-}
-
-function buildListingHref(listingId: string) {
-	return `/listings/${listingId}`;
 }
