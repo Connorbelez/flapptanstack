@@ -280,6 +280,33 @@ describe("lender portfolio rail", () => {
 		expect(disabledCta.textContent).toContain("View assigned broker");
 	});
 
+	it("enables profile fallback contact when the contract provides an http profile URL", () => {
+		vi.mocked(useIsMobile).mockReturnValue(false);
+
+		renderPage({
+			snapshot: {
+				...activeRailSnapshot,
+				brokerCoordination: {
+					...activeRailSnapshot.brokerCoordination,
+					fallbackContactCta: {
+						label: "View assigned broker",
+						mode: "profile",
+						value: " https://fairlend.example/brokers/broker_meridian ",
+					},
+				},
+			},
+		});
+
+		const rail = getRailQueries();
+
+		const contactLink = rail.getByTestId("broker-contact-cta") as HTMLAnchorElement;
+		expect(contactLink.textContent).toContain("View assigned broker");
+		expect(contactLink.getAttribute("href")).toBe(
+			"https://fairlend.example/brokers/broker_meridian"
+		);
+		expect(rail.queryByTestId("broker-contact-cta-disabled")).toBeNull();
+	});
+
 	it("renders the missing-broker fallback without removing the coordination surface", () => {
 		vi.mocked(useIsMobile).mockReturnValue(false);
 

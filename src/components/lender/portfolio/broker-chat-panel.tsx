@@ -84,8 +84,18 @@ function buildBrokerContactHref(
 		}
 		case "phone":
 			return `tel:${contact.value}`;
-		case "profile":
-			return null;
+		case "profile": {
+			const profileUrl = contact.value.trim();
+			try {
+				const parsedProfileUrl = new URL(profileUrl);
+				return parsedProfileUrl.protocol === "http:" ||
+					parsedProfileUrl.protocol === "https:"
+					? parsedProfileUrl.toString()
+					: null;
+			} catch {
+				return null;
+			}
+		}
 		default:
 			return null;
 	}
