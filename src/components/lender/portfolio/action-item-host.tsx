@@ -126,10 +126,10 @@ export function ActionItemHost({
 					<MessageSquarePlus className="size-4" />
 					{isSelected ? "Broker handoff selected" : "Prefill broker handoff"}
 				</Button>
-				{detailLabel ? (
+				{detailLabel && onOpenDetails ? (
 					<Button
 						data-testid={`action-open-details-${action.id}`}
-						onClick={() => onOpenDetails?.(action)}
+						onClick={() => onOpenDetails(action)}
 						size="sm"
 						type="button"
 						variant="ghost"
