@@ -37,9 +37,21 @@ describe("parseAdminDetailSearch", () => {
 			})
 		).toEqual({
 			detailOpen: false,
+			detailTab: undefined,
 			entityType: "mortgages",
 			recordId: "abc123",
 		});
+	});
+
+	it("accepts supported detail tabs and rejects unknown tab values", () => {
+		expect(parseAdminDetailSearch({ detailTab: "portfolio" }).detailTab).toBe(
+			"portfolio"
+		);
+		expect(parseAdminDetailSearch({ detailTab: "details" }).detailTab).toBe(
+			"details"
+		);
+		expect(parseAdminDetailSearch({ detailTab: "unknown" }).detailTab).toBeUndefined();
+		expect(parseAdminDetailSearch({ detailTab: 123 }).detailTab).toBeUndefined();
 	});
 
 	it("treats blank entityType as undefined", () => {

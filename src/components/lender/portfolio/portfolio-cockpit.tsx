@@ -16,19 +16,13 @@ import {
 	Line,
 	Pie,
 	PieChart,
+	Tooltip as RechartsTooltip,
 	ResponsiveContainer,
-	Tooltip,
 	XAxis,
 	YAxis,
 } from "recharts";
 import { Badge } from "#/components/ui/badge";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "#/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import {
 	Empty,
 	EmptyDescription,
@@ -46,7 +40,10 @@ import {
 	formatPortfolioEnumLabel,
 	formatPortfolioRate,
 } from "./portfolio-formatters";
-import { PortfolioSlotHost } from "./portfolio-shell";
+import {
+	PortfolioDescriptionTooltip,
+	PortfolioSlotHost,
+} from "./portfolio-shell";
 import type {
 	PortfolioAsyncState,
 	PortfolioCommandCenterSnapshot,
@@ -152,16 +149,15 @@ export function PortfolioCockpit({
 				<div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)]">
 					<Card className="border-border/70">
 						<CardHeader className="gap-3">
-							<div className="flex flex-wrap items-start justify-between gap-3">
-								<div className="space-y-1">
+							<div className="flex flex-wrap items-center justify-between gap-3">
+								<div className="flex items-center gap-2">
 									<CardTitle className="text-base">
 										Income trend and projected earnings
 									</CardTitle>
-									<CardDescription>
-										Track period income, accrued income to date, and the
-										projected aggregate earnings line from the snapshot-backed
-										history contract.
-									</CardDescription>
+									<PortfolioDescriptionTooltip
+										label="About income trend and projected earnings"
+										text="Track period income, accrued income to date, and the projected aggregate earnings line from the snapshot-backed history contract."
+									/>
 								</div>
 								<Badge variant="outline">
 									Updated {formatPortfolioDateTime(generatedAt)}
@@ -179,14 +175,14 @@ export function PortfolioCockpit({
 
 					<Card className="border-border/70">
 						<CardHeader className="gap-3">
-							<div className="space-y-1">
+							<div className="flex items-center gap-2">
 								<CardTitle className="text-base">
 									Portfolio breakdown visuals
 								</CardTitle>
-								<CardDescription>
-									Concentration is shown by mortgage status and property type so
-									risk and composition stay visible at a glance.
-								</CardDescription>
+								<PortfolioDescriptionTooltip
+									label="About portfolio breakdown visuals"
+									text="Concentration is shown by mortgage status and property type so risk and composition stay visible at a glance."
+								/>
 							</div>
 						</CardHeader>
 						<CardContent className="grid gap-4 lg:grid-cols-2">
@@ -318,7 +314,7 @@ function renderHistoryState({
 							tickLine={false}
 							width={88}
 						/>
-						<Tooltip
+						<RechartsTooltip
 							formatter={(value, name) => [
 								formatPortfolioCurrency(Number(value)),
 								name === "periodIncome"
@@ -397,7 +393,7 @@ function BreakdownChart({
 			<div className="mx-auto h-[180px] max-w-[240px] text-xs">
 				<ResponsiveContainer height="100%" width="100%">
 					<PieChart>
-						<Tooltip
+						<RechartsTooltip
 							formatter={(value) => [
 								`${Number(value).toLocaleString("en-CA")} units`,
 								"Position units",
@@ -468,18 +464,21 @@ function MetricCard({
 		<div className="rounded-2xl border border-border/70 bg-linear-to-br from-card via-card to-muted/20 p-4 shadow-sm">
 			<div className="flex items-start justify-between gap-3">
 				<div>
-					<p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
-						{label}
-					</p>
+					<div className="flex items-center gap-1.5">
+						<p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
+							{label}
+						</p>
+						<PortfolioDescriptionTooltip
+							label={`About ${label}`}
+							text={description}
+						/>
+					</div>
 					<p className="mt-3 font-semibold text-2xl tracking-tight">{value}</p>
 				</div>
 				<div className="flex size-10 items-center justify-center rounded-full bg-background shadow-sm">
 					{icon}
 				</div>
 			</div>
-			<p className="mt-3 text-muted-foreground text-sm leading-6">
-				{description}
-			</p>
 		</div>
 	);
 }

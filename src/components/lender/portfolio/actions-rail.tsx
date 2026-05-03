@@ -1,8 +1,11 @@
 import { CheckCircle2, ListTodo } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
-import type { Id } from "../../../../convex/_generated/dataModel";
 import { ActionItemHost } from "./action-item-host";
-import type { PortfolioCommandCenterSnapshot } from "./portfolio-types";
+import { PortfolioDescriptionTooltip } from "./portfolio-shell";
+import type {
+	LenderPortfolioQueryMode,
+	PortfolioCommandCenterSnapshot,
+} from "./portfolio-types";
 
 type PortfolioActionItem =
 	PortfolioCommandCenterSnapshot["actionsRequired"]["items"][number];
@@ -12,9 +15,9 @@ type PortfolioBrokerPrefillContext = PortfolioActionItem["prefillContext"];
 
 export interface ActionsRailProps {
 	actionsRequired: PortfolioActionsSection;
+	mode: LenderPortfolioQueryMode;
 	onOpenDetails?: (action: PortfolioActionItem) => void;
 	onPrefill: (context: PortfolioBrokerPrefillContext) => void;
-	portalId: Id<"portals">;
 	selectedPrefillContext?: PortfolioBrokerPrefillContext | null;
 }
 
@@ -30,9 +33,9 @@ function hasSamePrefillContext(
 
 export function ActionsRail({
 	actionsRequired,
+	mode,
 	onOpenDetails,
 	onPrefill,
-	portalId,
 	selectedPrefillContext,
 }: ActionsRailProps) {
 	const hasItems =
@@ -48,11 +51,11 @@ export function ActionsRail({
 					<div className="flex items-center gap-2">
 						<ListTodo className="size-4 text-muted-foreground" />
 						<h3 className="font-semibold text-base">Actions Required</h3>
+						<PortfolioDescriptionTooltip
+							label="About Actions Required"
+							text="Renewal, payment, and deal follow-up items stay grouped here so the rail remains an operational surface instead of an inbox."
+						/>
 					</div>
-					<p className="text-muted-foreground text-sm leading-6">
-						Renewal, payment, and deal follow-up items stay grouped here so the
-						rail remains an operational surface instead of an inbox.
-					</p>
 				</div>
 				<Badge variant="outline">
 					{hasItems
@@ -72,9 +75,9 @@ export function ActionsRail({
 									action.prefillContext
 								)}
 								key={action.id}
+								mode={mode}
 								onOpenDetails={onOpenDetails}
 								onPrefill={onPrefill}
-								portalId={portalId}
 							/>
 						))}
 					</div>

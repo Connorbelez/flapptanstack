@@ -43,6 +43,27 @@ export type ReschedulePlanEntryResult =
 			requestedAt: number;
 	  };
 
+export type CorrectPlanEntryScheduledDateResult =
+	| {
+			outcome: "corrected";
+			planEntryId: Id<"collectionPlanEntries">;
+			previousScheduledDate: number;
+			newScheduledDate: number;
+			requestedAt: number;
+	  }
+	| {
+			outcome: "rejected";
+			planEntryId: Id<"collectionPlanEntries">;
+			reasonCode:
+				| "invalid_reason"
+				| "invalid_scheduled_date"
+				| "plan_entry_has_execution_state"
+				| "plan_entry_not_found"
+				| "plan_entry_not_correctable_state";
+			reasonDetail: string;
+			requestedAt: number;
+	  };
+
 function isFiniteTimestamp(value: number) {
 	return Number.isFinite(value) && Number.isInteger(value) && value > 0;
 }
@@ -90,6 +111,106 @@ export const reschedulePlanEntry = paymentMutation
 		});
 	})
 	.public();
+
+async function correctPlanEntryScheduledDateImpl(
+	ctx: RescheduleMutationContext,
+	args: {
+		newScheduledDate: number;
+		planEntryId: Id<"collectionPlanEntries">;
+		reason: string;
+	},
+	options: RescheduleActorOptions
+): Promise<CorrectPlanEntryScheduledDateResult> {
+	const reason = args.reason.trim();
+	if (reason.length === 0) {
+		return {
+			outcome: "rejected",
+			planEntryId: args.planEntryId,
+			reasonCode: "invalid_reason",
+			reasonDetail: "Correction reason must be a non-empty string.",
+			requestedAt: options.requestedAt,
+		};
+	}
+
+	if (!isFiniteTimestamp(args.newScheduledDate)) {
+		return {
+			outcome: "rejected",
+			planEntryId: args.planEntryId,
+			reasonCode: "invalid_scheduled_date",
+			reasonDetail: "Corrected scheduled date must be an integer timestamp.",
+			requestedAt: options.requestedAt,
+		};
+	}
+
+	const planEntry = await ctx.db.get(args.planEntryId);
+	if (!planEntry) {
+		return {
+			outcome: "rejected",
+			planEntryId: args.planEntryId,
+			reasonCode: "plan_entry_not_found",
+			reasonDetail: `Collection plan entry ${args.planEntryId} was not found.`,
+			requestedAt: options.requestedAt,
+		};
+	}
+
+	if (
+		planEntry.status !== "planned" &&
+		planEntry.status !== "provider_scheduled"
+	) {
+		return {
+			outcome: "rejected",
+			planEntryId: planEntry._id,
+			reasonCode: "plan_entry_not_correctable_state",
+			reasonDetail: `Plan entry is in status "${planEntry.status}" and cannot be date-corrected.`,
+			requestedAt: options.requestedAt,
+		};
+	}
+
+	const existingAttempt = await findLinkedCollectionAttemptId(ctx, planEntry);
+	if (
+		existingAttempt ||
+		planEntry.executedAt !== undefined ||
+		planEntry.collectionAttemptId !== undefined
+	) {
+		return {
+			outcome: "rejected",
+			planEntryId: planEntry._id,
+			reasonCode: "plan_entry_has_execution_state",
+			reasonDetail:
+				"Plan entry already has execution linkage and can no longer be date-corrected safely.",
+			requestedAt: options.requestedAt,
+		};
+	}
+
+	await ctx.db.patch(planEntry._id, {
+		scheduledDate: args.newScheduledDate,
+		rescheduleReason: reason,
+		rescheduleRequestedAt: options.requestedAt,
+		rescheduleRequestedByActorId: options.actorId,
+		rescheduleRequestedByActorType: options.actorType,
+	});
+
+	const result: CorrectPlanEntryScheduledDateResult = {
+		outcome: "corrected",
+		planEntryId: planEntry._id,
+		previousScheduledDate: planEntry.scheduledDate,
+		newScheduledDate: args.newScheduledDate,
+		requestedAt: options.requestedAt,
+	};
+	await logRescheduleAudit({
+		action: "collection_plan.reschedule_plan_entry",
+		actorId: options.actorId,
+		ctx,
+		metadata: {
+			...result,
+			reason,
+			status: planEntry.status,
+		},
+		resourceId: `${planEntry._id}`,
+		severity: "info",
+	});
+	return result;
+}
 
 async function reschedulePlanEntryImpl(
 	ctx: RescheduleMutationContext,
@@ -345,6 +466,31 @@ export const reschedulePlanEntryInternal = internalMutation({
 	},
 	handler: async (ctx, args): Promise<ReschedulePlanEntryResult> =>
 		reschedulePlanEntryImpl(
+			ctx,
+			{
+				newScheduledDate: args.newScheduledDate,
+				planEntryId: args.planEntryId,
+				reason: args.reason,
+			},
+			{
+				actorId: args.actorId,
+				actorType: args.actorType,
+				requestedAt: args.requestedAt ?? Date.now(),
+			}
+		),
+});
+
+export const correctPlanEntryScheduledDateInternal = internalMutation({
+	args: {
+		actorId: v.string(),
+		actorType: workoutPlanActorTypeValidator,
+		newScheduledDate: v.number(),
+		planEntryId: v.id("collectionPlanEntries"),
+		reason: v.string(),
+		requestedAt: v.optional(v.number()),
+	},
+	handler: async (ctx, args): Promise<CorrectPlanEntryScheduledDateResult> =>
+		correctPlanEntryScheduledDateImpl(
 			ctx,
 			{
 				newScheduledDate: args.newScheduledDate,

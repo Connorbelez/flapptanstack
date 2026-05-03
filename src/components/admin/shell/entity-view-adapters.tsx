@@ -1,9 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { AdminLenderPortfolioTab } from "#/components/admin/lenders/AdminLenderPortfolioTab";
 import { MortgageFilesDocumentAttachButton } from "#/components/admin/mortgages/MortgageFilesDocumentAttachButton";
 import type { AdminRelationNavigationTarget } from "#/lib/admin-relation-navigation";
-import type { Doc } from "../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type {
 	EntityViewAdapterContract,
 	NormalizedFieldDefinition,
@@ -76,6 +77,7 @@ export interface RecordSidebarEntityAdapter {
 	readonly renderPageActions?: (args: RecordTabRenderArgs) => ReactNode;
 	readonly renderPageAside?: (args: RecordTabRenderArgs) => ReactNode;
 	readonly renderPageSections?: (args: RecordTabRenderArgs) => ReactNode;
+	readonly renderPortfolioTab?: (args: RecordTabRenderArgs) => ReactNode;
 }
 
 interface DedicatedDetailLayoutDefinition {
@@ -398,6 +400,31 @@ const ROLLOUT_DETAIL_ADAPTERS: Partial<
 				record={record}
 			/>
 		),
+		renderPortfolioTab: ({ record, reference }) => {
+			const lenderLabel = String(
+				record?.fields.lenderName ??
+					record?.fields.organizationName ??
+					reference.recordId
+			);
+			const brokerLabel =
+				typeof record?.fields.brokerSummary === "string"
+					? record.fields.brokerSummary
+					: undefined;
+			const isMicLender =
+				lenderLabel.toLowerCase().includes("fairlend mic") ||
+				String(record?.fields.organizationName ?? "")
+					.toLowerCase()
+					.includes("fairlend mic");
+
+			return (
+				<AdminLenderPortfolioTab
+					brokerLabel={brokerLabel}
+					isMicLender={isMicLender}
+					lenderLabel={lenderLabel}
+					targetLenderId={reference.recordId as Id<"lenders">}
+				/>
+			);
+		},
 	},
 	brokers: {
 		renderDetailsTab: ({ fields, objectDefs, onNavigateRelation, record }) => (

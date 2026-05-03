@@ -32,6 +32,16 @@ export interface HostedCheckoutSession {
 	readonly url: string;
 }
 
+export interface RetrievedHostedCheckoutSession {
+	readonly amountTotal?: number;
+	readonly currency?: string;
+	readonly metadata: Record<string, string>;
+	readonly paymentIntentId?: string;
+	readonly paymentStatus?: string;
+	readonly status?: string;
+	readonly stripeCheckoutSessionId: string;
+}
+
 export interface RefundPaymentIntentRequest {
 	readonly amount: number;
 	readonly idempotencyKey: string;
@@ -59,6 +69,9 @@ export interface CheckoutProvider {
 	refundPaymentIntent(
 		request: RefundPaymentIntentRequest
 	): Promise<RefundPaymentIntentResult>;
+	retrieveHostedCheckoutSession(request: {
+		readonly stripeCheckoutSessionId: string;
+	}): Promise<RetrievedHostedCheckoutSession>;
 }
 
 export interface StripeCheckoutProviderConfig {
@@ -68,8 +81,13 @@ export interface StripeCheckoutProviderConfig {
 }
 
 interface StripeCheckoutSessionResponse {
+	readonly amount_total?: unknown;
+	readonly currency?: unknown;
 	readonly id?: unknown;
+	readonly metadata?: unknown;
 	readonly payment_intent?: unknown;
+	readonly payment_status?: unknown;
+	readonly status?: unknown;
 	readonly url?: unknown;
 }
 
@@ -80,6 +98,8 @@ interface StripeRefundResponse {
 const STRIPE_API_VERSION = "2025-10-29.clover";
 const DEFAULT_STRIPE_API_BASE_URL = "https://api.stripe.com";
 const LOCK_FEE_PRODUCT_NAME = "FairLend marketplace lock fee";
+const STRIPE_CHECKOUT_SESSION_ID_TEMPLATE = "{CHECKOUT_SESSION_ID}";
+const TRAILING_SLASH_PATTERN = /\/$/;
 
 function assertNonEmptyString(value: string, label: string): void {
 	if (value.trim().length === 0) {
@@ -110,7 +130,6 @@ export function buildStripeCheckoutSessionParams(
 	params.append("mode", "payment");
 	params.append("success_url", request.successUrl);
 	params.append("cancel_url", request.cancelUrl);
-	params.append("automatic_payment_methods[enabled]", "true");
 	params.append("line_items[0][quantity]", "1");
 	params.append(
 		"line_items[0][price_data][currency]",
@@ -151,6 +170,66 @@ function readStripeCheckoutSessionResponse(
 		...(typeof value.payment_intent === "string"
 			? { paymentIntentId: value.payment_intent }
 			: {}),
+	};
+}
+
+function readStripeMetadata(value: unknown): Record<string, string> {
+	if (value === undefined || value === null) {
+		return {};
+	}
+	if (typeof value !== "object") {
+		throw new Error("Stripe checkout response metadata must be an object");
+	}
+	const metadata: Record<string, string> = {};
+	for (const [key, item] of Object.entries(value)) {
+		if (typeof item !== "string") {
+			throw new Error(
+				"Stripe checkout response metadata values must be strings"
+			);
+		}
+		metadata[key] = item;
+	}
+	return metadata;
+}
+
+function optionalNumber(value: unknown, label: string): number | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (typeof value !== "number") {
+		throw new Error(`Stripe checkout response ${label} must be a number`);
+	}
+	return value;
+}
+
+function optionalString(value: unknown, label: string): string | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (typeof value !== "string") {
+		throw new Error(`Stripe checkout response ${label} must be a string`);
+	}
+	return value;
+}
+
+function readRetrievedStripeCheckoutSessionResponse(
+	value: StripeCheckoutSessionResponse
+): RetrievedHostedCheckoutSession {
+	if (typeof value.id !== "string" || value.id.trim().length === 0) {
+		throw new Error("Stripe checkout response missing id");
+	}
+	const paymentIntentId = optionalString(
+		value.payment_intent,
+		"payment_intent"
+	);
+	return {
+		amountTotal: optionalNumber(value.amount_total, "amount_total"),
+		currency: optionalString(value.currency, "currency"),
+		metadata: readStripeMetadata(value.metadata),
+		paymentStatus: optionalString(value.payment_status, "payment_status"),
+		status: optionalString(value.status, "status"),
+		stripeCheckoutSessionId: value.id,
+		...(paymentIntentId ? { paymentIntentId } : {}),
 	};
 }
 
@@ -198,6 +277,27 @@ export function createStripeCheckoutProvider(
 				response
 			)) as StripeCheckoutSessionResponse;
 			return readStripeCheckoutSessionResponse(parsed);
+		},
+		async retrieveHostedCheckoutSession(request) {
+			assertNonEmptyString(
+				request.stripeCheckoutSessionId,
+				"stripeCheckoutSessionId"
+			);
+			const encoded = encodeURIComponent(request.stripeCheckoutSessionId);
+			const response = await fetchImpl(
+				`${apiBaseUrl}/v1/checkout/sessions/${encoded}`,
+				{
+					headers: {
+						Authorization: `Bearer ${config.secretKey}`,
+						"Stripe-Version": STRIPE_API_VERSION,
+					},
+					method: "GET",
+				}
+			);
+			const parsed = (await parseStripeResponse(
+				response
+			)) as StripeCheckoutSessionResponse;
+			return readRetrievedStripeCheckoutSessionResponse(parsed);
 		},
 		async expireHostedCheckoutSession(request) {
 			assertNonEmptyString(
@@ -264,17 +364,42 @@ export function createStripeCheckoutProviderFromEnv(): CheckoutProvider {
 	return createStripeCheckoutProvider({ secretKey });
 }
 
-export function readCheckoutRedirectUrlsFromEnv(): {
+function readAppBaseUrlFromEnv(): string {
+	return (
+		process.env.FAIRLEND_APP_URL ??
+		process.env.SITE_URL ??
+		process.env.VITE_APP_URL ??
+		"http://app.localhost:3000"
+	).replace(TRAILING_SLASH_PATTERN, "");
+}
+
+function defaultCheckoutSuccessUrl(): string {
+	return `${readAppBaseUrlFromEnv()}/checkout/complete?stripeCheckoutSessionId=${STRIPE_CHECKOUT_SESSION_ID_TEMPLATE}`;
+}
+
+function defaultCheckoutCancelUrl(listingId?: string): string {
+	const listingPath =
+		listingId && listingId.trim().length > 0
+			? `/listings/${encodeURIComponent(listingId)}`
+			: "/listings";
+	return `${readAppBaseUrlFromEnv()}${listingPath}?checkout=abandoned`;
+}
+
+function configuredUrl(value: string | undefined): string | undefined {
+	return value && value.trim().length > 0 ? value : undefined;
+}
+
+export function readCheckoutRedirectUrlsFromEnv(args?: {
+	readonly listingId?: string;
+}): {
 	readonly cancelUrl: string;
 	readonly successUrl: string;
 } {
-	const successUrl = process.env.STRIPE_CHECKOUT_SUCCESS_URL;
-	const cancelUrl = process.env.STRIPE_CHECKOUT_CANCEL_URL;
-	if (!successUrl) {
-		throw new Error("STRIPE_CHECKOUT_SUCCESS_URL is not configured");
-	}
-	if (!cancelUrl) {
-		throw new Error("STRIPE_CHECKOUT_CANCEL_URL is not configured");
-	}
+	const successUrl =
+		configuredUrl(process.env.STRIPE_CHECKOUT_SUCCESS_URL) ??
+		defaultCheckoutSuccessUrl();
+	const cancelUrl =
+		configuredUrl(process.env.STRIPE_CHECKOUT_CANCEL_URL) ??
+		defaultCheckoutCancelUrl(args?.listingId);
 	return { successUrl, cancelUrl };
 }

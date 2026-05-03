@@ -171,13 +171,15 @@ export async function listPlatformLawyerCheckoutOptions(
 				now,
 			});
 			const hasHold = availability.some((day) => day.isOnHold);
+			const hasCapacity = activeDealCount < capacityLimit;
 			return {
 				...option,
 				activeDealCount,
 				availability,
 				capacityLimit,
 				capacityWarning: warningForCapacity(activeDealCount, capacityLimit),
-				selectable: option.eligibilityStatus === "eligible" && !hasHold,
+				selectable:
+					option.eligibilityStatus === "eligible" && !hasHold && hasCapacity,
 				...(slaTier && slaTier.status === "active"
 					? {
 							slaTier: {

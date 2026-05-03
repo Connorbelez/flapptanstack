@@ -22,7 +22,11 @@ type AuthFlow = "sign-in" | "sign-up";
 export const getHostAwareAuthUrl = createServerFn({ method: "GET" })
 	.middleware([portalRequestMiddleware])
 	.inputValidator(
-		(input: { flow: AuthFlow; redirectTarget?: string | undefined }) => input
+		(input: {
+			flow: AuthFlow;
+			invitationToken?: string | undefined;
+			redirectTarget?: string | undefined;
+		}) => input
 	)
 	.handler(async ({ context, data }) => {
 		const portalContext = await resolveRootPortalContext({
@@ -60,6 +64,7 @@ export const getHostAwareAuthUrl = createServerFn({ method: "GET" })
 
 		const authRequest = buildHostAwareAuthRequest({
 			authStateToken,
+			invitationToken: data.invitationToken,
 			portalContext,
 			redirectTarget: data.redirectTarget,
 		});

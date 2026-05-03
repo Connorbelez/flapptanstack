@@ -5,9 +5,11 @@ import { Component } from "react";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
-import type { Id } from "../../../../../convex/_generated/dataModel";
 import { formatPortfolioDate } from "../portfolio-formatters";
-import type { PortfolioLenderRenewalIntentChoice } from "../portfolio-types";
+import type {
+	LenderPortfolioQueryMode,
+	PortfolioLenderRenewalIntentChoice,
+} from "../portfolio-types";
 import { PartialExitForm } from "./partial-exit-form";
 import { RenewalStatus, type RenewalSurfaceVariant } from "./renewal-status";
 import {
@@ -23,8 +25,8 @@ import {
 } from "./use-renewal-actions";
 
 interface RenewalActionSurfaceProps {
+	mode: LenderPortfolioQueryMode;
 	mortgageId: string;
-	portalId: Id<"portals">;
 	variant?: RenewalSurfaceVariant;
 }
 
@@ -43,13 +45,13 @@ interface RenewalActionSurfaceViewState {
 }
 
 export function RenewalActionSurface({
+	mode,
 	mortgageId,
-	portalId,
 	variant = "full",
 }: RenewalActionSurfaceProps) {
 	const renewalActions = usePortfolioRenewalActions({
+		mode,
 		mortgageId,
-		portalId,
 	});
 
 	return (

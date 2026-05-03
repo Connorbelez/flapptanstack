@@ -36,7 +36,7 @@ export const Route = createFileRoute(LENDER_PORTFOLIO_ROUTE_PATH)({
 		parseLenderPortfolioSearch(search),
 });
 
-function LenderPortfolioRouteComponent() {
+export function LenderPortfolioRouteComponent() {
 	return (
 		<>
 			<Authenticated>
@@ -100,7 +100,7 @@ function LenderPortfolioRouteContent() {
 
 	return (
 		<LenderPortfolioPage
-			portalId={portalId}
+			queryMode={{ kind: "portal", portalId }}
 			search={search}
 			setSearch={(updater) =>
 				void navigate({

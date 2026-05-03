@@ -16,6 +16,7 @@ import {
 	useMemo,
 	useState,
 } from "react";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -132,10 +133,13 @@ export function EntityTableToolbar<TData>({
 	return (
 		<div className="space-y-3">
 			{title || description ? (
-				<div className="space-y-1">
+				<div className="flex items-center gap-1.5">
 					{title ? <h2 className="font-semibold text-lg">{title}</h2> : null}
 					{description ? (
-						<p className="text-muted-foreground text-sm">{description}</p>
+						<AdminDescriptionHelp
+							content={description}
+							label={`${title ?? "Table"} details`}
+						/>
 					) : null}
 				</div>
 			) : null}

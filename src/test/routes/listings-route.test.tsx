@@ -50,6 +50,10 @@ vi.mock("#/components/listings/MarketplaceListingsPage", () => ({
 	MarketplaceListingsPage: vi.fn(() => <div>Marketplace Listings</div>),
 }));
 
+vi.mock("#/components/listings/ListingPdfViewer", () => ({
+	ListingPdfViewer: () => <div data-testid="listing-pdf-viewer" />,
+}));
+
 afterEach(() => {
 	cleanup();
 	vi.restoreAllMocks();

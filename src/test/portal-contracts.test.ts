@@ -22,6 +22,10 @@ describe("portal host contracts", () => {
 			hostType: "local",
 			slug: MIC_PORTAL_SLUG,
 		});
+		expect(parsePortalHostCandidate("MIC.localhost:3001")).toEqual({
+			hostType: "local",
+			slug: MIC_PORTAL_SLUG,
+		});
 		expect(parsePortalHostCandidate(MIC_PORTAL_PRODUCTION_HOST)).toEqual({
 			hostType: "production",
 			slug: MIC_PORTAL_SLUG,

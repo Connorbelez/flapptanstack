@@ -135,7 +135,7 @@ function renderPage(overrides?: Partial<LenderPortfolioPageLeafStateOverrides>) 
 	return render(
 		<LenderPortfolioPage
 			leafStateOverrides={buildLeafStateOverrides(overrides)}
-			portalId={"portal_meridian" as never}
+			queryMode={{ kind: "portal", portalId: "portal_meridian" as never }}
 			search={{
 				paymentSort: "due-desc",
 				positionSort: "next-payment-soonest",

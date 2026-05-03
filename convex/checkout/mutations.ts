@@ -15,7 +15,7 @@ import {
 	clampMarketplaceFiltersToLenderConstraints,
 	resolveViewerLenderConstraintForPortal,
 } from "../listings/portalVisibility";
-import { getCanonicalMicSellerAccountForSale } from "../mortgages/micSaleAvailability";
+import { resolveSellerLotForReservation } from "../marketplace/saleInventory";
 import {
 	assertCheckoutTransitionAllowed,
 	CHECKOUT_ACTIVE_STATUSES,
@@ -373,13 +373,19 @@ function resolveLedgerLenderId(lender: LenderDoc): string {
 async function resolveSellerAccount(
 	ctx: MutationCtx,
 	args: {
+		actorAuthId: string;
+		effectiveDate: string;
+		idempotencyKey: string;
 		mortgageId: Id<"mortgages">;
 		requestedFractions: number;
 	}
 ): Promise<LedgerAccountDoc | null> {
 	return (
 		(
-			await getCanonicalMicSellerAccountForSale(ctx, {
+			await resolveSellerLotForReservation(ctx, {
+				actorAuthId: args.actorAuthId,
+				effectiveDate: args.effectiveDate,
+				idempotencyKey: args.idempotencyKey,
 				mortgageId: args.mortgageId,
 				requestedLedgerUnits: args.requestedFractions,
 			})
@@ -513,6 +519,13 @@ export const prepareMarketplaceCheckout = convex
 
 		const buyerLedgerLenderId = resolveLedgerLenderId(lender);
 		const sellerAccount = await resolveSellerAccount(ctx, {
+			actorAuthId: args.viewerAuthId,
+			effectiveDate: today(),
+			idempotencyKey: `marketplace-checkout:${String(
+				listingCheck._id
+			)}:${String(lender._id)}:${requestedFractions}:${selectedLawyerIdempotencyPart(
+				selectedLawyer
+			)}`,
 			mortgageId: listingCheck.mortgageId,
 			requestedFractions,
 		});

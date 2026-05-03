@@ -3,8 +3,8 @@ import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { authedAction } from "../../fluent";
 import {
+	canStartSigningForDealStatus,
 	EMBEDDED_SIGNING_LOCKED_BY_DEAL_STATUS_MESSAGE,
-	isDealStatusOpenForEmbeddedSigning,
 } from "./gates";
 import { getSignatureProvider } from "./provider";
 
@@ -68,7 +68,14 @@ export const createEmbeddedSigningSession = authedAction
 		if (!signableDocument) {
 			throw new ConvexError("Signable document envelope not found");
 		}
-		if (!isDealStatusOpenForEmbeddedSigning(signableDocument.dealStatus)) {
+		const hasActiveEnvelope =
+			signableDocument.envelope.status === "sent" ||
+			signableDocument.envelope.status === "partially_signed";
+		if (
+			!canStartSigningForDealStatus(signableDocument.dealStatus, {
+				hasActiveEnvelope,
+			})
+		) {
 			throw new ConvexError(EMBEDDED_SIGNING_LOCKED_BY_DEAL_STATUS_MESSAGE);
 		}
 

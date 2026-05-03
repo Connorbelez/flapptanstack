@@ -33,11 +33,19 @@ export interface LegalRepresentationStatusProjection {
 	readonly activeLawyerAccessCount: number;
 	readonly currentInvitation: {
 		readonly acceptedAt: number | null;
+		readonly deliveredAt: number | null;
+		readonly deliveryError: string | null;
+		readonly deliveryProvider:
+			| Doc<"lawyerInvitations">["deliveryProvider"]
+			| null;
+		readonly deliveryStatus: Doc<"lawyerInvitations">["deliveryStatus"] | null;
 		readonly expiresAt: number | null;
 		readonly invitationId: Id<"lawyerInvitations"> | null;
+		readonly lastDeliveryAttemptAt: number | null;
 		readonly status: Doc<"lawyerInvitations">["status"] | "none";
 		readonly targetEmail: string | null;
 		readonly updatedAt: number | null;
+		readonly workosInvitationId: string | null;
 	};
 	readonly gate: {
 		readonly message: string;
@@ -45,6 +53,14 @@ export interface LegalRepresentationStatusProjection {
 	};
 	readonly kind: LegalRepresentationStatusKind;
 	readonly label: string;
+	readonly overrideEvidence?: {
+		readonly attachmentCount: number;
+		readonly createdAt: number;
+		readonly engagementId: Id<"representationEngagements"> | null;
+		readonly hasAttachments: boolean;
+		readonly overrideEvidenceId: Id<"representationOverrideEvidence">;
+		readonly transitionJournalEntryId: string | null;
+	} | null;
 	readonly selectedLawyer: {
 		readonly email: string | null;
 		readonly lawyerId: string | null;
@@ -227,6 +243,8 @@ function actionAvailability(args: {
 	const beforeVerified = args.deal.status === "lawyerOnboarding.pending";
 	const beforeDocumentReview = !isDocumentReviewOrAfter(args.deal.status);
 	const guest = args.deal.lawyerType === "guest_lawyer";
+	const hasGuestLawyerSelection =
+		guest && args.deal.selectedLawyer?.type === "guest_lawyer";
 	const pendingInvitation =
 		guest &&
 		args.invitation?.status === "pending" &&
@@ -235,6 +253,9 @@ function actionAvailability(args: {
 			now: args.now,
 		});
 	const replaceAllowed = beforeVerified || args.deal.status === "initiated";
+	const canSendOrResendInvitation =
+		(beforeVerified || args.deal.status === "initiated") &&
+		(hasGuestLawyerSelection || pendingInvitation);
 
 	return {
 		changeGuestEmail: pendingInvitation
@@ -254,12 +275,12 @@ function actionAvailability(args: {
 							? "Lawyer replacement after verification requires a separate cancellation or reissue flow."
 							: "Representation is already confirmed for this deal."
 					),
-		resendInvitation: pendingInvitation
+		resendInvitation: canSendOrResendInvitation
 			? managementAction(true)
 			: managementAction(
 					false,
 					guest
-						? "Only pending, unexpired guest invitations can be resent."
+						? "Guest invitations can only be sent before lawyer verification."
 						: "Only guest lawyer invitations can be resent."
 				),
 	};
@@ -273,28 +294,38 @@ export async function buildLegalRepresentationStatusProjection(
 	}
 ): Promise<LegalRepresentationStatusProjection> {
 	const now = args.now ?? Date.now();
-	const [invitations, accessRows, verificationGate, confirmationGate] =
-		await Promise.all([
-			ctx.db
-				.query("lawyerInvitations")
-				.withIndex("by_deal", (query) => query.eq("dealId", args.deal._id))
-				.collect(),
-			ctx.db
-				.query("dealAccess")
-				.withIndex("by_deal", (query) => query.eq("dealId", args.deal._id))
-				.collect(),
-			evaluateDealLegalGate(ctx, {
-				checkpoint: "LAWYER_VERIFIED",
-				deal: args.deal,
-				now,
-			}),
-			evaluateDealLegalGate(ctx, {
-				access: { requireActiveAccess: true },
-				checkpoint: "REPRESENTATION_CONFIRMED",
-				deal: args.deal,
-				now,
-			}),
-		]);
+	const [
+		invitations,
+		accessRows,
+		verificationGate,
+		confirmationGate,
+		overrideEvidence,
+	] = await Promise.all([
+		ctx.db
+			.query("lawyerInvitations")
+			.withIndex("by_deal", (query) => query.eq("dealId", args.deal._id))
+			.collect(),
+		ctx.db
+			.query("dealAccess")
+			.withIndex("by_deal", (query) => query.eq("dealId", args.deal._id))
+			.collect(),
+		evaluateDealLegalGate(ctx, {
+			checkpoint: "LAWYER_VERIFIED",
+			deal: args.deal,
+			now,
+		}),
+		evaluateDealLegalGate(ctx, {
+			access: { requireActiveAccess: true },
+			checkpoint: "REPRESENTATION_CONFIRMED",
+			deal: args.deal,
+			now,
+		}),
+		ctx.db
+			.query("representationOverrideEvidence")
+			.withIndex("by_deal", (query) => query.eq("dealId", args.deal._id))
+			.order("desc")
+			.first(),
+	]);
 	const invitation = latestInvitation(invitations);
 	const kind = statusKind({
 		confirmationGateDecision: confirmationGate.decision,
@@ -314,11 +345,17 @@ export async function buildLegalRepresentationStatusProjection(
 		).length,
 		currentInvitation: {
 			acceptedAt: invitation?.acceptedAt ?? null,
+			deliveredAt: invitation?.deliveredAt ?? null,
+			deliveryError: invitation?.deliveryError ?? null,
+			deliveryProvider: invitation?.deliveryProvider ?? null,
+			deliveryStatus: invitation?.deliveryStatus ?? null,
 			expiresAt: invitation?.expiresAt ?? null,
 			invitationId: invitation?._id ?? null,
+			lastDeliveryAttemptAt: invitation?.lastDeliveryAttemptAt ?? null,
 			status: invitation?.status ?? "none",
 			targetEmail: invitation?.targetEmail ?? null,
 			updatedAt: invitation?.updatedAt ?? null,
+			workosInvitationId: invitation?.workosInvitationId ?? null,
 		},
 		gate: {
 			message:
@@ -332,6 +369,17 @@ export async function buildLegalRepresentationStatusProjection(
 		},
 		kind,
 		label: labelForKind(kind),
+		overrideEvidence: overrideEvidence
+			? {
+					attachmentCount: overrideEvidence.attachmentIds?.length ?? 0,
+					createdAt: overrideEvidence.createdAt,
+					engagementId: overrideEvidence.engagementId ?? null,
+					hasAttachments: (overrideEvidence.attachmentIds?.length ?? 0) > 0,
+					overrideEvidenceId: overrideEvidence._id,
+					transitionJournalEntryId:
+						overrideEvidence.transitionJournalEntryId ?? null,
+				}
+			: null,
 		selectedLawyer: {
 			email: args.deal.selectedLawyer?.email ?? null,
 			lawyerId: args.deal.lawyerId ?? null,

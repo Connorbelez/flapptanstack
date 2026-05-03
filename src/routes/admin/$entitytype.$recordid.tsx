@@ -10,6 +10,7 @@ export const Route = createFileRoute("/admin/$entitytype/$recordid")({
 
 function RouteComponent() {
 	const { entitytype, recordid } = Route.useParams();
+	const { detailTab } = Route.useSearch();
 
 	if (isReservedAdminRouteSegment(entitytype)) {
 		return <AdminNotFoundState entityType={entitytype} variant="entity" />;
@@ -19,5 +20,11 @@ function RouteComponent() {
 		return <VelocityWorkspacePage workspaceId={recordid} />;
 	}
 
-	return <AdminRecordDetailPage entityType={entitytype} recordId={recordid} />;
+	return (
+		<AdminRecordDetailPage
+			entityType={entitytype}
+			initialTab={detailTab}
+			recordId={recordid}
+		/>
+	);
 }

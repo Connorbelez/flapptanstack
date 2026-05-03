@@ -4,10 +4,14 @@ import { useCallback, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type {
+	LenderPortfolioQueryMode,
 	PortfolioLenderRenewalIntentChoice,
 	PortfolioLenderRenewalIntentRecord,
 } from "../portfolio-types";
-import { lenderPortfolioRenewalIntentQueryOptions } from "../query-options";
+import {
+	adminLenderPortfolioRenewalIntentQueryOptions,
+	lenderPortfolioRenewalIntentQueryOptions,
+} from "../query-options";
 
 function toErrorMessage(error: unknown, fallback: string) {
 	return error instanceof Error ? error.message : fallback;
@@ -28,15 +32,30 @@ export interface UsePortfolioRenewalActionsResult {
 }
 
 export function usePortfolioRenewalActions(args: {
+	mode: LenderPortfolioQueryMode;
 	mortgageId: string;
-	portalId: Id<"portals">;
 }): UsePortfolioRenewalActionsResult {
 	const signalLenderRenewalIntent = useMutation(
 		api.renewals.portal.signalLenderRenewalIntent
 	);
-	const renewalQuery = useQuery({
-		...lenderPortfolioRenewalIntentQueryOptions(args.portalId, args.mortgageId),
-	});
+	const signalAdminLenderRenewalIntent = useMutation(
+		api.admin.portfolio.renewals.signalAdminLenderRenewalIntent
+	);
+	const renewalQueryOptions =
+		args.mode.kind === "admin"
+			? adminLenderPortfolioRenewalIntentQueryOptions(
+					args.mode.targetLenderId,
+					args.mortgageId
+				)
+			: lenderPortfolioRenewalIntentQueryOptions(
+					args.mode.portalId,
+					args.mortgageId
+				);
+	const renewalQuery = useQuery(
+		renewalQueryOptions as unknown as Parameters<
+			typeof useQuery<PortfolioLenderRenewalIntentRecord>
+		>[0]
+	);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [submitErrorMessage, setSubmitErrorMessage] = useState<
 		string | undefined
@@ -48,12 +67,24 @@ export function usePortfolioRenewalActions(args: {
 			setSubmitErrorMessage(undefined);
 
 			try {
-				await signalLenderRenewalIntent({
-					intent,
-					mortgageId: args.mortgageId as Id<"mortgages">,
-					partialExitFractions,
-					portalId: args.portalId,
-				});
+				if (args.mode.kind === "admin") {
+					await signalAdminLenderRenewalIntent({
+						intent,
+						mortgageId: args.mortgageId as Id<"mortgages">,
+						partialExitFractions,
+						reason:
+							args.mode.actionReason ??
+							"Admin submitted lender renewal decision from portfolio tab.",
+						targetLenderId: args.mode.targetLenderId,
+					});
+				} else {
+					await signalLenderRenewalIntent({
+						intent,
+						mortgageId: args.mortgageId as Id<"mortgages">,
+						partialExitFractions,
+						portalId: args.mode.portalId,
+					});
+				}
 			} catch (error) {
 				setSubmitErrorMessage(
 					toErrorMessage(
@@ -65,7 +96,12 @@ export function usePortfolioRenewalActions(args: {
 				setIsSubmitting(false);
 			}
 		},
-		[args.mortgageId, args.portalId, signalLenderRenewalIntent]
+		[
+			args.mortgageId,
+			args.mode,
+			signalAdminLenderRenewalIntent,
+			signalLenderRenewalIntent,
+		]
 	);
 
 	return {

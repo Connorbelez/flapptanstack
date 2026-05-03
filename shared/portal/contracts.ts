@@ -15,6 +15,7 @@ export const PORTAL_RESERVED_SLUGS = ["app", "api", "admin", "staging", "www"];
 const TRAILING_DOT_REGEX = /\.$/;
 const PRODUCTION_PORTAL_SUFFIX = ".fairlend.ca";
 const LOCAL_PORTAL_SUFFIX = ".localhost:3000";
+const LOCAL_PORTAL_HOST_REGEX = /^([a-z0-9-]+)\.localhost(?::\d+)?$/;
 const RESERVED_PORTAL_SLUG_SET = new Set<string>(PORTAL_RESERVED_SLUGS);
 const MARKETING_HOST_SET = new Set<string>([
 	FAIRLEND_MARKETING_PRODUCTION_HOST,
@@ -92,8 +93,9 @@ export function parsePortalHostCandidate(host: string): {
 			: null;
 	}
 
-	if (normalizedHost.endsWith(LOCAL_PORTAL_SUFFIX)) {
-		const slug = normalizedHost.slice(0, -LOCAL_PORTAL_SUFFIX.length);
+	const localPortalHost = normalizedHost.match(LOCAL_PORTAL_HOST_REGEX);
+	if (localPortalHost) {
+		const slug = localPortalHost[1];
 		return slug && !slug.includes(".") ? { hostType: "local", slug } : null;
 	}
 

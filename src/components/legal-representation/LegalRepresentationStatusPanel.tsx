@@ -114,7 +114,14 @@ export function LegalRepresentationStatusPanel({
 					value={
 						projection.currentInvitation.status === "none"
 							? "No invitation"
-							: actionTitle(projection.currentInvitation.status)
+							: [
+									actionTitle(projection.currentInvitation.status),
+									projection.currentInvitation.deliveryStatus
+										? `Delivery ${actionTitle(projection.currentInvitation.deliveryStatus)}`
+										: null,
+								]
+									.filter(Boolean)
+									.join(" · ")
 					}
 				/>
 				<StatusFact

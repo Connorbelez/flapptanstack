@@ -4,6 +4,7 @@ import { AdminPageMetadataProvider } from "#/components/admin/shell/AdminPageMet
 import { AdminRouteErrorBoundary } from "#/components/admin/shell/AdminRouteStates";
 import DashboardShell from "#/components/admin/shell/DashboardShell";
 import { RecordSidebarProvider } from "#/components/admin/shell/RecordSidebarProvider";
+import { TooltipProvider } from "#/components/ui/tooltip";
 import { parseAdminDetailSearch } from "#/lib/admin-detail-search";
 import { canAccessAdminPath } from "#/lib/auth";
 import { buildSignInRedirect } from "#/lib/auth-redirect";
@@ -28,10 +29,12 @@ function AdminPage() {
 	return (
 		<AdminPageMetadataProvider>
 			<RecordSidebarProvider>
-				<DashboardShell>
-					<Outlet />
-					<AdminDetailSheet />
-				</DashboardShell>
+				<TooltipProvider>
+					<DashboardShell>
+						<Outlet />
+						<AdminDetailSheet />
+					</DashboardShell>
+				</TooltipProvider>
 			</RecordSidebarProvider>
 		</AdminPageMetadataProvider>
 	);

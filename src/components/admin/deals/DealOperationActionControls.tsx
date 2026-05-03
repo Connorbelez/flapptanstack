@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { CalendarClock, CheckCircle2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Button } from "#/components/ui/button";
 import {
 	Dialog,
@@ -213,8 +214,14 @@ export function DealOperationActionControls({
 					{activeAction ? (
 						<>
 							<DialogHeader>
-								<DialogTitle>{actionTitle(activeAction)}</DialogTitle>
-								<DialogDescription>
+								<div className="flex items-center gap-1.5">
+									<DialogTitle>{actionTitle(activeAction)}</DialogTitle>
+									<AdminDescriptionHelp
+										content="This action is submitted through the governed deal transition path or a subordinate evidence mutation."
+										label={`${actionTitle(activeAction)} details`}
+									/>
+								</div>
+								<DialogDescription className="sr-only">
 									This action is submitted through the governed deal transition
 									path or a subordinate evidence mutation.
 								</DialogDescription>

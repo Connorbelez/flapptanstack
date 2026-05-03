@@ -145,7 +145,7 @@ describe("renewal ui components", () => {
 		const view = render(
 			<RenewalActionSurface
 				mortgageId={MORTGAGE_ID}
-				portalId={PORTAL_ID}
+				mode={{ kind: "portal", portalId: PORTAL_ID }}
 				variant="full"
 			/>
 		);
@@ -170,7 +170,7 @@ describe("renewal ui components", () => {
 		view.rerender(
 			<RenewalActionSurface
 				mortgageId={MORTGAGE_ID}
-				portalId={PORTAL_ID}
+				mode={{ kind: "portal", portalId: PORTAL_ID }}
 				variant="full"
 			/>
 		);
@@ -202,7 +202,7 @@ describe("renewal ui components", () => {
 		render(
 			<RenewalActionSurface
 				mortgageId={MORTGAGE_ID}
-				portalId={PORTAL_ID}
+				mode={{ kind: "portal", portalId: PORTAL_ID }}
 				variant="full"
 			/>
 		);

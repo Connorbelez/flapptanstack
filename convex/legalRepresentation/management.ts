@@ -9,7 +9,10 @@ import {
 import { grantDealAccess } from "../deals/mutations";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
 import { buildSource } from "../engine/commands";
-import { authedMutation, type Viewer } from "../fluent";
+import { executeTransition } from "../engine/transition";
+import { adminMutation, authedMutation, type Viewer } from "../fluent";
+import { recordSignedRepresentationEngagementRow } from "./engagements";
+import { evaluateDealLegalGate, type LegalGateResult } from "./gates";
 import {
 	createGuestInvitationDelivery,
 	getLatestGuestInvitationForDeal,
@@ -73,6 +76,20 @@ async function latestPendingInvitation(
 	return invitation;
 }
 
+async function latestReusableInvitation(
+	ctx: LegalManagementQueryCtx,
+	args: { readonly dealId: Id<"deals">; readonly now: number }
+) {
+	const invitation = await getLatestGuestInvitationForDeal(ctx, args.dealId);
+	if (
+		invitation?.status === "pending" &&
+		!isInvitationExpired({ expiresAt: invitation.expiresAt, now: args.now })
+	) {
+		return invitation;
+	}
+	return null;
+}
+
 async function revokeActiveLawyerAccessForDeal(
 	ctx: LegalManagementMutationCtx,
 	args: { readonly dealId: Id<"deals">; readonly now: number }
@@ -132,6 +149,52 @@ function selectedLawyerAccessTarget(selectedLawyer: SelectedLawyerSnapshot) {
 		lawyerType: selectedLawyer.type,
 		userId: normalizedEmail,
 	};
+}
+
+function requireNonEmptyTrimmed(value: string, fieldName: string) {
+	const trimmed = value.trim();
+	if (trimmed.length === 0) {
+		throw new ConvexError(`${fieldName} is required`);
+	}
+	return trimmed;
+}
+
+function resolveSelectedLawyerAuthId(deal: Doc<"deals">) {
+	if (deal.lawyerId && deal.lawyerId.trim().length > 0) {
+		if (deal.selectedLawyer?.type === "guest_lawyer") {
+			return normalizeLawyerEmail(deal.lawyerId);
+		}
+		return deal.lawyerId;
+	}
+	if (deal.selectedLawyer?.type === "platform_lawyer") {
+		return deal.selectedLawyer.lawyerId;
+	}
+	if (deal.selectedLawyer?.type === "guest_lawyer") {
+		return normalizeLawyerEmail(deal.selectedLawyer.email);
+	}
+	return null;
+}
+
+async function assertDocumentAssetsExist(
+	ctx: LegalManagementMutationCtx,
+	attachmentIds: readonly Id<"documentAssets">[]
+) {
+	for (const attachmentId of attachmentIds) {
+		const asset = await ctx.db.get(attachmentId);
+		if (!asset) {
+			throw new ConvexError(
+				`Representation override attachment not found: ${String(attachmentId)}`
+			);
+		}
+	}
+}
+
+function throwLegalGateBlocked(gate: LegalGateResult): never {
+	throw new ConvexError({
+		code: "LEGAL_REPRESENTATION_GATE_BLOCKED",
+		message: gate.message,
+		reasonCodes: [...gate.reasonCodes],
+	});
 }
 
 async function recordLegalManagementAudit(
@@ -204,6 +267,102 @@ function statusAuditSnapshot(projection: {
 	};
 }
 
+export const adminOverrideRepresentationConfirmation = adminMutation
+	.input({
+		attachmentIds: v.optional(v.array(v.id("documentAssets"))),
+		dealId: v.id("deals"),
+		evidenceNote: v.string(),
+		reason: v.string(),
+	})
+	.handler(async (ctx, args) => {
+		const reason = requireNonEmptyTrimmed(args.reason, "Override reason");
+		const evidenceNote = requireNonEmptyTrimmed(
+			args.evidenceNote,
+			"Override evidence note"
+		);
+		const attachmentIds = args.attachmentIds ?? [];
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal) {
+			throw new ConvexError("Deal not found");
+		}
+		if (deal.status !== "lawyerOnboarding.verified") {
+			throw new ConvexError(
+				`Admin representation override requires deal status lawyerOnboarding.verified; found ${deal.status}`
+			);
+		}
+		if (!deal.selectedLawyer) {
+			throw new ConvexError(
+				"Admin representation override requires a selected lawyer"
+			);
+		}
+		const lawyerAuthId = resolveSelectedLawyerAuthId(deal);
+		if (!lawyerAuthId) {
+			throw new ConvexError(
+				"Admin representation override requires selected lawyer auth identity"
+			);
+		}
+		await assertDocumentAssetsExist(ctx, attachmentIds);
+		const now = Date.now();
+		const overrideEvidenceId = await ctx.db.insert(
+			"representationOverrideEvidence",
+			{
+				adminActorId: ctx.viewer.authId,
+				attachmentIds,
+				createdAt: now,
+				dealId: args.dealId,
+				evidenceNote,
+				reason,
+				selectedLawyerSnapshot: deal.selectedLawyer,
+			}
+		);
+		const engagementId = await recordSignedRepresentationEngagementRow(ctx, {
+			createdAt: now,
+			dealId: args.dealId,
+			evidenceHash: `sha256:admin-override:${overrideEvidenceId}`,
+			lawyerAuthId,
+			provider: "manual_admin",
+			signedAt: now,
+		});
+		const gateDeal =
+			deal.lawyerId === lawyerAuthId
+				? deal
+				: { ...deal, lawyerId: lawyerAuthId };
+		const gate = await evaluateDealLegalGate(ctx, {
+			access: { requireActiveAccess: true },
+			checkpoint: "REPRESENTATION_CONFIRMED",
+			deal: gateDeal,
+		});
+		if (gate.decision !== "allow") {
+			throwLegalGateBlocked(gate);
+		}
+		const transition = await executeTransition(ctx, {
+			entityId: args.dealId,
+			entityType: "deal",
+			eventType: "REPRESENTATION_CONFIRMED",
+			source: buildSource(ctx.viewer, "admin_dashboard"),
+		});
+		if (!transition.success) {
+			throw new ConvexError(
+				transition.reason ?? "Representation confirmation transition rejected"
+			);
+		}
+		if (!transition.journalEntryId) {
+			throw new ConvexError(
+				"Representation confirmation transition did not return a journal entry"
+			);
+		}
+		await ctx.db.patch(overrideEvidenceId, {
+			engagementId,
+			transitionJournalEntryId: transition.journalEntryId,
+		});
+		return {
+			engagementId,
+			overrideEvidenceId,
+			transition,
+		};
+	})
+	.public();
+
 export const resendLegalRepresentationInvitation = authedMutation
 	.input({
 		baseUrl: v.optional(v.string()),
@@ -221,25 +380,31 @@ export const resendLegalRepresentationInvitation = authedMutation
 		const before = statusAuditSnapshot(
 			await buildLegalRepresentationStatusProjection(ctx, { deal, now })
 		);
-		const invitation = await latestPendingInvitation(ctx, {
+		const invitation = await latestReusableInvitation(ctx, {
 			dealId: args.dealId,
 			now,
 		});
+		if (!invitation && deal.selectedLawyer?.type !== "guest_lawyer") {
+			throw new ConvexError("A guest lawyer selection is required");
+		}
 		const token = await createGuestInvitationDelivery(ctx, {
 			baseUrl: args.baseUrl,
 			createdBy: ctx.viewer.authId,
 			deal,
-			expiresAt: invitation.expiresAt,
+			expiresAt: invitation?.expiresAt,
 			now,
+			scheduleDelivery: true,
 			selectedLawyer:
-				invitation.selectedLawyerSnapshot.type === "guest_lawyer"
+				invitation?.selectedLawyerSnapshot.type === "guest_lawyer"
 					? invitation.selectedLawyerSnapshot
 					: undefined,
-			targetEmail: invitation.targetEmail,
+			targetEmail: invitation?.targetEmail,
+			workosInvitationId: invitation?.workosInvitationId,
 		});
 		await revokeActiveGuestInvitationsForDeal(ctx, {
 			dealId: args.dealId,
 			exceptInvitationId: token.invitationId,
+			exceptWorkosInvitationId: invitation?.workosInvitationId,
 			now,
 		});
 		const afterDeal = (await ctx.db.get(args.dealId)) ?? deal;
@@ -256,12 +421,12 @@ export const resendLegalRepresentationInvitation = authedMutation
 			eventType: "LEGAL_REPRESENTATION_INVITATION_RESENT",
 			linkedRecordIds: {
 				newInvitationId: String(token.invitationId),
-				previousInvitationId: String(invitation._id),
+				previousInvitationId: invitation ? String(invitation._id) : undefined,
 			},
 			now,
 			payload: {
-				expiresAt: invitation.expiresAt,
-				targetEmail: invitation.targetEmail,
+				expiresAt: invitation?.expiresAt,
+				targetEmail: invitation?.targetEmail ?? deal.selectedLawyer?.email,
 			},
 		});
 		return token;
@@ -325,6 +490,7 @@ export const changeLegalRepresentationGuestEmail = authedMutation
 			deal: patchedDeal,
 			expiresAt: invitation.expiresAt,
 			now,
+			scheduleDelivery: true,
 			selectedLawyer: selectedLawyer as Extract<
 				SelectedLawyerSnapshot,
 				{ type: "guest_lawyer" }
@@ -413,6 +579,7 @@ export const replaceLegalRepresentationLawyer = authedMutation
 						createdBy: ctx.viewer.authId,
 						deal: patchedDeal,
 						now,
+						scheduleDelivery: true,
 						selectedLawyer: args.newSelectedLawyer,
 						targetEmail: args.newSelectedLawyer.email,
 					})

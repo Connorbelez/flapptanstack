@@ -2,7 +2,9 @@ import type { AdminDetailSearch } from "#/lib/admin-detail-search";
 
 export interface MetricItem {
 	description?: string;
+	isActive?: boolean;
 	label: string;
+	onSelect?: () => void;
 	tone?: "critical" | "default" | "positive" | "warning";
 	value: string;
 }
@@ -26,7 +28,10 @@ export interface DashboardSearchState<TTab extends string>
 	dateFrom?: string;
 	dateTo?: string;
 	lenderId?: string;
+	metricFilter?: string;
 	mortgageId?: string;
+	scheduleBorrowerId?: string;
+	scheduleMortgageId?: string;
 	search?: string;
 	selectedCheck?: string;
 	selectedId?: string;
@@ -73,6 +78,9 @@ export interface CollectionAttemptReconciliationSummary {
 
 export interface PaymentCollectionAttemptRow {
 	amount: number;
+	borrowerEmail: string | null;
+	borrowerId: string | null;
+	borrowerLabel: string | null;
 	cancelledAt?: number;
 	collectionAttemptId: string;
 	confirmedAt?: number;
@@ -84,6 +92,7 @@ export interface PaymentCollectionAttemptRow {
 	initiatedAt: number;
 	method: string;
 	mortgageId: string;
+	mortgageLabel: string;
 	obligationIds: string[];
 	planEntryId: string;
 	reconciliation?: CollectionAttemptReconciliationSummary | null;
@@ -106,6 +115,9 @@ export interface PaymentCollectionPlanEntryRow {
 		ruleId?: string;
 		signalSource?: string;
 	};
+	borrowerEmail: string | null;
+	borrowerId: string | null;
+	borrowerLabel: string | null;
 	collectionAttemptId?: string;
 	createdAt: number;
 	createdByRule?: {
@@ -118,6 +130,7 @@ export interface PaymentCollectionPlanEntryRow {
 	} | null;
 	executedAt?: number;
 	executionIdempotencyKey?: string;
+	executionMode?: "app_owned" | "provider_managed";
 	lineage: {
 		rescheduledFromId?: string;
 		retryOfId?: string;
@@ -127,6 +140,7 @@ export interface PaymentCollectionPlanEntryRow {
 	};
 	method: string;
 	mortgageId: string;
+	mortgageLabel: string;
 	obligationIds: string[];
 	planEntryId: string;
 	relatedAttempt?: PaymentCollectionAttemptRow | null;

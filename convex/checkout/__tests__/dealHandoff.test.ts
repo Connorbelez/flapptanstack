@@ -8,6 +8,10 @@ import { api, internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import { canAccessDeal } from "../../auth/resourceChecks";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
+import {
+	setWorkosProvisioningForTests,
+	type WorkosProvisioning,
+} from "../../engine/effects/workosProvisioning";
 import { FAIRLEND_MIC_LENDER_EMAIL } from "../../platform/defaultOriginationOwnerContract";
 import schema from "../../schema";
 import { seedAuthIdFromEmail } from "../../seed/seedHelpers";
@@ -229,8 +233,8 @@ async function setupCheckoutFixture(t: TestHarness) {
 		await ctx.db.insert("organizationMemberships", {
 			organizationName: "Handoff Law Firm",
 			organizationWorkosId: "org_handoff_lawfirm",
-			roleSlug: "platform_lawyer",
-			roleSlugs: ["platform_lawyer"],
+			roleSlug: "lawyer",
+			roleSlugs: ["lawyer"],
 			status: "active",
 			userWorkosId: selectedPlatformLawyer().lawyerId,
 			workosId: "om_handoff_platform_lawyer",
@@ -412,6 +416,57 @@ async function runDealHandoff(
 	}
 }
 
+function installWorkosInvitationCapture() {
+	const sentInvitations: Array<{
+		email: string;
+		organizationId?: string;
+		roleSlug?: string;
+	}> = [];
+	const provisioning = {
+		createOrganization: async () => ({ id: "org_unused" }),
+		createOrganizationMembership: async () => ({ id: "om_unused" }),
+		createUser: async (args: { email: string }) => ({
+			email: args.email,
+			id: "user_unused",
+		}),
+		findInvitationByToken: async (token: string) => ({
+			email: "gail.guest@example.com",
+			id: `invitation_${token}`,
+			state: "pending",
+			token,
+		}),
+		listUsers: async () => [],
+		resendInvitation: async (invitationId: string) => ({
+			email: "gail.guest@example.com",
+			id: invitationId,
+			state: "pending",
+		}),
+		revokeInvitation: async (invitationId: string) => ({
+			email: "gail.guest@example.com",
+			id: invitationId,
+			state: "revoked",
+		}),
+		sendInvitation: async (args: {
+			email: string;
+			organizationId?: string;
+			roleSlug?: string;
+		}) => {
+			sentInvitations.push(args);
+			return {
+				email: args.email,
+				id: `workos_invitation_${sentInvitations.length}`,
+				state: "pending",
+				token: `workos_token_${sentInvitations.length}`,
+			};
+		},
+	} as unknown as WorkosProvisioning;
+	setWorkosProvisioningForTests(provisioning);
+	return {
+		sentInvitations,
+		reset: () => setWorkosProvisioningForTests(null),
+	};
+}
+
 function buildStripeSignature(body: string) {
 	const timestamp = Math.floor(Date.now() / 1000);
 	const payload = `${timestamp}.${body}`;
@@ -440,6 +495,7 @@ async function runStripeWebhook(
 				currency: "cad",
 				metadata: args.metadata,
 				payment_intent: "pi_handoff_123",
+				payment_status: "paid",
 			},
 		},
 	};
@@ -722,6 +778,7 @@ describe("paid checkout to deal handoff", () => {
 
 	it("uses guest lawyer snapshot for deal access and package signatories", async () => {
 		const t = createHarness();
+		const workos = installWorkosInvitationCapture();
 		const { prepared, selectedLawyer } = await prepareCompletedCheckout(t, {
 			selectedLawyer: {
 				...selectedGuestLawyer(),
@@ -729,7 +786,9 @@ describe("paid checkout to deal handoff", () => {
 			},
 		});
 
-		const result = await runDealHandoff(t, prepared.checkoutSessionId);
+		const result = await runDealHandoff(t, prepared.checkoutSessionId).finally(
+			workos.reset
+		);
 
 		expect(result).toMatchObject({ ok: true });
 		if (!result.ok) {
@@ -741,7 +800,11 @@ describe("paid checkout to deal handoff", () => {
 				.query("dealAccess")
 				.withIndex("by_deal", (q) => q.eq("dealId", result.dealId))
 				.collect();
-			return { access, deal };
+			const invitations = await ctx.db
+				.query("lawyerInvitations")
+				.withIndex("by_deal", (q) => q.eq("dealId", result.dealId))
+				.collect();
+			return { access, deal, invitations };
 		});
 		const signatories = await t.query(
 			internal.documents.dealPackages.resolveDealDocumentSignatoriesInternal,
@@ -779,6 +842,22 @@ describe("paid checkout to deal handoff", () => {
 				}),
 			])
 		);
+		expect(snapshot.invitations).toEqual([
+			expect.objectContaining({
+				deliveryProvider: "workos",
+				deliveryStatus: "sent",
+				normalizedTargetEmail: selectedLawyer.email.toLowerCase(),
+				status: "pending",
+				targetEmail: selectedLawyer.email,
+				workosInvitationId: "workos_invitation_1",
+			}),
+		]);
+		expect(workos.sentInvitations).toEqual([
+			expect.objectContaining({
+				email: selectedLawyer.email,
+				roleSlug: "lawyer",
+			}),
+		]);
 		expect(signatories).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -789,6 +868,31 @@ describe("paid checkout to deal handoff", () => {
 			])
 		);
 		expect(guestLawyerCanAccess).toBe(true);
+	});
+
+	it("does not duplicate guest lawyer WorkOS invitations on handoff replay", async () => {
+		const t = createHarness();
+		const workos = installWorkosInvitationCapture();
+		const { prepared } = await prepareCompletedCheckout(t, {
+			selectedLawyer: selectedGuestLawyer(),
+		});
+
+		const first = await runDealHandoff(t, prepared.checkoutSessionId);
+		const second = await runDealHandoff(t, prepared.checkoutSessionId).finally(
+			workos.reset
+		);
+
+		expect(first).toMatchObject({ ok: true, status: "created" });
+		expect(second).toMatchObject({ ok: true, status: "already_created" });
+		expect(workos.sentInvitations).toHaveLength(1);
+		const invitations = await t.run(async (ctx) =>
+			ctx.db.query("lawyerInvitations").collect()
+		);
+		expect(invitations).toHaveLength(1);
+		expect(invitations[0]).toMatchObject({
+			deliveryStatus: "sent",
+			workosInvitationId: "workos_invitation_1",
+		});
 	});
 
 	it("rejects completed checkouts when the lock-fee transfer is missing or not confirmed", async () => {
@@ -845,11 +949,11 @@ describe("paid checkout to deal handoff", () => {
 		expect(secondResponse.status).toBe(200);
 		await expect(firstResponse.json()).resolves.toMatchObject({
 			accepted: true,
-			processed: true,
+			processing: "processed",
 		});
 		await expect(secondResponse.json()).resolves.toMatchObject({
 			accepted: true,
-			processed: true,
+			processing: "processed",
 		});
 		const counts = await t.run(async (ctx) => ({
 			access: (await ctx.db.query("dealAccess").collect()).length,

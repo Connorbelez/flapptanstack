@@ -120,12 +120,17 @@ export function requiresHostAwareAuthState(
 
 export function buildHostAwareAuthRequest(args: {
 	authStateToken?: string;
+	invitationToken?: string;
 	portalContext: RootPortalContext;
 	redirectTarget: unknown;
 }) {
 	const redirectUri = buildCallbackRedirectUri(
 		args.portalContext.canonicalHost
 	);
+	const invitationToken =
+		args.invitationToken && args.invitationToken.trim().length > 0
+			? args.invitationToken
+			: undefined;
 
 	if (
 		args.authStateToken &&
@@ -133,6 +138,7 @@ export function buildHostAwareAuthRequest(args: {
 			requiresHostAwareAuthState(args.portalContext))
 	) {
 		return {
+			...(invitationToken ? { invitationToken } : {}),
 			redirectUri,
 			returnPathname: buildAuthCompletionPath(args.authStateToken),
 		};
@@ -140,6 +146,7 @@ export function buildHostAwareAuthRequest(args: {
 
 	if (args.portalContext.kind === "admin") {
 		return {
+			...(invitationToken ? { invitationToken } : {}),
 			redirectUri,
 			returnPathname: getReturnPathname(args.redirectTarget),
 		};

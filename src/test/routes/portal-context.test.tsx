@@ -140,6 +140,23 @@ describe("resolveRootPortalContext", () => {
 		);
 	});
 
+	it("resolves local portal hosts running on alternate dev server ports", async () => {
+		const portalContext = await resolveRootPortalContext(
+			{
+				requestHost: "MERIDIAN.localhost:3001",
+				token: null,
+			},
+			{
+				resolvePortalByHost: async (host) =>
+					buildResolvedPortal({ requestedHost: host }),
+			}
+		);
+
+		expect(portalContext.kind).toBe("portal");
+		expect(portalContext.requestedHost).toBe("meridian.localhost:3001");
+		expect(portalContext.canonicalHost).toBe("meridian.localhost:3000");
+	});
+
 	it("classifies reserved hosts when no portal row exists", async () => {
 		const portalContext = await resolveRootPortalContext(
 			{

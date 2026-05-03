@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -232,48 +233,60 @@ export function RotessaReconciliationPage({
 			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 				<Card className="border-border/70">
 					<CardHeader className="pb-3">
-						<CardDescription>Unmatched customers</CardDescription>
+						<div className="flex items-center gap-1.5">
+							<CardDescription>Unmatched customers</CardDescription>
+							<AdminDescriptionHelp
+								content="Customers in Rotessa that still need canonical borrower linkage."
+								label="Unmatched customers details"
+							/>
+						</div>
 						<CardTitle className="text-3xl">
 							{snapshot.summary.unmatchedCustomers}
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="text-muted-foreground text-sm">
-						Customers in Rotessa that still need canonical borrower linkage.
-					</CardContent>
 				</Card>
 				<Card className="border-border/70">
 					<CardHeader className="pb-3">
-						<CardDescription>Unmatched schedules</CardDescription>
+						<div className="flex items-center gap-1.5">
+							<CardDescription>Unmatched schedules</CardDescription>
+							<AdminDescriptionHelp
+								content="Schedules that are imported but not yet attached to a borrower."
+								label="Unmatched schedules details"
+							/>
+						</div>
 						<CardTitle className="text-3xl">
 							{snapshot.summary.unmatchedSchedules}
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="text-muted-foreground text-sm">
-						Schedules that are imported but not yet attached to a borrower.
-					</CardContent>
 				</Card>
 				<Card className="border-border/70">
 					<CardHeader className="pb-3">
-						<CardDescription>Conflicts</CardDescription>
+						<div className="flex items-center gap-1.5">
+							<CardDescription>Conflicts</CardDescription>
+							<AdminDescriptionHelp
+								content="Rows requiring manual review before they can be used safely."
+								label="Conflicts details"
+							/>
+						</div>
 						<CardTitle className="text-3xl">
 							{snapshot.summary.conflictCustomers +
 								snapshot.summary.conflictSchedules}
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="text-muted-foreground text-sm">
-						Rows requiring manual review before they can be used safely.
-					</CardContent>
 				</Card>
 				<Card className="border-border/70">
 					<CardHeader className="pb-3">
-						<CardDescription>Available schedules</CardDescription>
+						<div className="flex items-center gap-1.5">
+							<CardDescription>Available schedules</CardDescription>
+							<AdminDescriptionHelp
+								content="Imported schedules ready to be reserved by origination."
+								label="Available schedules details"
+							/>
+						</div>
 						<CardTitle className="text-3xl">
 							{snapshot.summary.availableSchedules}
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="text-muted-foreground text-sm">
-						Imported schedules ready to be reserved by origination.
-					</CardContent>
 				</Card>
 			</div>
 

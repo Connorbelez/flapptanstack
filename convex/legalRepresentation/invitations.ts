@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { SelectedLawyerSnapshot } from "../checkout/validators";
@@ -37,6 +38,7 @@ type GuestSelectedLawyerSnapshot = Extract<
 >;
 
 export interface GuestInvitationDeliveryResult {
+	readonly deliveryStatus: "pending";
 	readonly invitationId: Id<"lawyerInvitations">;
 	readonly inviteUrl: string;
 	readonly token: string;
@@ -46,6 +48,7 @@ export type InvitationAcceptResult =
 	| {
 			readonly status: "verified";
 			readonly accessId: Id<"dealAccess">;
+			readonly dealId: Id<"deals">;
 			readonly invitationId: Id<"lawyerInvitations">;
 			readonly lawyerProfileId: Id<"lawyerProfiles">;
 			readonly verificationId: Id<"lawyerVerifications">;
@@ -57,6 +60,7 @@ export type InvitationAcceptResult =
 				| "requires_review"
 				| "revoked"
 				| "used";
+			readonly dealId?: Id<"deals">;
 			readonly invitationId?: Id<"lawyerInvitations">;
 			readonly reason: string;
 			readonly verificationId?: Id<"lawyerVerifications">;
@@ -88,7 +92,7 @@ function isActiveInvitationStatus(status: Doc<"lawyerInvitations">["status"]) {
 
 function isLawyerViewer(viewer: {
 	readonly permissions: ReadonlySet<string>;
-	readonly role: string | undefined;
+	readonly role?: string | undefined;
 	readonly roles: ReadonlySet<string>;
 }) {
 	return (
@@ -100,7 +104,7 @@ function isLawyerViewer(viewer: {
 
 function assertCanonicalLawyerViewer(viewer: {
 	readonly permissions: ReadonlySet<string>;
-	readonly role: string | undefined;
+	readonly role?: string | undefined;
 	readonly roles: ReadonlySet<string>;
 }) {
 	if (!isLawyerViewer(viewer)) {
@@ -134,10 +138,13 @@ function lsoLawyerIdFromSnapshot(
 }
 
 async function revokeActiveInvitationsForDeal(
-	ctx: LegalRepresentationMutationCtx,
+	ctx: LegalRepresentationMutationCtx & {
+		readonly scheduler?: MutationCtx["scheduler"];
+	},
 	args: {
 		readonly dealId: Id<"deals">;
 		readonly exceptInvitationId?: Id<"lawyerInvitations">;
+		readonly exceptWorkosInvitationId?: string;
 		readonly now: number;
 	}
 ) {
@@ -154,15 +161,33 @@ async function revokeActiveInvitationsForDeal(
 				status: "revoked",
 				updatedAt: args.now,
 			});
+			if (
+				row.workosInvitationId &&
+				row.workosInvitationId !== args.exceptWorkosInvitationId &&
+				process.env.SKIP_WORKOS_INVITATION_REVOKE !== "true"
+			) {
+				await ctx.scheduler?.runAfter(
+					1,
+					internal.legalRepresentation.workosInvitations
+						.revokeWorkosInvitationDelivery,
+					{
+						invitationId: row._id,
+						workosInvitationId: row.workosInvitationId,
+					}
+				);
+			}
 		}
 	}
 }
 
 export async function revokeActiveGuestInvitationsForDeal(
-	ctx: LegalRepresentationMutationCtx,
+	ctx: LegalRepresentationMutationCtx & {
+		readonly scheduler?: MutationCtx["scheduler"];
+	},
 	args: {
 		readonly dealId: Id<"deals">;
 		readonly exceptInvitationId?: Id<"lawyerInvitations">;
+		readonly exceptWorkosInvitationId?: string;
 		readonly now: number;
 	}
 ) {
@@ -178,6 +203,19 @@ async function getInvitationByToken(
 		.query("lawyerInvitations")
 		.withIndex("by_token_hash", (query) => query.eq("tokenHash", tokenHash))
 		.unique();
+}
+
+async function getInvitationByWorkosInvitationId(
+	ctx: LegalRepresentationQueryCtx,
+	workosInvitationId: string
+): Promise<Doc<"lawyerInvitations"> | null> {
+	return await ctx.db
+		.query("lawyerInvitations")
+		.withIndex("by_workos_invitation", (query) =>
+			query.eq("workosInvitationId", workosInvitationId)
+		)
+		.filter((query) => query.eq(query.field("status"), "pending"))
+		.first();
 }
 
 function selectedLawyerFromInvitation(
@@ -482,6 +520,7 @@ async function revokeProvisionalEmailAccess(
 
 export async function createGuestInvitationDelivery(
 	ctx: LegalRepresentationMutationCtx & {
+		readonly scheduler?: MutationCtx["scheduler"];
 		readonly viewer?: { readonly authId: string };
 	},
 	args: {
@@ -490,9 +529,11 @@ export async function createGuestInvitationDelivery(
 		readonly deal: Doc<"deals">;
 		readonly expiresAt?: number;
 		readonly now: number;
+		readonly scheduleDelivery?: boolean;
 		readonly selectedLawyer?: GuestSelectedLawyerSnapshot;
 		readonly targetEmail?: string;
 		readonly ttlMs?: number;
+		readonly workosInvitationId?: string;
 	}
 ): Promise<GuestInvitationDeliveryResult> {
 	const selectedLawyer =
@@ -512,6 +553,8 @@ export async function createGuestInvitationDelivery(
 		createdBy:
 			args.createdBy ?? ctx.viewer?.authId ?? `system:${String(args.deal._id)}`,
 		dealId: args.deal._id,
+		deliveryProvider: "workos",
+		deliveryStatus: "pending",
 		expiresAt:
 			args.expiresAt ??
 			calculateInvitationExpiry({
@@ -525,8 +568,23 @@ export async function createGuestInvitationDelivery(
 		targetEmail,
 		tokenHash: token.tokenHash,
 		updatedAt: args.now,
+		workosInvitationId: args.workosInvitationId,
 	});
+	if (
+		args.scheduleDelivery &&
+		process.env.SKIP_WORKOS_INVITATION_DELIVERY !== "true"
+	) {
+		await ctx.scheduler?.runAfter(
+			1,
+			args.workosInvitationId
+				? internal.legalRepresentation.workosInvitations
+						.resendGuestInvitationDelivery
+				: internal.legalRepresentation.workosInvitations.deliverGuestInvitation,
+			{ invitationId }
+		);
+	}
 	return {
+		deliveryStatus: "pending",
 		invitationId,
 		inviteUrl: inviteUrl({ baseUrl: args.baseUrl, token: token.token }),
 		token: token.token,
@@ -546,9 +604,14 @@ export const getInvitationStatusByToken = convex
 			invitation.status === "pending" &&
 			isInvitationExpired({ expiresAt: invitation.expiresAt, now })
 		) {
-			return { status: "expired" as const };
+			return {
+				dealId: invitation.dealId,
+				expiresAt: invitation.expiresAt,
+				status: "expired" as const,
+			};
 		}
 		return {
+			dealId: invitation.dealId,
 			status: invitation.status,
 			expiresAt: invitation.expiresAt,
 		};
@@ -559,6 +622,7 @@ export const createGuestInvitationForDeal = adminMutation
 	.input({
 		baseUrl: v.optional(v.string()),
 		dealId: v.id("deals"),
+		deliverViaWorkos: v.optional(v.boolean()),
 		now: v.optional(v.number()),
 		ttlMs: v.optional(v.number()),
 	})
@@ -588,6 +652,7 @@ export const createGuestInvitationForDeal = adminMutation
 			baseUrl: args.baseUrl,
 			deal,
 			now,
+			scheduleDelivery: args.deliverViaWorkos,
 			selectedLawyer,
 			targetEmail,
 			ttlMs: args.ttlMs,
@@ -598,6 +663,7 @@ export const createGuestInvitationForDeal = adminMutation
 export const resendGuestInvitation = adminMutation
 	.input({
 		baseUrl: v.optional(v.string()),
+		deliverViaWorkos: v.optional(v.boolean()),
 		invitationId: v.id("lawyerInvitations"),
 		now: v.optional(v.number()),
 		ttlMs: v.optional(v.number()),
@@ -611,6 +677,7 @@ export const resendGuestInvitation = adminMutation
 		await revokeActiveInvitationsForDeal(ctx, {
 			dealId: invitation.dealId,
 			exceptInvitationId: invitation._id,
+			exceptWorkosInvitationId: invitation.workosInvitationId,
 			now,
 		});
 		const token = await generateInvitationToken();
@@ -624,13 +691,33 @@ export const resendGuestInvitation = adminMutation
 							ttlMs: args.ttlMs,
 						}),
 			resolvedAuthId: undefined,
+			deliveryProvider: "workos",
+			deliveryStatus: "pending",
+			deliveryError: undefined,
+			lastDeliveryAttemptAt: undefined,
+			deliveredAt: undefined,
 			status: "pending",
 			tokenHash: token.tokenHash,
 			updatedAt: now,
 			verificationId: undefined,
 			verifiedAt: undefined,
 		});
+		if (
+			args.deliverViaWorkos &&
+			process.env.SKIP_WORKOS_INVITATION_DELIVERY !== "true"
+		) {
+			await ctx.scheduler.runAfter(
+				1,
+				invitation.workosInvitationId
+					? internal.legalRepresentation.workosInvitations
+							.resendGuestInvitationDelivery
+					: internal.legalRepresentation.workosInvitations
+							.deliverGuestInvitation,
+				{ invitationId: invitation._id }
+			);
+		}
 		return {
+			deliveryStatus: "pending" as const,
 			invitationId: invitation._id,
 			inviteUrl: inviteUrl({ baseUrl: args.baseUrl, token: token.token }),
 			token: token.token,
@@ -673,6 +760,7 @@ export const acceptGuestInvitation = authedMutation
 		}
 		if (invitation.status === "verified") {
 			return {
+				dealId: invitation.dealId,
 				invitationId: invitation._id,
 				reason: "Invitation was already verified",
 				status: "used",
@@ -681,6 +769,7 @@ export const acceptGuestInvitation = authedMutation
 		}
 		if (invitation.status === "revoked") {
 			return {
+				dealId: invitation.dealId,
 				invitationId: invitation._id,
 				reason: "Invitation was revoked",
 				status: "revoked",
@@ -695,6 +784,7 @@ export const acceptGuestInvitation = authedMutation
 				updatedAt: now,
 			});
 			return {
+				dealId: invitation.dealId,
 				invitationId: invitation._id,
 				reason: "Invitation expired",
 				status: "expired",
@@ -714,6 +804,7 @@ export const acceptGuestInvitation = authedMutation
 				verificationId,
 			});
 			return {
+				dealId: invitation.dealId,
 				invitationId: invitation._id,
 				reason: "Verified WorkOS email is required",
 				status: "failed",
@@ -734,6 +825,7 @@ export const acceptGuestInvitation = authedMutation
 				verificationId,
 			});
 			return {
+				dealId: invitation.dealId,
 				invitationId: invitation._id,
 				reason: "Signed-in lawyer email does not match invitation",
 				status: "failed",
@@ -762,6 +854,7 @@ export const acceptGuestInvitation = authedMutation
 				verificationId,
 			});
 			return {
+				dealId: invitation.dealId,
 				invitationId: invitation._id,
 				reason:
 					verification?.outcome === "requires_review"
@@ -809,6 +902,7 @@ export const acceptGuestInvitation = authedMutation
 		});
 		return {
 			accessId,
+			dealId: invitation.dealId,
 			invitationId: invitation._id,
 			lawyerProfileId,
 			status: "verified",
@@ -816,3 +910,205 @@ export const acceptGuestInvitation = authedMutation
 		};
 	})
 	.public();
+
+const workosInvitationViewerValidator = v.object({
+	authId: v.string(),
+	email: v.optional(v.string()),
+	permissions: v.array(v.string()),
+	role: v.optional(v.string()),
+	roles: v.array(v.string()),
+	verifiedEmail: v.optional(v.string()),
+});
+
+export const getPendingInvitationByWorkosInvitationIdInternal = convex
+	.query()
+	.input({ workosInvitationId: v.string() })
+	.handler(async (ctx, args) => {
+		return await getInvitationByWorkosInvitationId(
+			ctx,
+			args.workosInvitationId
+		);
+	})
+	.internal();
+
+export const acceptGuestInvitationByWorkosInvitationInternal = convex
+	.mutation()
+	.input({
+		invitationEmail: v.string(),
+		now: v.optional(v.number()),
+		viewer: workosInvitationViewerValidator,
+		workosInvitationId: v.string(),
+	})
+	.handler(async (ctx, args): Promise<InvitationAcceptResult> => {
+		const viewer = {
+			...args.viewer,
+			permissions: new Set(args.viewer.permissions),
+			roles: new Set(args.viewer.roles),
+		};
+		assertCanonicalLawyerViewer(viewer);
+		const now = args.now ?? Date.now();
+		const invitation = await getInvitationByWorkosInvitationId(
+			ctx,
+			args.workosInvitationId
+		);
+		if (!invitation) {
+			throw new ConvexError("FairLend lawyer invitation was not found");
+		}
+		if (
+			normalizeLawyerEmail(args.invitationEmail) !==
+			invitation.normalizedTargetEmail
+		) {
+			throw new ConvexError("WorkOS invitation email does not match");
+		}
+		if (invitation.status === "verified") {
+			return {
+				dealId: invitation.dealId,
+				invitationId: invitation._id,
+				reason: "Invitation was already verified",
+				status: "used",
+				verificationId: invitation.verificationId,
+			};
+		}
+		if (invitation.status === "revoked") {
+			return {
+				dealId: invitation.dealId,
+				invitationId: invitation._id,
+				reason: "Invitation was revoked",
+				status: "revoked",
+			};
+		}
+		if (
+			invitation.status === "expired" ||
+			isInvitationExpired({ expiresAt: invitation.expiresAt, now })
+		) {
+			await ctx.db.patch(invitation._id, {
+				status: "expired",
+				updatedAt: now,
+			});
+			return {
+				dealId: invitation.dealId,
+				invitationId: invitation._id,
+				reason: "Invitation expired",
+				status: "expired",
+			};
+		}
+		const verifiedEmail = viewer.verifiedEmail ?? viewer.email;
+		if (!verifiedEmail) {
+			const verificationId = await recordInvitationFailure(ctx, {
+				authId: viewer.authId,
+				invitation,
+				now,
+				reason: "missing_verified_email",
+			});
+			await ctx.db.patch(invitation._id, {
+				status: "failed",
+				updatedAt: now,
+				verificationId,
+			});
+			return {
+				dealId: invitation.dealId,
+				invitationId: invitation._id,
+				reason: "Verified WorkOS email is required",
+				status: "failed",
+				verificationId,
+			};
+		}
+		const normalizedVerifiedEmail = normalizeLawyerEmail(verifiedEmail);
+		if (normalizedVerifiedEmail !== invitation.normalizedTargetEmail) {
+			const verificationId = await recordInvitationFailure(ctx, {
+				authId: viewer.authId,
+				invitation,
+				now,
+				reason: "email_mismatch",
+			});
+			await ctx.db.patch(invitation._id, {
+				status: "failed",
+				updatedAt: now,
+				verificationId,
+			});
+			return {
+				dealId: invitation.dealId,
+				invitationId: invitation._id,
+				reason: "Signed-in lawyer email does not match invitation",
+				status: "failed",
+				verificationId,
+			};
+		}
+		const lawyerProfileId = await resolveOrProvisionGuestLawyerProfile(ctx, {
+			authId: normalizeAuthId(viewer.authId) ?? viewer.authId,
+			email: verifiedEmail,
+			now,
+			selectedLawyer: selectedLawyerFromInvitation(invitation),
+		});
+		const verificationId = await recordInvitationVerification(ctx, {
+			authId: viewer.authId,
+			invitation,
+			lawyerProfileId,
+			now,
+		});
+		const verification = await ctx.db.get(verificationId);
+		if (!verification || verification.outcome !== "eligible") {
+			await ctx.db.patch(invitation._id, {
+				acceptedAt: now,
+				resolvedAuthId: viewer.authId,
+				status: "failed",
+				updatedAt: now,
+				verificationId,
+			});
+			return {
+				dealId: invitation.dealId,
+				invitationId: invitation._id,
+				reason:
+					verification?.outcome === "requires_review"
+						? "Lawyer verification requires review"
+						: "Lawyer verification failed",
+				status:
+					verification?.outcome === "requires_review"
+						? "requires_review"
+						: "failed",
+				verificationId,
+			};
+		}
+		const accessId = await grantDealAccess(ctx.db, {
+			dealId: invitation.dealId,
+			grantedBy: `lawyer-invitation:${String(invitation._id)}`,
+			role: "guest_lawyer",
+			userId: viewer.authId,
+		});
+		await revokeProvisionalEmailAccess(ctx, {
+			dealId: invitation.dealId,
+			normalizedEmail: invitation.normalizedTargetEmail,
+			now,
+		});
+		const deal = await ctx.db.get(invitation.dealId);
+		if (
+			deal &&
+			deal.lawyerType === "guest_lawyer" &&
+			deal.lawyerId === invitation.normalizedTargetEmail
+		) {
+			await ctx.db.patch(deal._id, {
+				lawyerId: viewer.authId,
+			});
+		}
+		await ctx.db.patch(lawyerProfileId, {
+			latestVerificationId: verificationId,
+			updatedAt: now,
+		});
+		await ctx.db.patch(invitation._id, {
+			acceptedAt: now,
+			resolvedAuthId: viewer.authId,
+			status: "verified",
+			updatedAt: now,
+			verificationId,
+			verifiedAt: now,
+		});
+		return {
+			accessId,
+			dealId: invitation.dealId,
+			invitationId: invitation._id,
+			lawyerProfileId,
+			status: "verified",
+			verificationId,
+		};
+	})
+	.internal();

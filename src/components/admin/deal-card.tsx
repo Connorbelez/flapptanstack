@@ -394,7 +394,7 @@ export function DealCard({ deal }: DealCardProps) {
 						<DialogContent className="sm:max-w-md">
 							<DialogHeader>
 								<DialogTitle>Confirm Funds Received</DialogTitle>
-								<DialogDescription>
+								<DialogDescription className="sr-only">
 									Record the trust-account evidence used to confirm receipt of
 									funds for this closing.
 								</DialogDescription>
@@ -439,7 +439,7 @@ export function DealCard({ deal }: DealCardProps) {
 							<AlertDialogContent>
 								<AlertDialogHeader>
 									<AlertDialogTitle>Cancel Deal</AlertDialogTitle>
-									<AlertDialogDescription>
+									<AlertDialogDescription className="sr-only">
 										Please provide a reason for cancelling this deal. This will
 										be recorded in the audit log.
 									</AlertDialogDescription>

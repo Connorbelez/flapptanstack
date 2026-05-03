@@ -295,6 +295,64 @@ describe("detailContextQueries", () => {
 				source: "default_schedule",
 				status: "planned",
 			});
+			const bankAccountId = await ctx.db.insert("bankAccounts", {
+				accountLast4: "1234",
+				createdAt: now - 3500,
+				country: "CA",
+				currency: "CAD",
+				isDefaultInbound: true,
+				mandateStatus: "active",
+				metadata: {
+					rotessaCustomerId: 987,
+					rotessaCustomerCustomIdentifier: "borrower-rotessa-987",
+				},
+				ownerId: String(borrowerId),
+				ownerType: "borrower",
+				status: "validated",
+			});
+			const selectedScheduleId = await ctx.db.insert(
+				"externalCollectionSchedules",
+				{
+					activationIdempotencyKey: `schedule-active-${now}`,
+					activatedAt: now - 3000,
+					bankAccountId,
+					borrowerId,
+					cadence: "monthly",
+					consecutiveSyncFailures: 0,
+					coveredFromPlanEntryId: planEntryId,
+					coveredToPlanEntryId: planEntryId,
+					createdAt: now - 3000,
+					endDate: now + 86_400_000 * 90,
+					externalScheduleRef: "rotessa-active-987",
+					lastSyncedAt: now - 2000,
+					mortgageId,
+					providerCode: "pad_rotessa",
+					source: "origination_create",
+					startDate: now + 86_400_000,
+					status: "active",
+				}
+			);
+			await ctx.db.insert("externalCollectionSchedules", {
+				activationIdempotencyKey: `schedule-stale-${now}`,
+				bankAccountId,
+				borrowerId,
+				cadence: "monthly",
+				consecutiveSyncFailures: 2,
+				coveredFromPlanEntryId: planEntryId,
+				coveredToPlanEntryId: planEntryId,
+				createdAt: now - 5000,
+				endDate: now + 86_400_000 * 90,
+				externalScheduleRef: "rotessa-stale-987",
+				lastSyncErrorMessage: "No matching transaction schedule",
+				mortgageId,
+				providerCode: "pad_rotessa",
+				source: "sync",
+				startDate: now + 86_400_000,
+				status: "sync_error",
+			});
+			await ctx.db.patch(mortgageId, {
+				activeExternalCollectionScheduleId: selectedScheduleId,
+			});
 			await ctx.db.insert("collectionAttempts", {
 				amount: 2875,
 				failedAt: now - 1000,
@@ -423,6 +481,64 @@ describe("detailContextQueries", () => {
 				source: "default_schedule",
 				status: "planned",
 			});
+			const bankAccountId = await ctx.db.insert("bankAccounts", {
+				accountLast4: "1234",
+				createdAt: now - 3500,
+				country: "CA",
+				currency: "CAD",
+				isDefaultInbound: true,
+				mandateStatus: "active",
+				metadata: {
+					rotessaCustomerId: 987,
+					rotessaCustomerCustomIdentifier: "borrower-rotessa-987",
+				},
+				ownerId: String(borrowerId),
+				ownerType: "borrower",
+				status: "validated",
+			});
+			const selectedScheduleId = await ctx.db.insert(
+				"externalCollectionSchedules",
+				{
+					activationIdempotencyKey: `detail-active-${now}`,
+					activatedAt: now - 3000,
+					bankAccountId,
+					borrowerId,
+					cadence: "monthly",
+					consecutiveSyncFailures: 0,
+					coveredFromPlanEntryId: planEntryId,
+					coveredToPlanEntryId: planEntryId,
+					createdAt: now - 3000,
+					endDate: now + 86_400_000 * 90,
+					externalScheduleRef: "rotessa-active-987",
+					lastSyncedAt: now - 2000,
+					mortgageId,
+					providerCode: "pad_rotessa",
+					source: "origination_create",
+					startDate: now + 86_400_000,
+					status: "active",
+				}
+			);
+			await ctx.db.insert("externalCollectionSchedules", {
+				activationIdempotencyKey: `detail-stale-${now}`,
+				bankAccountId,
+				borrowerId,
+				cadence: "monthly",
+				consecutiveSyncFailures: 2,
+				coveredFromPlanEntryId: planEntryId,
+				coveredToPlanEntryId: planEntryId,
+				createdAt: now - 5000,
+				endDate: now + 86_400_000 * 90,
+				externalScheduleRef: "rotessa-stale-987",
+				lastSyncErrorMessage: "No matching transaction schedule",
+				mortgageId,
+				providerCode: "pad_rotessa",
+				source: "sync",
+				startDate: now + 86_400_000,
+				status: "sync_error",
+			});
+			await ctx.db.patch(mortgageId, {
+				activeExternalCollectionScheduleId: selectedScheduleId,
+			});
 			await ctx.db.insert("collectionAttempts", {
 				amount: 2875,
 				failedAt: now - 1000,
@@ -440,6 +556,16 @@ describe("detailContextQueries", () => {
 				borrowerId,
 				mortgageId,
 				role: "primary",
+			});
+			await ctx.db.insert("deals", {
+				buyerId: "detail-context-lender",
+				createdAt: now - 1000,
+				createdBy: "user_admin",
+				fractionalShare: 2500,
+				mortgageId,
+				orgId: externalOrgId,
+				sellerId: "seller.detail-context@test.ca",
+				status: "active",
 			});
 
 			return mortgageId;
@@ -460,19 +586,67 @@ describe("detailContextQueries", () => {
 				name: "Jordan Borrower",
 				role: "primary",
 				status: "active",
+				email: "detail-context-borrower@test.ca",
+				authId: "detail-context-borrower",
+				rotessaCustomerReference: expect.objectContaining({
+					customerId: 987,
+					customIdentifier: "borrower-rotessa-987",
+				}),
+			}),
+		]);
+		expect(result.borrowers[0]?.linkedExternalSchedules).toEqual([
+			expect.objectContaining({
+				externalScheduleRef: "rotessa-active-987",
+				isSelected: true,
+				status: "active",
+			}),
+			expect.objectContaining({
+				externalScheduleRef: "rotessa-stale-987",
+				isSelected: false,
+				lastSyncErrorMessage: "No matching transaction schedule",
+				status: "sync_error",
+			}),
+		]);
+		expect(result.borrowers[0]?.linkedPlanEntries).toEqual([
+			expect.objectContaining({
+				planEntryId: expect.any(String),
+				status: "planned",
 			}),
 		]);
 		expect(result.paymentSetup.obligations).toHaveLength(1);
 		expect(result.paymentSetup.collectionPlanEntries).toHaveLength(1);
 		expect(result.paymentSetup.collectionAttemptCount).toBe(1);
+		expect(result.paymentSetup.externalSchedule).toEqual(
+			expect.objectContaining({
+				externalScheduleRef: "rotessa-active-987",
+				status: "active",
+			})
+		);
+		expect(result.paymentSetup.externalSchedules).toEqual([
+			expect.objectContaining({
+				externalScheduleRef: "rotessa-active-987",
+				isSelected: true,
+			}),
+			expect.objectContaining({
+				externalScheduleRef: "rotessa-stale-987",
+				isSelected: false,
+				lastSyncErrorMessage: "No matching transaction schedule",
+			}),
+		]);
 		expect(result.paymentSnapshot).toEqual({
 			mostRecentPaymentAmount: 2875,
 			mostRecentPaymentDate: expect.any(Number),
 			mostRecentPaymentStatus: "failed",
 			nextUpcomingPaymentAmount: 2875,
-			nextUpcomingPaymentDate: expect.any(Number),
+			nextUpcomingPaymentDate: result.paymentSetup.obligations[0]?.dueDate,
 			nextUpcomingPaymentStatus: "planned",
 		});
+		expect(result.activeDeals).toEqual([
+			expect.objectContaining({
+				fractionalShare: 2500,
+				status: "active",
+			}),
+		]);
 	});
 
 	it("loads borrower connected brokers and deals", async () => {

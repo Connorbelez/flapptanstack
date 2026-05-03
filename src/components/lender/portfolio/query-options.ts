@@ -10,6 +10,15 @@ export function lenderPortfolioCommandCenterQueryOptions(
 	});
 }
 
+export function adminLenderPortfolioCommandCenterQueryOptions(
+	targetLenderId: Id<"lenders">
+) {
+	return convexQuery(
+		api.admin.portfolio.queries.getAdminLenderPortfolioCommandCenter,
+		{ targetLenderId }
+	);
+}
+
 export function lenderPortfolioPositionDetailQueryOptions(
 	portalId: Id<"portals">,
 	mortgageId: string
@@ -18,6 +27,19 @@ export function lenderPortfolioPositionDetailQueryOptions(
 		mortgageId: mortgageId as Id<"mortgages">,
 		portalId,
 	});
+}
+
+export function adminLenderPortfolioPositionDetailQueryOptions(
+	targetLenderId: Id<"lenders">,
+	mortgageId: string
+) {
+	return convexQuery(
+		api.admin.portfolio.queries.getAdminLenderPortfolioPositionDetail,
+		{
+			mortgageId: mortgageId as Id<"mortgages">,
+			targetLenderId,
+		}
+	);
 }
 
 export function lenderPortfolioPaymentDetailQueryOptions(
@@ -30,6 +52,19 @@ export function lenderPortfolioPaymentDetailQueryOptions(
 	});
 }
 
+export function adminLenderPortfolioPaymentDetailQueryOptions(
+	targetLenderId: Id<"lenders">,
+	obligationId: string
+) {
+	return convexQuery(
+		api.admin.portfolio.queries.getAdminLenderPortfolioPaymentDetail,
+		{
+			obligationId: obligationId as Id<"obligations">,
+			targetLenderId,
+		}
+	);
+}
+
 export function lenderPortfolioRenewalIntentQueryOptions(
 	portalId: Id<"portals">,
 	mortgageId: string
@@ -38,4 +73,17 @@ export function lenderPortfolioRenewalIntentQueryOptions(
 		mortgageId: mortgageId as Id<"mortgages">,
 		portalId,
 	});
+}
+
+export function adminLenderPortfolioRenewalIntentQueryOptions(
+	targetLenderId: Id<"lenders">,
+	mortgageId: string
+) {
+	return convexQuery(
+		api.admin.portfolio.queries.getAdminLenderPortfolioRenewalIntentByMortgage,
+		{
+			mortgageId: mortgageId as Id<"mortgages">,
+			targetLenderId,
+		}
+	);
 }

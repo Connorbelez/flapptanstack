@@ -12,6 +12,7 @@ import {
 	Heart,
 	ImageIcon,
 	Loader2,
+	LockKeyhole,
 	MapPin,
 	MapPinned,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
+import { Slider } from "#/components/ui/slider";
 import { cn } from "#/lib/utils";
 import { ListingDocumentSidebar } from "./ListingDocumentSidebar";
 import { ListingDocumentViewer } from "./ListingDocumentViewer";
@@ -69,6 +71,46 @@ const LISTING_REVEAL_TRANSITION = {
 	duration: 0.44,
 	ease: LISTING_REVEAL_EASE,
 };
+const LOCK_WORKFLOW_SECTION_ID = "listing-lock-workflow";
+
+function checkoutErrorLogDetails(error: unknown): Record<string, unknown> {
+	if (error instanceof Error) {
+		return {
+			message: error.message,
+			name: error.name,
+			stack: error.stack,
+		};
+	}
+	return { error };
+}
+
+function logCheckoutStartFailure(args: {
+	error?: unknown;
+	input: ListingCheckoutStartInput;
+	result?: Extract<ListingCheckoutStartResult, { ok: false }>;
+	stage: "backend_result" | "empty_provider_url" | "start_action";
+}) {
+	console.error("[ListingDetailPage] hosted checkout start failed", {
+		listingId: args.input.listingId,
+		portalId: args.input.portalId,
+		requestedFractions: args.input.requestedFractions,
+		resultCode: args.result?.code,
+		resultMessage: args.result?.message,
+		selectedLawyer: {
+			lawyerId:
+				args.input.selectedLawyer.type === "platform_lawyer"
+					? args.input.selectedLawyer.lawyerId
+					: undefined,
+			source:
+				args.input.selectedLawyer.type === "guest_lawyer"
+					? args.input.selectedLawyer.source
+					: undefined,
+			type: args.input.selectedLawyer.type,
+		},
+		stage: args.stage,
+		...(args.error === undefined ? {} : checkoutErrorLogDetails(args.error)),
+	});
+}
 
 function ListingScrollReveal({
 	children,
@@ -259,23 +301,38 @@ export function ListingDetailPage({
 
 		setCheckoutError(null);
 		setIsCheckoutPending(true);
+		const checkoutStartInput = {
+			listingId: listing.id,
+			portalId,
+			requestedFractions,
+			selectedLawyer: selectedLawyerSnapshot,
+		};
 		try {
-			const result = await onStartCheckout({
-				listingId: listing.id,
-				portalId,
-				requestedFractions,
-				selectedLawyer: selectedLawyerSnapshot,
-			});
+			const result = await onStartCheckout(checkoutStartInput);
 			if (!result.ok) {
+				logCheckoutStartFailure({
+					input: checkoutStartInput,
+					result,
+					stage: "backend_result",
+				});
 				setCheckoutError(result.message);
 				return;
 			}
 			if (result.stripeCheckoutUrl.trim().length === 0) {
+				logCheckoutStartFailure({
+					input: checkoutStartInput,
+					stage: "empty_provider_url",
+				});
 				setCheckoutError("Hosted checkout is unavailable. Please try again.");
 				return;
 			}
 			redirectToHostedCheckout(result.stripeCheckoutUrl);
-		} catch {
+		} catch (error) {
+			logCheckoutStartFailure({
+				error,
+				input: checkoutStartInput,
+				stage: "start_action",
+			});
 			setCheckoutError("Unable to start hosted checkout. Please try again.");
 		} finally {
 			setIsCheckoutPending(false);
@@ -325,6 +382,12 @@ export function ListingDetailPage({
 		setFractionInput(
 			normalizeFractions(parsedFractionInput ?? defaultFractions)
 		);
+	}
+
+	function scrollToLockWorkflow() {
+		document
+			.getElementById(LOCK_WORKFLOW_SECTION_ID)
+			?.scrollIntoView({ behavior: "smooth", block: "start" });
 	}
 
 	return (
@@ -413,6 +476,22 @@ export function ListingDetailPage({
 									{referenceLabel ? ` · ${referenceLabel}` : ""}
 								</p>
 							</div>
+							{isInteractive && checkout ? (
+								<div className="flex flex-wrap items-center gap-3 pt-1">
+									<Button
+										className="h-11 rounded-full bg-[#1B4332] px-5 text-white hover:bg-[#143528]"
+										onClick={scrollToLockWorkflow}
+										type="button"
+									>
+										<LockKeyhole className="size-4" />
+										Start listing lock
+									</Button>
+									<p className="text-muted-foreground text-sm">
+										{checkout.lockFee.display} lock fee via hosted Stripe
+										checkout.
+									</p>
+								</div>
+							) : null}
 							<div className="space-y-4">
 								<SectionLabel>Executive Summary</SectionLabel>
 								<div className="max-w-prose space-y-3 text-[15px] text-foreground/90 leading-[1.65] dark:text-foreground/85">
@@ -539,6 +618,21 @@ export function ListingDetailPage({
 						{listing.listedLabel}
 						{referenceLabel ? ` · ${referenceLabel}` : ""}
 					</p>
+					{isInteractive && checkout ? (
+						<div className="mt-4 space-y-2">
+							<Button
+								className="h-11 w-full rounded-full bg-[#1B4332] text-white hover:bg-[#143528]"
+								onClick={scrollToLockWorkflow}
+								type="button"
+							>
+								<LockKeyhole className="size-4" />
+								Start listing lock
+							</Button>
+							<p className="text-center text-muted-foreground text-xs">
+								{checkout.lockFee.display} lock fee via hosted Stripe checkout.
+							</p>
+						</div>
+					) : null}
 				</section>
 
 				<section className="px-5 pt-4">
@@ -1297,103 +1391,149 @@ function HostedCheckoutLauncher({
 	}
 
 	return (
-		<section className={cn(isMobile ? "px-5 pt-3" : "flex gap-6 px-16 pt-6")}>
-			<WhiteSurface className={cn("px-7 py-7", isMobile ? "w-full" : "flex-1")}>
-				<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-					<div>
-						<SectionLabel>Lock workflow</SectionLabel>
-						<h2 className="mt-1 font-semibold text-[20px]">
-							Choose fractions and counsel
-						</h2>
-					</div>
-					<div className="rounded-xl bg-[#F1FAF3] px-4 py-3 text-[#204636]">
-						<p className="font-medium text-xs uppercase tracking-[0.16em]">
-							Available
-						</p>
-						<p className="mt-1 font-semibold text-xl">
-							{availableFractions.toLocaleString()}
-						</p>
+		<section
+			className={cn(
+				isMobile
+					? "scroll-mt-20 px-5 pt-3"
+					: "grid scroll-mt-24 grid-cols-[minmax(0,1fr)_380px] gap-5 px-16 pt-6"
+			)}
+			id={LOCK_WORKFLOW_SECTION_ID}
+		>
+			<WhiteSurface className="overflow-hidden">
+				<div className="border-border/70 border-b px-5 py-5 sm:px-6">
+					<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+						<div className="min-w-0">
+							<SectionLabel>Lock workflow</SectionLabel>
+							<h2 className="mt-2 font-semibold text-[24px] leading-tight">
+								Reserve your fraction
+							</h2>
+						</div>
+						<div className="grid grid-cols-2 gap-2 sm:w-[260px]">
+							<LockStat
+								label="Available"
+								value={availableFractions.toLocaleString()}
+							/>
+							<LockStat label="Lock fee" value={checkout.lockFee.display} />
+						</div>
 					</div>
 				</div>
 
-				<div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
-					<div className="space-y-2">
-						<label
-							className="font-medium text-[#6B6B68] text-[13px]"
-							htmlFor={fractionsInputId}
-						>
-							Number of fractions
-						</label>
-						<Input
-							aria-describedby={
-								fractionError ? `${fractionsInputId}-error` : undefined
-							}
-							aria-invalid={fractionError !== null}
-							className="h-12 rounded-xl border-[#E7E5E4] bg-[#FBFAF8] text-base"
-							id={fractionsInputId}
-							inputMode="numeric"
-							onBlur={onFractionBlur}
-							onChange={(event) => onFractionChange(event.target.value)}
-							value={fractionInput}
-						/>
-						<p className="text-[#6B6B68] text-xs">
-							Minimum {minimumFractions.toLocaleString()}, maximum{" "}
-							{availableFractions.toLocaleString()}. Availability is checked
-							again at checkout start.
+				<div className="grid gap-5 px-5 py-5 sm:px-6 sm:py-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+					<div className="rounded-xl border border-border/70 bg-background/35 p-4">
+						<div className="flex items-start justify-between gap-4">
+							<div>
+								<p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
+									Fractions
+								</p>
+								<label className="sr-only" htmlFor={fractionsInputId}>
+									Number of fractions
+								</label>
+							</div>
+							<p className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[12px] text-[var(--palm)]">
+								{minimumFractions.toLocaleString()}-
+								{availableFractions.toLocaleString()} allowed
+							</p>
+						</div>
+						<div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+							<div className="min-w-0 space-y-4">
+								<Input
+									aria-describedby={
+										fractionError ? `${fractionsInputId}-error` : undefined
+									}
+									aria-invalid={fractionError !== null}
+									className="h-14 rounded-lg border-border/80 bg-card/70 px-4 font-semibold text-[22px] shadow-none focus-visible:ring-[var(--palm)]"
+									id={fractionsInputId}
+									inputMode="numeric"
+									onBlur={onFractionBlur}
+									onChange={(event) => onFractionChange(event.target.value)}
+									value={fractionInput}
+								/>
+								<div className="space-y-2">
+									<Slider
+										aria-label="Fraction range"
+										className="[&_[data-slot=slider-range]]:bg-[var(--palm)] [&_[data-slot=slider-thumb]]:size-5 [&_[data-slot=slider-thumb]]:border-[var(--palm)]"
+										max={availableFractions}
+										min={minimumFractions}
+										onValueChange={(values) =>
+											onFractionChange(String(values[0] ?? minimumFractions))
+										}
+										step={1}
+										value={[
+											effectiveSliderFractions({
+												availableFractions,
+												fractions,
+												minimumFractions,
+											}),
+										]}
+									/>
+									<div className="flex items-center justify-between text-[11px] text-muted-foreground">
+										<span>{minimumFractions.toLocaleString()}</span>
+										<span>{availableFractions.toLocaleString()}</span>
+									</div>
+								</div>
+							</div>
+							<div className="min-w-[128px] rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-right">
+								<p className="font-semibold text-[22px] text-[var(--palm)] leading-none">
+									{formatCurrency(calculatedInvestment)}
+								</p>
+								<p className="mt-1 text-[11px] text-muted-foreground">
+									total position
+								</p>
+							</div>
+						</div>
+						<p className="mt-3 text-muted-foreground text-xs leading-5">
+							Availability is rechecked before Stripe checkout opens.
 						</p>
 						{fractionError ? (
 							<p
-								className="text-[#B42318] text-xs"
+								className="mt-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-red-400 text-xs"
 								id={`${fractionsInputId}-error`}
 							>
 								{fractionError}
 							</p>
 						) : null}
 					</div>
-					<div className="rounded-xl bg-[#E7F6EA] px-5 py-3 font-semibold text-[#2E7D4F] text-xl">
-						= {formatCurrency(calculatedInvestment)}
-					</div>
-				</div>
 
-				<div className="mt-6 space-y-3">
-					<p className="font-medium text-[#6B6B68] text-[13px]">
-						Select your lawyer
-					</p>
-					<div className="grid gap-2 sm:grid-cols-2">
-						<button
-							aria-pressed={lawyerMode === "platform"}
-							className={cn(
-								"rounded-xl border px-4 py-3 text-left font-medium text-sm",
-								lawyerMode === "platform"
-									? "border-[#204636] bg-[#F1FAF3] text-[#204636]"
-									: "border-[#E7E5E4] bg-white text-[#4A4A48]"
-							)}
-							onClick={() => onLawyerModeChange("platform")}
-							type="button"
-						>
-							Platform lawyer
-						</button>
-						{canUseManualGuestFallback ? (
-							<button
-								aria-pressed={lawyerMode === "guest"}
+					<div className="rounded-xl border border-border/70 bg-background/35 p-4">
+						<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+							<div>
+								<p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
+									Counsel
+								</p>
+								<p className="mt-1 font-medium text-sm">
+									Choose representation for closing
+								</p>
+							</div>
+							<div
 								className={cn(
-									"rounded-xl border px-4 py-3 text-left font-medium text-sm",
-									lawyerMode === "guest"
-										? "border-[#204636] bg-[#F1FAF3] text-[#204636]"
-										: "border-[#E7E5E4] bg-white text-[#4A4A48]"
+									"grid gap-1 rounded-lg border border-border/70 bg-muted/25 p-1",
+									canUseManualGuestFallback ? "grid-cols-2" : "grid-cols-1"
 								)}
-								onClick={() => onLawyerModeChange("guest")}
-								type="button"
 							>
-								Guest lawyer fallback
-							</button>
+								<SegmentButton
+									isSelected={lawyerMode === "platform"}
+									onClick={() => onLawyerModeChange("platform")}
+								>
+									Platform lawyer
+								</SegmentButton>
+								{canUseManualGuestFallback ? (
+									<SegmentButton
+										isSelected={lawyerMode === "guest"}
+										onClick={() => onLawyerModeChange("guest")}
+									>
+										Guest lawyer fallback
+									</SegmentButton>
+								) : null}
+							</div>
+						</div>
+
+						<div className="mt-4">{lawyerSelection}</div>
+						{lawyerError ? (
+							<p className="mt-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-red-400 text-xs">
+								{lawyerError}
+							</p>
 						) : null}
 					</div>
-
-					{lawyerSelection}
-					{lawyerError ? (
-						<p className="text-[#B42318] text-xs">{lawyerError}</p>
-					) : null}
 				</div>
 			</WhiteSurface>
 
@@ -1418,6 +1558,57 @@ function HostedCheckoutLauncher({
 	);
 }
 
+function LockStat({ label, value }: { label: string; value: string }) {
+	return (
+		<div className="rounded-lg border border-primary/15 bg-primary/10 px-3 py-2">
+			<p className="font-medium text-[10px] text-muted-foreground uppercase tracking-[0.16em]">
+				{label}
+			</p>
+			<p className="mt-1 truncate font-semibold text-[18px] text-[var(--palm)] leading-none">
+				{value}
+			</p>
+		</div>
+	);
+}
+
+function SegmentButton({
+	children,
+	isSelected,
+	onClick,
+}: {
+	children: ReactNode;
+	isSelected: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			aria-pressed={isSelected}
+			className={cn(
+				"h-9 rounded-md px-3 font-medium text-[13px] transition-colors",
+				isSelected
+					? "bg-card text-foreground shadow-sm"
+					: "text-muted-foreground hover:text-foreground"
+			)}
+			onClick={onClick}
+			type="button"
+		>
+			{children}
+		</button>
+	);
+}
+
+function effectiveSliderFractions({
+	availableFractions,
+	fractions,
+	minimumFractions,
+}: {
+	availableFractions: number;
+	fractions: number;
+	minimumFractions: number;
+}) {
+	return Math.min(Math.max(fractions, minimumFractions), availableFractions);
+}
+
 function FieldInput({
 	className,
 	id,
@@ -1435,11 +1626,14 @@ function FieldInput({
 }) {
 	return (
 		<div className={className}>
-			<label className="font-medium text-[#6B6B68] text-[13px]" htmlFor={id}>
+			<label
+				className="font-medium text-[13px] text-muted-foreground"
+				htmlFor={id}
+			>
 				{label}
 			</label>
 			<Input
-				className="mt-1 h-11 rounded-xl border-[#E7E5E4] bg-white"
+				className="mt-1 h-11 rounded-lg border-border/80 bg-card/70 shadow-none focus-visible:ring-[var(--palm)]"
 				id={id}
 				onChange={(event) => onChange(event.target.value)}
 				type={type}
@@ -1475,61 +1669,77 @@ function HostedCheckoutSummary({
 	selectedLawyerLabel?: string;
 }) {
 	return (
-		<div
+		<aside
 			className={cn(
-				"shrink-0 rounded-xl bg-[#1B4332] px-7 py-7 text-white",
-				isMobile ? "mt-4 w-full px-5 py-5" : "w-[400px]"
+				"shrink-0 overflow-hidden rounded-xl border border-primary/20 bg-[#173A2B] text-white shadow-sm",
+				isMobile ? "mt-4 w-full" : "sticky top-6 self-start"
 			)}
 		>
-			<h2 className="font-semibold text-[20px]">Hosted Checkout</h2>
-			<div className="mt-5 space-y-3 text-sm">
-				<CheckoutRow label="Listing" value={listingTitle} />
-				<CheckoutRow
-					label="Fractions"
-					value={`${fractions} (${formatCurrency(calculatedInvestment)})`}
-				/>
-				<CheckoutRow
-					label="Lawyer"
-					value={selectedLawyerLabel ?? "No lawyer selected"}
-				/>
-				<CheckoutRow
-					emphasis
-					label="Lock Fee"
-					value={checkout.lockFee.display}
-				/>
+			<div className="border-white/10 border-b px-5 py-5">
+				<p className="font-medium text-[11px] text-white/55 uppercase tracking-[0.18em]">
+					Hosted Checkout
+				</p>
+				<div className="mt-4 flex items-end justify-between gap-4">
+					<div>
+						<p className="text-sm text-white/60">Lock fee due today</p>
+						<p className="mt-1 font-semibold text-[42px] leading-none tracking-[-0.04em]">
+							{checkout.lockFee.display}
+						</p>
+					</div>
+					<div className="rounded-lg bg-white/10 px-3 py-2 text-right">
+						<p className="font-semibold text-[18px] leading-none">
+							{fractions}
+						</p>
+						<p className="mt-1 text-[11px] text-white/55">fractions</p>
+					</div>
+				</div>
 			</div>
 
-			<Button
-				className="mt-6 inline-flex h-auto min-h-11 w-full items-center justify-center gap-2 whitespace-normal rounded-xl bg-white px-4 py-3 text-[#173A2B] hover:bg-white/90"
-				disabled={!canStartCheckout || isCheckoutPending}
-				onClick={onStartCheckout}
-				type="button"
-			>
-				{isCheckoutPending ? (
-					<>
-						<Loader2 className="size-4 animate-spin" />
-						Starting checkout
-					</>
-				) : (
-					<>
-						<ExternalLink className="size-4" />
-						{ctaLabel}
-					</>
-				)}
-			</Button>
-
-			{checkoutError ? (
-				<div className="mt-4 flex gap-2 rounded-xl bg-[#F8EAEA] px-3 py-3 text-[#7A271A] text-sm">
-					<AlertCircle className="mt-0.5 size-4 shrink-0" />
-					<p>{checkoutError}</p>
+			<div className="space-y-4 px-5 py-5">
+				<div className="space-y-3 rounded-lg border border-white/10 bg-black/10 p-4 text-sm">
+					<CheckoutRow label="Listing" value={listingTitle} />
+					<CheckoutRow
+						label="Position"
+						value={formatCurrency(calculatedInvestment)}
+					/>
+					<CheckoutRow
+						label="Counsel"
+						value={selectedLawyerLabel ?? "No lawyer selected"}
+					/>
 				</div>
-			) : null}
 
-			<p className="mt-4 text-[12px] text-white/65 leading-5">
-				The lock fee is created by FairLend and paid on Stripe's hosted checkout
-				page. Availability is confirmed again before the hosted session opens.
-			</p>
-		</div>
+				<Button
+					className="inline-flex h-auto min-h-12 w-full items-center justify-center gap-2 whitespace-normal rounded-lg bg-white px-4 py-3 font-semibold text-[#173A2B] hover:bg-white/90 disabled:bg-white/35 disabled:text-[#173A2B]/70"
+					disabled={!canStartCheckout || isCheckoutPending}
+					onClick={onStartCheckout}
+					type="button"
+				>
+					{isCheckoutPending ? (
+						<>
+							<Loader2 className="size-4 animate-spin" />
+							Starting checkout
+						</>
+					) : (
+						<>
+							<ExternalLink className="size-4" />
+							{ctaLabel}
+						</>
+					)}
+				</Button>
+
+				{checkoutError ? (
+					<div className="flex gap-2 rounded-lg border border-red-200/25 bg-red-100/90 px-3 py-3 text-[#7A271A] text-sm">
+						<AlertCircle className="mt-0.5 size-4 shrink-0" />
+						<p>{checkoutError}</p>
+					</div>
+				) : null}
+
+				<p className="text-[12px] text-white/58 leading-5">
+					Stripe collects the lock fee after FairLend confirms the selected
+					fractions are still available.
+				</p>
+			</div>
+		</aside>
 	);
 }
 
@@ -2330,23 +2540,13 @@ function LegendChip({ color, label }: { color: string; label: string }) {
 	);
 }
 
-function CheckoutRow({
-	emphasis = false,
-	label,
-	value,
-}: {
-	emphasis?: boolean;
-	label: string;
-	value: string;
-}) {
+function CheckoutRow({ label, value }: { label: string; value: string }) {
 	return (
-		<div className="flex items-start justify-between gap-4">
-			<span className="text-white/70">{label}</span>
+		<div className="grid grid-cols-[86px_minmax(0,1fr)] items-start gap-3">
+			<span className="text-white/55">{label}</span>
 			<span
-				className={cn(
-					"text-right",
-					emphasis ? "font-semibold text-[32px] leading-none" : "font-medium"
-				)}
+				className="min-w-0 text-right font-medium text-white leading-5"
+				title={value}
 			>
 				{value}
 			</span>

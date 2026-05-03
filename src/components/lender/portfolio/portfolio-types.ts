@@ -1,5 +1,6 @@
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 export const PORTFOLIO_DETAIL_TYPES = ["payment", "position"] as const;
 export type PortfolioDetailType = (typeof PORTFOLIO_DETAIL_TYPES)[number];
@@ -60,6 +61,14 @@ export const DEFAULT_LENDER_PORTFOLIO_SEARCH: LenderPortfolioSearchState = {
 export type PortfolioSearchUpdater = (
 	current: LenderPortfolioSearchState
 ) => LenderPortfolioSearchState;
+
+export type LenderPortfolioQueryMode =
+	| { kind: "portal"; portalId: Id<"portals"> }
+	| {
+			actionReason?: string;
+			kind: "admin";
+			targetLenderId: Id<"lenders">;
+	  };
 
 export type PortfolioCommandCenterSnapshot = FunctionReturnType<
 	typeof api.portfolio.queries.getLenderPortfolioCommandCenter

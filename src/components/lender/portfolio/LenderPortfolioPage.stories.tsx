@@ -65,7 +65,7 @@ const meta = {
 				exportState: "ready",
 			},
 		},
-		portalId: "portal_meridian" as never,
+		queryMode: { kind: "portal", portalId: "portal_meridian" as never },
 		search: {
 			paymentSort: "due-desc",
 			positionSort: "next-payment-soonest",

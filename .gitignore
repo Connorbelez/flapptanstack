@@ -28,3 +28,7 @@ coverage
 reviews/
 src/routeTree.gen.ts
 .gitnexus
+.superpowers/
+.superpowers/*
+docs/superpowers/plans/*
+rotessaPaymentSchedulePayload.json

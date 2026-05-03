@@ -118,11 +118,17 @@ const workspace: ParticipantDealWorkspace = {
 		activeLawyerAccessCount: 1,
 		currentInvitation: {
 			acceptedAt: null,
+			deliveredAt: 1_800_000_000_000,
+			deliveryError: null,
+			deliveryProvider: "workos",
+			deliveryStatus: "sent",
 			expiresAt: 1_800_000_100_000,
 			invitationId: "invitation_123" as never,
+			lastDeliveryAttemptAt: 1_800_000_000_000,
 			status: "pending",
 			targetEmail: "lawyer@test.fairlend.ca",
 			updatedAt: 1_800_000_000_000,
+			workosInvitationId: "workos_invitation_123",
 		},
 		gate: {
 			message: "Signed representation engagement evidence is required.",

@@ -4,12 +4,12 @@ import { useMutation, useQuery } from "convex/react";
 import { CircleDashed, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
 	Empty,
 	EmptyContent,
-	EmptyDescription,
 	EmptyHeader,
 	EmptyMedia,
 	EmptyTitle,
@@ -93,7 +93,10 @@ function renderEmptyState(args: { description: string; title: string }) {
 					<CircleDashed className="size-5" />
 				</EmptyMedia>
 				<EmptyTitle>{args.title}</EmptyTitle>
-				<EmptyDescription>{args.description}</EmptyDescription>
+				<AdminDescriptionHelp
+					content={args.description}
+					label={`${args.title} details`}
+				/>
 			</EmptyHeader>
 		</Empty>
 	);

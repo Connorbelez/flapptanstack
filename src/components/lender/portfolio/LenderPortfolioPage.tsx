@@ -4,7 +4,6 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthorization } from "#/lib/auth";
 import { api } from "../../../../convex/_generated/api";
-import type { Id } from "../../../../convex/_generated/dataModel";
 import { ActionsRail } from "./actions-rail";
 import { BrokerChatPanel } from "./broker-chat-panel";
 import { PaymentActivityTable } from "./payment-activity-table";
@@ -13,6 +12,7 @@ import { PortfolioCockpit } from "./portfolio-cockpit";
 import { PortfolioExportStrip } from "./portfolio-export-strip";
 import { PortfolioShell, PortfolioSlotHost } from "./portfolio-shell";
 import type {
+	LenderPortfolioQueryMode,
 	LenderPortfolioSearchState,
 	PortfolioAsyncState,
 	PortfolioBrokerContextSource,
@@ -55,7 +55,7 @@ export interface LenderPortfolioPageLeafStateOverrides {
 
 export interface LenderPortfolioPageProps {
 	leafStateOverrides?: LenderPortfolioPageLeafStateOverrides;
-	portalId: Id<"portals">;
+	queryMode: LenderPortfolioQueryMode;
 	search: LenderPortfolioSearchState;
 	setSearch: (updater: PortfolioSearchUpdater) => void;
 	snapshot: PortfolioCommandCenterSnapshot;
@@ -64,7 +64,7 @@ export interface LenderPortfolioPageProps {
 
 export function LenderPortfolioPage({
 	leafStateOverrides,
-	portalId,
+	queryMode,
 	search,
 	setSearch,
 	snapshot,
@@ -128,7 +128,7 @@ export function LenderPortfolioPage({
 						/>
 					) : (
 						<ConnectedPortfolioCockpit
-							portalId={portalId}
+							queryMode={queryMode}
 							snapshot={snapshot}
 						/>
 					)
@@ -145,7 +145,7 @@ export function LenderPortfolioPage({
 						/>
 					) : (
 						<ConnectedPortfolioExportStrip
-							portalId={portalId}
+							queryMode={queryMode}
 							snapshot={snapshot}
 						/>
 					)
@@ -246,6 +246,7 @@ export function LenderPortfolioPage({
 						<div className="space-y-3">
 							<ActionsRail
 								actionsRequired={snapshot.actionsRequired}
+								mode={queryMode}
 								onOpenDetails={(action) => {
 									const detailSearch = buildPortfolioActionDetailSearch(action);
 									if (!detailSearch) {
@@ -265,7 +266,6 @@ export function LenderPortfolioPage({
 										})
 									)
 								}
-								portalId={portalId}
 								selectedPrefillContext={
 									selectedBrokerPrefillEntry?.source === "action"
 										? selectedBrokerPrefillContext
@@ -308,6 +308,7 @@ export function LenderPortfolioPage({
 
 			{selectedPositionId ? (
 				<PositionSheet
+					mode={queryMode}
 					mortgageId={selectedPositionId}
 					onOpenChange={(open) => {
 						if (!open) {
@@ -315,12 +316,12 @@ export function LenderPortfolioPage({
 						}
 					}}
 					open
-					portalId={portalId}
 				/>
 			) : null}
 
 			{selectedPaymentId ? (
 				<PaymentSheet
+					mode={queryMode}
 					obligationId={selectedPaymentId}
 					onOpenChange={(open) => {
 						if (!open) {
@@ -328,7 +329,6 @@ export function LenderPortfolioPage({
 						}
 					}}
 					open
-					portalId={portalId}
 				/>
 			) : null}
 		</>
@@ -336,10 +336,62 @@ export function LenderPortfolioPage({
 }
 
 function ConnectedPortfolioCockpit({
+	queryMode,
+	snapshot,
+}: {
+	queryMode: LenderPortfolioQueryMode;
+	snapshot: PortfolioCommandCenterSnapshot;
+}) {
+	if (queryMode.kind === "admin") {
+		return (
+			<ConnectedAdminPortfolioCockpit
+				snapshot={snapshot}
+				targetLenderId={queryMode.targetLenderId}
+			/>
+		);
+	}
+
+	return (
+		<ConnectedPortalPortfolioCockpit
+			portalId={queryMode.portalId}
+			snapshot={snapshot}
+		/>
+	);
+}
+
+function ConnectedAdminPortfolioCockpit({
+	snapshot,
+	targetLenderId,
+}: {
+	snapshot: PortfolioCommandCenterSnapshot;
+	targetLenderId: Extract<
+		LenderPortfolioQueryMode,
+		{ kind: "admin" }
+	>["targetLenderId"];
+}) {
+	const historyQuery = useQuery({
+		...convexQuery(
+			api.admin.portfolio.queries.getAdminLenderPortfolioHistoricalSeries,
+			{
+				months: COCKPIT_HISTORY_MONTHS,
+				targetLenderId,
+			}
+		),
+	});
+
+	return (
+		<PortfolioCockpitFromQuery
+			historyQuery={historyQuery}
+			snapshot={snapshot}
+		/>
+	);
+}
+
+function ConnectedPortalPortfolioCockpit({
 	portalId,
 	snapshot,
 }: {
-	portalId: Id<"portals">;
+	portalId: Extract<LenderPortfolioQueryMode, { kind: "portal" }>["portalId"];
 	snapshot: PortfolioCommandCenterSnapshot;
 }) {
 	const historyQuery = useQuery({
@@ -348,6 +400,22 @@ function ConnectedPortfolioCockpit({
 			portalId,
 		}),
 	});
+
+	return (
+		<PortfolioCockpitFromQuery
+			historyQuery={historyQuery}
+			snapshot={snapshot}
+		/>
+	);
+}
+
+function PortfolioCockpitFromQuery({
+	historyQuery,
+	snapshot,
+}: {
+	historyQuery: ReturnType<typeof useQuery<PortfolioHistoricalSeries>>;
+	snapshot: PortfolioCommandCenterSnapshot;
+}) {
 	let historyState: PortfolioAsyncState = "ready";
 	if (historyQuery.isPending) {
 		historyState = "loading";
@@ -371,10 +439,68 @@ function ConnectedPortfolioCockpit({
 }
 
 function ConnectedPortfolioExportStrip({
+	queryMode,
+	snapshot,
+}: {
+	queryMode: LenderPortfolioQueryMode;
+	snapshot: PortfolioCommandCenterSnapshot;
+}) {
+	if (queryMode.kind === "admin") {
+		return (
+			<ConnectedAdminPortfolioExportStrip
+				snapshot={snapshot}
+				targetLenderId={queryMode.targetLenderId}
+			/>
+		);
+	}
+
+	return (
+		<ConnectedPortalPortfolioExportStrip
+			portalId={queryMode.portalId}
+			snapshot={snapshot}
+		/>
+	);
+}
+
+function ConnectedAdminPortfolioExportStrip({
+	snapshot,
+	targetLenderId,
+}: {
+	snapshot: PortfolioCommandCenterSnapshot;
+	targetLenderId: Extract<
+		LenderPortfolioQueryMode,
+		{ kind: "admin" }
+	>["targetLenderId"];
+}) {
+	const { allowed: canExportTax, loading } = useAuthorization({
+		kind: "permission",
+		permission: "portfolio:export_tax",
+	});
+	const exportQuery = useQuery({
+		...convexQuery(
+			api.admin.portfolio.queries.getAdminLenderPortfolioTaxExport,
+			{
+				targetLenderId,
+			}
+		),
+		enabled: !loading && canExportTax,
+	});
+
+	return (
+		<PortfolioExportStripFromQuery
+			canExportTax={canExportTax}
+			exportQuery={exportQuery}
+			loading={loading}
+			snapshot={snapshot}
+		/>
+	);
+}
+
+function ConnectedPortalPortfolioExportStrip({
 	portalId,
 	snapshot,
 }: {
-	portalId: Id<"portals">;
+	portalId: Extract<LenderPortfolioQueryMode, { kind: "portal" }>["portalId"];
 	snapshot: PortfolioCommandCenterSnapshot;
 }) {
 	const { allowed: canExportTax, loading } = useAuthorization({
@@ -388,6 +514,27 @@ function ConnectedPortfolioExportStrip({
 		enabled: !loading && canExportTax,
 	});
 
+	return (
+		<PortfolioExportStripFromQuery
+			canExportTax={canExportTax}
+			exportQuery={exportQuery}
+			loading={loading}
+			snapshot={snapshot}
+		/>
+	);
+}
+
+function PortfolioExportStripFromQuery({
+	canExportTax,
+	exportQuery,
+	loading,
+	snapshot,
+}: {
+	canExportTax: boolean;
+	exportQuery: ReturnType<typeof useQuery<PortfolioTaxExport>>;
+	loading: boolean;
+	snapshot: PortfolioCommandCenterSnapshot;
+}) {
 	let exportState: PortfolioExportAsyncState = "forbidden";
 	if (loading) {
 		exportState = "loading";

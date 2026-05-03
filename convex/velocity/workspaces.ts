@@ -26,6 +26,7 @@ import {
 
 type VelocityWorkspace = Doc<"velocityPackageWorkspaces">;
 type DocumentAsset = Doc<"documentAssets">;
+type PdfDocumentAsset = DocumentAsset & { mimeType: "application/pdf" };
 
 const optionalString = v.optional(v.string());
 const optionalNumber = v.optional(v.number());
@@ -623,7 +624,7 @@ async function workspaceDetail(
 async function requireDocumentAsset(
 	ctx: Pick<QueryCtx | MutationCtx, "db">,
 	documentAssetId: Id<"documentAssets">
-): Promise<DocumentAsset> {
+): Promise<PdfDocumentAsset> {
 	const asset = await ctx.db.get(documentAssetId);
 	if (!asset) {
 		throw new ConvexError("Document asset not found");
@@ -633,7 +634,7 @@ async function requireDocumentAsset(
 			"Velocity package documents must reference PDF assets"
 		);
 	}
-	return asset;
+	return asset as PdfDocumentAsset;
 }
 
 export const listVelocityPackageWorkspaces = adminQuery

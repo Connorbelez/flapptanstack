@@ -16,6 +16,8 @@ describe("deal participant projection contract", () => {
 		expect(mapDealAccessRoleToPortalPersona("borrower")).toBe("seller");
 		expect(mapDealAccessRoleToPortalPersona("platform_lawyer")).toBe("lawyer");
 		expect(mapDealAccessRoleToPortalPersona("guest_lawyer")).toBe("lawyer");
+		expect(mapDealAccessRoleToPortalPersona("broker_of_record")).toBe("broker");
+		expect(mapDealAccessRoleToPortalPersona("assigned_broker")).toBe("broker");
 	});
 
 	it("projects 10000-based fraction units into display percent", () => {
@@ -164,6 +166,50 @@ describe("deal participant projection contract", () => {
 			hasActiveDealAccess: true,
 			lawyerType: "guest_lawyer",
 		});
+		expect(projection.projection.involvedParties).toEqual([
+			{
+				email: "buyer@test.fairlend.ca",
+				hasWorkspaceAccess: false,
+				label: "Buyer",
+				name: "Bianca Buyer",
+				role: "buyer",
+			},
+			{
+				email: "seller@test.fairlend.ca",
+				hasWorkspaceAccess: false,
+				label: "Seller",
+				name: "Sam Seller",
+				role: "seller",
+			},
+			{
+				email: "lawyer@test.fairlend.ca",
+				hasWorkspaceAccess: true,
+				label: "Buyer's Lawyer",
+				name: "Laura Lawyer",
+				role: "buyer_lawyer",
+			},
+			{
+				email: null,
+				hasWorkspaceAccess: false,
+				label: "Seller's Lawyer",
+				name: null,
+				role: "seller_lawyer",
+			},
+			{
+				email: "broker@test.fairlend.ca",
+				hasWorkspaceAccess: false,
+				label: "Broker",
+				name: "Bryn Broker",
+				role: "broker",
+			},
+			{
+				email: "seller@test.fairlend.ca",
+				hasWorkspaceAccess: false,
+				label: "Borrower",
+				name: "Sam Seller",
+				role: "borrower",
+			},
+		]);
 		expect(projection.projection.fractionalShareDisplayPercent).toBe(25);
 	});
 
@@ -337,6 +383,14 @@ describe("deal participant projection contract", () => {
 			hasActiveDealAccess: false,
 			lawyerType: null,
 		});
+		expect(projection.involvedParties.map((party) => party.label)).toEqual([
+			"Buyer",
+			"Seller",
+			"Buyer's Lawyer",
+			"Seller's Lawyer",
+			"Broker",
+			"Borrower",
+		]);
 		expect(projection.fractionalShareStatus).toMatchObject({
 			fractionalShareDisplayPercent: null,
 			isValid: false,

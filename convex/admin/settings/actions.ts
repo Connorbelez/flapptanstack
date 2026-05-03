@@ -2,6 +2,10 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "../../_generated/api";
 import type { Id, TableNames } from "../../_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "../../_generated/server";
+import {
+	FAIRLEND_BROKERAGE_ORG_ID,
+	FAIRLEND_STAFF_ORG_ID,
+} from "../../constants";
 import { adminAction, convex } from "../../fluent";
 import { RotessaApiClient } from "../../payments/rotessa/api";
 import {
@@ -351,10 +355,14 @@ export const ensureMockSeedBrokerPortal = convex
 		viewerUserId: v.id("users"),
 	})
 	.handler(async (ctx, args) => {
+		const seedBrokerOrgId =
+			args.orgId === FAIRLEND_STAFF_ORG_ID
+				? FAIRLEND_BROKERAGE_ORG_ID
+				: args.orgId;
 		const existingBrokerPortal = (
 			await ctx.db
 				.query("portals")
-				.withIndex("by_org", (query) => query.eq("orgId", args.orgId))
+				.withIndex("by_org", (query) => query.eq("orgId", seedBrokerOrgId))
 				.collect()
 		).find(
 			(portal) =>
@@ -373,7 +381,7 @@ export const ensureMockSeedBrokerPortal = convex
 		const broker = await ctx.db
 			.query("brokers")
 			.withIndex("by_org_status", (query) =>
-				query.eq("orgId", args.orgId).eq("status", "active")
+				query.eq("orgId", seedBrokerOrgId).eq("status", "active")
 			)
 			.first();
 		if (!broker) {
@@ -394,12 +402,12 @@ export const ensureMockSeedBrokerPortal = convex
 			};
 		}
 
-		const slugBase = slugify(`mock-${args.orgId.slice(-10)}`);
+		const slugBase = slugify(`mock-${seedBrokerOrgId.slice(-10)}`);
 		const hosts = buildPortalHosts(slugBase);
 		const normalized = await assertPortalRegistryInvariants(ctx, {
 			brokerId: broker._id,
 			localHost: hosts.localHost,
-			orgId: args.orgId,
+			orgId: seedBrokerOrgId,
 			productionHost: hosts.productionHost,
 			slug: slugBase,
 		});

@@ -4,12 +4,22 @@
  */
 export interface AdminDetailSearch {
 	readonly detailOpen: boolean;
+	readonly detailTab?: AdminDetailTab | undefined;
 	readonly entityType: string | undefined;
 	readonly recordId: string | undefined;
 }
 
+export type AdminDetailTab =
+	| "details"
+	| "files"
+	| "history"
+	| "notes"
+	| "portfolio"
+	| "relations";
+
 export const EMPTY_ADMIN_DETAIL_SEARCH: AdminDetailSearch = {
 	detailOpen: false,
+	detailTab: undefined,
 	entityType: undefined,
 	recordId: undefined,
 };
@@ -75,6 +85,22 @@ function parseBooleanParam(value: unknown): boolean {
 	return false;
 }
 
+function parseDetailTabParam(value: unknown): AdminDetailTab | undefined {
+	if (typeof value !== "string") {
+		return undefined;
+	}
+
+	const normalized = value.trim();
+	return normalized === "details" ||
+		normalized === "files" ||
+		normalized === "history" ||
+		normalized === "notes" ||
+		normalized === "portfolio" ||
+		normalized === "relations"
+		? normalized
+		: undefined;
+}
+
 /**
  * Validates raw search params into {@link AdminDetailSearch}.
  * Safe for malformed URLs: never throws.
@@ -87,6 +113,7 @@ export function parseAdminDetailSearch(
 
 	return {
 		detailOpen: parseBooleanParam(raw.detailOpen),
+		detailTab: parseDetailTabParam(raw.detailTab),
 		entityType,
 		recordId,
 	};

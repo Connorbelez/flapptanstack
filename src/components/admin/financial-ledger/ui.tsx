@@ -1,14 +1,10 @@
+import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import type * as React from "react";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo, useState } from "react";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "#/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import {
@@ -36,6 +32,80 @@ export interface TableColumn<T> {
 	header: string;
 	id: string;
 	render: (row: T) => ReactNode;
+	sortValue?: (row: T) => SortableTableValue;
+}
+
+type SortableTableValue = boolean | number | string | null | undefined;
+type SortDirection = "asc" | "desc";
+
+interface TableSortState {
+	columnId: string;
+	direction: SortDirection;
+}
+
+function compareSortableValues(
+	left: SortableTableValue,
+	right: SortableTableValue,
+	direction: SortDirection
+) {
+	const leftMissing = left === null || left === undefined || left === "";
+	const rightMissing = right === null || right === undefined || right === "";
+	if (leftMissing && rightMissing) {
+		return 0;
+	}
+	if (leftMissing) {
+		return 1;
+	}
+	if (rightMissing) {
+		return -1;
+	}
+
+	let compared: number;
+	if (typeof left === "number" && typeof right === "number") {
+		compared = left - right;
+	} else if (typeof left === "boolean" && typeof right === "boolean") {
+		compared = Number(left) - Number(right);
+	} else {
+		compared = String(left).localeCompare(String(right), "en", {
+			numeric: true,
+			sensitivity: "base",
+		});
+	}
+
+	return direction === "asc" ? compared : -compared;
+}
+
+function nextSortState(
+	current: TableSortState | null,
+	columnId: string
+): TableSortState | null {
+	if (current?.columnId !== columnId) {
+		return { columnId, direction: "asc" };
+	}
+	if (current.direction === "asc") {
+		return { columnId, direction: "desc" };
+	}
+	return null;
+}
+
+function SortIndicator({ direction }: { direction?: SortDirection }) {
+	if (direction === "asc") {
+		return <ArrowUp className="size-3.5" />;
+	}
+	if (direction === "desc") {
+		return <ArrowDown className="size-3.5" />;
+	}
+	return <ChevronsUpDown className="size-3.5 opacity-60" />;
+}
+
+function getAriaSort(direction?: SortDirection) {
+	if (direction === "asc") {
+		return "ascending";
+	}
+	if (direction === "desc") {
+		return "descending";
+	}
+	return "none";
 }
 
 export function statusBadgeVariant(status?: string) {
@@ -100,11 +170,12 @@ export function PageHeader({
 		<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 			<div className="space-y-2">
 				{eyebrow ? <div>{eyebrow}</div> : null}
-				<div className="space-y-1">
+				<div className="flex items-center gap-2">
 					<h1 className="font-semibold text-3xl tracking-tight">{title}</h1>
-					<p className="max-w-3xl text-muted-foreground text-sm">
-						{description}
-					</p>
+					<AdminDescriptionHelp
+						content={description}
+						label={`${title} details`}
+					/>
 				</div>
 			</div>
 			{actions ? (
@@ -117,30 +188,76 @@ export function PageHeader({
 export function MetricStrip({ items }: { items: MetricItem[] }) {
 	return (
 		<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-			{items.map((item) => (
-				<Card
-					className={cn(
-						"gap-2 py-4",
-						item.tone === "critical" &&
-							"border-destructive/40 bg-destructive/5",
-						item.tone === "warning" && "border-amber-200 bg-amber-50/60",
-						item.tone === "positive" && "border-emerald-200 bg-emerald-50/60"
-					)}
-					key={item.label}
-				>
-					<CardContent className="px-4">
-						<div className="text-muted-foreground text-xs uppercase tracking-[0.12em]">
-							{item.label}
-						</div>
-						<div className="mt-2 font-semibold text-2xl">{item.value}</div>
-						{item.description ? (
-							<p className="mt-1 text-muted-foreground text-xs">
-								{item.description}
-							</p>
-						) : null}
-					</CardContent>
-				</Card>
-			))}
+			{items.map((item) => {
+				const hasTone = item.tone && item.tone !== "default";
+				const isInteractive = Boolean(item.onSelect);
+
+				return (
+					<Card
+						className={cn(
+							"gap-2 py-4",
+							isInteractive &&
+								"cursor-pointer transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+							item.isActive && "border-primary/70 ring-2 ring-primary/30",
+							item.tone === "critical" &&
+								"border-destructive/40 bg-destructive/5 text-destructive-foreground dark:bg-destructive/15",
+							item.tone === "warning" &&
+								"border-amber-400/60 bg-amber-50 text-amber-950 dark:bg-amber-500/15 dark:text-amber-50",
+							item.tone === "positive" &&
+								"border-emerald-400/60 bg-emerald-50 text-emerald-950 dark:bg-emerald-500/15 dark:text-emerald-50"
+						)}
+						key={item.label}
+						onClick={
+							item.onSelect
+								? (event: React.MouseEvent<HTMLDivElement>) => {
+										if (
+											event.target instanceof Element &&
+											event.target.closest("a,button")
+										) {
+											return;
+										}
+										item.onSelect?.();
+									}
+								: undefined
+						}
+						onKeyDown={
+							item.onSelect
+								? (event: React.KeyboardEvent<HTMLDivElement>) => {
+										if (event.key === "Enter" || event.key === " ") {
+											event.preventDefault();
+											item.onSelect?.();
+										}
+									}
+								: undefined
+						}
+						role={isInteractive ? "button" : undefined}
+						tabIndex={isInteractive ? 0 : undefined}
+					>
+						<CardContent className="px-4">
+							<div className="flex items-center gap-1.5">
+								<div
+									className={cn(
+										"text-xs uppercase tracking-[0.12em]",
+										hasTone ? "text-current/75" : "text-muted-foreground"
+									)}
+								>
+									{item.label}
+								</div>
+								{item.description ? (
+									<AdminDescriptionHelp
+										className={
+											hasTone ? "text-current/75 hover:text-current" : ""
+										}
+										content={item.description}
+										label={`${item.label} details`}
+									/>
+								) : null}
+							</div>
+							<div className="mt-2 font-semibold text-2xl">{item.value}</div>
+						</CardContent>
+					</Card>
+				);
+			})}
 		</div>
 	);
 }
@@ -160,10 +277,13 @@ export function SectionCard({
 		<Card className="gap-0 overflow-hidden py-0">
 			<CardHeader className="border-b px-5 py-4">
 				<div className="flex items-start justify-between gap-4">
-					<div className="space-y-1">
+					<div className="flex items-center gap-1.5">
 						<CardTitle className="text-base">{title}</CardTitle>
 						{description ? (
-							<CardDescription>{description}</CardDescription>
+							<AdminDescriptionHelp
+								content={description}
+								label={`${title} details`}
+							/>
 						) : null}
 					</div>
 					{action ? <div>{action}</div> : null}
@@ -277,23 +397,73 @@ export function DataTableCard<T>({
 	rows: T[];
 	selectedRowId?: string;
 }) {
+	const [sort, setSort] = useState<TableSortState | null>(null);
+	const sortedRows = useMemo(() => {
+		const sortedColumn = sort
+			? columns.find((column) => column.id === sort.columnId)
+			: undefined;
+		if (!(sort && sortedColumn?.sortValue)) {
+			return rows;
+		}
+
+		return rows
+			.map((row, index) => ({ index, row }))
+			.sort((left, right) => {
+				const compared = compareSortableValues(
+					sortedColumn.sortValue?.(left.row),
+					sortedColumn.sortValue?.(right.row),
+					sort.direction
+				);
+				if (compared === 0) {
+					return left.index - right.index;
+				}
+				return compared;
+			})
+			.map(({ row }) => row);
+	}, [columns, rows, sort]);
+
 	return (
-		<div className="overflow-hidden">
+		<div className="max-h-[min(72vh,760px)] overflow-auto">
 			<Table>
-				<TableHeader>
+				<TableHeader className="sticky top-0 z-[1] bg-card">
 					<TableRow className="hover:bg-transparent">
-						{columns.map((column) => (
-							<TableHead
-								className={cn(column.align === "right" && "text-right")}
-								key={column.id}
-							>
-								{column.header}
-							</TableHead>
-						))}
+						{columns.map((column) => {
+							const sortDirection =
+								sort?.columnId === column.id ? sort.direction : undefined;
+							return (
+								<TableHead
+									aria-sort={
+										column.sortValue ? getAriaSort(sortDirection) : undefined
+									}
+									className={cn(column.align === "right" && "text-right")}
+									key={column.id}
+								>
+									{column.sortValue ? (
+										<button
+											className={cn(
+												"inline-flex h-8 w-full items-center gap-1.5 rounded px-1 text-left font-medium transition hover:bg-muted/70 hover:text-foreground",
+												column.align === "right"
+													? "justify-end"
+													: "justify-start"
+											)}
+											onClick={() =>
+												setSort((current) => nextSortState(current, column.id))
+											}
+											type="button"
+										>
+											<span>{column.header}</span>
+											<SortIndicator direction={sortDirection} />
+										</button>
+									) : (
+										column.header
+									)}
+								</TableHead>
+							);
+						})}
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{rows.length === 0 ? (
+					{sortedRows.length === 0 ? (
 						<TableRow>
 							<TableCell
 								className="h-36 text-center text-muted-foreground"
@@ -303,7 +473,7 @@ export function DataTableCard<T>({
 							</TableCell>
 						</TableRow>
 					) : (
-						rows.map((row) => {
+						sortedRows.map((row) => {
 							const key = rowKey(row);
 							const isSelected = selectedRowId === key;
 							return (
@@ -358,7 +528,10 @@ export function DetailRail({
 						) : null}
 					</div>
 					{description ? (
-						<CardDescription>{description}</CardDescription>
+						<AdminDescriptionHelp
+							content={description}
+							label={`${title} details`}
+						/>
 					) : null}
 				</div>
 			</CardHeader>
@@ -403,8 +576,13 @@ export function EmptyDetailState({
 }) {
 	return (
 		<div className="rounded-xl border border-dashed p-6 text-center">
-			<div className="font-medium text-sm">{title}</div>
-			<p className="mt-2 text-muted-foreground text-sm">{description}</p>
+			<div className="inline-flex items-center gap-1.5 font-medium text-sm">
+				{title}
+				<AdminDescriptionHelp
+					content={description}
+					label={`${title} details`}
+				/>
+			</div>
 		</div>
 	);
 }

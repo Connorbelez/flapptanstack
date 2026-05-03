@@ -2,6 +2,8 @@ import { v } from "convex/values";
 import { auditLog } from "../../auditLog";
 import { adminMutation, requirePermission } from "../../fluent";
 import {
+	type HideListingResult,
+	hideListingRecord,
 	type PublishListingResult,
 	publishListingRecord,
 } from "../../listings/lifecycle";
@@ -60,6 +62,20 @@ export const publishListing = adminMutation
 	})
 	.handler(async (ctx, args): Promise<PublishListingResult> => {
 		return publishListingRecord(ctx, {
+			actorAuthId: ctx.viewer.authId,
+			listingId: args.listingId,
+			now: Date.now(),
+		});
+	})
+	.public();
+
+export const hideListing = adminMutation
+	.use(requirePermission("listing:manage"))
+	.input({
+		listingId: v.id("listings"),
+	})
+	.handler(async (ctx, args): Promise<HideListingResult> => {
+		return hideListingRecord(ctx, {
 			actorAuthId: ctx.viewer.authId,
 			listingId: args.listingId,
 			now: Date.now(),

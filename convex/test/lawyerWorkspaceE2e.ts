@@ -161,6 +161,12 @@ async function insertMatter(
 		lawyerType: "guest_lawyer",
 		lenderId,
 		mortgageId,
+		selectedLawyer: {
+			email: `${ctx.viewer.authId}@e2e.fairlend.ca`,
+			name: "E2E Closing Lawyer",
+			source: "manual",
+			type: "guest_lawyer",
+		},
 		orgId,
 		sellerId: `e2e-${suffix}-seller`,
 		status: statusForMatter(kind),

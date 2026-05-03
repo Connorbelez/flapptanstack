@@ -732,6 +732,24 @@ export const fireDealTransitionInternal = internalMutation({
 		if (!deal) {
 			throw new ConvexError("Deal not found");
 		}
+		if (deal.status === "confirmed") {
+			const evidenceResult = await recordFundsReceiptRow(ctx, {
+				dealId: args.dealId,
+				source: fundsReceiptSource,
+				recordedBy: "system",
+			});
+			if (evidenceResult.status === "blocked") {
+				throw new ConvexError(
+					"FUNDS_RECEIVED funds evidence is incompatible with existing evidence"
+				);
+			}
+			return {
+				success: true,
+				previousState: "confirmed",
+				newState: "confirmed",
+				reason: "Deal funds receipt already confirmed",
+			} satisfies TransitionResult;
+		}
 		if (deal.status !== "fundsTransfer.pending") {
 			throw new ConvexError(
 				`Deal must be in fundsTransfer.pending to confirm funds, currently: ${deal.status}`

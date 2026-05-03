@@ -3,6 +3,7 @@ import {
 	buildStripeCheckoutSessionParams,
 	type CreateHostedCheckoutSessionRequest,
 	createStripeCheckoutProvider,
+	readCheckoutRedirectUrlsFromEnv,
 } from "../stripe";
 
 const request: CreateHostedCheckoutSessionRequest = {
@@ -34,13 +35,55 @@ function response(
 }
 
 describe("Stripe Checkout provider", () => {
+	it("defaults hosted Checkout redirects to the in-app confirmation flow", () => {
+		const originalAppUrl = process.env.FAIRLEND_APP_URL;
+		const originalSuccessUrl = process.env.STRIPE_CHECKOUT_SUCCESS_URL;
+		const originalCancelUrl = process.env.STRIPE_CHECKOUT_CANCEL_URL;
+		process.env.FAIRLEND_APP_URL = "http://app.localhost:3000/";
+		process.env.STRIPE_CHECKOUT_SUCCESS_URL = "";
+		process.env.STRIPE_CHECKOUT_CANCEL_URL = "";
+		try {
+			expect(
+				readCheckoutRedirectUrlsFromEnv({ listingId: "listing_123" })
+			).toEqual({
+				successUrl:
+					"http://app.localhost:3000/checkout/complete?stripeCheckoutSessionId={CHECKOUT_SESSION_ID}",
+				cancelUrl:
+					"http://app.localhost:3000/listings/listing_123?checkout=abandoned",
+			});
+		} finally {
+			process.env.FAIRLEND_APP_URL = originalAppUrl;
+			process.env.STRIPE_CHECKOUT_SUCCESS_URL = originalSuccessUrl;
+			process.env.STRIPE_CHECKOUT_CANCEL_URL = originalCancelUrl;
+		}
+	});
+
+	it("keeps explicit hosted Checkout redirects when configured", () => {
+		const originalSuccessUrl = process.env.STRIPE_CHECKOUT_SUCCESS_URL;
+		const originalCancelUrl = process.env.STRIPE_CHECKOUT_CANCEL_URL;
+		process.env.STRIPE_CHECKOUT_SUCCESS_URL = "https://portal.example.com/paid";
+		process.env.STRIPE_CHECKOUT_CANCEL_URL =
+			"https://portal.example.com/canceled";
+		try {
+			expect(readCheckoutRedirectUrlsFromEnv()).toEqual({
+				successUrl: "https://portal.example.com/paid",
+				cancelUrl: "https://portal.example.com/canceled",
+			});
+		} finally {
+			process.env.STRIPE_CHECKOUT_SUCCESS_URL = originalSuccessUrl;
+			process.env.STRIPE_CHECKOUT_CANCEL_URL = originalCancelUrl;
+		}
+	});
+
 	it("builds hosted Checkout params with lock fee and mirrored metadata", () => {
 		const params = buildStripeCheckoutSessionParams(request);
 
 		expect(params.get("mode")).toBe("payment");
 		expect(params.get("success_url")).toBe(request.successUrl);
 		expect(params.get("cancel_url")).toBe(request.cancelUrl);
-		expect(params.get("automatic_payment_methods[enabled]")).toBe("true");
+		expect(params.has("automatic_payment_methods")).toBe(false);
+		expect(params.has("automatic_payment_methods[enabled]")).toBe(false);
+		expect(params.has("payment_method_types[0]")).toBe(false);
 		expect(params.get("line_items[0][quantity]")).toBe("1");
 		expect(params.get("line_items[0][price_data][currency]")).toBe("cad");
 		expect(params.get("line_items[0][price_data][unit_amount]")).toBe("25000");
@@ -104,6 +147,43 @@ describe("Stripe Checkout provider", () => {
 		await expect(provider.createHostedCheckoutSession(request)).rejects.toThrow(
 			"Stripe Checkout request failed with 504"
 		);
+	});
+
+	it("retrieves paid hosted Checkout sessions for return-page reconciliation", async () => {
+		const urls: string[] = [];
+		const provider = createStripeCheckoutProvider({
+			secretKey: "sk_test_123",
+			apiBaseUrl: "https://stripe.test",
+			fetch: async (url) => {
+				urls.push(String(url));
+				return response({
+					id: "cs_test_123",
+					amount_total: 25_000,
+					currency: "cad",
+					metadata: request.metadata,
+					payment_intent: "pi_test_123",
+					payment_status: "paid",
+					status: "complete",
+				});
+			},
+		});
+
+		await expect(
+			provider.retrieveHostedCheckoutSession({
+				stripeCheckoutSessionId: "cs_test_123",
+			})
+		).resolves.toEqual({
+			amountTotal: 25_000,
+			currency: "cad",
+			metadata: request.metadata,
+			paymentIntentId: "pi_test_123",
+			paymentStatus: "paid",
+			status: "complete",
+			stripeCheckoutSessionId: "cs_test_123",
+		});
+		expect(urls).toEqual([
+			"https://stripe.test/v1/checkout/sessions/cs_test_123",
+		]);
 	});
 
 	it("expires hosted Checkout sessions when provider attach fails", async () => {

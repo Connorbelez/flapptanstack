@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { httpAction } from "../../_generated/server";
+import { CHECKOUT_LOCK_FEE_AMOUNT_CENTS } from "../../checkout/validators";
 import { DEAL_LOCK_FEE_AMOUNT_CENTS } from "../../dealLocks/validators";
 import { convex } from "../../fluent";
 import {
@@ -21,6 +22,7 @@ export interface StripeWebhookEvent {
 			amount: number;
 			amount_total?: number;
 			charge?: string;
+			currency?: string;
 			failure_code?: string;
 			failure_message?: string;
 			id: string;
@@ -209,10 +211,14 @@ async function processCheckoutSuccessWebhook(
 	}
 
 	const checkoutSession = args.event.data.object;
-	if (
-		checkoutSession.amount_total !== undefined &&
-		checkoutSession.amount_total !== DEAL_LOCK_FEE_AMOUNT_CENTS
-	) {
+	const amount = checkoutSession.amount_total ?? checkoutSession.amount;
+	const isMarketplaceCheckout =
+		typeof checkoutSession.metadata?.checkoutSessionId === "string" &&
+		checkoutSession.metadata.checkoutSessionId.trim().length > 0;
+	const expectedAmount = isMarketplaceCheckout
+		? CHECKOUT_LOCK_FEE_AMOUNT_CENTS
+		: DEAL_LOCK_FEE_AMOUNT_CENTS;
+	if (amount !== expectedAmount) {
 		await markTransferWebhookFailed(ctx, {
 			webhookEventId: persisted.webhookEventId,
 			error: "unexpected_checkout_amount",
@@ -228,6 +234,48 @@ async function processCheckoutSuccessWebhook(
 	}
 
 	try {
+		if (isMarketplaceCheckout) {
+			const result = await ctx.runMutation(
+				internal.checkout.reconciliation.reconcileStripeCheckoutWebhook,
+				{
+					amount,
+					currency: checkoutSession.currency,
+					kind: "success",
+					metadata: checkoutSession.metadata ?? {},
+					occurredAt: args.event.created * 1000,
+					providerEventId: args.event.id,
+					stripeCheckoutSessionId: checkoutSession.id,
+					stripePaymentIntentId: checkoutSession.payment_intent,
+					webhookEventId: persisted.webhookEventId,
+				}
+			);
+			if (!result.ok) {
+				return { ok: false as const, error: result.error };
+			}
+			if (result.status === "completed") {
+				await ctx.scheduler.runAfter(
+					0,
+					internal.checkout.dealHandoff.createDealFromPaidCheckoutInternal,
+					{
+						checkoutSessionId: checkoutSession.metadata
+							?.checkoutSessionId as Id<"checkoutSessions">,
+					}
+				);
+			}
+			if (
+				result.status !== "completed" &&
+				result.status !== "already_completed" &&
+				result.status !== "refund_already_recorded"
+			) {
+				await markTransferWebhookProcessed(ctx, persisted.webhookEventId);
+			}
+			return {
+				ok: true as const,
+				result,
+				webhookEventId: persisted.webhookEventId,
+			};
+		}
+
 		const result = await ctx.runMutation(
 			internal.dealLocks.mutations.processStripeCheckoutSuccess,
 			{

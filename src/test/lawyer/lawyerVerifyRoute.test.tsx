@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+	buildLawyerWorkosInvitationPath,
+} from "#/routes/lawyer/invitation";
+import {
+	buildLawyerOnboardingPath,
 	buildLawyerVerifyRedirectPath,
+	buildVerifiedLawyerReturnPath,
 	getLawyerVerifyTerminalCopy,
 } from "#/routes/lawyer/verify.$token";
 
@@ -11,6 +16,25 @@ describe("lawyer verification route helpers", () => {
 		);
 		expect(buildLawyerVerifyRedirectPath("token with spaces")).toBe(
 			"/lawyer/verify/token%20with%20spaces"
+		);
+	});
+
+	it("links verified invitations back to the shared deal portal", () => {
+		expect(buildVerifiedLawyerReturnPath("deal_123")).toBe("/deals/deal_123");
+		expect(buildVerifiedLawyerReturnPath("deal with spaces")).toBe(
+			"/deals/deal%20with%20spaces"
+		);
+	});
+
+	it("preserves deal portal return through lawyer onboarding", () => {
+		expect(buildLawyerOnboardingPath("deal_123")).toBe(
+			"/onboard?context=deal-representation&redirect=%2Fdeals%2Fdeal_123"
+		);
+	});
+
+	it("builds the WorkOS invitation landing path with invitation_token", () => {
+		expect(buildLawyerWorkosInvitationPath("workos token")).toBe(
+			"/lawyer/invitation?invitation_token=workos+token"
 		);
 	});
 

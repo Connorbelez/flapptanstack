@@ -198,7 +198,7 @@ export function LinkedRecordsPanel({
 				<AlertDialogContent>
 					<AlertDialogHeader>
 						<AlertDialogTitle>Remove link?</AlertDialogTitle>
-						<AlertDialogDescription>
+						<AlertDialogDescription className="sr-only">
 							This will remove the relationship between these records. The
 							records themselves will not be deleted.
 						</AlertDialogDescription>

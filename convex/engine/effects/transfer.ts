@@ -448,6 +448,7 @@ function mapProviderToFundsMethod(
 		case "wire":
 			return "wire_receipt";
 		case "manual":
+		case "manual_review":
 			return "manual";
 		default:
 			// Mock providers and future providers default to "manual".

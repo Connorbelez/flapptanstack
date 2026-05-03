@@ -9,6 +9,7 @@ import {
 describe("mortgagePaymentSnapshot", () => {
 	it("prefers the latest execution outcome over obligation fallback", () => {
 		const snapshot = deriveMostRecentPaymentSnapshot({
+			asOf: Date.parse("2026-04-03T00:00:00.000Z"),
 			attempts: [
 				{
 					_id: "attempt_older",
@@ -52,6 +53,7 @@ describe("mortgagePaymentSnapshot", () => {
 
 	it("falls back to a settled obligation when no execution history exists", () => {
 		const snapshot = deriveMostRecentPaymentSnapshot({
+			asOf: Date.parse("2026-05-02T00:00:00.000Z"),
 			attempts: [],
 			obligations: [
 				{
@@ -75,8 +77,9 @@ describe("mortgagePaymentSnapshot", () => {
 		});
 	});
 
-	it("uses the best available obligation state when no attempt history exists", () => {
+	it("uses the best available due obligation state when no attempt history exists", () => {
 		const snapshot = deriveMostRecentPaymentSnapshot({
+			asOf: Date.parse("2026-05-02T00:00:00.000Z"),
 			attempts: [],
 			obligations: [
 				{
@@ -95,8 +98,47 @@ describe("mortgagePaymentSnapshot", () => {
 		});
 	});
 
+	it("uses the linked obligation date for in-flight provider-managed attempts", () => {
+		const processDate = Date.parse("2026-05-01T12:00:00.000Z");
+		const ingestionTime = Date.parse("2026-05-02T05:25:32.000Z");
+
+		const snapshot = deriveMostRecentPaymentSnapshot({
+			asOf: Date.parse("2026-05-02T12:00:00.000Z"),
+			attempts: [
+				{
+					_id: "attempt_provider_managed",
+					amount: 346_075,
+					confirmedAt: undefined,
+					failedAt: undefined,
+					cancelledAt: undefined,
+					obligationIds: ["obligation_may"],
+					reversedAt: undefined,
+					initiatedAt: ingestionTime,
+					settledAt: undefined,
+					status: "processing",
+				},
+			],
+			obligations: [
+				{
+					_id: "obligation_may" as never,
+					amount: 346_075,
+					dueDate: processDate,
+					status: "upcoming",
+				},
+			],
+			transfersByAttemptId: new Map(),
+		});
+
+		expect(snapshot).toEqual({
+			amount: 346_075,
+			date: processDate,
+			status: "processing",
+		});
+	});
+
 	it("prefers a linked transfer lifecycle when normalizing the most recent status", () => {
 		const snapshot = deriveMostRecentPaymentSnapshot({
+			asOf: Date.parse("2026-04-03T00:00:00.000Z"),
 			attempts: [
 				{
 					_id: "attempt_1",
@@ -131,9 +173,10 @@ describe("mortgagePaymentSnapshot", () => {
 		});
 	});
 
-	it("falls back to the next collection plan entry before provider schedule or obligation", () => {
+	it("uses the obligation due date instead of the internal plan-entry lead date", () => {
 		const snapshot = deriveNextUpcomingPaymentSnapshot({
 			asOf: Date.parse("2026-04-15T00:00:00.000Z"),
+			attempts: [],
 			externalSchedule: {
 				nextPollAt: Date.parse("2026-04-22T00:00:00.000Z"),
 				status: "active",
@@ -142,21 +185,56 @@ describe("mortgagePaymentSnapshot", () => {
 				{
 					amount: 2450,
 					dueDate: Date.parse("2026-05-01T00:00:00.000Z"),
+					_id: "obligation_1" as never,
 					status: "upcoming",
-				},
-			],
-			planEntries: [
-				{
-					amount: 2450,
-					scheduledDate: Date.parse("2026-04-30T00:00:00.000Z"),
-					status: "planned",
 				},
 			],
 		});
 
 		expect(snapshot).toEqual({
 			amount: 2450,
-			date: Date.parse("2026-04-30T00:00:00.000Z"),
+			date: Date.parse("2026-05-01T00:00:00.000Z"),
+			status: "planned",
+		});
+	});
+
+	it("skips an obligation with an active linked attempt when selecting next upcoming", () => {
+		const snapshot = deriveNextUpcomingPaymentSnapshot({
+			asOf: Date.parse("2026-05-01T12:00:00.000Z"),
+			attempts: [
+				{
+					_id: "attempt_1",
+					amount: 2450,
+					confirmedAt: undefined,
+					failedAt: undefined,
+					cancelledAt: undefined,
+					obligationIds: ["obligation_1"],
+					reversedAt: undefined,
+					initiatedAt: Date.parse("2026-04-30T10:00:00.000Z"),
+					settledAt: undefined,
+					status: "processing",
+				},
+			],
+			externalSchedule: null,
+			obligations: [
+				{
+					_id: "obligation_1" as never,
+					amount: 2450,
+					dueDate: Date.parse("2026-05-01T00:00:00.000Z"),
+					status: "upcoming",
+				},
+				{
+					_id: "obligation_2" as never,
+					amount: 2450,
+					dueDate: Date.parse("2026-06-01T00:00:00.000Z"),
+					status: "upcoming",
+				},
+			],
+		});
+
+		expect(snapshot).toEqual({
+			amount: 2450,
+			date: Date.parse("2026-06-01T00:00:00.000Z"),
 			status: "planned",
 		});
 	});
@@ -164,6 +242,7 @@ describe("mortgagePaymentSnapshot", () => {
 	it("returns explicit none states when a mortgage has no payment context", () => {
 		expect(
 			deriveMostRecentPaymentSnapshot({
+				asOf: Date.parse("2026-04-15T00:00:00.000Z"),
 				attempts: [],
 				obligations: [],
 				transfersByAttemptId: new Map(),
@@ -177,9 +256,9 @@ describe("mortgagePaymentSnapshot", () => {
 		expect(
 			deriveNextUpcomingPaymentSnapshot({
 				asOf: Date.parse("2026-04-15T00:00:00.000Z"),
+				attempts: [],
 				externalSchedule: null,
 				obligations: [],
-				planEntries: [],
 			})
 		).toEqual({
 			amount: null,
@@ -191,6 +270,7 @@ describe("mortgagePaymentSnapshot", () => {
 	it("falls back to an overdue obligation when no plan entry or provider schedule exists", () => {
 		const snapshot = deriveNextUpcomingPaymentSnapshot({
 			asOf: Date.parse("2026-04-15T00:00:00.000Z"),
+			attempts: [],
 			externalSchedule: null,
 			obligations: [
 				{
@@ -199,7 +279,6 @@ describe("mortgagePaymentSnapshot", () => {
 					status: "overdue",
 				},
 			],
-			planEntries: [],
 		});
 
 		expect(snapshot).toEqual({
@@ -305,11 +384,6 @@ describe("mortgagePaymentSnapshot", () => {
 				mortgageIds: [] as string[],
 				rowsByMortgageId: {} as Record<string, unknown[]>,
 			},
-			collectionPlanEntries: {
-				expectedIndex: "by_mortgage_status_scheduled",
-				mortgageIds: [] as string[],
-				rowsByMortgageId: {} as Record<string, unknown[]>,
-			},
 			externalCollectionSchedules: {
 				expectedIndex: "by_mortgage",
 				mortgageIds: [] as string[],
@@ -384,18 +458,15 @@ describe("mortgagePaymentSnapshot", () => {
 		);
 
 		expect(indexedQueries.obligations.mortgageIds).toEqual(mortgageIds);
-		expect(indexedQueries.collectionPlanEntries.mortgageIds).toEqual(
-			mortgageIds
-		);
 		expect(indexedQueries.collectionAttempts.mortgageIds).toEqual(mortgageIds);
 		expect(indexedQueries.externalCollectionSchedules.mortgageIds).toEqual(
 			mortgageIds
 		);
 		expect(ctx.db.query).not.toHaveBeenCalledWith("transferRequests");
 		expect(snapshots.get("mortgage_1")).toEqual({
-			mostRecentPaymentAmount: 2450,
-			mostRecentPaymentDate: obligationDueDate,
-			mostRecentPaymentStatus: "processing",
+			mostRecentPaymentAmount: null,
+			mostRecentPaymentDate: null,
+			mostRecentPaymentStatus: "none",
 			nextUpcomingPaymentAmount: 2450,
 			nextUpcomingPaymentDate: obligationDueDate,
 			nextUpcomingPaymentStatus: "planned",

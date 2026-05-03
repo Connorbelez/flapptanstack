@@ -146,6 +146,104 @@ function buildDisplayName(args: {
 	);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function optionalString(value: unknown) {
+	return typeof value === "string" && value.trim().length > 0
+		? value.trim()
+		: null;
+}
+
+function optionalFiniteNumber(value: unknown) {
+	return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readRotessaCustomerReferenceFromMetadata(metadata: unknown) {
+	if (!isRecord(metadata)) {
+		return null;
+	}
+
+	const customerId = optionalFiniteNumber(metadata.rotessaCustomerId);
+	const customIdentifier =
+		optionalString(metadata.rotessaCustomerCustomIdentifier) ??
+		optionalString(metadata.rotessaCustomIdentifier);
+
+	if (customerId === null && customIdentifier === null) {
+		return null;
+	}
+
+	return {
+		customerId,
+		customIdentifier,
+		source: "bank_account_metadata" as const,
+	};
+}
+
+function isActiveCollectionAttemptStatus(status: string) {
+	return (
+		status === "initiated" ||
+		status === "pending" ||
+		status === "executing" ||
+		status === "processing"
+	);
+}
+
+function buildActiveAttemptByObligationId(
+	attempts: readonly Doc<"collectionAttempts">[]
+) {
+	const activeAttemptByObligationId = new Map<
+		string,
+		Doc<"collectionAttempts">
+	>();
+
+	for (const attempt of [...attempts].sort((left, right) =>
+		sortByDescendingNumber(
+			left.providerLastReportedAt ?? left.initiatedAt,
+			right.providerLastReportedAt ?? right.initiatedAt
+		)
+	)) {
+		if (!isActiveCollectionAttemptStatus(attempt.status)) {
+			continue;
+		}
+
+		for (const obligationId of attempt.obligationIds) {
+			const key = String(obligationId);
+			if (!activeAttemptByObligationId.has(key)) {
+				activeAttemptByObligationId.set(key, attempt);
+			}
+		}
+	}
+
+	return activeAttemptByObligationId;
+}
+
+function buildExternalScheduleRow(args: {
+	isSelected: boolean;
+	schedule: Doc<"externalCollectionSchedules">;
+}) {
+	return {
+		activatedAt: args.schedule.activatedAt ?? null,
+		bankAccountId: args.schedule.bankAccountId,
+		borrowerId: args.schedule.borrowerId,
+		coveredFromPlanEntryId: args.schedule.coveredFromPlanEntryId,
+		coveredToPlanEntryId: args.schedule.coveredToPlanEntryId,
+		externalScheduleRef: args.schedule.externalScheduleRef ?? null,
+		isSelected: args.isSelected,
+		lastSyncErrorMessage: args.schedule.lastSyncErrorMessage ?? null,
+		lastSyncedAt: args.schedule.lastSyncedAt ?? null,
+		nextPollAt: args.schedule.nextPollAt ?? null,
+		providerCode: args.schedule.providerCode,
+		scheduleId: args.schedule._id,
+		status: args.schedule.status,
+	};
+}
+
+function isActiveDealStatus(status: Doc<"deals">["status"]) {
+	return status !== "confirmed" && status !== "failed";
+}
+
 async function loadBrokerSummary(
 	ctx: CrmDetailQueryCtx,
 	brokerId: Id<"brokers">
@@ -197,6 +295,7 @@ async function loadBorrowerSummary(
 		}),
 		onboardedAt: borrower.onboardedAt ?? null,
 		status: borrower.status,
+		userId: user?._id ?? null,
 	};
 }
 
@@ -225,6 +324,7 @@ async function loadLenderSummary(
 		}),
 		payoutFrequency: lender.payoutFrequency ?? null,
 		status: lender.status,
+		userId: user?._id ?? null,
 	};
 }
 
@@ -252,6 +352,66 @@ async function loadDealLenderSummary(
 		}),
 		payoutFrequency: null,
 		status: "unresolved",
+		userId: user?._id ?? null,
+	};
+}
+
+async function loadDealSellerSummary(
+	ctx: CrmDetailQueryCtx,
+	deal: Doc<"deals">
+) {
+	const user = await getUserByAuthId(ctx, deal.sellerId);
+	const borrower = user
+		? await ctx.db
+				.query("borrowers")
+				.withIndex("by_user", (query) => query.eq("userId", user._id))
+				.first()
+		: null;
+	const borrowerSummary =
+		borrower && canAccessCrmOrgScopedRecord(ctx.viewer, borrower)
+			? await loadBorrowerSummary(ctx, borrower._id)
+			: null;
+
+	return (
+		borrowerSummary ?? {
+			borrowerId: null,
+			email:
+				user?.email ?? (deal.sellerId.includes("@") ? deal.sellerId : null),
+			idvStatus: null,
+			name: buildDisplayName({
+				email: user?.email ?? null,
+				fallback: deal.sellerId,
+				firstName: user?.firstName ?? null,
+				lastName: user?.lastName ?? null,
+			}),
+			onboardedAt: null,
+			status: "unresolved",
+			userId: user?._id ?? null,
+		}
+	);
+}
+
+async function loadDealLawyerSummary(
+	ctx: CrmDetailQueryCtx,
+	deal: Doc<"deals">
+) {
+	if (!deal.lawyerId) {
+		return null;
+	}
+
+	const user = await getUserByAuthId(ctx, deal.lawyerId);
+
+	return {
+		authId: deal.lawyerId,
+		email: user?.email ?? (deal.lawyerId.includes("@") ? deal.lawyerId : null),
+		lawyerType: deal.lawyerType ?? null,
+		name: buildDisplayName({
+			email: user?.email ?? null,
+			fallback: deal.lawyerId,
+			firstName: user?.firstName ?? null,
+			lastName: user?.lastName ?? null,
+		}),
+		userId: user?._id ?? null,
 	};
 }
 
@@ -284,6 +444,7 @@ export const getMortgageDetailContext = crmQuery
 			originationCase,
 			documentBlueprints,
 			micSaleAvailability,
+			deals,
 		] = await Promise.all([
 			ctx.db.get(mortgage.propertyId),
 			ctx.db
@@ -342,7 +503,40 @@ export const getMortgageDetailContext = crmQuery
 				mortgageId: args.mortgageId,
 			}),
 			buildMortgageMicSaleAvailabilitySummary(ctx, args.mortgageId),
+			ctx.db
+				.query("deals")
+				.withIndex("by_mortgage", (q) => q.eq("mortgageId", args.mortgageId))
+				.collect(),
 		]);
+
+		const obligationsById = new Map(
+			obligations.map((obligation) => [String(obligation._id), obligation])
+		);
+		const activeAttemptByObligationId =
+			buildActiveAttemptByObligationId(collectionAttempts);
+		const planEntriesByBorrowerId = new Map<
+			string,
+			Doc<"collectionPlanEntries">[]
+		>();
+		for (const entry of collectionPlanEntries) {
+			const borrowerIds = new Set(
+				entry.obligationIds
+					.map(
+						(obligationId) =>
+							obligationsById.get(String(obligationId))?.borrowerId
+					)
+					.filter(
+						(borrowerId): borrowerId is Id<"borrowers"> =>
+							borrowerId !== undefined
+					)
+					.map(String)
+			);
+			for (const borrowerId of borrowerIds) {
+				const existing = planEntriesByBorrowerId.get(borrowerId) ?? [];
+				existing.push(entry);
+				planEntriesByBorrowerId.set(borrowerId, existing);
+			}
+		}
 
 		const borrowers = await Promise.all(
 			borrowerLinks.map(async (link) => {
@@ -351,15 +545,86 @@ export const getMortgageDetailContext = crmQuery
 					return null;
 				}
 
-				const user = await ctx.db.get(borrower.userId);
+				const [user, bankAccounts, externalCustomerProfiles] =
+					await Promise.all([
+						ctx.db.get(borrower.userId),
+						ctx.db
+							.query("bankAccounts")
+							.withIndex("by_owner", (q) =>
+								q
+									.eq("ownerType", "borrower")
+									.eq("ownerId", String(borrower._id))
+							)
+							.collect(),
+						ctx.db
+							.query("externalCustomerProfiles")
+							.withIndex("by_borrower", (q) => q.eq("borrowerId", borrower._id))
+							.order("desc")
+							.collect(),
+					]);
+				const metadataReference = bankAccounts
+					.map((bankAccount) =>
+						readRotessaCustomerReferenceFromMetadata(bankAccount.metadata)
+					)
+					.find((reference) => reference !== null);
+				const externalProfileReference = externalCustomerProfiles[0]
+					? {
+							customerId: Number.isFinite(
+								Number(externalCustomerProfiles[0].externalCustomerRef)
+							)
+								? Number(externalCustomerProfiles[0].externalCustomerRef)
+								: null,
+							customIdentifier:
+								externalCustomerProfiles[0].externalCustomerCustomIdentifier ??
+								null,
+							source: "external_customer_profile" as const,
+						}
+					: null;
+				const linkedPlanEntries = (
+					planEntriesByBorrowerId.get(String(borrower._id)) ?? []
+				)
+					.sort((left, right) => left.scheduledDate - right.scheduledDate)
+					.map((entry) => ({
+						amount: entry.amount,
+						displayDate:
+							entry.obligationIds.length === 1
+								? (obligationsById.get(String(entry.obligationIds[0]))
+										?.dueDate ?? entry.scheduledDate)
+								: entry.scheduledDate,
+						obligationIds: entry.obligationIds,
+						planEntryId: entry._id,
+						scheduledDate: entry.scheduledDate,
+						status: entry.status,
+					}));
+				const linkedExternalSchedules = externalCollectionSchedules
+					.filter((schedule) => schedule.borrowerId === borrower._id)
+					.sort((left, right) => right.createdAt - left.createdAt)
+					.map((schedule) =>
+						buildExternalScheduleRow({
+							isSelected:
+								schedule._id ===
+								pickPreferredExternalCollectionSchedule({
+									mortgage,
+									schedules: externalCollectionSchedules,
+								})?._id,
+							schedule,
+						})
+					);
+
 				return {
+					authId: user?.authId ?? null,
 					borrowerId: borrower._id,
+					email: user?.email ?? null,
+					linkedExternalSchedules,
+					linkedPlanEntries,
 					name:
 						toBorrowerName({
 							firstName: user?.firstName,
 							lastName: user?.lastName,
 						}) ?? String(borrower._id),
 					role: link.role,
+					rotessaCustomerReference:
+						metadataReference ?? externalProfileReference ?? null,
 					status: borrower.status,
 					idvStatus: borrower.idvStatus ?? null,
 				};
@@ -385,17 +650,40 @@ export const getMortgageDetailContext = crmQuery
 			},
 			{}
 		);
+		const transferRequestsById = new Map(
+			transferRequests.map((transferRequest) => [
+				String(transferRequest._id),
+				transferRequest,
+			])
+		);
 		const paymentSetupObligations = [...obligations]
 			.sort((left, right) => left.dueDate - right.dueDate)
-			.map((obligation) => ({
-				amount: obligation.amount,
-				amountSettled: obligation.amountSettled,
-				dueDate: obligation.dueDate,
-				obligationId: obligation._id,
-				paymentNumber: obligation.paymentNumber,
-				status: obligation.status,
-				type: obligation.type,
-			}));
+			.map((obligation) => {
+				const activeAttempt = activeAttemptByObligationId.get(
+					String(obligation._id)
+				);
+				const activeTransferRequest = activeAttempt?.transferRequestId
+					? transferRequestsById.get(String(activeAttempt.transferRequestId))
+					: null;
+
+				return {
+					activeCollectionAttemptId: activeAttempt?._id ?? null,
+					activeCollectionAttemptStatus: activeAttempt?.status ?? null,
+					activeTransferRequestId: activeTransferRequest?._id ?? null,
+					activeTransferRequestStatus: activeTransferRequest?.status ?? null,
+					amount: obligation.amount,
+					amountSettled: obligation.amountSettled,
+					displayStatus:
+						activeTransferRequest?.status ??
+						activeAttempt?.status ??
+						obligation.status,
+					dueDate: obligation.dueDate,
+					obligationId: obligation._id,
+					paymentNumber: obligation.paymentNumber,
+					status: obligation.status,
+					type: obligation.type,
+				};
+			});
 		const paymentSetupPlanEntries = await Promise.all(
 			[...collectionPlanEntries]
 				.sort((left, right) => left.scheduledDate - right.scheduledDate)
@@ -410,12 +698,19 @@ export const getMortgageDetailContext = crmQuery
 				mortgage,
 				schedules: externalCollectionSchedules,
 			});
+		const externalScheduleRows = [...externalCollectionSchedules]
+			.sort((left, right) => right.createdAt - left.createdAt)
+			.map((schedule) =>
+				buildExternalScheduleRow({
+					isSelected: schedule._id === selectedExternalCollectionSchedule?._id,
+					schedule,
+				})
+			);
 		const paymentSnapshot = buildMortgagePaymentSnapshot({
 			asOf: Date.now(),
 			attempts: collectionAttempts,
 			mortgage,
 			obligations,
-			planEntries: collectionPlanEntries,
 			schedules: externalCollectionSchedules,
 			transfersById: new Map(
 				transferRequests.map(
@@ -484,6 +779,7 @@ export const getMortgageDetailContext = crmQuery
 					mortgage.collectionExecutionProviderCode ?? null,
 				collectionPlanEntryCount: collectionPlanEntries.length,
 				collectionPlanEntries: paymentSetupPlanEntries,
+				externalSchedules: externalScheduleRows,
 				externalSchedule: selectedExternalCollectionSchedule
 					? {
 							activatedAt:
@@ -549,6 +845,19 @@ export const getMortgageDetailContext = crmQuery
 					newState: event.newState,
 					timestamp: event.timestamp,
 				})),
+			activeDeals: await Promise.all(
+				deals
+					.filter((deal) => isActiveDealStatus(deal.status))
+					.sort((left, right) => right.createdAt - left.createdAt)
+					.map(async (deal) => ({
+						buyerId: deal.buyerId,
+						closingDate: deal.closingDate ?? null,
+						dealId: deal._id,
+						fractionalShare: deal.fractionalShare,
+						lender: await loadDealLenderSummary(ctx, deal),
+						status: deal.status,
+					}))
+			),
 		};
 	})
 	.public();
@@ -649,11 +958,12 @@ export const getDealDetailContext = crmQuery
 			throw new ConvexError("Deal not found or access denied");
 		}
 
-		const [property, lenderUser, sellerUser, viewerUser, recentAuditEvents] =
+		const [property, lender, seller, lawyer, viewerUser, recentAuditEvents] =
 			await Promise.all([
 				ctx.db.get(mortgage.propertyId),
-				getUserByAuthId(ctx, deal.buyerId),
-				getUserByAuthId(ctx, deal.sellerId),
+				loadDealLenderSummary(ctx, deal),
+				loadDealSellerSummary(ctx, deal),
+				loadDealLawyerSummary(ctx, deal),
 				getUserByAuthId(ctx, ctx.viewer.authId),
 				ctx.db
 					.query("auditJournal")
@@ -670,41 +980,6 @@ export const getDealDetailContext = crmQuery
 				userId: viewerUser?._id,
 			}
 		);
-
-		const lender = lenderUser
-			? {
-					email: lenderUser.email ?? null,
-					name:
-						toBorrowerName({
-							firstName: lenderUser.firstName,
-							lastName: lenderUser.lastName,
-						}) ??
-						lenderUser.email ??
-						deal.buyerId,
-					userId: lenderUser._id,
-				}
-			: {
-					email: deal.buyerId.includes("@") ? deal.buyerId : null,
-					name: deal.buyerId,
-					userId: null,
-				};
-		const seller = sellerUser
-			? {
-					email: sellerUser.email ?? null,
-					name:
-						toBorrowerName({
-							firstName: sellerUser.firstName,
-							lastName: sellerUser.lastName,
-						}) ??
-						sellerUser.email ??
-						deal.sellerId,
-					userId: sellerUser._id,
-				}
-			: {
-					email: deal.sellerId.includes("@") ? deal.sellerId : null,
-					name: deal.sellerId,
-					userId: null,
-				};
 
 		return {
 			mortgage: {
@@ -724,12 +999,7 @@ export const getDealDetailContext = crmQuery
 					}
 				: null,
 			parties: {
-				lawyer: deal.lawyerId
-					? {
-							lawyerId: deal.lawyerId,
-							lawyerType: deal.lawyerType ?? null,
-						}
-					: null,
+				lawyer,
 				lender,
 				seller,
 			},

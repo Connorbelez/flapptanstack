@@ -13,6 +13,7 @@ import {
 	Users,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { LegalRepresentationStatusPanel } from "#/components/legal-representation/LegalRepresentationStatusPanel";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -62,9 +63,12 @@ function Section({
 		<section className="space-y-4 border-border/70 border-t pt-5">
 			<div className="flex gap-3">
 				<div className="mt-0.5 text-muted-foreground">{icon}</div>
-				<div className="space-y-1">
+				<div className="flex items-center gap-1.5">
 					<h2 className="font-medium text-base">{title}</h2>
-					<p className="text-muted-foreground text-sm">{description}</p>
+					<AdminDescriptionHelp
+						content={description}
+						label={`${title} details`}
+					/>
 				</div>
 			</div>
 			{children}

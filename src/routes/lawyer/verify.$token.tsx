@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import { useMutation, useQuery } from "convex/react";
 import type { ReactNode } from "react";
@@ -8,8 +8,10 @@ import { api } from "../../../convex/_generated/api";
 type AcceptResult =
 	| {
 			readonly status: "verified";
+			readonly dealId?: string;
 	  }
 	| {
+			readonly dealId?: string;
 			readonly reason: string;
 			readonly status:
 				| "expired"
@@ -19,8 +21,14 @@ type AcceptResult =
 				| "used";
 	  };
 
-type AcceptPhase = "idle" | "accepting" | "complete";
+type AcceptPhase = "idle" | "accepting" | "complete" | "redirectingOnboard";
 type InvitationStatus = keyof typeof statusCopy | "pending";
+
+interface LawyerAccessAuth {
+	readonly permissions?: readonly string[];
+	readonly role?: string;
+	readonly roles?: readonly string[];
+}
 
 const statusCopy = {
 	accepted: {
@@ -61,10 +69,36 @@ export function buildLawyerVerifyRedirectPath(token: string): string {
 	return `/lawyer/verify/${encodeURIComponent(token)}`;
 }
 
+export function buildVerifiedLawyerReturnPath(dealId: string): string {
+	return `/deals/${encodeURIComponent(dealId)}`;
+}
+
+export function buildLawyerOnboardingPath(dealId: string): string {
+	const search = new URLSearchParams({
+		context: "deal-representation",
+		redirect: buildVerifiedLawyerReturnPath(dealId),
+	});
+	return `/onboard?${search.toString()}`;
+}
+
 export function getLawyerVerifyTerminalCopy(
 	status: Exclude<InvitationStatus, "pending">
 ): (typeof statusCopy)[Exclude<InvitationStatus, "pending">] {
 	return statusCopy[status];
+}
+
+function hasLawyerAccess(auth: LawyerAccessAuth): boolean {
+	return (
+		auth.role === "lawyer" ||
+		auth.roles?.includes("lawyer") === true ||
+		auth.permissions?.includes("lawyer:access") === true
+	);
+}
+
+function invitationDealId(
+	status: { readonly dealId?: unknown } | null | undefined
+): string | undefined {
+	return typeof status?.dealId === "string" ? status.dealId : undefined;
 }
 
 export const Route = createFileRoute("/lawyer/verify/$token")({
@@ -82,6 +116,7 @@ export function LawyerVerifyRouteContent({
 	readonly token: string;
 }) {
 	const auth = useAuth();
+	const navigate = useNavigate();
 	const invitationStatus = useQuery(
 		api.legalRepresentation.invitations.getInvitationStatusByToken,
 		{ token }
@@ -96,19 +131,64 @@ export function LawyerVerifyRouteContent({
 		() => buildLawyerVerifyRedirectPath(token),
 		[token]
 	);
+	const dealId = invitationDealId(invitationStatus);
+	const canAcceptInvitation = hasLawyerAccess(auth);
 
 	useEffect(() => {
 		if (
 			phase !== "idle" ||
 			auth.loading ||
 			!auth.user ||
-			invitationStatus?.status !== "pending"
+			invitationStatus?.status !== "pending" ||
+			canAcceptInvitation ||
+			!dealId
+		) {
+			return;
+		}
+		setPhase("redirectingOnboard");
+		void navigate({ href: buildLawyerOnboardingPath(dealId) }).catch(
+			(unknownError: unknown) => {
+				setError(
+					unknownError instanceof Error
+						? unknownError.message
+						: "Lawyer onboarding could not be opened."
+				);
+				setPhase("complete");
+			}
+		);
+	}, [
+		auth.loading,
+		auth.user,
+		canAcceptInvitation,
+		dealId,
+		invitationStatus?.status,
+		navigate,
+		phase,
+	]);
+
+	useEffect(() => {
+		if (
+			phase !== "idle" ||
+			auth.loading ||
+			!auth.user ||
+			invitationStatus?.status !== "pending" ||
+			!canAcceptInvitation
 		) {
 			return;
 		}
 		setPhase("accepting");
 		void acceptInvitation({ token })
-			.then((nextResult) => {
+			.then(async (nextResult) => {
+				if (
+					nextResult.status === "verified" &&
+					"dealId" in nextResult &&
+					typeof nextResult.dealId === "string"
+				) {
+					await navigate({
+						href: buildVerifiedLawyerReturnPath(nextResult.dealId),
+					});
+					return;
+				}
 				setResult(nextResult as AcceptResult);
 				setPhase("complete");
 			})
@@ -124,7 +204,9 @@ export function LawyerVerifyRouteContent({
 		acceptInvitation,
 		auth.loading,
 		auth.user,
+		canAcceptInvitation,
 		invitationStatus?.status,
+		navigate,
 		phase,
 		token,
 	]);
@@ -167,7 +249,33 @@ export function LawyerVerifyRouteContent({
 
 	if (invitationStatus.status !== "pending") {
 		const copy = statusCopy[invitationStatus.status];
-		return <LawyerVerifyShell body={copy.body} title={copy.title} />;
+		const portalDealId =
+			invitationStatus.status === "verified" ? dealId : undefined;
+		return (
+			<LawyerVerifyShell
+				actions={
+					portalDealId ? (
+						<a
+							className="rounded-md bg-slate-950 px-3 py-2 font-medium text-sm text-white"
+							href={buildVerifiedLawyerReturnPath(portalDealId)}
+						>
+							Open deal portal
+						</a>
+					) : undefined
+				}
+				body={copy.body}
+				title={copy.title}
+			/>
+		);
+	}
+
+	if (phase === "redirectingOnboard") {
+		return (
+			<LawyerVerifyShell
+				body="Opening the lawyer onboarding track before this representation can be confirmed."
+				title="Preparing lawyer onboarding"
+			/>
+		);
 	}
 
 	if (phase === "accepting") {

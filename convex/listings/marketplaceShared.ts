@@ -1,7 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { TOTAL_SUPPLY } from "../ledger/constants";
-import { buildMortgageMicSaleAvailabilitySummary } from "../mortgages/micSaleAvailability";
+import { buildMortgageSaleInventorySummary } from "../marketplace/saleInventory";
 
 export interface MarketplaceAvailabilitySummary {
 	availableFractions: number;
@@ -102,17 +102,17 @@ export async function buildMarketplaceAvailabilitySummary(
 		});
 	}
 
-	const micAvailability = await buildMortgageMicSaleAvailabilitySummary(
+	const saleInventory = await buildMortgageSaleInventorySummary(
 		ctx,
 		mortgageId
 	);
 
 	return buildAvailabilitySummary({
-		availableFractions: micAvailability.availableForSaleLedgerUnits,
-		lockedFractions: micAvailability.lockedLedgerUnits,
-		soldFractions: micAvailability.soldLedgerUnits,
+		availableFractions: saleInventory.availableForSaleLedgerUnits,
+		lockedFractions: saleInventory.lockedLedgerUnits,
+		soldFractions: saleInventory.soldLedgerUnits,
 		totalFractions,
-		totalInvestors: micAvailability.totalInvestors,
+		totalInvestors: saleInventory.totalInvestors,
 	});
 }
 

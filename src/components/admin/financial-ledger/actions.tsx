@@ -117,7 +117,7 @@ export function WaiveBalanceDialog({
 			<DialogContent className="sm:max-w-lg">
 				<DialogHeader>
 					<DialogTitle>Waive obligation balance</DialogTitle>
-					<DialogDescription>
+					<DialogDescription className="sr-only">
 						Use the existing cash-ledger waiver mutation. This keeps operator
 						corrections on the canonical backend path.
 					</DialogDescription>
@@ -222,7 +222,7 @@ export function WriteOffBalanceDialog({
 			<DialogContent className="sm:max-w-lg">
 				<DialogHeader>
 					<DialogTitle>Write off obligation balance</DialogTitle>
-					<DialogDescription>
+					<DialogDescription className="sr-only">
 						This action uses the existing write-off mutation and records the
 						journal evidence in the cash ledger.
 					</DialogDescription>

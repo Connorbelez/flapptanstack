@@ -280,7 +280,7 @@ export function MortgageDocumentAttachComposer({
 			<DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>Attach mortgage document</DialogTitle>
-					<DialogDescription>
+					<DialogDescription className="sr-only">
 						Create a future-only mortgage document blueprint.
 					</DialogDescription>
 				</DialogHeader>

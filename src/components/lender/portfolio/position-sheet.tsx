@@ -5,7 +5,6 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "#/components/ui/tabs";
-import type { Id } from "../../../../convex/_generated/dataModel";
 import {
 	PortfolioDetailHost,
 	PortfolioDetailSection,
@@ -20,14 +19,21 @@ import {
 	formatPortfolioFractions,
 	formatPortfolioPercent,
 } from "./portfolio-formatters";
-import { lenderPortfolioPositionDetailQueryOptions } from "./query-options";
+import type {
+	LenderPortfolioQueryMode,
+	PortfolioPositionDetail,
+} from "./portfolio-types";
+import {
+	adminLenderPortfolioPositionDetailQueryOptions,
+	lenderPortfolioPositionDetailQueryOptions,
+} from "./query-options";
 import { RenewalActionSurface } from "./renewals/renewal-actions";
 
 interface PositionSheetProps {
+	mode: LenderPortfolioQueryMode;
 	mortgageId: string;
 	onOpenChange: (open: boolean) => void;
 	open: boolean;
-	portalId: Id<"portals">;
 }
 
 const POSITION_SHEET_LOADING_KEYS = [
@@ -54,14 +60,23 @@ function SheetLoadingState() {
 }
 
 export function PositionSheet({
+	mode,
 	mortgageId,
 	onOpenChange,
 	open,
-	portalId,
 }: PositionSheetProps) {
-	const { data, error, isPending } = useQuery({
-		...lenderPortfolioPositionDetailQueryOptions(portalId, mortgageId),
-	});
+	const positionDetailQueryOptions =
+		mode.kind === "admin"
+			? adminLenderPortfolioPositionDetailQueryOptions(
+					mode.targetLenderId,
+					mortgageId
+				)
+			: lenderPortfolioPositionDetailQueryOptions(mode.portalId, mortgageId);
+	const { data, error, isPending } = useQuery(
+		positionDetailQueryOptions as unknown as Parameters<
+			typeof useQuery<PortfolioPositionDetail>
+		>[0]
+	);
 
 	return (
 		<PortfolioDetailHost
@@ -221,8 +236,8 @@ export function PositionSheet({
 									title="Renewal"
 								>
 									<RenewalActionSurface
+										mode={mode}
 										mortgageId={mortgageId}
-										portalId={portalId}
 										variant="full"
 									/>
 								</PortfolioDetailSection>

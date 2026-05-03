@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Button } from "#/components/ui/button";
 import {
 	Dialog,
@@ -69,8 +70,14 @@ export function MortgagePackageApplyButton({
 			<Dialog onOpenChange={setOpen} open={open}>
 				<DialogContent>
 					<DialogHeader>
-						<DialogTitle>Apply Document Package</DialogTitle>
-						<DialogDescription>
+						<div className="flex items-center gap-1.5">
+							<DialogTitle>Apply Document Package</DialogTitle>
+							<AdminDescriptionHelp
+								content="Applies only to future deal locks. Existing locked deal documents keep their immutable snapshots."
+								label="Apply Document Package details"
+							/>
+						</div>
+						<DialogDescription className="sr-only">
 							Applies only to future deal locks. Existing locked deal documents
 							keep their immutable snapshots.
 						</DialogDescription>

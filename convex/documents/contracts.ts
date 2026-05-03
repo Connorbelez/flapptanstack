@@ -188,6 +188,7 @@ export const dealDocumentInstanceKindValidator = v.union(
 export const dealDocumentInstanceStatusValidator = v.union(
 	v.literal("available"),
 	v.literal("generation_failed"),
+	v.literal("provider_error"),
 	v.literal("signature_pending_recipient_resolution"),
 	v.literal("signature_draft"),
 	v.literal("signature_sent"),
@@ -196,6 +197,12 @@ export const dealDocumentInstanceStatusValidator = v.union(
 	v.literal("signature_voided"),
 	v.literal("signed"),
 	v.literal("archived")
+);
+
+export const dealDocumentStoredRemediationActionValidator = v.union(
+	v.literal("waived_for_deal"),
+	v.literal("retried_instance"),
+	v.literal("refreshed_from_source_snapshot")
 );
 
 export const dealEnvelopeProviderValidator = v.literal("documenso");
@@ -357,6 +364,10 @@ export type DealDocumentInstanceKind = Infer<
 
 export type DealDocumentInstanceStatus = Infer<
 	typeof dealDocumentInstanceStatusValidator
+>;
+
+export type DealDocumentStoredRemediationAction = Infer<
+	typeof dealDocumentStoredRemediationActionValidator
 >;
 
 export type DealEnvelopeProvider = Infer<typeof dealEnvelopeProviderValidator>;

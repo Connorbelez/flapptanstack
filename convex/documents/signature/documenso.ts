@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import type { Id } from "../../_generated/dataModel";
 import type {
 	SignatureEnvelopeStatus,
@@ -11,6 +12,9 @@ import type {
 	SignatureProviderDownloadCompletedArtifactsInput,
 	SignatureProviderDownloadCompletedArtifactsResult,
 	SignatureProviderField,
+	SignatureProviderPreflightError,
+	SignatureProviderPreflightErrorCode,
+	SignatureProviderPreflightResult,
 	SignatureProviderRecipientInput,
 	SignatureProviderSyncEnvelopeResult,
 } from "./provider";
@@ -93,6 +97,20 @@ type DocumensoFieldMetaType =
 	| "radio"
 	| "signature"
 	| "text";
+
+const DOCUMENSO_SUPPORTED_FIELD_TYPES = new Set([
+	"CHECKBOX",
+	"DATE",
+	"DROPDOWN",
+	"EMAIL",
+	"FREE_SIGNATURE",
+	"INITIALS",
+	"NAME",
+	"NUMBER",
+	"RADIO",
+	"SIGNATURE",
+	"TEXT",
+]);
 
 interface DocumensoFieldMeta {
 	placeholder?: string;
@@ -325,31 +343,174 @@ function toDocumensoFieldMeta(
 	};
 }
 
-function isDocumensoSignatureField(field: SignatureProviderField) {
-	const type = field.type.toUpperCase();
-	return type === "SIGNATURE" || type === "FREE_SIGNATURE";
+function fieldPath(args: {
+	fieldIndex: number;
+	recipientIndex: number;
+	property?: string;
+}) {
+	return `recipients.${args.recipientIndex}.fields.${args.fieldIndex}${
+		args.property ? `.${args.property}` : ""
+	}`;
 }
 
-function validateDocumensoEnvelopeRecipients(
-	recipients: SignatureProviderRecipientInput[]
+function addPreflightError(
+	errors: SignatureProviderPreflightError[],
+	args: {
+		code: SignatureProviderPreflightErrorCode;
+		fieldIdentifier?: number | string;
+		message: string;
+		path: string;
+		platformRole?: string;
+	}
 ) {
-	const invalidSigners = recipients.filter(
-		(recipient) =>
-			recipient.providerRole === "SIGNER" &&
-			!recipient.fields.some(isDocumensoSignatureField)
-	);
-	if (invalidSigners.length === 0) {
+	errors.push({
+		code: args.code,
+		...(args.fieldIdentifier !== undefined
+			? { fieldIdentifier: args.fieldIdentifier }
+			: {}),
+		message: args.message,
+		path: args.path,
+		...(args.platformRole ? { platformRole: args.platformRole } : {}),
+	});
+}
+
+function isPercentValue(value: number) {
+	return Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function hasValidSizePercent(value: number) {
+	return Number.isFinite(value) && value > 0 && value <= 100;
+}
+
+function validateFieldMeta(
+	errors: SignatureProviderPreflightError[],
+	recipient: SignatureProviderRecipientInput,
+	field: SignatureProviderField,
+	recipientIndex: number,
+	fieldIndex: number
+) {
+	if (!field.fieldMeta) {
 		return;
 	}
 
-	throw new DocumensoConfigError(
-		`Documenso signer recipients must have at least one SIGNATURE field: ${invalidSigners
-			.map(
-				(recipient) =>
-					`${recipient.name} <${recipient.email}> (${recipient.platformRole})`
-			)
-			.join(", ")}`
-	);
+	const meta = field.fieldMeta;
+	if (
+		(meta.placeholder !== undefined && typeof meta.placeholder !== "string") ||
+		(meta.helpText !== undefined && typeof meta.helpText !== "string") ||
+		(meta.readOnly !== undefined && typeof meta.readOnly !== "boolean")
+	) {
+		addPreflightError(errors, {
+			code: "invalid_field_meta",
+			fieldIdentifier: field.identifier,
+			message: `Documenso field metadata is invalid for ${recipient.platformRole}.`,
+			path: fieldPath({
+				fieldIndex,
+				property: "fieldMeta",
+				recipientIndex,
+			}),
+			platformRole: recipient.platformRole,
+		});
+	}
+}
+
+function validateDocumensoEnvelopePreflight(
+	input: SignatureProviderCreateEnvelopeInput
+): SignatureProviderPreflightResult {
+	const errors: SignatureProviderPreflightError[] = [];
+
+	input.recipients.forEach((recipient, recipientIndex) => {
+		if (!(recipient.name.trim() && recipient.email.trim())) {
+			addPreflightError(errors, {
+				code: "recipient_missing_identity",
+				message: `Documenso recipient ${recipient.platformRole} is missing a name or email.`,
+				path: `recipients.${recipientIndex}`,
+				platformRole: recipient.platformRole,
+			});
+		}
+
+		let hasSignatureField = false;
+		recipient.fields.forEach((field, fieldIndex) => {
+			const normalizedType = field.type.trim().toUpperCase();
+			const currentFieldPath = fieldPath({ fieldIndex, recipientIndex });
+			if (!DOCUMENSO_SUPPORTED_FIELD_TYPES.has(normalizedType)) {
+				addPreflightError(errors, {
+					code: "invalid_field_type",
+					fieldIdentifier: field.identifier,
+					message: `Unsupported Documenso field type "${field.type}" for ${recipient.platformRole}.`,
+					path: `${currentFieldPath}.type`,
+					platformRole: recipient.platformRole,
+				});
+			}
+
+			if (
+				normalizedType === "SIGNATURE" ||
+				normalizedType === "FREE_SIGNATURE"
+			) {
+				hasSignatureField = true;
+			}
+
+			if (!Number.isInteger(field.pageNumber) || field.pageNumber < 1) {
+				addPreflightError(errors, {
+					code: "invalid_page",
+					fieldIdentifier: field.identifier,
+					message: `Documenso field page must be a 1-based integer for ${recipient.platformRole}.`,
+					path: `${currentFieldPath}.pageNumber`,
+					platformRole: recipient.platformRole,
+				});
+			}
+
+			const hasValidPosition =
+				isPercentValue(field.positionX) &&
+				isPercentValue(field.positionY) &&
+				hasValidSizePercent(field.width) &&
+				hasValidSizePercent(field.height);
+			if (!hasValidPosition) {
+				addPreflightError(errors, {
+					code: "invalid_position",
+					fieldIdentifier: field.identifier,
+					message: `Documenso field position must use percentage coordinates and positive percentage size for ${recipient.platformRole}.`,
+					path: currentFieldPath,
+					platformRole: recipient.platformRole,
+				});
+			}
+
+			validateFieldMeta(errors, recipient, field, recipientIndex, fieldIndex);
+		});
+
+		if (recipient.providerRole === "SIGNER" && !hasSignatureField) {
+			addPreflightError(errors, {
+				code: "signer_missing_signature_field",
+				message: `Documenso signer recipient ${recipient.name} <${recipient.email}> (${recipient.platformRole}) must have at least one SIGNATURE or FREE_SIGNATURE field.`,
+				path: `recipients.${recipientIndex}.fields`,
+				platformRole: recipient.platformRole,
+			});
+		}
+	});
+
+	return {
+		errors,
+		ok: errors.length === 0,
+	};
+}
+
+function assertDocumensoEnvelopePreflight(
+	input: SignatureProviderCreateEnvelopeInput
+) {
+	const result = validateDocumensoEnvelopePreflight(input);
+	if (!result.ok) {
+		throw new ConvexError({
+			code: "DOCUMENSO_PROVIDER_PREFLIGHT_FAILED",
+			errors: result.errors.map((error) => ({
+				code: error.code,
+				...(error.fieldIdentifier !== undefined
+					? { fieldIdentifier: String(error.fieldIdentifier) }
+					: {}),
+				message: error.message,
+				path: error.path,
+				...(error.platformRole ? { platformRole: error.platformRole } : {}),
+			})),
+		});
+	}
 }
 
 function toDocumensoField(field: SignatureProviderField) {
@@ -569,7 +730,7 @@ async function createAndOptionallyDistributeEnvelope(
 	recipients: DocumensoRecipientResponse[];
 	status: "draft" | "sent";
 }> {
-	validateDocumensoEnvelopeRecipients(input.recipients);
+	assertDocumensoEnvelopePreflight(input);
 
 	const pdfBlob = await config.getStorageBlob(input.pdfStorageId);
 	if (!pdfBlob) {

@@ -1,11 +1,27 @@
+/**
+ * @vitest-environment jsdom
+ */
+
 import type { Id } from "../../../convex/_generated/dataModel";
 import type {
 	NormalizedFieldDefinition,
 	RelationCellDisplayValue,
 } from "../../../convex/crm/types";
 import { FieldRenderer } from "#/components/admin/shell/FieldRenderer";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+
+beforeAll(() => {
+	globalThis.ResizeObserver =
+		globalThis.ResizeObserver ??
+		class ResizeObserver {
+			disconnect() {}
+			observe() {}
+			unobserve() {}
+		};
+});
 
 function buildField(
 	overrides: Partial<NormalizedFieldDefinition> = {}
@@ -113,5 +129,34 @@ describe("FieldRenderer", () => {
 		expect(markup).toContain("12 Oak Street");
 		expect(markup).not.toContain("&quot;kind&quot;");
 		expect(markup).not.toContain("&quot;items&quot;");
+	});
+
+	it("moves field descriptions and read-only reasons into tooltip help", async () => {
+		const { container } = render(
+			<FieldRenderer
+				field={buildField({
+					description: "Explains the field.",
+					editability: {
+						mode: "read_only",
+						reason: "Read-only source.",
+					},
+					label: "Status",
+				})}
+				value="Active"
+			/>
+		);
+
+		const helpTrigger = screen.getByRole("button", { name: "Status details" });
+		expect(container.innerHTML).not.toContain(
+			'<p class="text-muted-foreground text-xs">Explains the field.</p>'
+		);
+		expect(container.innerHTML).not.toContain(
+			'<p class="text-muted-foreground text-xs">Read-only source.</p>'
+		);
+
+		await userEvent.hover(helpTrigger);
+
+		expect(await screen.findAllByText("Explains the field.")).not.toHaveLength(0);
+		expect(await screen.findAllByText("Read-only source.")).not.toHaveLength(0);
 	});
 });

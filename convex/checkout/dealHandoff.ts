@@ -8,6 +8,10 @@ import { executeTransition } from "../engine/transition";
 import type { CommandSource } from "../engine/types";
 import { authedAction, convex, requirePermissionAction } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
+import {
+	createGuestInvitationDelivery,
+	getLatestGuestInvitationForDeal,
+} from "../legalRepresentation/invitations";
 
 type CheckoutSessionDoc = Doc<"checkoutSessions">;
 type DealDoc = Doc<"deals">;
@@ -59,6 +63,15 @@ function selectedLawyerId(
 
 function normalizeGuestLawyerEmail(email: string): string {
 	return email.trim().toLowerCase();
+}
+
+function hasCanonicalLawyerRole(
+	membership: Pick<Doc<"organizationMemberships">, "roleSlug" | "roleSlugs">
+): boolean {
+	return (
+		membership.roleSlug === "lawyer" ||
+		membership.roleSlugs?.includes("lawyer") === true
+	);
 }
 
 function errorMessage(error: unknown): string {
@@ -114,6 +127,37 @@ async function ensureCompletedCheckout(
 		);
 	}
 	return checkoutSession;
+}
+
+async function ensurePlatformLawyerRoleEvidence(
+	ctx: Pick<MutationCtx, "db">,
+	checkoutSession: CheckoutSessionDoc
+): Promise<DealHandoffFailure | null> {
+	if (checkoutSession.selectedLawyer.type !== "platform_lawyer") {
+		return null;
+	}
+	const lawyerId = checkoutSession.selectedLawyer.lawyerId;
+	if (!lawyerId) {
+		return fail(
+			"missing_platform_lawyer_auth_id",
+			"Platform lawyer checkout selection is missing an auth principal"
+		);
+	}
+	const memberships = await ctx.db
+		.query("organizationMemberships")
+		.withIndex("byUser", (query) => query.eq("userWorkosId", lawyerId))
+		.collect();
+	const hasRoleEvidence = memberships.some(
+		(membership) =>
+			membership.status === "active" && hasCanonicalLawyerRole(membership)
+	);
+	if (!hasRoleEvidence) {
+		return fail(
+			"missing_platform_lawyer_role",
+			"Platform lawyer checkout selection is missing active WorkOS lawyer role evidence"
+		);
+	}
+	return null;
 }
 
 async function ensureValidLockFeeTransfer(
@@ -386,6 +430,34 @@ async function ensureDealAccessForCheckout(
 	return { ok: true };
 }
 
+async function ensureGuestLawyerInvitationForDeal(
+	ctx: MutationCtx,
+	args: {
+		checkoutSession: CheckoutSessionDoc;
+		deal: DealDoc;
+	}
+) {
+	if (args.checkoutSession.selectedLawyer.type !== "guest_lawyer") {
+		return null;
+	}
+	const latestInvitation = await getLatestGuestInvitationForDeal(
+		ctx,
+		args.deal._id
+	);
+	if (latestInvitation?.status === "pending") {
+		return latestInvitation._id;
+	}
+	const invitation = await createGuestInvitationDelivery(ctx, {
+		createdBy: checkoutHandoffSource.actorId ?? "checkout_handoff",
+		deal: args.deal,
+		now: Date.now(),
+		scheduleDelivery: true,
+		selectedLawyer: args.checkoutSession.selectedLawyer,
+		targetEmail: args.checkoutSession.selectedLawyer.email,
+	});
+	return invitation.invitationId;
+}
+
 async function handleAccessGrantFailure(
 	ctx: MutationCtx,
 	args: {
@@ -543,6 +615,13 @@ async function createDealForCheckout(
 			);
 		}
 	}
+	const platformLawyerFailure = await ensurePlatformLawyerRoleEvidence(
+		ctx,
+		checkoutSession
+	);
+	if (platformLawyerFailure) {
+		return platformLawyerFailure;
+	}
 
 	const now = Date.now();
 	const dealId = await ctx.db.insert("deals", {
@@ -603,6 +682,14 @@ async function createDealForCheckout(
 			failure: accessResult,
 		});
 	}
+	const createdDeal = await ctx.db.get(dealId);
+	if (!createdDeal) {
+		return fail("deal_not_found", "Checkout deal disappeared during handoff");
+	}
+	await ensureGuestLawyerInvitationForDeal(ctx, {
+		checkoutSession,
+		deal: createdDeal,
+	});
 	await appendHandoffAudit(ctx, {
 		checkoutSession,
 		dealId,
@@ -684,6 +771,19 @@ export const createOrReuseDealForPaidCheckout = convex
 				});
 				return linkFailure;
 			}
+			const platformLawyerFailure = await ensurePlatformLawyerRoleEvidence(
+				ctx,
+				checkoutSession
+			);
+			if (platformLawyerFailure) {
+				await appendCheckoutHandoffFailureAudit(ctx, {
+					checkoutSession,
+					code: platformLawyerFailure.code,
+					dealId: existingDeal._id,
+					message: platformLawyerFailure.message,
+				});
+				return platformLawyerFailure;
+			}
 			const accessResult = await ensureDealAccessForCheckout(ctx, {
 				checkoutSession,
 				dealId: existingDeal._id,
@@ -696,6 +796,11 @@ export const createOrReuseDealForPaidCheckout = convex
 					failure: accessResult,
 				});
 			}
+			const currentDeal = (await ctx.db.get(existingDeal._id)) ?? existingDeal;
+			await ensureGuestLawyerInvitationForDeal(ctx, {
+				checkoutSession,
+				deal: currentDeal,
+			});
 			let currentStatus = existingDeal.status;
 			if (existingDeal.status === "initiated") {
 				await executeTransition(ctx, {

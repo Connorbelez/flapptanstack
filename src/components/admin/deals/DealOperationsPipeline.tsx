@@ -1,6 +1,5 @@
 "use client";
 
-import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
 	AlertTriangle,
@@ -10,11 +9,12 @@ import {
 	Scale,
 	Users,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useMemo, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { ScrollArea, ScrollBar } from "#/components/ui/scroll-area";
+import { useAdminDetailSheet } from "#/hooks/useAdminDetailSheet";
 import { cn } from "#/lib/utils";
 import { api } from "../../../../convex/_generated/api";
 import type {
@@ -55,19 +55,59 @@ function formatDate(value: number | null) {
 	return new Date(value).toLocaleDateString();
 }
 
+function isInteractiveCardTarget(target: EventTarget | null) {
+	return (
+		target instanceof Element &&
+		target.closest("a,button,input,textarea,select,[data-card-action]") !== null
+	);
+}
+
 function DealOperationsCard({
 	deal,
+	onOpenDeal,
 }: {
 	readonly deal: AdminDealOperationsCard;
+	readonly onOpenDeal: (recordId: string) => void;
 }) {
 	const primaryAction = deal.nextAction;
 	const criticalBlocker = deal.blockers.find(
 		(blocker) => blocker.severity === "critical"
 	);
 	const progress = lifecycleProgress(deal.lifecycle.phase);
+	const dealLabel = `deal ${String(deal._id).slice(-6)}`;
+
+	function openDeal() {
+		onOpenDeal(String(deal._id));
+	}
+
+	function handleCardClick(event: MouseEvent<HTMLDivElement>) {
+		if (event.defaultPrevented || isInteractiveCardTarget(event.target)) {
+			return;
+		}
+		openDeal();
+	}
+
+	function handleCardKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+		if (
+			event.defaultPrevented ||
+			event.target !== event.currentTarget ||
+			(event.key !== "Enter" && event.key !== " ")
+		) {
+			return;
+		}
+		event.preventDefault();
+		openDeal();
+	}
 
 	return (
-		<Card className="rounded-md border-border/70 shadow-none">
+		<Card
+			aria-label={`Open ${dealLabel} detail sheet`}
+			className="cursor-pointer rounded-md border-border/70 shadow-none transition-colors hover:border-primary/50 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+			onClick={handleCardClick}
+			onKeyDown={handleCardKeyDown}
+			role="button"
+			tabIndex={0}
+		>
 			<CardHeader className="space-y-3 pb-3">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0 space-y-1">
@@ -138,19 +178,17 @@ function DealOperationsCard({
 								{criticalBlocker?.message ?? "Projected from governed state"}
 							</p>
 						</div>
-						<Button asChild size="icon" variant="outline">
-							<Link
-								aria-label={`Open deal ${String(deal._id).slice(-6)}`}
-								params={{ recordid: String(deal._id) }}
-								search={{
-									detailOpen: false,
-									entityType: undefined,
-									recordId: undefined,
-								}}
-								to="/admin/deals/$recordid"
-							>
-								<ArrowRight className="size-4" />
-							</Link>
+						<Button
+							aria-label={`Open ${dealLabel} detail sheet`}
+							onClick={(event) => {
+								event.stopPropagation();
+								openDeal();
+							}}
+							size="icon"
+							type="button"
+							variant="outline"
+						>
+							<ArrowRight className="size-4" />
 						</Button>
 					</div>
 				</div>
@@ -179,6 +217,7 @@ export function DealOperationsPipeline() {
 	const projection = useQuery(api.deals.queries.getAdminDealOperations) as
 		| AdminDealOperationsProjection
 		| undefined;
+	const { open } = useAdminDetailSheet();
 	const [activeFilter, setActiveFilter] =
 		useState<AdminDealOperationsFilter>("all");
 	const filteredCards = useMemo(
@@ -252,7 +291,11 @@ export function DealOperationsPipeline() {
 							<div className="space-y-3 rounded-md border border-border/70 bg-muted/20 p-3">
 								{grouped[phase.id].length > 0 ? (
 									grouped[phase.id].map((deal) => (
-										<DealOperationsCard deal={deal} key={deal._id} />
+										<DealOperationsCard
+											deal={deal}
+											key={deal._id}
+											onOpenDeal={open}
+										/>
 									))
 								) : (
 									<div className="flex h-32 items-center justify-center rounded-md border border-dashed bg-background">

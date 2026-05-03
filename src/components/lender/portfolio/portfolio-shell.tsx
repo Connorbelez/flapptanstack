@@ -1,12 +1,13 @@
+import { CircleHelp } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "#/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "#/components/ui/card";
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "#/components/ui/tooltip";
 import { cn } from "#/lib/utils";
 
 interface PortfolioShellProps {
@@ -83,10 +84,13 @@ export function PortfolioSlotHost({
 								{eyebrow}
 							</p>
 						) : null}
-						<CardTitle className="text-xl">{title}</CardTitle>
-						<CardDescription className="max-w-2xl text-sm leading-6">
-							{description}
-						</CardDescription>
+						<div className="flex items-center gap-2">
+							<CardTitle className="text-xl">{title}</CardTitle>
+							<PortfolioDescriptionTooltip
+								label={`About ${title}`}
+								text={description}
+							/>
+						</div>
 					</div>
 					{summary ? (
 						<Badge className="self-start" variant="outline">
@@ -97,5 +101,35 @@ export function PortfolioSlotHost({
 			</CardHeader>
 			{children ? <CardContent className="pt-5">{children}</CardContent> : null}
 		</Card>
+	);
+}
+
+export function PortfolioDescriptionTooltip({
+	label,
+	text,
+}: {
+	label: string;
+	text: string;
+}) {
+	return (
+		<TooltipProvider>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<button
+						aria-label={label}
+						className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						type="button"
+					>
+						<CircleHelp className="size-4" />
+					</button>
+				</TooltipTrigger>
+				<TooltipContent
+					className="max-w-72 text-pretty leading-5"
+					sideOffset={6}
+				>
+					{text}
+				</TooltipContent>
+			</Tooltip>
+		</TooltipProvider>
 	);
 }
