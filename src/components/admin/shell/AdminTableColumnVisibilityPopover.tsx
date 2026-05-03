@@ -15,11 +15,12 @@ import {
 } from "#/components/ui/popover";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import type { SavedViewFieldId } from "../../../../convex/crm/types";
 import type { AdminViewSchemaColumn } from "./admin-view-types";
 
 interface AdminTableColumnVisibilityPopoverProps {
 	readonly columns: readonly AdminViewSchemaColumn[];
-	readonly defaultVisibleFieldIds: readonly Id<"fieldDefs">[];
+	readonly defaultVisibleFieldIds: readonly SavedViewFieldId[];
 	readonly disabled?: boolean;
 	readonly onRestoreDefaults: () => void;
 	readonly onToggleVisibility: (

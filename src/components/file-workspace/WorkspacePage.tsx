@@ -51,14 +51,22 @@ interface WorkspacePageProps {
 	onCreateLink?: () => void;
 	onDownload?: (nodeId: string) => void;
 	onPreview?: (nodeId: string) => void;
+	onRemoveParticipant?: (participantId: string) => Promise<void> | void;
 	onRestore?: (nodeId: string) => void;
 	onSelectNode?: (nodeId: string) => void;
 	onShare?: () => void;
 	onTreeExpand?: (nodeId: string, expanded: boolean) => void;
 	onUpload?: () => void;
+	onUpsertParticipant?: (grant: {
+		authId?: string;
+		email?: string;
+		role: "viewer" | "editor" | "manager";
+	}) => Promise<void> | void;
 	onViewModeChange?: (viewMode: FileWorkspaceViewMode) => void;
+	participantStatus?: string | null;
 	selectedNodeId?: string;
 	tags?: FileWorkspaceTagList;
+	uploadError?: string | null;
 	versions?: FileWorkspaceVersionList;
 	viewMode: FileWorkspaceViewMode;
 }
@@ -126,15 +134,19 @@ export function WorkspacePage({
 	onCreateFolder,
 	onCreateLink,
 	onDownload,
+	onRemoveParticipant,
 	onPreview,
 	onRestore,
 	onSelectNode,
 	onShare,
 	onTreeExpand,
 	onUpload,
+	onUpsertParticipant,
 	onViewModeChange,
+	participantStatus,
 	selectedNodeId,
 	tags,
+	uploadError,
 	versions,
 	viewMode,
 }: WorkspacePageProps) {
@@ -170,10 +182,15 @@ export function WorkspacePage({
 							viewMode={viewMode}
 						/>
 					</div>
+					{uploadError ? (
+						<p className="m-0 mt-2 text-destructive text-sm" role="alert">
+							{uploadError}
+						</p>
+					) : null}
 				</header>
 
 				<div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[18rem_minmax(0,1fr)_22rem]">
-					<aside className="min-h-0 overflow-auto border-(--line) border-r bg-[var(--surface-strong)] p-3 max-lg:max-h-80">
+					<aside className="min-h-0 overflow-auto border-(--line) border-r bg-[var(--surface-strong)] p-3 max-lg:order-2 max-lg:max-h-80">
 						<div className="mb-3 flex items-center gap-2">
 							<Search className="size-4 text-(--sea-ink-soft)" />
 							<Input aria-label="Search files" placeholder="Search files" />
@@ -198,7 +215,7 @@ export function WorkspacePage({
 						</Button>
 					</aside>
 
-					<section className="min-h-0 overflow-auto bg-[var(--surface)]">
+					<section className="min-h-0 overflow-auto bg-[var(--surface)] max-lg:order-1">
 						<div className="min-w-[680px]">
 							<div className="grid grid-cols-[minmax(18rem,1fr)_8rem_9rem_8rem_7rem] gap-3 border-(--line) border-b px-4 py-2 font-semibold text-(--sea-ink-soft) text-xs uppercase tracking-[0.1em]">
 								<span>Name</span>
@@ -283,6 +300,7 @@ export function WorkspacePage({
 
 					<FileInspector
 						box={box}
+						className="max-lg:order-3"
 						comments={comments}
 						managerSettings={managerSettings}
 						selectedNode={selectedNode}
@@ -294,6 +312,9 @@ export function WorkspacePage({
 				{managerSettings ? (
 					<ShareSettings
 						onCreateLink={onCreateLink}
+						onRemoveParticipant={onRemoveParticipant}
+						onUpsertParticipant={onUpsertParticipant}
+						participantStatus={participantStatus}
 						settings={managerSettings}
 					/>
 				) : null}

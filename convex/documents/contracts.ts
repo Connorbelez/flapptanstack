@@ -160,8 +160,11 @@ export const dealDocumentSourceBlueprintSnapshotValidator = v.object({
 	description: v.optional(v.string()),
 	displayName: v.string(),
 	displayOrder: v.number(),
+	envelopeBoundaryKey: v.optional(v.string()),
+	packageItemKind: v.optional(v.string()),
 	packageKey: v.optional(v.string()),
 	packageLabel: v.optional(v.string()),
+	packageVersionId: v.optional(v.string()),
 	templateId: v.optional(v.id("documentTemplates")),
 	templateVersion: v.optional(v.number()),
 });

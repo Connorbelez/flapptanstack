@@ -16,6 +16,7 @@ import type {
 	EntityViewRow,
 	NormalizedFieldDefinition,
 	RecordFilter,
+	SavedViewFieldId,
 	SavedViewFilterDefinition,
 	SystemViewDefinition,
 	UnifiedRecord,
@@ -28,6 +29,7 @@ type ViewField = Doc<"viewFields">;
 type CrmQueryCtx = QueryCtx & { viewer: Viewer };
 type DbCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
 type FieldDefId = Id<"fieldDefs">;
+type VisibleFieldId = SavedViewFieldId;
 type ViewDefDoc = Doc<"viewDefs">;
 type ViewFieldDoc = Doc<"viewFields">;
 type ViewFilterDoc = Doc<"viewFilters">;
@@ -115,12 +117,12 @@ function normalizeFieldOrder(
 }
 
 function normalizeVisibleFieldIds(
-	preferred: FieldDefId[] | undefined,
-	fallback: FieldDefId[]
-): FieldDefId[] {
+	preferred: VisibleFieldId[] | undefined,
+	fallback: VisibleFieldId[]
+): VisibleFieldId[] {
 	const sourceIds = preferred ?? fallback;
 	const uniqueIds = new Set<string>();
-	const normalized: FieldDefId[] = [];
+	const normalized: VisibleFieldId[] = [];
 
 	for (const fieldId of sourceIds) {
 		const key = fieldId.toString();

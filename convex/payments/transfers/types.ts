@@ -116,6 +116,7 @@ export const PROVIDER_CODES = [
 	"pad_rotessa",
 	"eft_vopay",
 	"e_transfer",
+	"stripe",
 	"wire",
 	"plaid_transfer",
 ] as const;

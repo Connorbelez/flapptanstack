@@ -24,6 +24,7 @@ export type FieldRendererHint =
 	| "user_ref"
 	| "relation"
 	| "computed";
+export type SavedViewFieldId = Id<"fieldDefs"> | string;
 
 export interface LayoutEligibilityRule {
 	enabled: boolean;
@@ -192,7 +193,7 @@ export interface SystemViewDefinition {
 	needsRepair: boolean;
 	objectDefId: Id<"objectDefs">;
 	viewDefId: Id<"viewDefs">;
-	visibleFieldIds: Id<"fieldDefs">[];
+	visibleFieldIds: SavedViewFieldId[];
 }
 
 export interface UserSavedViewDefinition {
@@ -208,7 +209,7 @@ export interface UserSavedViewDefinition {
 	sourceViewDefId?: Id<"viewDefs">;
 	userSavedViewId: Id<"userSavedViews">;
 	viewType: ViewLayout;
-	visibleFieldIds: Id<"fieldDefs">[];
+	visibleFieldIds: SavedViewFieldId[];
 }
 
 export interface EffectiveViewDefinition {
@@ -225,7 +226,7 @@ export interface EffectiveViewDefinition {
 	sort?: RecordSort;
 	sourceViewDefId: Id<"viewDefs">;
 	viewType: ViewLayout;
-	visibleFieldIds: Id<"fieldDefs">[];
+	visibleFieldIds: SavedViewFieldId[];
 }
 
 export interface EntityViewAdapterContract {
