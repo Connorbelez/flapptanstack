@@ -61,8 +61,11 @@ export type InvitationAcceptResult =
 	  }
 	| {
 			readonly status: "onboarding_required";
-			readonly dealId: Id<"deals">;
-			readonly invitationId: Id<"lawyerInvitations">;
+			readonly dealId?: Id<"deals">;
+			readonly invitationId:
+				| Id<"lawyerInvitations">
+				| Id<"platformLawyerInvitations">;
+			readonly invitationKind?: "guest" | "platform";
 			readonly nextRoute?: string;
 			readonly onboardingSessionId: Id<"lawyerOnboardingSessions">;
 			readonly returnPath: string;

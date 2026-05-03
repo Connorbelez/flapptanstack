@@ -2885,12 +2885,15 @@ export default defineSchema({
 		deliveryError: v.optional(v.string()),
 		deliveredAt: v.optional(v.number()),
 		lastDeliveryAttemptAt: v.optional(v.number()),
+		acceptedAt: v.optional(v.number()),
+		onboardingSessionId: v.optional(v.id("lawyerOnboardingSessions")),
 		createdBy: v.string(),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
 		.index("by_profile_status", ["lawyerProfileId", "status"])
 		.index("by_email_status", ["normalizedEmail", "status"])
+		.index("by_onboarding_session", ["onboardingSessionId"])
 		.index("by_workos_invitation", ["workosInvitationId"]),
 
 	platformLawyerSlaTiers: defineTable({
@@ -3091,7 +3094,7 @@ export default defineSchema({
 		completedAt: v.optional(v.number()),
 		createdAt: v.number(),
 		currentStep: v.string(),
-		dealId: v.id("deals"),
+		dealId: v.optional(v.id("deals")),
 		engagementAcceptedAt: v.optional(v.number()),
 		idvCompletedAt: v.optional(v.number()),
 		identityConfirmedAt: v.optional(v.number()),
@@ -3102,6 +3105,10 @@ export default defineSchema({
 		nextRoute: v.optional(v.string()),
 		normalizedTargetEmail: v.optional(v.string()),
 		path: lawyerOnboardingPathValidator,
+		platformAgreementAcceptedAt: v.optional(v.number()),
+		platformAgreementEvidenceHash: v.optional(v.string()),
+		platformAgreementVersion: v.optional(v.string()),
+		platformLawyerInvitationId: v.optional(v.id("platformLawyerInvitations")),
 		returnPath: v.string(),
 		status: lawyerOnboardingStatusValidator,
 		updatedAt: v.number(),
@@ -3109,6 +3116,8 @@ export default defineSchema({
 	})
 		.index("by_deal_status", ["dealId", "status"])
 		.index("by_invitation", ["invitationId"])
+		.index("by_lawyer_profile_status", ["lawyerProfileId", "status"])
+		.index("by_platform_invitation", ["platformLawyerInvitationId"])
 		.index("by_workos_deal", ["workosUserId", "dealId"])
 		.index("by_target_email_deal", ["normalizedTargetEmail", "dealId"]),
 

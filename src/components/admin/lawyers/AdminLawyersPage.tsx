@@ -218,6 +218,8 @@ export function AdminLawyersPage() {
 						["verified", "Verified"],
 						["expired", "Expired"],
 						["revoked", "Revoked"],
+						["sent", "Sent"],
+						["canceled", "Canceled"],
 						["failed", "Failed"],
 						["none", "None"],
 					]}
@@ -407,7 +409,15 @@ function LawyerRosterTableRow(props: {
 			</td>
 			<td className="p-3">{license}</td>
 			<td className="p-3">{formatLawyerProfileKind(props.row.profileKind)}</td>
-			<td className="p-3">{formatAdminEnum(props.row.platformStatus)}</td>
+			<td className="p-3">
+				<span>{formatAdminEnum(props.row.platformStatus)}</span>
+				{props.row.platformOnboardingSession ? (
+					<span className="block text-muted-foreground text-xs">
+						Onboarding{" "}
+						{formatAdminEnum(props.row.platformOnboardingSession.status)}
+					</span>
+				) : null}
+			</td>
 			<td className="p-3">{formatAdminEnum(props.row.verificationStatus)}</td>
 			<td className="p-3">{formatAdminEnum(props.row.invitationStatus)}</td>
 			<td className="p-3">{formatLawyerUrgencyLabel(props.row.urgency)}</td>

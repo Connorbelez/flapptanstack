@@ -5,7 +5,7 @@ import {
 	FileSignature,
 	ShieldCheck,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -95,15 +95,78 @@ function checkpointState(
 	return statusIndex > checkpointIndex ? "complete" : "waiting";
 }
 
+function checkpointCircleClass(state: "complete" | "current" | "waiting") {
+	if (state === "complete") {
+		return "mt-0.5 flex size-7 items-center justify-center rounded-full bg-emerald-700 text-white";
+	}
+	if (state === "current") {
+		return "mt-0.5 flex size-7 items-center justify-center rounded-full border border-slate-950 bg-white text-slate-950";
+	}
+	return "mt-0.5 flex size-7 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-400";
+}
+
 function formatIdentifier(value: string) {
 	return value.replaceAll("_", " ");
 }
 
-function checkpointBody(status: OnboardingStatus) {
-	if (status === "blocked" || status === "complete" || status === "expired") {
-		return terminalCopy[status];
+function isPlatformSession(session: LawyerOnboardingSession) {
+	return (
+		session.path === "platform_assigned" ||
+		session.path === "platform_application"
+	);
+}
+
+function titleForStatus(
+	status: OnboardingStatus,
+	session: LawyerOnboardingSession
+) {
+	if (isPlatformSession(session)) {
+		if (status === "engagement_pending") {
+			return "Accept platform agreement";
+		}
+		if (status === "complete") {
+			return "Platform access ready";
+		}
+	}
+	return titles[status];
+}
+
+function descriptionForStatus(
+	status: OnboardingStatus,
+	session: LawyerOnboardingSession
+) {
+	if (isPlatformSession(session)) {
+		if (status === "engagement_pending") {
+			return "Platform lawyer agreement accepted";
+		}
+		if (status === "complete") {
+			return "Lawyer workspace unlocked";
+		}
 	}
 	return checkpointDescriptions[status];
+}
+
+function checkpointBody(
+	status: OnboardingStatus,
+	session: LawyerOnboardingSession
+) {
+	if (status === "blocked" || status === "complete" || status === "expired") {
+		if (status === "complete" && isPlatformSession(session)) {
+			return "Your platform lawyer account is active. Continue from the lawyer workspace.";
+		}
+		return terminalCopy[status];
+	}
+	return descriptionForStatus(status, session);
+}
+
+function CheckpointIcon({ status }: { readonly status: OnboardingStatus }) {
+	if (status === "engagement_pending") {
+		return <FileSignature aria-hidden="true" className="size-5" />;
+	}
+	if (status === "lso_pending") {
+		return <BadgeCheck aria-hidden="true" className="size-5" />;
+	}
+	return <ShieldCheck aria-hidden="true" className="size-5" />;
 }
 
 export function LawyerOnboardingPage({
@@ -126,8 +189,8 @@ export function LawyerOnboardingPage({
 	);
 	const status = currentSession.status;
 	const actionStatus = actionForStatus(status);
-	const title = titles[status];
-	const body = checkpointBody(status);
+	const title = titleForStatus(status, currentSession);
+	const body = checkpointBody(status, currentSession);
 	const isPending = pendingStatus === status;
 	const activeStepLabel = useMemo(() => formatIdentifier(status), [status]);
 
@@ -143,18 +206,20 @@ export function LawyerOnboardingPage({
 		setPendingStatus(status);
 		try {
 			const sessionId = currentSession._id;
-			const nextSession =
-				actionStatus === "identity_pending"
-					? await confirmIdentity({ sessionId })
-					: actionStatus === "lso_pending"
-						? await submitLsoLicense({
-								barNumber,
-								jurisdiction,
-								sessionId,
-							})
-						: actionStatus === "idv_pending"
-							? await completeMockIdv({ sessionId })
-							: await acceptRepresentationEngagement({ sessionId });
+			let nextSession: LawyerOnboardingSession;
+			if (actionStatus === "identity_pending") {
+				nextSession = await confirmIdentity({ sessionId });
+			} else if (actionStatus === "lso_pending") {
+				nextSession = await submitLsoLicense({
+					barNumber,
+					jurisdiction,
+					sessionId,
+				});
+			} else if (actionStatus === "idv_pending") {
+				nextSession = await completeMockIdv({ sessionId });
+			} else {
+				nextSession = await acceptRepresentationEngagement({ sessionId });
+			}
 			setCurrentSession(nextSession);
 		} catch (unknownError) {
 			setError(
@@ -165,6 +230,64 @@ export function LawyerOnboardingPage({
 		} finally {
 			setPendingStatus(null);
 		}
+	}
+
+	let checkpointAction: ReactNode = null;
+	if (status === "lso_pending") {
+		checkpointAction = (
+			<form
+				className="grid gap-4 sm:grid-cols-2"
+				onSubmit={(event) => {
+					event.preventDefault();
+					void runCheckpointAction();
+				}}
+			>
+				<div className="space-y-2">
+					<Label htmlFor="bar-number">Bar number</Label>
+					<Input
+						autoComplete="off"
+						id="bar-number"
+						onChange={(event) => setBarNumber(event.target.value)}
+						placeholder="L12345"
+						value={barNumber}
+					/>
+				</div>
+				<div className="space-y-2">
+					<Label htmlFor="jurisdiction">Jurisdiction</Label>
+					<Input
+						autoComplete="off"
+						id="jurisdiction"
+						onChange={(event) => setJurisdiction(event.target.value)}
+						placeholder="ON"
+						value={jurisdiction}
+					/>
+				</div>
+				<div className="sm:col-span-2">
+					<Button
+						disabled={
+							isPending ||
+							barNumber.trim().length === 0 ||
+							jurisdiction.trim().length === 0
+						}
+						type="submit"
+					>
+						<BadgeCheck aria-hidden="true" />
+						{isPending ? "Confirming LSO licence" : title}
+					</Button>
+				</div>
+			</form>
+		);
+	} else if (actionStatus) {
+		checkpointAction = (
+			<Button
+				disabled={isPending}
+				onClick={() => void runCheckpointAction()}
+				type="button"
+			>
+				<ShieldCheck aria-hidden="true" />
+				{isPending ? "Recording checkpoint" : title}
+			</Button>
+		);
 	}
 
 	return (
@@ -179,7 +302,7 @@ export function LawyerOnboardingPage({
 							{title}
 						</h1>
 						<p className="max-w-2xl text-base text-slate-600 leading-7">
-							{checkpointDescriptions[status]}
+							{descriptionForStatus(status, currentSession)}
 						</p>
 					</div>
 					<div className="grid grid-cols-2 gap-3 text-sm md:min-w-72">
@@ -207,21 +330,15 @@ export function LawyerOnboardingPage({
 									className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-3"
 									key={checkpoint}
 								>
-									<span
-										className={
-											state === "complete"
-												? "mt-0.5 flex size-7 items-center justify-center rounded-full bg-emerald-700 text-white"
-												: state === "current"
-													? "mt-0.5 flex size-7 items-center justify-center rounded-full border border-slate-950 bg-white text-slate-950"
-													: "mt-0.5 flex size-7 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-400"
-										}
-									>
+									<span className={checkpointCircleClass(state)}>
 										<CheckCircle2 aria-hidden="true" className="size-4" />
 									</span>
 									<div className="min-w-0 pb-4">
-										<p className="font-medium text-sm">{titles[checkpoint]}</p>
+										<p className="font-medium text-sm">
+											{titleForStatus(checkpoint, currentSession)}
+										</p>
 										<p className="text-slate-500 text-xs leading-5">
-											{checkpointDescriptions[checkpoint]}
+											{descriptionForStatus(checkpoint, currentSession)}
 										</p>
 									</div>
 								</li>
@@ -235,13 +352,7 @@ export function LawyerOnboardingPage({
 						<div className="space-y-6 p-6 md:p-8">
 							<div className="flex items-start gap-4">
 								<div className="flex size-11 shrink-0 items-center justify-center rounded-md bg-slate-950 text-white">
-									{status === "engagement_pending" ? (
-										<FileSignature aria-hidden="true" className="size-5" />
-									) : status === "lso_pending" ? (
-										<BadgeCheck aria-hidden="true" className="size-5" />
-									) : (
-										<ShieldCheck aria-hidden="true" className="size-5" />
-									)}
+									<CheckpointIcon status={status} />
 								</div>
 								<div className="min-w-0 space-y-2">
 									<h2 className="font-semibold text-2xl">Current checkpoint</h2>
@@ -249,58 +360,7 @@ export function LawyerOnboardingPage({
 								</div>
 							</div>
 
-							{status === "lso_pending" ? (
-								<form
-									className="grid gap-4 sm:grid-cols-2"
-									onSubmit={(event) => {
-										event.preventDefault();
-										void runCheckpointAction();
-									}}
-								>
-									<div className="space-y-2">
-										<Label htmlFor="bar-number">Bar number</Label>
-										<Input
-											autoComplete="off"
-											id="bar-number"
-											onChange={(event) => setBarNumber(event.target.value)}
-											placeholder="L12345"
-											value={barNumber}
-										/>
-									</div>
-									<div className="space-y-2">
-										<Label htmlFor="jurisdiction">Jurisdiction</Label>
-										<Input
-											autoComplete="off"
-											id="jurisdiction"
-											onChange={(event) => setJurisdiction(event.target.value)}
-											placeholder="ON"
-											value={jurisdiction}
-										/>
-									</div>
-									<div className="sm:col-span-2">
-										<Button
-											disabled={
-												isPending ||
-												barNumber.trim().length === 0 ||
-												jurisdiction.trim().length === 0
-											}
-											type="submit"
-										>
-											<BadgeCheck aria-hidden="true" />
-											{isPending ? "Confirming LSO licence" : title}
-										</Button>
-									</div>
-								</form>
-							) : actionStatus ? (
-								<Button
-									disabled={isPending}
-									onClick={() => void runCheckpointAction()}
-									type="button"
-								>
-									<ShieldCheck aria-hidden="true" />
-									{isPending ? "Recording checkpoint" : title}
-								</Button>
-							) : null}
+							{checkpointAction}
 
 							{error ? (
 								<p className="border border-red-200 bg-red-50 px-3 py-2 text-red-800 text-sm">
@@ -312,9 +372,11 @@ export function LawyerOnboardingPage({
 						<div className="border-slate-200 border-t bg-slate-50 p-6 md:border-t-0 md:border-l">
 							<dl className="space-y-5 text-sm">
 								<div>
-									<dt className="text-slate-500">Deal</dt>
+									<dt className="text-slate-500">Context</dt>
 									<dd className="mt-1 truncate font-medium">
-										{String(currentSession.dealId)}
+										{currentSession.dealId
+											? String(currentSession.dealId)
+											: "Platform onboarding"}
 									</dd>
 								</div>
 								<div>

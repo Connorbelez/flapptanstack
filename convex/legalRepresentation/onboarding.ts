@@ -35,6 +35,8 @@ type OwnedSessionResult =
 const LSO_VERIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 90;
 const IDV_VERIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 365;
 const IDENTITY_CONFIRMATION_TTL_MS = 1000 * 60 * 60 * 24 * 365;
+const PLATFORM_RETURN_PATH = "/lawyer";
+const PLATFORM_AGREEMENT_VERSION = "platform-lawyer-v1";
 
 function onboardingRoute(sessionId: Id<"lawyerOnboardingSessions">) {
 	return `/lawyer/onboarding/${String(sessionId)}`;
@@ -68,6 +70,19 @@ function latestSession(
 	);
 }
 
+function isPlatformOnboardingSession(session: Doc<"lawyerOnboardingSessions">) {
+	return (
+		session.path === "platform_assigned" ||
+		session.path === "platform_application"
+	);
+}
+
+function isActivePlatformInvitationStatus(
+	status: Doc<"platformLawyerInvitations">["status"]
+) {
+	return status === "pending" || status === "sent";
+}
+
 async function assertActiveInvitation(
 	ctx: OnboardingMutationCtx,
 	invitation: Doc<"lawyerInvitations">,
@@ -90,6 +105,23 @@ async function assertActiveInvitation(
 	}
 	if (!isActiveInvitationStatus(invitation.status)) {
 		throw new ConvexError("Lawyer invitation is not active");
+	}
+}
+
+function assertActivePlatformInvitation(
+	invitation: Doc<"platformLawyerInvitations">
+) {
+	if (invitation.status === "canceled") {
+		throw new ConvexError("Platform lawyer invitation canceled");
+	}
+	if (invitation.status === "failed") {
+		throw new ConvexError("Platform lawyer invitation delivery failed");
+	}
+	if (
+		!isActivePlatformInvitationStatus(invitation.status) &&
+		invitation.status !== "accepted"
+	) {
+		throw new ConvexError("Platform lawyer invitation is not active");
 	}
 }
 
@@ -185,6 +217,45 @@ export async function startOrResumeForInvitationInMutation(
 		path: "guest_invited",
 		status: "auth_pending",
 	});
+}
+
+export async function startOrResumeForPlatformInvitationInMutation(
+	ctx: OnboardingMutationCtx,
+	args: {
+		readonly invitationId: Id<"platformLawyerInvitations">;
+		readonly now?: number;
+	}
+): Promise<Doc<"lawyerOnboardingSessions">> {
+	const invitation = await ctx.db.get(args.invitationId);
+	if (!invitation) {
+		throw new ConvexError("Platform lawyer invitation not found");
+	}
+	assertActivePlatformInvitation(invitation);
+	const existing = await ctx.db
+		.query("lawyerOnboardingSessions")
+		.withIndex("by_platform_invitation", (query) =>
+			query.eq("platformLawyerInvitationId", args.invitationId)
+		)
+		.first();
+	if (existing) {
+		return existing;
+	}
+	const now = args.now ?? Date.now();
+	const sessionId = await ctx.db.insert("lawyerOnboardingSessions", {
+		createdAt: now,
+		currentStep: "auth",
+		lawyerProfileId: invitation.lawyerProfileId,
+		normalizedTargetEmail: invitation.normalizedEmail,
+		path: "platform_application",
+		platformLawyerInvitationId: invitation._id,
+		returnPath: PLATFORM_RETURN_PATH,
+		status: "auth_pending",
+		updatedAt: now,
+	});
+	await ctx.db.patch(sessionId, {
+		nextRoute: onboardingRoute(sessionId),
+	});
+	return await getSessionAfterPatch(ctx, sessionId);
 }
 
 async function getOwnedSession(
@@ -359,6 +430,28 @@ async function selectedLsoEvidenceForSession(
 			lsoLawyerId: invitation?.lsoLawyerId ?? invitationLso.lsoLawyerId,
 		};
 	}
+	if (isPlatformOnboardingSession(session)) {
+		const platformInvitation =
+			session.platformLawyerInvitationId === undefined
+				? null
+				: await ctx.db.get(session.platformLawyerInvitationId);
+		const profile =
+			session.lawyerProfileId === undefined
+				? null
+				: await ctx.db.get(session.lawyerProfileId);
+		return {
+			barNumber: platformInvitation?.barNumber ?? profile?.barNumber,
+			jurisdiction: platformInvitation?.jurisdiction ?? profile?.jurisdiction,
+			lsoLawyerId: undefined,
+		};
+	}
+	if (session.dealId === undefined) {
+		return {
+			barNumber: undefined,
+			jurisdiction: undefined,
+			lsoLawyerId: undefined,
+		};
+	}
 	const deal = await ctx.db.get(session.dealId);
 	const dealLso =
 		deal?.selectedLawyer?.type === "guest_lawyer"
@@ -486,12 +579,57 @@ export async function completeSessionInternal(
 	if (session.completedAt !== undefined && session.status === "complete") {
 		return session;
 	}
-	const invitation = await loadActiveInvitationForSession(ctx, session, now);
 	requireCheckpoint(
 		session,
 		"engagementAcceptedAt",
 		"Representation engagement checkpoint is required before completion"
 	);
+	if (isPlatformOnboardingSession(session)) {
+		if (session.lawyerProfileId === undefined) {
+			throw new ConvexError("Platform lawyer profile is required");
+		}
+		const profile = await ctx.db.get(session.lawyerProfileId);
+		if (!profile) {
+			throw new ConvexError("Platform lawyer profile not found");
+		}
+		const latestVerification = await ctx.db
+			.query("lawyerVerifications")
+			.withIndex("by_profile_check_created", (query) =>
+				query.eq("lawyerProfileId", session.lawyerProfileId)
+			)
+			.collect();
+		const eligibleVerification = latestVerification
+			.filter((row) => row.outcome === "eligible")
+			.sort((a, b) => b.createdAt - a.createdAt)[0];
+		const latestVerificationId = eligibleVerification?._id;
+		await ctx.db.patch(profile._id, {
+			authId: ctx.viewer.authId,
+			latestVerificationId,
+			platformStatus: "active",
+			updatedAt: now,
+		});
+		if (session.platformLawyerInvitationId !== undefined) {
+			await ctx.db.patch(session.platformLawyerInvitationId, {
+				acceptedAt: session.platformAgreementAcceptedAt ?? now,
+				onboardingSessionId: session._id,
+				status: "accepted",
+				updatedAt: now,
+			});
+		}
+		await ctx.db.patch(session._id, {
+			completedAt: now,
+			currentStep: "complete",
+			nextRoute: PLATFORM_RETURN_PATH,
+			status: "complete",
+			updatedAt: now,
+			workosUserId: ctx.viewer.authId,
+		});
+		return await getSessionAfterPatch(ctx, session._id);
+	}
+	if (session.dealId === undefined) {
+		throw new ConvexError("Deal-bound lawyer onboarding session requires deal");
+	}
+	const invitation = await loadActiveInvitationForSession(ctx, session, now);
 	await grantDealAccess(ctx.db, {
 		dealId: session.dealId,
 		grantedBy: `lawyer-onboarding:${String(session._id)}`,
@@ -624,6 +762,18 @@ export const startOrResumeForDeal = authedMutation
 		throw new ConvexError("Viewer is not the selected lawyer for this deal");
 	})
 	.public();
+
+export const startOrResumeForPlatformInvitationInternal = convex
+	.mutation()
+	.input({ invitationId: v.id("platformLawyerInvitations") })
+	.handler(async (ctx, args) => {
+		const session = await startOrResumeForPlatformInvitationInMutation(
+			ctx,
+			args
+		);
+		return { session };
+	})
+	.internal();
 
 export const getLawyerOnboardingSession = lawyerQuery
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
@@ -845,6 +995,26 @@ export const acceptRepresentationEngagement = lawyerMutation
 			"idvCompletedAt",
 			"IDV checkpoint is required before engagement acceptance"
 		);
+		if (isPlatformOnboardingSession(session)) {
+			const evidenceHash = `sha256:platform-lawyer-agreement:${String(session._id)}:${ctx.viewer.authId}:${now}`;
+			await ctx.db.patch(session._id, {
+				acceptedEngagementAt: now,
+				currentStep: "complete",
+				engagementAcceptedAt: now,
+				platformAgreementAcceptedAt: now,
+				platformAgreementEvidenceHash: evidenceHash,
+				platformAgreementVersion: PLATFORM_AGREEMENT_VERSION,
+				status: "complete",
+				updatedAt: now,
+				workosUserId: ctx.viewer.authId,
+			});
+			return await completeSessionInternal(ctx, session._id);
+		}
+		if (session.dealId === undefined) {
+			throw new ConvexError(
+				"Deal-bound lawyer onboarding session requires deal"
+			);
+		}
 		await recordSignedRepresentationEngagementRow(ctx, {
 			createdAt: now,
 			dealId: session.dealId,

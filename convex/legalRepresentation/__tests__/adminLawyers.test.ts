@@ -334,52 +334,91 @@ describe("admin lawyer detail projection and actions", () => {
 	it("returns platform ops, availability, and activity detail records", async () => {
 		const t = createHarness();
 		const { platformProfileId } = await seedLawyerRosterRows(t);
-		await t.run(async (ctx) => {
-			const now = Date.UTC(2026, 4, 3);
-			const tierId = await ctx.db.insert("platformLawyerSlaTiers", {
-				createdAt: now,
-				createdBy: "user_fairlend_admin",
-				description: "Standard review",
-				name: "Standard",
-				reviewHours: 24,
-				status: "active",
-				updatedAt: now,
-				updatedBy: "user_fairlend_admin",
-			});
-			await ctx.db.insert("platformLawyerAssignments", {
-				capacityLimit: 4,
-				createdAt: now,
-				createdBy: "user_fairlend_admin",
-				lawyerProfileId: platformProfileId,
-				nextRestrictionRecheckAt: now + 86_400_000,
-				recheckIntervalDays: 30,
-				slaTierId: tierId,
-				updatedAt: now,
-				updatedBy: "user_fairlend_admin",
-			});
-			await ctx.db.insert("platformLawyerAvailabilityWindows", {
-				createdAt: now,
-				createdBy: "user_fairlend_admin",
-				dayOfWeek: 1,
-				endMinute: 1020,
-				lawyerProfileId: platformProfileId,
-				startMinute: 540,
-				status: "active",
-				timezone: "America/Toronto",
-				updatedAt: now,
-				updatedBy: "user_fairlend_admin",
-			});
-			await ctx.db.insert("platformLawyerAvailabilityExceptions", {
-				businessDate: "2026-05-04",
-				createdAt: now,
-				createdBy: "user_fairlend_admin",
-				kind: "hold",
-				lawyerProfileId: platformProfileId,
-				reason: "Closing volume",
-				updatedAt: now,
-				updatedBy: "user_fairlend_admin",
-			});
-		});
+		const { platformInvitationId, platformSessionId } = await t.run(
+			async (ctx) => {
+				const now = Date.UTC(2026, 4, 3);
+				const tierId = await ctx.db.insert("platformLawyerSlaTiers", {
+					createdAt: now,
+					createdBy: "user_fairlend_admin",
+					description: "Standard review",
+					name: "Standard",
+					reviewHours: 24,
+					status: "active",
+					updatedAt: now,
+					updatedBy: "user_fairlend_admin",
+				});
+				await ctx.db.insert("platformLawyerAssignments", {
+					capacityLimit: 4,
+					createdAt: now,
+					createdBy: "user_fairlend_admin",
+					lawyerProfileId: platformProfileId,
+					nextRestrictionRecheckAt: now + 86_400_000,
+					recheckIntervalDays: 30,
+					slaTierId: tierId,
+					updatedAt: now,
+					updatedBy: "user_fairlend_admin",
+				});
+				await ctx.db.insert("platformLawyerAvailabilityWindows", {
+					createdAt: now,
+					createdBy: "user_fairlend_admin",
+					dayOfWeek: 1,
+					endMinute: 1020,
+					lawyerProfileId: platformProfileId,
+					startMinute: 540,
+					status: "active",
+					timezone: "America/Toronto",
+					updatedAt: now,
+					updatedBy: "user_fairlend_admin",
+				});
+				await ctx.db.insert("platformLawyerAvailabilityExceptions", {
+					businessDate: "2026-05-04",
+					createdAt: now,
+					createdBy: "user_fairlend_admin",
+					kind: "hold",
+					lawyerProfileId: platformProfileId,
+					reason: "Closing volume",
+					updatedAt: now,
+					updatedBy: "user_fairlend_admin",
+				});
+				const platformInvitationId = await ctx.db.insert(
+					"platformLawyerInvitations",
+					{
+						barNumber: "LSO-100001",
+						createdAt: now - 2000,
+						createdBy: "user_fairlend_admin",
+						deliveredAt: now - 1000,
+						deliveryStatus: "sent",
+						displayName: "Panel Lawyer",
+						email: "panel@example.test",
+						firmName: "Panel Law LLP",
+						jurisdiction: "ON",
+						lawyerProfileId: platformProfileId,
+						normalizedEmail: "panel@example.test",
+						status: "sent",
+						updatedAt: now - 1000,
+						workosInvitationId: "workos_panel_invitation",
+					}
+				);
+				const platformSessionId = await ctx.db.insert(
+					"lawyerOnboardingSessions",
+					{
+						createdAt: now - 500,
+						currentStep: "lso",
+						identityConfirmedAt: now - 400,
+						lawyerProfileId: platformProfileId,
+						nextRoute: "/lawyer/onboarding/platform-panel",
+						normalizedTargetEmail: "panel@example.test",
+						path: "platform_application",
+						platformLawyerInvitationId: platformInvitationId,
+						returnPath: "/lawyer",
+						status: "lso_pending",
+						updatedAt: now - 400,
+						workosUserId: "user_platform_panel",
+					}
+				);
+				return { platformInvitationId, platformSessionId };
+			}
+		);
 
 		const detail = await t
 			.withIdentity(FAIRLEND_ADMIN)
@@ -390,6 +429,14 @@ describe("admin lawyer detail projection and actions", () => {
 		expect(detail.platform.assignment.capacityLimit).toBe(4);
 		expect(detail.platform.availability.windows).toHaveLength(1);
 		expect(detail.platform.availability.exceptions).toHaveLength(1);
+		expect(detail.platform.invitations.active[0]).toMatchObject({
+			_id: platformInvitationId,
+			status: "sent",
+		});
+		expect(detail.platform.onboardingSessions.active[0]).toMatchObject({
+			_id: platformSessionId,
+			status: "lso_pending",
+		});
 		expect(detail.activity.events.length).toBeGreaterThan(0);
 	});
 

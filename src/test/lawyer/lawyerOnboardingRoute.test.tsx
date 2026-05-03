@@ -2,17 +2,61 @@
  * @vitest-environment jsdom
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { useMutation } from "convex/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { Window } from "happy-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LawyerOnboardingPage } from "#/components/legal-representation/LawyerOnboardingPage";
 
 vi.mock("convex/react", () => ({
 	useMutation: vi.fn(),
 }));
 
+function mockUseMutation() {
+	(useMutation as unknown as { mockReturnValue: (value: unknown) => void })
+		.mockReturnValue(vi.fn());
+}
+
+let testWindow: Window | null = null;
+
+beforeEach(() => {
+	testWindow = new Window({
+		url: "http://admin.localhost:3000/lawyer/onboarding/session_123",
+	});
+	Object.defineProperty(globalThis, "window", {
+		configurable: true,
+		value: testWindow,
+	});
+	Object.defineProperty(globalThis, "document", {
+		configurable: true,
+		value: testWindow.document,
+	});
+	Object.defineProperty(globalThis, "navigator", {
+		configurable: true,
+		value: testWindow.navigator,
+	});
+	Object.defineProperty(globalThis, "HTMLElement", {
+		configurable: true,
+		value: testWindow.HTMLElement,
+	});
+	Object.defineProperty(globalThis, "Element", {
+		configurable: true,
+		value: testWindow.Element,
+	});
+	Object.defineProperty(globalThis, "Node", {
+		configurable: true,
+		value: testWindow.Node,
+	});
+	Object.defineProperty(testWindow, "SyntaxError", {
+		configurable: true,
+		value: SyntaxError,
+	});
+});
+
 afterEach(() => {
 	cleanup();
+	void testWindow?.happyDOM.abort();
+	testWindow = null;
 	vi.clearAllMocks();
 });
 
@@ -31,17 +75,47 @@ const identityPendingFixture = {
 	workosUserId: "user_123",
 } as const;
 
+const platformAgreementPendingFixture = {
+	_creationTime: 1_777_800_000_000,
+	_id: "session_platform_123",
+	createdAt: 1_777_800_000_000,
+	currentStep: "engagement",
+	nextRoute: "/lawyer/onboarding/session_platform_123",
+	normalizedTargetEmail: "platform@example.test",
+	path: "platform_application",
+	platformLawyerInvitationId: "platform_invitation_123",
+	returnPath: "/lawyer",
+	status: "engagement_pending",
+	updatedAt: 1_777_800_000_000,
+	workosUserId: "user_platform_123",
+} as const;
+
 describe("lawyer onboarding route UI", () => {
 	it("renders the current onboarding checkpoint", async () => {
-		vi.mocked(useMutation).mockReturnValue(vi.fn());
+		mockUseMutation();
 
-		render(<LawyerOnboardingPage session={identityPendingFixture} />);
+		const view = render(
+			<LawyerOnboardingPage session={identityPendingFixture} />
+		);
 
 		expect(
-			screen.getByRole("heading", { name: /Confirm identity/i })
+			view.getByRole("heading", { name: /Confirm identity/i })
 		).toBeTruthy();
 		expect(
-			screen.getByRole("button", { name: /Confirm identity/i })
+			view.getByRole("button", { name: /Confirm identity/i })
 		).toBeTruthy();
+	});
+
+	it("renders platform onboarding without a deal context", async () => {
+		mockUseMutation();
+
+		const view = render(
+			<LawyerOnboardingPage session={platformAgreementPendingFixture} />
+		);
+
+		expect(
+			view.getByRole("heading", { name: /Accept platform agreement/i })
+		).toBeTruthy();
+		expect(view.getByText("Platform onboarding")).toBeTruthy();
 	});
 });

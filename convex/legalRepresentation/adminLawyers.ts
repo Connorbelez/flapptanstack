@@ -79,6 +79,8 @@ const invitationStatusFilterValidator = v.union(
 	v.literal("expired"),
 	v.literal("revoked"),
 	v.literal("failed"),
+	v.literal("sent"),
+	v.literal("canceled"),
 	v.literal("none")
 );
 
@@ -128,7 +130,10 @@ export interface AdminLawyerRosterRow {
 	readonly displayName: string;
 	readonly email: string;
 	readonly firmName: string | null;
-	readonly invitationStatus: Doc<"lawyerInvitations">["status"] | "none";
+	readonly invitationStatus:
+		| Doc<"lawyerInvitations">["status"]
+		| Doc<"platformLawyerInvitations">["status"]
+		| "none";
 	readonly jurisdiction: string | null;
 	readonly latestActivityAt: number;
 	readonly latestVerification: {
@@ -140,6 +145,22 @@ export interface AdminLawyerRosterRow {
 		readonly verificationId: Id<"lawyerVerifications">;
 	} | null;
 	readonly nextAction: string;
+	readonly platformInvitation: {
+		readonly deliveryStatus:
+			| Doc<"platformLawyerInvitations">["deliveryStatus"]
+			| null;
+		readonly invitationId: Id<"platformLawyerInvitations">;
+		readonly status: Doc<"platformLawyerInvitations">["status"];
+		readonly targetEmail: string;
+		readonly updatedAt: number;
+	} | null;
+	readonly platformOnboardingSession: {
+		readonly currentStep: string;
+		readonly nextRoute: string | null;
+		readonly sessionId: Id<"lawyerOnboardingSessions">;
+		readonly status: Doc<"lawyerOnboardingSessions">["status"];
+		readonly updatedAt: number;
+	} | null;
 	readonly platformStatus:
 		| Doc<"lawyerProfiles">["platformStatus"]
 		| "not_platform";
@@ -198,8 +219,44 @@ async function invitationsForProfile(
 		.collect();
 }
 
+async function platformInvitationsForProfile(
+	ctx: Pick<QueryCtx, "db">,
+	profileId: Id<"lawyerProfiles">
+) {
+	return await ctx.db
+		.query("platformLawyerInvitations")
+		.withIndex("by_profile_status", (query) =>
+			query.eq("lawyerProfileId", profileId)
+		)
+		.collect();
+}
+
+async function onboardingSessionsForProfile(
+	ctx: Pick<QueryCtx, "db">,
+	profileId: Id<"lawyerProfiles">
+) {
+	return await ctx.db
+		.query("lawyerOnboardingSessions")
+		.withIndex("by_lawyer_profile_status", (query) =>
+			query.eq("lawyerProfileId", profileId)
+		)
+		.collect();
+}
+
 function latestInvitation(invitations: readonly Doc<"lawyerInvitations">[]) {
 	return [...invitations].sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+}
+
+function latestPlatformInvitation(
+	invitations: readonly Doc<"platformLawyerInvitations">[]
+) {
+	return [...invitations].sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+}
+
+function latestOnboardingSession(
+	sessions: readonly Doc<"lawyerOnboardingSessions">[]
+) {
+	return [...sessions].sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
 }
 
 function summarizeInvitation(invitation: Doc<"lawyerInvitations"> | null) {
@@ -214,6 +271,36 @@ function summarizeInvitation(invitation: Doc<"lawyerInvitations"> | null) {
 		status: invitation.status,
 		targetEmail: invitation.targetEmail,
 		updatedAt: invitation.updatedAt,
+	};
+}
+
+function summarizePlatformInvitation(
+	invitation: Doc<"platformLawyerInvitations"> | null
+) {
+	if (!invitation) {
+		return null;
+	}
+	return {
+		deliveryStatus: invitation.deliveryStatus ?? null,
+		invitationId: invitation._id,
+		status: invitation.status,
+		targetEmail: invitation.email,
+		updatedAt: invitation.updatedAt,
+	};
+}
+
+function summarizeOnboardingSession(
+	session: Doc<"lawyerOnboardingSessions"> | null
+) {
+	if (!session) {
+		return null;
+	}
+	return {
+		currentStep: session.currentStep,
+		nextRoute: session.nextRoute ?? null,
+		sessionId: session._id,
+		status: session.status,
+		updatedAt: session.updatedAt,
 	};
 }
 
@@ -599,6 +686,8 @@ async function buildRosterRow(
 	const [
 		verification,
 		invitations,
+		platformInvitations,
+		onboardingSessions,
 		assignment,
 		slaReview,
 		restrictionRecheck,
@@ -608,6 +697,8 @@ async function buildRosterRow(
 	] = await Promise.all([
 		latestVerification(ctx, profile._id),
 		invitationsForProfile(ctx, profile),
+		platformInvitationsForProfile(ctx, profile._id),
+		onboardingSessionsForProfile(ctx, profile._id),
 		assignmentForProfile(ctx, profile._id),
 		latestSlaReview(ctx, profile._id),
 		latestRestrictionRecheck(ctx, profile._id),
@@ -616,6 +707,8 @@ async function buildRosterRow(
 		dealsForProfile(ctx, profile),
 	]);
 	const invitation = latestInvitation(invitations);
+	const platformInvitation = latestPlatformInvitation(platformInvitations);
+	const onboardingSession = latestOnboardingSession(onboardingSessions);
 	const dealCount = metrics?.activeDealCount ?? activeDealCount(deals);
 	const capacityLimit =
 		metrics?.capacityLimit ?? assignment?.capacityLimit ?? null;
@@ -650,11 +743,14 @@ async function buildRosterRow(
 		displayName: profile.displayName,
 		email: profile.normalizedEmail,
 		firmName: profile.firmName ?? null,
-		invitationStatus: invitation?.status ?? "none",
+		invitationStatus:
+			invitation?.status ?? platformInvitation?.status ?? "none",
 		latestActivityAt: Math.max(
 			profile.updatedAt,
 			verification?.createdAt ?? 0,
 			invitation?.updatedAt ?? 0,
+			platformInvitation?.updatedAt ?? 0,
+			onboardingSession?.updatedAt ?? 0,
 			slaReview?.updatedAt ?? 0,
 			restrictionRecheck?.startedAt ?? 0,
 			metrics?.calculatedAt ?? 0,
@@ -664,6 +760,8 @@ async function buildRosterRow(
 		platformStatus: includesPlatform(profile)
 			? (profile.platformStatus ?? "invited")
 			: "not_platform",
+		platformInvitation: summarizePlatformInvitation(platformInvitation),
+		platformOnboardingSession: summarizeOnboardingSession(onboardingSession),
 		jurisdiction: profile.jurisdiction ?? null,
 		latestVerification: summarizeVerification(verification),
 		profileId: profile._id,
@@ -696,7 +794,9 @@ function activityEvents(args: {
 	readonly deals: readonly Doc<"deals">[];
 	readonly escalations: readonly Doc<"platformLawyerEscalations">[];
 	readonly invitations: readonly Doc<"lawyerInvitations">[];
+	readonly onboardingSessions: readonly Doc<"lawyerOnboardingSessions">[];
 	readonly overrideEvidence: readonly Doc<"representationOverrideEvidence">[];
+	readonly platformInvitations: readonly Doc<"platformLawyerInvitations">[];
 	readonly profile: Doc<"lawyerProfiles">;
 	readonly verifications: readonly Doc<"lawyerVerifications">[];
 }) {
@@ -712,6 +812,18 @@ function activityEvents(args: {
 			entityId: String(invitation._id),
 			kind: "invitation_updated",
 			label: `Invitation ${invitation.status}`,
+		})),
+		...args.platformInvitations.map((invitation) => ({
+			at: invitation.updatedAt,
+			entityId: String(invitation._id),
+			kind: "platform_invitation_updated",
+			label: `Platform invitation ${invitation.status}`,
+		})),
+		...args.onboardingSessions.map((session) => ({
+			at: session.updatedAt,
+			entityId: String(session._id),
+			kind: "onboarding_session_updated",
+			label: `Onboarding ${session.status}`,
 		})),
 		...args.verifications.map((verification) => ({
 			at: verification.createdAt,
@@ -821,6 +933,8 @@ export const getLawyerAdminDetail = adminQuery
 		const [
 			verifications,
 			invitations,
+			platformInvitations,
+			onboardingSessions,
 			assignment,
 			slaReview,
 			restrictionRecheck,
@@ -836,6 +950,8 @@ export const getLawyerAdminDetail = adminQuery
 				)
 				.collect(),
 			invitationsForProfile(ctx, profile),
+			platformInvitationsForProfile(ctx, args.profileId),
+			onboardingSessionsForProfile(ctx, args.profileId),
 			assignmentForProfile(ctx, args.profileId),
 			latestSlaReview(ctx, args.profileId),
 			latestRestrictionRecheck(ctx, args.profileId),
@@ -858,6 +974,16 @@ export const getLawyerAdminDetail = adminQuery
 		const activeInvitations = invitations.filter(
 			(invitation) => invitation.status === "pending"
 		);
+		const activePlatformInvitations = platformInvitations.filter(
+			(invitation) =>
+				invitation.status === "pending" || invitation.status === "sent"
+		);
+		const activeOnboardingSessions = onboardingSessions.filter(
+			(session) =>
+				session.status !== "complete" &&
+				session.status !== "expired" &&
+				session.status !== "blocked"
+		);
 		return {
 			allowedActions: {
 				cancelInvitation: activeInvitations.length > 0,
@@ -870,13 +996,17 @@ export const getLawyerAdminDetail = adminQuery
 					deals,
 					escalations,
 					invitations,
+					onboardingSessions,
 					overrideEvidence,
+					platformInvitations,
 					profile,
 					verifications,
 				}),
 				latestActivityAt: Math.max(
 					profile.updatedAt,
 					...invitations.map((invitation) => invitation.updatedAt),
+					...platformInvitations.map((invitation) => invitation.updatedAt),
+					...onboardingSessions.map((session) => session.updatedAt),
 					...verifications.map((verification) => verification.createdAt),
 					...deals.map((deal) => deal.createdAt)
 				),
@@ -895,7 +1025,23 @@ export const getLawyerAdminDetail = adminQuery
 				assignment,
 				availability,
 				escalations,
+				invitations: {
+					active: activePlatformInvitations,
+					historical: platformInvitations.filter(
+						(invitation) =>
+							invitation.status !== "pending" && invitation.status !== "sent"
+					),
+				},
 				metrics,
+				onboardingSessions: {
+					active: activeOnboardingSessions,
+					historical: onboardingSessions.filter(
+						(session) =>
+							session.status === "complete" ||
+							session.status === "expired" ||
+							session.status === "blocked"
+					),
+				},
 				restrictionRecheck,
 				slaReview,
 			},
@@ -1095,6 +1241,19 @@ export const getPlatformLawyerInvitationForDeliveryInternal = convex
 	.query()
 	.input({ invitationId: v.id("platformLawyerInvitations") })
 	.handler(async (ctx, args) => await ctx.db.get(args.invitationId))
+	.internal();
+
+export const getPlatformInvitationByWorkosInvitationIdInternal = convex
+	.query()
+	.input({ workosInvitationId: v.string() })
+	.handler(async (ctx, args) => {
+		return await ctx.db
+			.query("platformLawyerInvitations")
+			.withIndex("by_workos_invitation", (query) =>
+				query.eq("workosInvitationId", args.workosInvitationId)
+			)
+			.first();
+	})
 	.internal();
 
 export const deliverPlatformLawyerInvitation = convex

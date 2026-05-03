@@ -52,6 +52,18 @@ function requireFindInvitationByToken(provisioning: WorkosProvisioning) {
 	return provisioning.findInvitationByToken.bind(provisioning);
 }
 
+function isLawyerViewer(viewer: {
+	readonly permissions: readonly string[];
+	readonly role?: string | undefined;
+	readonly roles: readonly string[];
+}) {
+	return (
+		viewer.role === LAWYER_ROLE_SLUG ||
+		viewer.roles.includes(LAWYER_ROLE_SLUG) ||
+		viewer.permissions.includes("lawyer:access")
+	);
+}
+
 export const updateInvitationDeliveryInternal = convex
 	.mutation()
 	.input({
@@ -292,9 +304,19 @@ export const resolveWorkosInvitationToken = convex
 			| {
 					readonly dealId: Id<"deals">;
 					readonly emailMatches: boolean;
+					readonly invitationKind: "guest";
 					readonly nextRoute?: string;
 					readonly onboardingSessionId?: Id<"lawyerOnboardingSessions">;
 					readonly status: Doc<"lawyerInvitations">["status"];
+					readonly targetEmail: string;
+			  }
+			| {
+					readonly dealId?: undefined;
+					readonly emailMatches: boolean;
+					readonly invitationKind: "platform";
+					readonly nextRoute?: string;
+					readonly onboardingSessionId?: Id<"lawyerOnboardingSessions">;
+					readonly status: Doc<"platformLawyerInvitations">["status"];
 					readonly targetEmail: string;
 			  }
 		> => {
@@ -310,24 +332,49 @@ export const resolveWorkosInvitationToken = convex
 						.getPendingInvitationByWorkosInvitationIdInternal,
 					{ workosInvitationId: workosInvitation.id }
 				);
-			if (!localInvitation) {
+			if (localInvitation) {
+				const emailMatches =
+					normalizeLawyerEmail(workosInvitation.email) ===
+					localInvitation.normalizedTargetEmail;
+				const onboarding = await ctx.runMutation(
+					internal.legalRepresentation.onboarding
+						.startOrResumeForInvitationInternal,
+					{ invitationId: localInvitation._id }
+				);
+				return {
+					dealId: localInvitation.dealId,
+					emailMatches,
+					invitationKind: "guest",
+					nextRoute: onboarding.session.nextRoute,
+					onboardingSessionId: onboarding.session._id,
+					status: localInvitation.status,
+					targetEmail: localInvitation.targetEmail,
+				};
+			}
+			const platformInvitation: Doc<"platformLawyerInvitations"> | null =
+				await ctx.runQuery(
+					internal.legalRepresentation.adminLawyers
+						.getPlatformInvitationByWorkosInvitationIdInternal,
+					{ workosInvitationId: workosInvitation.id }
+				);
+			if (!platformInvitation) {
 				return { status: "not_found" as const };
 			}
 			const emailMatches =
 				normalizeLawyerEmail(workosInvitation.email) ===
-				localInvitation.normalizedTargetEmail;
+				platformInvitation.normalizedEmail;
 			const onboarding = await ctx.runMutation(
 				internal.legalRepresentation.onboarding
-					.startOrResumeForInvitationInternal,
-				{ invitationId: localInvitation._id }
+					.startOrResumeForPlatformInvitationInternal,
+				{ invitationId: platformInvitation._id }
 			);
 			return {
-				dealId: localInvitation.dealId,
 				emailMatches,
+				invitationKind: "platform",
 				nextRoute: onboarding.session.nextRoute,
 				onboardingSessionId: onboarding.session._id,
-				status: localInvitation.status,
-				targetEmail: localInvitation.targetEmail,
+				status: platformInvitation.status,
+				targetEmail: platformInvitation.email,
 			};
 		}
 	)
@@ -343,22 +390,80 @@ export const completeWorkosGuestInvitation = authedAction
 			getWorkosProvisioning()
 		);
 		const workosInvitation = await findInvitationByToken(args.invitationToken);
-		return await ctx.runMutation(
+		const guestInvitation: Doc<"lawyerInvitations"> | null = await ctx.runQuery(
 			internal.legalRepresentation.invitations
-				.acceptWorkosInvitationForOnboardingInternal,
-			{
-				invitationEmail: workosInvitation.email,
-				now: args.now,
-				viewer: {
-					authId: ctx.viewer.authId,
-					email: ctx.viewer.email,
-					permissions: [...ctx.viewer.permissions],
-					role: ctx.viewer.role,
-					roles: [...ctx.viewer.roles],
-					verifiedEmail: ctx.viewer.verifiedEmail,
-				},
-				workosInvitationId: workosInvitation.id,
-			}
+				.getPendingInvitationByWorkosInvitationIdInternal,
+			{ workosInvitationId: workosInvitation.id }
 		);
+		if (guestInvitation) {
+			return await ctx.runMutation(
+				internal.legalRepresentation.invitations
+					.acceptWorkosInvitationForOnboardingInternal,
+				{
+					invitationEmail: workosInvitation.email,
+					now: args.now,
+					viewer: {
+						authId: ctx.viewer.authId,
+						email: ctx.viewer.email,
+						permissions: [...ctx.viewer.permissions],
+						role: ctx.viewer.role,
+						roles: [...ctx.viewer.roles],
+						verifiedEmail: ctx.viewer.verifiedEmail,
+					},
+					workosInvitationId: workosInvitation.id,
+				}
+			);
+		}
+		const platformInvitation: Doc<"platformLawyerInvitations"> | null =
+			await ctx.runQuery(
+				internal.legalRepresentation.adminLawyers
+					.getPlatformInvitationByWorkosInvitationIdInternal,
+				{ workosInvitationId: workosInvitation.id }
+			);
+		if (!platformInvitation) {
+			throw new ConvexError("FairLend lawyer invitation was not found");
+		}
+		const viewer = {
+			authId: ctx.viewer.authId,
+			email: ctx.viewer.email,
+			permissions: [...ctx.viewer.permissions],
+			role: ctx.viewer.role,
+			roles: [...ctx.viewer.roles],
+			verifiedEmail: ctx.viewer.verifiedEmail,
+		};
+		if (!isLawyerViewer(viewer)) {
+			throw new ConvexError(
+				"Platform lawyer invitation requires lawyer access"
+			);
+		}
+		if (
+			normalizeLawyerEmail(workosInvitation.email) !==
+			platformInvitation.normalizedEmail
+		) {
+			throw new ConvexError("WorkOS invitation email does not match");
+		}
+		const verifiedEmail = viewer.verifiedEmail ?? viewer.email;
+		if (!verifiedEmail) {
+			throw new ConvexError("Verified WorkOS email is required");
+		}
+		if (
+			normalizeLawyerEmail(verifiedEmail) !== platformInvitation.normalizedEmail
+		) {
+			throw new ConvexError("Signed-in lawyer email does not match invitation");
+		}
+		const onboarding = await ctx.runMutation(
+			internal.legalRepresentation.onboarding
+				.startOrResumeForPlatformInvitationInternal,
+			{ invitationId: platformInvitation._id }
+		);
+		return {
+			invitationId: platformInvitation._id,
+			invitationKind: "platform" as const,
+			nextRoute: onboarding.session.nextRoute,
+			onboardingSessionId: onboarding.session._id,
+			returnPath: onboarding.session.returnPath,
+			status: "onboarding_required" as const,
+			targetEmail: platformInvitation.email,
+		};
 	})
 	.public();

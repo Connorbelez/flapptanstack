@@ -190,6 +190,40 @@ async function seedPendingGuestInvitation(
 	return { dealId, invitationId };
 }
 
+async function seedPendingPlatformInvitation(t: ReturnType<typeof convexTest>) {
+	return await t.run(async (ctx) => {
+		const profileId = await ctx.db.insert("lawyerProfiles", {
+			barNumber: "L77777",
+			createdAt: NOW,
+			displayName: "Pending Platform",
+			email: "platform.pending@example.test",
+			firmName: "Platform LLP",
+			jurisdiction: "ON",
+			normalizedEmail: "platform.pending@example.test",
+			platformStatus: "invited",
+			profileKind: "platform",
+			updatedAt: NOW,
+		});
+		const invitationId = await ctx.db.insert("platformLawyerInvitations", {
+			barNumber: "L77777",
+			createdAt: NOW,
+			createdBy: "system:test",
+			deliveredAt: NOW,
+			deliveryStatus: "sent",
+			displayName: "Pending Platform",
+			email: "platform.pending@example.test",
+			firmName: "Platform LLP",
+			jurisdiction: "ON",
+			lawyerProfileId: profileId,
+			normalizedEmail: "platform.pending@example.test",
+			status: "sent",
+			updatedAt: NOW,
+			workosInvitationId: "workos_platform_invitation",
+		});
+		return { invitationId, profileId };
+	});
+}
+
 async function seedGuestOnboardingSession(t: ReturnType<typeof convexTest>) {
 	const { dealId, normalizedEmail, provisionalAccessId } =
 		await seedGuestDeal(t);
@@ -344,6 +378,39 @@ describe("lawyer onboarding sessions", () => {
 			returnPath: `/deals/${String(dealId)}`,
 			status: "auth_pending",
 		});
+		expect(result.session.nextRoute).toBe(
+			`/lawyer/onboarding/${String(result.session._id)}`
+		);
+		expect(resumed.session._id).toBe(result.session._id);
+	});
+
+	it("starts or resumes a platform invitation onboarding session through the internal trusted path", async () => {
+		const t = createHarness();
+		const { invitationId, profileId } = await seedPendingPlatformInvitation(t);
+
+		const result = await t.mutation(
+			onboardingApi.startOrResumeForPlatformInvitationInternal,
+			{
+				invitationId,
+			}
+		);
+		const resumed = await t.mutation(
+			onboardingApi.startOrResumeForPlatformInvitationInternal,
+			{
+				invitationId,
+			}
+		);
+
+		expect(result.session).toMatchObject({
+			currentStep: "auth",
+			lawyerProfileId: profileId,
+			normalizedTargetEmail: "platform.pending@example.test",
+			path: "platform_application",
+			platformLawyerInvitationId: invitationId,
+			returnPath: "/lawyer",
+			status: "auth_pending",
+		});
+		expect(result.session.dealId).toBeUndefined();
 		expect(result.session.nextRoute).toBe(
 			`/lawyer/onboarding/${String(result.session._id)}`
 		);
@@ -585,6 +652,89 @@ describe("lawyer onboarding sessions", () => {
 			provider: "manual_admin",
 			status: "signed",
 		});
+	});
+
+	it("progresses platform checkpoints to complete without a deal and activates the platform lawyer", async () => {
+		const t = createHarness();
+		const auth = t.withIdentity(
+			lawyerIdentity({
+				authId: "user_platform_pending",
+				email: "platform.pending@example.test",
+			})
+		);
+		const { invitationId, profileId } = await seedPendingPlatformInvitation(t);
+		const started = await t.mutation(
+			onboardingApi.startOrResumeForPlatformInvitationInternal,
+			{
+				invitationId,
+			}
+		);
+
+		await auth.mutation(onboardingApi.confirmIdentity, {
+			sessionId: started.session._id,
+		});
+		await auth.mutation(onboardingApi.submitLsoLicense, {
+			barNumber: "L77777",
+			jurisdiction: "ON",
+			sessionId: started.session._id,
+		});
+		await auth.mutation(onboardingApi.completeMockIdv, {
+			sessionId: started.session._id,
+		});
+		const accepted = await auth.mutation(
+			onboardingApi.acceptRepresentationEngagement,
+			{
+				sessionId: started.session._id,
+			}
+		);
+		const completed = await auth.mutation(onboardingApi.completeSession, {
+			sessionId: started.session._id,
+		});
+
+		expect(accepted).toMatchObject({
+			currentStep: "complete",
+			status: "complete",
+		});
+		expect(completed).toMatchObject({
+			completedAt: expect.any(Number),
+			currentStep: "complete",
+			nextRoute: "/lawyer",
+			platformAgreementAcceptedAt: expect.any(Number),
+			status: "complete",
+			workosUserId: "user_platform_pending",
+		});
+		const rows = await t.run(async (ctx) => ({
+			access: await ctx.db.query("dealAccess").collect(),
+			engagements: await ctx.db.query("representationEngagements").collect(),
+			invitation: await ctx.db.get(invitationId),
+			profile: await ctx.db.get(profileId),
+			verifications: await ctx.db
+				.query("lawyerVerifications")
+				.withIndex("by_profile_check_created", (query) =>
+					query.eq("lawyerProfileId", profileId)
+				)
+				.collect(),
+		}));
+
+		expect(rows.access).toEqual([]);
+		expect(rows.engagements).toEqual([]);
+		expect(rows.invitation).toMatchObject({
+			acceptedAt: expect.any(Number),
+			onboardingSessionId: started.session._id,
+			status: "accepted",
+		});
+		expect(rows.profile).toMatchObject({
+			authId: "user_platform_pending",
+			platformStatus: "active",
+		});
+		expect(rows.verifications.map((row) => row.checkType).sort()).toEqual([
+			"idv",
+			"initial_lso",
+			"manual_admin",
+		]);
+		expect(rows.verifications.every((row) => row.dealId === undefined)).toBe(
+			true
+		);
 	});
 
 	it("does not rewrite invitation acceptedAt when completing onboarding", async () => {

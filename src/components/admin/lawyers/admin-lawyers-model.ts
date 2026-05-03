@@ -35,6 +35,8 @@ export type AdminLawyerInvitationStatusFilter =
 	| "expired"
 	| "revoked"
 	| "failed"
+	| "sent"
+	| "canceled"
 	| "none";
 export type AdminLawyerCapacitySlaFilter =
 	| "all"
@@ -88,6 +90,20 @@ export interface AdminLawyerRosterRow {
 		readonly verificationId: Id<"lawyerVerifications">;
 	} | null;
 	readonly nextAction: string;
+	readonly platformInvitation: {
+		readonly deliveryStatus: string | null;
+		readonly invitationId: Id<"platformLawyerInvitations">;
+		readonly status: string;
+		readonly targetEmail: string;
+		readonly updatedAt: number;
+	} | null;
+	readonly platformOnboardingSession: {
+		readonly currentStep: string;
+		readonly nextRoute: string | null;
+		readonly sessionId: Id<"lawyerOnboardingSessions">;
+		readonly status: string;
+		readonly updatedAt: number;
+	} | null;
 	readonly platformStatus: string;
 	readonly profileId: Id<"lawyerProfiles">;
 	readonly profileKind: "platform" | "guest" | "both";
@@ -157,7 +173,15 @@ export interface AdminLawyerDetailResult {
 			readonly message?: string;
 			readonly status?: string;
 		}[];
+		readonly invitations: {
+			readonly active: readonly { readonly status: string }[];
+			readonly historical: readonly { readonly status: string }[];
+		};
 		readonly metrics: unknown | null;
+		readonly onboardingSessions: {
+			readonly active: readonly { readonly status: string }[];
+			readonly historical: readonly { readonly status: string }[];
+		};
 		readonly restrictionRecheck: unknown | null;
 		readonly slaReview: unknown | null;
 	};
