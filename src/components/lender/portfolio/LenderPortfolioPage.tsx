@@ -65,8 +65,17 @@ export function LenderPortfolioPage({
 	search,
 	setSearch,
 	snapshot,
-	suggestedOpportunitiesState = "ready",
+	suggestedOpportunitiesState,
 }: LenderPortfolioPageProps) {
+	let resolvedSuggestedOpportunitiesState: SuggestedOpportunitiesState =
+		"ready";
+	if (suggestedOpportunitiesState === "loading") {
+		resolvedSuggestedOpportunitiesState = "loading";
+	} else if (
+		snapshot.suggestedOpportunities.availabilityState === "unavailable"
+	) {
+		resolvedSuggestedOpportunitiesState = "unavailable";
+	}
 	const positionRows = applyPortfolioPositionSearch(
 		snapshot.positions.rows,
 		search
@@ -257,7 +266,7 @@ export function LenderPortfolioPage({
 						hasBrokerConstraints={snapshot.limitsStrip.hasConstraints}
 						hasPositions={snapshot.positions.rows.length > 0}
 						rows={snapshot.suggestedOpportunities.rows}
-						state={suggestedOpportunitiesState}
+						state={resolvedSuggestedOpportunitiesState}
 						unavailableReason={
 							snapshot.suggestedOpportunities.unavailableReason
 						}
