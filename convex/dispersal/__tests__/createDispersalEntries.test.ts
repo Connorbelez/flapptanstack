@@ -166,6 +166,43 @@ async function seedDispersalScenario(
 			brokerOfRecordId: brokerId,
 			createdAt: now,
 		});
+		const servicingFeeTemplateId = await ctx.db.insert("feeTemplates", {
+			name: "Test Servicing Fee",
+			code: "servicing",
+			behavior: "payment_waterfall_deduction",
+			displayCode: "servicing",
+			surface: "waterfall_deduction",
+			revenueDestination: "platform_revenue",
+			calculationType: "annual_rate_principal",
+			parameters: { annualRate: 0.01 },
+			status: "active",
+			createdAt: now,
+			updatedAt: now,
+		});
+		const servicingFeeSetTemplateId = await ctx.db.insert("feeSetTemplates", {
+			name: "Test Standard Mortgage Fees",
+			isPlatformDefault: false,
+			status: "active",
+			createdAt: now,
+			updatedAt: now,
+		});
+		await ctx.db.insert("mortgageFees", {
+			mortgageId,
+			feeTemplateId: servicingFeeTemplateId,
+			feeSetTemplateId: servicingFeeSetTemplateId,
+			code: "servicing",
+			behavior: "payment_waterfall_deduction",
+			displayCode: "servicing",
+			surface: "waterfall_deduction",
+			revenueDestination: "platform_revenue",
+			calculationType: "annual_rate_principal",
+			parameters: { annualRate: 0.01 },
+			defaultApplication: "platform_default",
+			effectiveFrom: "2026-01-01",
+			waterfallPriority: 10,
+			status: "active",
+			createdAt: now,
+		});
 
 		const obligationId = await ctx.db.insert("obligations", {
 			status: "settled",
@@ -351,6 +388,200 @@ describe("createDispersalEntries", () => {
 		expect(result.entries.reduce((sum, entry) => sum + entry.amount, 0)).toBe(
 			96_154
 		);
+	});
+
+	it("applies every active waterfall deduction before lender allocation", async () => {
+		const seeded = await seedDispersalScenario(t);
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			const feeTemplateId = await ctx.db.insert("feeTemplates", {
+				name: "Administration Spread",
+				code: "admin_fee",
+				behavior: "payment_waterfall_deduction",
+				displayCode: "administration_spread",
+				surface: "waterfall_deduction",
+				revenueDestination: "platform_revenue",
+				calculationType: "annual_rate_principal",
+				parameters: { annualRate: 0.012 },
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("mortgageFees", {
+				mortgageId: seeded.mortgageId,
+				feeTemplateId,
+				code: "admin_fee",
+				behavior: "payment_waterfall_deduction",
+				displayCode: "administration_spread",
+				surface: "waterfall_deduction",
+				revenueDestination: "platform_revenue",
+				calculationType: "annual_rate_principal",
+				parameters: { annualRate: 0.012 },
+				defaultApplication: "mortgage_specific",
+				effectiveFrom: "2026-01-01",
+				waterfallPriority: 20,
+				status: "active",
+				createdAt: now,
+			});
+		});
+
+		const result = await runCreateDispersal(t, {
+			obligationId: seeded.obligationId,
+			mortgageId: seeded.mortgageId,
+			settledAmount: 100_000,
+			settledDate: "2026-03-01",
+			idempotencyKey: "dispersal:test:multiple-waterfall-fees",
+		});
+
+		expect(result.entries.reduce((sum, entry) => sum + entry.amount, 0)).toBe(
+			81_667
+		);
+		expect(
+			result.entries.find((entry) => entry.lenderId === seeded.lenderOneId)
+		).toMatchObject({ amount: 49_000 });
+		expect(
+			result.entries.find((entry) => entry.lenderId === seeded.lenderTwoId)
+		).toMatchObject({ amount: 32_667 });
+
+		const { assessmentCodes, journalEntryAmounts, servicingFeeEntries } =
+			await t.run(async (ctx) => {
+				const assessments = await ctx.db
+					.query("feeAssessments")
+					.withIndex("by_obligation", (q) =>
+						q.eq("obligationId", seeded.obligationId)
+					)
+					.collect();
+				const journalEntries = await ctx.db
+					.query("cash_ledger_journal_entries")
+					.withIndex("by_posting_group", (q) =>
+						q.eq("postingGroupId", `allocation:${seeded.obligationId}`)
+					)
+					.collect();
+				const feeEntries = await ctx.db
+					.query("servicingFeeEntries")
+					.withIndex("by_obligation", (q) =>
+						q.eq("obligationId", seeded.obligationId)
+					)
+					.collect();
+				return {
+					assessmentCodes: assessments
+						.map((assessment) => assessment.code)
+						.sort(),
+					journalEntryAmounts: journalEntries
+						.filter((entry) => entry.entryType === "SERVICING_FEE_RECOGNIZED")
+						.map((entry) => Number(entry.amount))
+						.sort((left, right) => left - right),
+					servicingFeeEntries: feeEntries
+						.map((entry) => ({
+							amount: entry.amount,
+							feeCode: entry.feeCode,
+						}))
+						.sort((left, right) =>
+							(left.feeCode ?? "").localeCompare(right.feeCode ?? "")
+						),
+				};
+			});
+
+		expect(assessmentCodes).toEqual(["admin_fee", "servicing"]);
+		expect(journalEntryAmounts).toEqual([8333, 10_000]);
+		expect(servicingFeeEntries).toEqual([
+			{ amount: 10_000, feeCode: "admin_fee" },
+			{ amount: 8333, feeCode: "servicing" },
+		]);
+	});
+
+	it("settles waterfall fees by configured priority when cash is insufficient", async () => {
+		const seeded = await seedDispersalScenario(t);
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			const feeTemplateId = await ctx.db.insert("feeTemplates", {
+				name: "Administration Spread",
+				code: "admin_fee",
+				behavior: "payment_waterfall_deduction",
+				displayCode: "administration_spread",
+				surface: "waterfall_deduction",
+				revenueDestination: "platform_revenue",
+				calculationType: "annual_rate_principal",
+				parameters: { annualRate: 0.012 },
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("mortgageFees", {
+				mortgageId: seeded.mortgageId,
+				feeTemplateId,
+				code: "admin_fee",
+				behavior: "payment_waterfall_deduction",
+				displayCode: "administration_spread",
+				surface: "waterfall_deduction",
+				revenueDestination: "platform_revenue",
+				calculationType: "annual_rate_principal",
+				parameters: { annualRate: 0.012 },
+				defaultApplication: "mortgage_specific",
+				effectiveFrom: "2026-01-01",
+				waterfallPriority: 5,
+				status: "active",
+				createdAt: now,
+			});
+		});
+
+		const result = await runCreateDispersal(t, {
+			obligationId: seeded.obligationId,
+			mortgageId: seeded.mortgageId,
+			settledAmount: 12_000,
+			settledDate: "2026-03-01",
+			idempotencyKey: "dispersal:test:waterfall-priority",
+		});
+
+		expect(result.entries).toHaveLength(0);
+
+		const { assessments, journalEntryAmounts } = await t.run(async (ctx) => {
+			const feeAssessments = await ctx.db
+				.query("feeAssessments")
+				.withIndex("by_obligation", (q) =>
+					q.eq("obligationId", seeded.obligationId)
+				)
+				.collect();
+			const journalEntries = await ctx.db
+				.query("cash_ledger_journal_entries")
+				.withIndex("by_posting_group", (q) =>
+					q.eq("postingGroupId", `allocation:${seeded.obligationId}`)
+				)
+				.collect();
+			return {
+				assessments: feeAssessments
+					.map((assessment) => ({
+						amountSettledCents: assessment.amountSettledCents,
+						code: assessment.code,
+						status: assessment.status,
+					}))
+					.sort((left, right) => left.code.localeCompare(right.code)),
+				journalEntryAmounts: journalEntries
+					.filter((entry) => entry.entryType === "SERVICING_FEE_RECOGNIZED")
+					.map((entry) => Number(entry.amount))
+					.sort((left, right) => left - right),
+			};
+		});
+
+		expect(assessments).toEqual([
+			{ amountSettledCents: 10_000, code: "admin_fee", status: "settled" },
+			{
+				amountSettledCents: 2000,
+				code: "servicing",
+				status: "partially_settled",
+			},
+		]);
+		expect(journalEntryAmounts).toEqual([2000, 10_000]);
+
+		const retry = await runCreateDispersal(t, {
+			obligationId: seeded.obligationId,
+			mortgageId: seeded.mortgageId,
+			settledAmount: 12_000,
+			settledDate: "2026-03-01",
+			idempotencyKey: "dispersal:test:waterfall-priority",
+		});
+		expect(retry.created).toBe(false);
+		expect(retry.servicingFeeEntryId).toBe(result.servicingFeeEntryId);
 	});
 
 	it("applies deal reroutes before calculating ownership shares", async () => {
@@ -613,6 +844,20 @@ describe("createDispersalEntries", () => {
 				.collect()
 		);
 		expect(persistedEntries).toHaveLength(0);
+
+		const assessment = await t.run(async (ctx) =>
+			ctx.db
+				.query("feeAssessments")
+				.withIndex("by_obligation", (q) =>
+					q.eq("obligationId", seeded.obligationId)
+				)
+				.first()
+		);
+		expect(assessment).not.toBeNull();
+		expect(assessment?.amountCents).toBe(8333);
+		expect(assessment?.amountSettledCents).toBe(8000);
+		expect(assessment?.status).toBe("partially_settled");
+		expect(assessment?.cashLedgerJournalEntryId).toBeDefined();
 
 		const retry = await runCreateDispersal(t, {
 			obligationId: seeded.obligationId,

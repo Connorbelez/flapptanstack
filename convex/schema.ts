@@ -109,9 +109,15 @@ import {
 	sourceValidator,
 } from "./engine/validators";
 import {
+	feeAssessmentSourceValidator,
+	feeAssessmentStatusValidator,
+	feeBehaviorValidator,
 	feeCalculationParametersValidator,
 	feeCalculationTypeValidator,
 	feeCodeValidator,
+	feeDefaultApplicationValidator,
+	feePaymentRailValidator,
+	feeRecurrenceValidator,
 	feeRevenueDestinationValidator,
 	feeStatusValidator,
 	feeSurfaceValidator,
@@ -1922,10 +1928,14 @@ export default defineSchema({
 		name: v.string(),
 		description: v.optional(v.string()),
 		code: feeCodeValidator,
+		behavior: feeBehaviorValidator,
+		displayCode: v.string(),
 		surface: feeSurfaceValidator,
 		revenueDestination: feeRevenueDestinationValidator,
 		calculationType: feeCalculationTypeValidator,
 		parameters: feeCalculationParametersValidator,
+		paymentRail: v.optional(feePaymentRailValidator),
+		recurrence: v.optional(feeRecurrenceValidator),
 		status: feeStatusValidator,
 		createdAt: v.number(),
 		updatedAt: v.number(),
@@ -1936,10 +1946,13 @@ export default defineSchema({
 	feeSetTemplates: defineTable({
 		name: v.string(),
 		description: v.optional(v.string()),
+		isPlatformDefault: v.boolean(),
 		status: feeStatusValidator,
 		createdAt: v.number(),
 		updatedAt: v.number(),
-	}).index("by_status", ["status"]),
+	})
+		.index("by_status", ["status"])
+		.index("by_platform_default_status", ["isPlatformDefault", "status"]),
 
 	feeSetTemplateItems: defineTable({
 		feeSetTemplateId: v.id("feeSetTemplates"),
@@ -1953,16 +1966,25 @@ export default defineSchema({
 	mortgageFees: defineTable({
 		mortgageId: v.id("mortgages"),
 		code: feeCodeValidator,
+		behavior: feeBehaviorValidator,
+		displayCode: v.string(),
 		surface: feeSurfaceValidator,
 		revenueDestination: feeRevenueDestinationValidator,
 		calculationType: feeCalculationTypeValidator,
 		parameters: feeCalculationParametersValidator,
+		paymentRail: v.optional(feePaymentRailValidator),
+		recurrence: v.optional(feeRecurrenceValidator),
+		defaultApplication: feeDefaultApplicationValidator,
 		effectiveFrom: v.string(),
 		effectiveTo: v.optional(v.string()),
 		status: feeStatusValidator,
 		feeTemplateId: v.optional(v.id("feeTemplates")),
 		feeSetTemplateId: v.optional(v.id("feeSetTemplates")),
 		feeSetTemplateItemId: v.optional(v.id("feeSetTemplateItems")),
+		waterfallPriority: v.optional(v.number()),
+		optedOutAt: v.optional(v.number()),
+		optedOutBy: v.optional(v.string()),
+		overrideReason: v.optional(v.string()),
 		createdAt: v.number(),
 		deactivatedAt: v.optional(v.number()),
 	})
@@ -1976,6 +1998,52 @@ export default defineSchema({
 		])
 		.index("by_fee_template", ["feeTemplateId"])
 		.index("by_fee_set_template", ["feeSetTemplateId"]),
+
+	mortgageFeeSetOptOuts: defineTable({
+		mortgageId: v.id("mortgages"),
+		feeSetTemplateId: v.id("feeSetTemplates"),
+		reason: v.string(),
+		optedOutAt: v.number(),
+		optedOutBy: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_mortgage_fee_set", ["mortgageId", "feeSetTemplateId"])
+		.index("by_fee_set_template", ["feeSetTemplateId"]),
+
+	feeAssessments: defineTable({
+		orgId: v.optional(v.string()),
+		mortgageId: v.id("mortgages"),
+		mortgageFeeId: v.id("mortgageFees"),
+		feeTemplateId: v.optional(v.id("feeTemplates")),
+		feeSetTemplateId: v.optional(v.id("feeSetTemplates")),
+		behavior: feeBehaviorValidator,
+		code: feeCodeValidator,
+		displayCode: v.string(),
+		amountCents: v.number(),
+		amountSettledCents: v.number(),
+		source: feeAssessmentSourceValidator,
+		status: feeAssessmentStatusValidator,
+		assessedAt: v.number(),
+		effectiveDate: v.string(),
+		obligationId: v.optional(v.id("obligations")),
+		sourceObligationId: v.optional(v.id("obligations")),
+		dispersalEntryId: v.optional(v.id("dispersalEntries")),
+		servicingFeeEntryId: v.optional(v.id("servicingFeeEntries")),
+		cashLedgerJournalEntryId: v.optional(v.id("cash_ledger_journal_entries")),
+		metadata: v.optional(v.any()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_org", ["orgId", "assessedAt"])
+		.index("by_org_status", ["orgId", "status", "assessedAt"])
+		.index("by_org_behavior", ["orgId", "behavior", "assessedAt"])
+		.index("by_mortgage", ["mortgageId", "assessedAt"])
+		.index("by_mortgage_fee", ["mortgageFeeId", "assessedAt"])
+		.index("by_status", ["status", "assessedAt"])
+		.index("by_behavior", ["behavior", "assessedAt"])
+		.index("by_obligation", ["obligationId"])
+		.index("by_source_obligation", ["sourceObligationId"]),
 
 	// ══════════════════════════════════════════════════════════
 	// PAYMENT RAILS (SPEC 1.5)

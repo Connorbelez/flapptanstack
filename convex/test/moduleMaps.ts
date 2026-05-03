@@ -424,6 +424,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 	"/convex/engine/types.ts": async () => await import("./../engine/types.ts"),
 	"/convex/engine/validators.ts": async () =>
 		await import("./../engine/validators.ts"),
+	"/convex/fees/assessments.ts": async () =>
+		await import("./../fees/assessments.ts"),
 	"/convex/fees/config.ts": async () => await import("./../fees/config.ts"),
 	"/convex/fees/migrations.ts": async () =>
 		await import("./../fees/migrations.ts"),

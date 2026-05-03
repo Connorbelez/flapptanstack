@@ -5,7 +5,10 @@ import { internalMutation } from "../_generated/server";
 import { calculateProRataShares } from "../accrual/interestMath";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
 import { sourceValidator } from "../engine/validators";
-import { resolveServicingFeeConfig } from "../fees/resolver";
+import {
+	type ResolvedWaterfallFeeConfig,
+	resolveWaterfallFeeConfigs,
+} from "../fees/resolver";
 import { getAccountLenderId } from "../ledger/accountOwnership";
 import { getPostedBalance } from "../ledger/accounts";
 import {
@@ -45,12 +48,35 @@ interface ExistingDispersalState {
 	existingFee: Doc<"servicingFeeEntries"> | null;
 }
 
-interface ServicingSplit {
-	distributableAmount: number;
+interface WaterfallFeeAllocation {
+	config: ResolvedWaterfallFeeConfig;
 	feeCashApplied: number;
 	feeDue: number;
 	feeReceivable: number;
-	servicingConfig: Awaited<ReturnType<typeof resolveServicingFeeConfig>> | null;
+}
+
+interface FeeRuntimeRecord {
+	allocation: WaterfallFeeAllocation;
+	feeAssessmentId?: Id<"feeAssessments">;
+	feeMetadata?: ServicingFeeMetadata;
+	servicingFeeEntryId: Id<"servicingFeeEntries">;
+}
+
+interface ServicingSplit {
+	distributableAmount: number;
+	feeAllocations: WaterfallFeeAllocation[];
+	feeCashApplied: number;
+	feeDue: number;
+	feeReceivable: number;
+	servicingConfig: ResolvedWaterfallFeeConfig | null;
+}
+
+function selectCanonicalServicingFeeEntry(
+	entries: Doc<"servicingFeeEntries">[]
+): Doc<"servicingFeeEntries"> | null {
+	return (
+		entries.find((entry) => entry.feeCode === "servicing") ?? entries[0] ?? null
+	);
 }
 
 async function resolveLenderIdFromAuthId(
@@ -165,7 +191,7 @@ async function loadExistingDispersalState(
 	ctx: MutationCtx,
 	obligationId: Id<"obligations">
 ): Promise<ExistingDispersalState> {
-	const [existingEntries, existingFee] = await Promise.all([
+	const [existingEntries, existingFeeEntries] = await Promise.all([
 		ctx.db
 			.query("dispersalEntries")
 			.withIndex("by_obligation", (q) => q.eq("obligationId", obligationId))
@@ -173,8 +199,10 @@ async function loadExistingDispersalState(
 		ctx.db
 			.query("servicingFeeEntries")
 			.withIndex("by_obligation", (q) => q.eq("obligationId", obligationId))
-			.first(),
+			.collect(),
 	]);
+
+	const existingFee = selectCanonicalServicingFeeEntry(existingFeeEntries);
 
 	return { existingEntries, existingFee };
 }
@@ -188,27 +216,69 @@ async function calculateServicingSplit(
 		settledDate: string;
 	}
 ): Promise<ServicingSplit> {
-	const servicingConfig =
-		args.obligation.type === "regular_interest"
-			? await resolveServicingFeeConfig(ctx.db, args.mortgage, args.settledDate)
-			: null;
+	if (args.obligation.type !== "regular_interest") {
+		return {
+			servicingConfig: null,
+			feeAllocations: [],
+			feeDue: 0,
+			feeCashApplied: 0,
+			feeReceivable: 0,
+			distributableAmount: args.settledAmount,
+		};
+	}
+
+	const waterfallConfigs = await resolveWaterfallFeeConfigs(
+		ctx.db,
+		args.mortgage,
+		args.settledDate
+	);
 	// ENG-217: Fee basis is current outstanding principal (mortgage.principal).
 	// This means fees decrease as principal is repaid — standard amortizing mortgage behavior.
 	// The principalBalance used is stored in servicingFeeEntries for audit verification.
-	const feeDue =
-		servicingConfig === null
-			? 0
-			: calculateServicingFee(
-					servicingConfig.annualRate,
-					args.mortgage.principal,
-					args.mortgage.paymentFrequency
-				);
-	const feeCashApplied = Math.min(args.settledAmount, feeDue);
+	let remainingCash = args.settledAmount;
+	const feeAllocations: WaterfallFeeAllocation[] = [];
+	for (const config of waterfallConfigs) {
+		const feeDue = calculateServicingFee(
+			config.annualRate,
+			args.mortgage.principal,
+			args.mortgage.paymentFrequency
+		);
+		if (feeDue === 0) {
+			continue;
+		}
+		const feeCashApplied = Math.min(remainingCash, feeDue);
+		remainingCash -= feeCashApplied;
+		feeAllocations.push({
+			config,
+			feeDue,
+			feeCashApplied,
+			feeReceivable: feeDue - feeCashApplied,
+		});
+	}
+
+	const feeDue = feeAllocations.reduce(
+		(sum, allocation) => sum + allocation.feeDue,
+		0
+	);
+	const feeCashApplied = feeAllocations.reduce(
+		(sum, allocation) => sum + allocation.feeCashApplied,
+		0
+	);
+	const feeReceivable = feeAllocations.reduce(
+		(sum, allocation) => sum + allocation.feeReceivable,
+		0
+	);
+	const servicingConfig =
+		feeAllocations.find((allocation) => allocation.config.code === "servicing")
+			?.config ??
+		feeAllocations[0]?.config ??
+		null;
 	return {
 		servicingConfig,
+		feeAllocations,
 		feeDue,
 		feeCashApplied,
-		feeReceivable: feeDue - feeCashApplied,
+		feeReceivable,
 		distributableAmount: args.settledAmount - feeCashApplied,
 	};
 }
@@ -399,6 +469,7 @@ export const createDispersalEntries = internalMutation({
 		);
 		const {
 			servicingConfig,
+			feeAllocations,
 			feeDue,
 			feeCashApplied,
 			feeReceivable,
@@ -498,11 +569,24 @@ export const createDispersalEntries = internalMutation({
 			servicingConfig: servicingConfig
 				? {
 						annualRate: servicingConfig.annualRate,
+						behavior: servicingConfig.behavior,
 						code: servicingConfig.code,
+						displayCode: servicingConfig.displayCode,
 						mortgageFeeId: servicingConfig.mortgageFeeId,
 						policyVersion: servicingConfig.policyVersion,
 					}
 				: null,
+			waterfallFees: feeAllocations.map((allocation) => ({
+				annualRate: allocation.config.annualRate,
+				behavior: allocation.config.behavior,
+				code: allocation.config.code,
+				displayCode: allocation.config.displayCode,
+				feeCashApplied: allocation.feeCashApplied,
+				feeDue: allocation.feeDue,
+				feeReceivable: allocation.feeReceivable,
+				mortgageFeeId: allocation.config.mortgageFeeId,
+				policyVersion: allocation.config.policyVersion,
+			})),
 			ownershipSnapshot: normalizedPositions.map((position) => ({
 				lenderAccountId: `${position.lenderAccountId}`,
 				lenderId: `${position.lenderId}`,
@@ -511,6 +595,14 @@ export const createDispersalEntries = internalMutation({
 		};
 		const calculationOutputs = {
 			servicingFeeEntryExpected: feeDue > 0,
+			waterfallFees: feeAllocations.map((allocation) => ({
+				code: allocation.config.code,
+				displayCode: allocation.config.displayCode,
+				feeCashApplied: allocation.feeCashApplied,
+				feeDue: allocation.feeDue,
+				feeReceivable: allocation.feeReceivable,
+				mortgageFeeId: allocation.config.mortgageFeeId,
+			})),
 			shares: shares.map((share) => ({
 				amount: share.amount,
 				lenderAccountId: `${share.lenderAccountId}`,
@@ -696,31 +788,29 @@ export const createDispersalEntries = internalMutation({
 			});
 		}
 
-		const newServicingFeeEntryId =
-			feeDue > 0
-				? await ctx.db.insert("servicingFeeEntries", {
-						calculationRunId,
-						mortgageId: args.mortgageId,
-						obligationId: args.obligationId,
-						amount: feeCashApplied,
-						annualRate: servicingConfig?.annualRate ?? 0,
-						principalBalance: mortgage.principal,
-						date: args.settledDate,
-						createdAt,
-						feeDue,
-						feeCashApplied,
-						feeReceivable,
-						policyVersion: servicingConfig?.policyVersion,
-						sourceObligationType: obligation.type,
-						mortgageFeeId: servicingConfig?.mortgageFeeId,
-						feeCode: servicingConfig?.code,
-					})
-				: null;
+		const feeRuntimeRecords: FeeRuntimeRecord[] = [];
+		for (const allocation of feeAllocations) {
+			const servicingFeeEntryId = await ctx.db.insert("servicingFeeEntries", {
+				calculationRunId,
+				mortgageId: args.mortgageId,
+				obligationId: args.obligationId,
+				amount: allocation.feeCashApplied,
+				annualRate: allocation.config.annualRate,
+				principalBalance: mortgage.principal,
+				date: args.settledDate,
+				createdAt,
+				feeDue: allocation.feeDue,
+				feeCashApplied: allocation.feeCashApplied,
+				feeReceivable: allocation.feeReceivable,
+				policyVersion: allocation.config.policyVersion,
+				sourceObligationType: obligation.type,
+				mortgageFeeId: allocation.config.mortgageFeeId,
+				feeCode: allocation.config.code,
+			});
 
-		if (newServicingFeeEntryId) {
 			await appendAuditJournalEntry(ctx, {
 				entityType: "servicingFeeEntry",
-				entityId: `${newServicingFeeEntryId}`,
+				entityId: `${servicingFeeEntryId}`,
 				eventType: "CREATED",
 				eventCategory: "domain_write",
 				organizationId: mortgage.orgId,
@@ -731,64 +821,132 @@ export const createDispersalEntries = internalMutation({
 				actorType: args.source.actorType,
 				channel: args.source.channel,
 				payload: {
-					amount: feeCashApplied,
-					mortgageFeeId: servicingConfig?.mortgageFeeId
-						? `${servicingConfig.mortgageFeeId}`
-						: undefined,
+					amount: allocation.feeCashApplied,
+					feeCode: allocation.config.code,
+					mortgageFeeId: `${allocation.config.mortgageFeeId}`,
 					obligationId: `${args.obligationId}`,
 				},
-				idempotencyKey: `${args.idempotencyKey}:servicing-fee`,
+				idempotencyKey: `${args.idempotencyKey}:servicing-fee:${allocation.config.mortgageFeeId}`,
 				linkedRecordIds: {
 					calculationRunId: `${calculationRunId}`,
 					mortgageId: `${args.mortgageId}`,
 					obligationId: `${args.obligationId}`,
-					servicingFeeEntryId: `${newServicingFeeEntryId}`,
+					servicingFeeEntryId: `${servicingFeeEntryId}`,
 				},
 				afterState: {
-					_id: `${newServicingFeeEntryId}`,
-					amount: feeCashApplied,
-					annualRate: servicingConfig?.annualRate ?? 0,
+					_id: `${servicingFeeEntryId}`,
+					amount: allocation.feeCashApplied,
+					annualRate: allocation.config.annualRate,
 					calculationRunId: `${calculationRunId}`,
 					createdAt,
 					date: args.settledDate,
-					feeCashApplied,
-					feeCode: servicingConfig?.code,
-					feeDue,
-					feeReceivable,
-					mortgageFeeId: servicingConfig?.mortgageFeeId
-						? `${servicingConfig.mortgageFeeId}`
-						: undefined,
+					feeCashApplied: allocation.feeCashApplied,
+					feeCode: allocation.config.code,
+					feeDue: allocation.feeDue,
+					feeReceivable: allocation.feeReceivable,
+					mortgageFeeId: `${allocation.config.mortgageFeeId}`,
 					mortgageId: `${args.mortgageId}`,
 					obligationId: `${args.obligationId}`,
-					policyVersion: servicingConfig?.policyVersion,
+					policyVersion: allocation.config.policyVersion,
 					principalBalance: mortgage.principal,
 					sourceObligationType: obligation.type,
 				},
 				timestamp: createdAt,
 			});
-		}
 
-		let feeMetadata: ServicingFeeMetadata | undefined;
-		if (feeCashApplied > 0) {
-			if (!servicingConfig) {
+			const mortgageFee = await ctx.db.get(allocation.config.mortgageFeeId);
+			if (!mortgageFee || mortgageFee.mortgageId !== args.mortgageId) {
 				throw new ConvexError(
-					`createDispersalEntries: feeCashApplied=${feeCashApplied} but servicingConfig is null for obligation ${args.obligationId}. Cannot post fee without audit metadata.`
+					`createDispersalEntries: waterfall mortgageFeeId ${allocation.config.mortgageFeeId} is not valid for mortgage ${args.mortgageId}`
 				);
 			}
-			feeMetadata = {
-				annualRate: servicingConfig.annualRate,
-				principalBalance: mortgage.principal,
-				paymentFrequency: mortgage.paymentFrequency,
-				policyVersion: servicingConfig.policyVersion,
-				feeCode: servicingConfig.code,
-				mortgageFeeId: servicingConfig.mortgageFeeId
-					? String(servicingConfig.mortgageFeeId)
-					: undefined,
-				feeDue,
-				feeCashApplied,
-				feeReceivable,
-			};
+			const feeAssessmentId = await ctx.db.insert("feeAssessments", {
+				orgId: mortgage.orgId,
+				mortgageId: args.mortgageId,
+				mortgageFeeId: allocation.config.mortgageFeeId,
+				feeTemplateId: mortgageFee.feeTemplateId,
+				feeSetTemplateId: mortgageFee.feeSetTemplateId,
+				behavior: allocation.config.behavior,
+				code: allocation.config.code,
+				displayCode: allocation.config.displayCode,
+				amountCents: allocation.feeDue,
+				amountSettledCents: 0,
+				source: "payment_waterfall",
+				status: "assessed",
+				assessedAt: createdAt,
+				effectiveDate: args.settledDate,
+				sourceObligationId: args.obligationId,
+				obligationId: args.obligationId,
+				servicingFeeEntryId,
+				metadata: {
+					calculationRunId,
+					distributableAmount,
+					feeCashApplied: allocation.feeCashApplied,
+					feeCode: allocation.config.code,
+					feeDue: allocation.feeDue,
+					feeReceivable: allocation.feeReceivable,
+					idempotencyKey: args.idempotencyKey,
+					settledAmount: args.settledAmount,
+				},
+				createdAt,
+				updatedAt: createdAt,
+			});
+
+			let feeMetadata: ServicingFeeMetadata | undefined;
+			if (allocation.feeCashApplied > 0) {
+				const feeCalculationOutputs = {
+					...calculationOutputs,
+					feeCashApplied: allocation.feeCashApplied,
+					feeDue: allocation.feeDue,
+					feeReceivable: allocation.feeReceivable,
+				};
+				const feeAssessmentMetadata = {
+					behavior: allocation.config.behavior,
+					calculationInputs,
+					calculationOutputs: feeCalculationOutputs,
+					displayCode: allocation.config.displayCode,
+					feeAssessmentId,
+					feeCode: allocation.config.code,
+					mortgageFeeId: allocation.config.mortgageFeeId,
+				};
+				feeMetadata = {
+					annualRate: allocation.config.annualRate,
+					behavior: allocation.config.behavior,
+					calculationInputs,
+					calculationOutputs: feeCalculationOutputs,
+					displayCode: allocation.config.displayCode,
+					feeAssessment: feeAssessmentMetadata,
+					feeAssessmentId,
+					policyVersion: allocation.config.policyVersion,
+					feeCode: allocation.config.code,
+					mortgageFeeId: allocation.config.mortgageFeeId,
+					paymentFrequency: mortgage.paymentFrequency,
+					principalBalance: mortgage.principal,
+					feeDue: allocation.feeDue,
+					feeCashApplied: allocation.feeCashApplied,
+					feeReceivable: allocation.feeReceivable,
+				};
+			}
+
+			feeRuntimeRecords.push({
+				allocation,
+				feeAssessmentId,
+				feeMetadata,
+				servicingFeeEntryId,
+			});
 		}
+
+		const newServicingFeeEntryId =
+			feeRuntimeRecords.find(
+				(record) => record.allocation.config.code === "servicing"
+			)?.servicingFeeEntryId ??
+			feeRuntimeRecords[0]?.servicingFeeEntryId ??
+			null;
+		const feeMetadataEntries = feeRuntimeRecords
+			.map((record) => record.feeMetadata)
+			.filter(
+				(metadata): metadata is ServicingFeeMetadata => metadata !== undefined
+			);
 
 		await postSettlementAllocation(ctx, {
 			obligationId: args.obligationId,
@@ -802,7 +960,7 @@ export const createDispersalEntries = internalMutation({
 				amount: entry.amount,
 			})),
 			source: args.source,
-			...(feeMetadata ? { feeMetadata } : {}),
+			...(feeMetadataEntries.length > 0 ? { feeMetadataEntries } : {}),
 		});
 
 		return {

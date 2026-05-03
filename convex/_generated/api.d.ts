@@ -214,6 +214,8 @@ import type * as engine_transition from "../engine/transition.js";
 import type * as engine_transitionMutation from "../engine/transitionMutation.js";
 import type * as engine_types from "../engine/types.js";
 import type * as engine_validators from "../engine/validators.js";
+import type * as fees_assessments from "../fees/assessments.js";
+import type * as fees_behavior from "../fees/behavior.js";
 import type * as fees_config from "../fees/config.js";
 import type * as fees_migrations from "../fees/migrations.js";
 import type * as fees_queries from "../fees/queries.js";
@@ -711,6 +713,8 @@ declare const fullApi: ApiFromModules<{
   "engine/transitionMutation": typeof engine_transitionMutation;
   "engine/types": typeof engine_types;
   "engine/validators": typeof engine_validators;
+  "fees/assessments": typeof fees_assessments;
+  "fees/behavior": typeof fees_behavior;
   "fees/config": typeof fees_config;
   "fees/migrations": typeof fees_migrations;
   "fees/queries": typeof fees_queries;

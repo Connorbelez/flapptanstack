@@ -3,6 +3,7 @@ import { internalQuery } from "../_generated/server";
 import { adminQuery } from "../fluent";
 import {
 	listActiveMortgageFeesForSurface,
+	previewBulkApplyFeeSetToMortgages,
 	resolveBorrowerChargeFeeConfig,
 } from "./resolver";
 import { feeCodeValidator, feeSurfaceValidator } from "./validators";
@@ -95,5 +96,16 @@ export const listMortgageFees = adminQuery
 			.query("mortgageFees")
 			.withIndex("by_mortgage", (q) => q.eq("mortgageId", args.mortgageId))
 			.collect();
+	})
+	.public();
+
+export const previewBulkApplyFeeSet = adminQuery
+	.input({
+		feeSetTemplateId: v.id("feeSetTemplates"),
+		mortgageIds: v.optional(v.array(v.id("mortgages"))),
+		effectiveFrom: v.string(),
+	})
+	.handler(async (ctx, args) => {
+		return await previewBulkApplyFeeSetToMortgages(ctx.db, args);
 	})
 	.public();

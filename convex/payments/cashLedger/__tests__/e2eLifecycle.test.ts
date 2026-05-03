@@ -8,6 +8,7 @@ import {
 	ADMIN_SOURCE,
 	createDueObligation,
 	createHarness,
+	createTestServicingFeeMetadata,
 	SYSTEM_SOURCE,
 	seedMinimalEntities,
 } from "../../../../src/test/convex/payments/cashLedger/testUtils";
@@ -1054,11 +1055,20 @@ describe("E2E lifecycle tests", () => {
 
 			// Re-post settlement allocation (same idempotency keys)
 			await t.run(async (ctx) => {
+				const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+					mortgageId,
+					obligationId,
+					effectiveDate: "2026-03-01",
+					feeDue: servicingFee,
+					feeCashApplied: servicingFee,
+				});
+
 				await postSettlementAllocation(ctx, {
 					obligationId,
 					mortgageId,
 					settledDate: "2026-03-01",
 					servicingFee,
+					feeMetadata,
 					entries: dispersal.entries.map((e) => ({
 						dispersalEntryId: e.id,
 						lenderId: e.lenderId,
