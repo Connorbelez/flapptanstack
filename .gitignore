@@ -33,5 +33,6 @@ src/routeTree.gen.ts
 .superpowers/*
 docs/superpowers/plans/*
 rotessaPaymentSchedulePayload.json
+.docs/superpowers/plans/
 CLAUDE.md
 .impeccable.md
