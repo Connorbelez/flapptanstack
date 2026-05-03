@@ -6,6 +6,10 @@ dotenv.config({ path: path.resolve(import.meta.dirname, ".env.local") });
 
 const e2ePort = Number(process.env.E2E_PORT ?? 3000);
 const e2eBaseUrl = `http://localhost:${e2ePort}`;
+const fileWorkspaceStorageState = path.resolve(
+	import.meta.dirname,
+	".auth/file-workspace-user.json"
+);
 
 export default defineConfig({
 	testDir: "./e2e",
@@ -43,11 +47,33 @@ export default defineConfig({
 				"rbac/**",
 				"deal-closing/**",
 				"document-engine/**",
+				"file-workspace.setup.ts",
+				"file-workspace/**",
 				"origination/**",
 				"auth.setup.ts",
 				"simulation.spec.ts",
 			],
 			use: { ...devices["Desktop Chrome"] },
+		},
+		{
+			name: "file-workspace-setup",
+			testDir: "./e2e",
+			testMatch: "file-workspace.setup.ts",
+			use: {
+				...devices["Desktop Chrome"],
+				baseURL: `http://app.localhost:${e2ePort}`,
+			},
+		},
+		{
+			name: "file-workspace",
+			testDir: "./e2e/file-workspace",
+			dependencies: ["file-workspace-setup"],
+			workers: 1,
+			use: {
+				...devices["Desktop Chrome"],
+				baseURL: `http://app.localhost:${e2ePort}`,
+				storageState: fileWorkspaceStorageState,
+			},
 		},
 		{
 			name: "document-engine",
