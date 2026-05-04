@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UnauthorizedRouteImport } from './routes/unauthorized'
+import { Route as StartLendingRouteImport } from './routes/start-lending'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignOutRouteImport } from './routes/sign-out'
 import { Route as SignInRouteImport } from './routes/sign-in'
@@ -27,6 +28,7 @@ import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ListingsIndexRouteImport } from './routes/listings/index'
 import { Route as BrokerIndexRouteImport } from './routes/broker/index'
+import { Route as StartLendingCompleteRouteImport } from './routes/start-lending.complete'
 import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
 import { Route as ListingsListingIdRouteImport } from './routes/listings/$listingId'
 import { Route as LenderPortfolioRouteImport } from './routes/lender.portfolio'
@@ -155,6 +157,11 @@ const UnauthorizedRoute = UnauthorizedRouteImport.update({
   path: '/unauthorized',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StartLendingRoute = StartLendingRouteImport.update({
+  id: '/start-lending',
+  path: '/start-lending',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
   path: '/sign-up',
@@ -239,6 +246,11 @@ const BrokerIndexRoute = BrokerIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => BrokerRouteRoute,
+} as any)
+const StartLendingCompleteRoute = StartLendingCompleteRouteImport.update({
+  id: '/complete',
+  path: '/complete',
+  getParentRoute: () => StartLendingRoute,
 } as any)
 const SignOutLocalRoute = SignOutLocalRouteImport.update({
   id: '/local',
@@ -909,6 +921,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
+  '/start-lending': typeof StartLendingRouteWithChildren
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
@@ -967,6 +980,7 @@ export interface FileRoutesByFullPath {
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
+  '/start-lending/complete': typeof StartLendingCompleteRoute
   '/listings/': typeof ListingsIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
@@ -1049,6 +1063,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
+  '/start-lending': typeof StartLendingRouteWithChildren
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
@@ -1097,6 +1112,7 @@ export interface FileRoutesByTo {
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker': typeof BrokerIndexRoute
+  '/start-lending/complete': typeof StartLendingCompleteRoute
   '/listings': typeof ListingsIndexRoute
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
   '/demo/rbac/borrower': typeof DemoRbacBorrowerRouteRoute
@@ -1181,6 +1197,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-out': typeof SignOutRouteWithChildren
   '/sign-up': typeof SignUpRoute
+  '/start-lending': typeof StartLendingRouteWithChildren
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
@@ -1239,6 +1256,7 @@ export interface FileRoutesById {
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/broker/': typeof BrokerIndexRoute
+  '/start-lending/complete': typeof StartLendingCompleteRoute
   '/listings/': typeof ListingsIndexRoute
   '/demo/broker-whitelabel/listings': typeof DemoBrokerWhitelabelListingsRouteRouteWithChildren
   '/demo/rbac/admin': typeof DemoRbacAdminRouteRouteWithChildren
@@ -1325,6 +1343,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
+    | '/start-lending'
     | '/unauthorized'
     | '/admin/borrowers'
     | '/admin/deals'
@@ -1383,6 +1402,7 @@ export interface FileRouteTypes {
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker/'
+    | '/start-lending/complete'
     | '/listings/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
@@ -1465,6 +1485,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
+    | '/start-lending'
     | '/unauthorized'
     | '/admin/borrowers'
     | '/admin/deals'
@@ -1513,6 +1534,7 @@ export interface FileRouteTypes {
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker'
+    | '/start-lending/complete'
     | '/listings'
     | '/demo/rbac/admin'
     | '/demo/rbac/borrower'
@@ -1596,6 +1618,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-out'
     | '/sign-up'
+    | '/start-lending'
     | '/unauthorized'
     | '/admin/borrowers'
     | '/admin/deals'
@@ -1654,6 +1677,7 @@ export interface FileRouteTypes {
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/broker/'
+    | '/start-lending/complete'
     | '/listings/'
     | '/demo/broker-whitelabel/listings'
     | '/demo/rbac/admin'
@@ -1739,6 +1763,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SignOutRoute: typeof SignOutRouteWithChildren
   SignUpRoute: typeof SignUpRoute
+  StartLendingRoute: typeof StartLendingRouteWithChildren
   UnauthorizedRoute: typeof UnauthorizedRoute
   DemoAmpsRouteRoute: typeof DemoAmpsRouteRouteWithChildren
   DemoAuditTraceabilityRouteRoute: typeof DemoAuditTraceabilityRouteRouteWithChildren
@@ -1788,6 +1813,13 @@ declare module '@tanstack/react-router' {
       path: '/unauthorized'
       fullPath: '/unauthorized'
       preLoaderRoute: typeof UnauthorizedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/start-lending': {
+      id: '/start-lending'
+      path: '/start-lending'
+      fullPath: '/start-lending'
+      preLoaderRoute: typeof StartLendingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-up': {
@@ -1908,6 +1940,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/broker/'
       preLoaderRoute: typeof BrokerIndexRouteImport
       parentRoute: typeof BrokerRouteRoute
+    }
+    '/start-lending/complete': {
+      id: '/start-lending/complete'
+      path: '/complete'
+      fullPath: '/start-lending/complete'
+      preLoaderRoute: typeof StartLendingCompleteRouteImport
+      parentRoute: typeof StartLendingRoute
     }
     '/sign-out/local': {
       id: '/sign-out/local'
@@ -2999,6 +3038,18 @@ const SignOutRouteChildren: SignOutRouteChildren = {
 const SignOutRouteWithChildren =
   SignOutRoute._addFileChildren(SignOutRouteChildren)
 
+interface StartLendingRouteChildren {
+  StartLendingCompleteRoute: typeof StartLendingCompleteRoute
+}
+
+const StartLendingRouteChildren: StartLendingRouteChildren = {
+  StartLendingCompleteRoute: StartLendingCompleteRoute,
+}
+
+const StartLendingRouteWithChildren = StartLendingRoute._addFileChildren(
+  StartLendingRouteChildren,
+)
+
 interface DemoAmpsRouteRouteChildren {
   DemoAmpsCollectionAttemptsRoute: typeof DemoAmpsCollectionAttemptsRoute
   DemoAmpsCollectionPlanRoute: typeof DemoAmpsCollectionPlanRoute
@@ -3230,6 +3281,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignOutRoute: SignOutRouteWithChildren,
   SignUpRoute: SignUpRoute,
+  StartLendingRoute: StartLendingRouteWithChildren,
   UnauthorizedRoute: UnauthorizedRoute,
   DemoAmpsRouteRoute: DemoAmpsRouteRouteWithChildren,
   DemoAuditTraceabilityRouteRoute: DemoAuditTraceabilityRouteRouteWithChildren,

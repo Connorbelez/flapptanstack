@@ -293,53 +293,59 @@ function PortalLandingTeaserCard({
 	const isSecondPosition = listing.mortgagePositionLabel === "2nd";
 
 	return (
-		<article
-			aria-label={`Featured listing: ${listing.title}`}
-			className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm"
+		<a
+			aria-label={listing.action.label}
+			className="block rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-900/30"
+			href={listing.action.href}
 		>
-			<div className="relative flex aspect-[16/10] items-center justify-center bg-stone-200">
-				{listing.heroImageUrl ? (
-					<img
-						alt=""
-						className="h-full w-full object-cover"
-						height={360}
-						src={listing.heroImageUrl}
-						width={576}
-					/>
-				) : (
-					<Building2 aria-hidden className="size-10 text-stone-400" />
-				)}
-			</div>
-			<div className="grid gap-3 p-5">
-				<div className="flex flex-wrap items-center gap-2 text-[12px] text-stone-500">
-					<span
-						className={cn(
-							"rounded-md px-2 py-1 font-semibold text-white",
-							isSecondPosition ? "bg-stone-700" : "bg-emerald-950"
-						)}
-					>
-						{listing.mortgagePositionLabel}
-					</span>
-					<span>{listing.propertyTypeLabel}</span>
-					<span className="ml-auto font-semibold text-emerald-800">
-						{listing.statusLabel}
-					</span>
+			<article
+				aria-label={`Featured listing: ${listing.title}`}
+				className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+			>
+				<div className="relative flex aspect-[16/10] items-center justify-center bg-stone-200">
+					{listing.heroImageUrl ? (
+						<img
+							alt=""
+							className="h-full w-full object-cover"
+							height={360}
+							src={listing.heroImageUrl}
+							width={576}
+						/>
+					) : (
+						<Building2 aria-hidden className="size-10 text-stone-400" />
+					)}
 				</div>
-				<h3 className="line-clamp-2 min-h-11 font-semibold text-lg text-stone-950 leading-6">
-					{listing.title}
-				</h3>
-				<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-stone-500">
-					<strong className="text-base text-stone-950">
-						{listing.amountLabel}
-					</strong>
-					<span className="font-semibold text-emerald-800">
-						{listing.rateLabel}
-					</span>
-					<span>{listing.ltvLabel}</span>
-					<span>{listing.termLabel}</span>
+				<div className="grid gap-3 p-5">
+					<div className="flex flex-wrap items-center gap-2 text-[12px] text-stone-500">
+						<span
+							className={cn(
+								"rounded-md px-2 py-1 font-semibold text-white",
+								isSecondPosition ? "bg-stone-700" : "bg-emerald-950"
+							)}
+						>
+							{listing.mortgagePositionLabel}
+						</span>
+						<span>{listing.propertyTypeLabel}</span>
+						<span className="ml-auto font-semibold text-emerald-800">
+							{listing.statusLabel}
+						</span>
+					</div>
+					<h3 className="line-clamp-2 min-h-11 font-semibold text-lg text-stone-950 leading-6">
+						{listing.title}
+					</h3>
+					<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-stone-500">
+						<strong className="text-base text-stone-950">
+							{listing.amountLabel}
+						</strong>
+						<span className="font-semibold text-emerald-800">
+							{listing.rateLabel}
+						</span>
+						<span>{listing.ltvLabel}</span>
+						<span>{listing.termLabel}</span>
+					</div>
 				</div>
-			</div>
-		</article>
+			</article>
+		</a>
 	);
 }
 

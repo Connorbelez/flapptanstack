@@ -190,6 +190,7 @@ export const publicPortalLandingPageValidator = v.object({
 		hasBlurredContinuation: v.boolean(),
 		items: v.array(
 			v.object({
+				action: portalLandingActionValidator,
 				amountLabel: v.string(),
 				heroImageUrl: v.union(v.string(), v.null()),
 				id: v.string(),
