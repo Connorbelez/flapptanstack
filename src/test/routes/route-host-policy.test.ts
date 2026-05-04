@@ -6,7 +6,7 @@ import { resolveRouteHostPolicy } from "#/lib/portal/route-host-policy";
 
 function buildPortalSummary(args: {
 	portalId: string;
-	portalType?: "broker" | "fairlend";
+	portalType?: "broker" | "fairlend" | "mic";
 	slug: string;
 }) {
 	return {
@@ -64,6 +64,8 @@ describe("route host policy", () => {
 		expect(resolveRouteHostPolicy("/sign-out/local")).toBe("shared");
 		expect(resolveRouteHostPolicy("/about")).toBe("marketing");
 		expect(resolveRouteHostPolicy("/financing/start")).toBe("portal");
+		expect(resolveRouteHostPolicy("/portal")).toBe("portal");
+		expect(resolveRouteHostPolicy("/portal/")).toBe("portal");
 		expect(resolveRouteHostPolicy("/listings/abc")).toBe("portal");
 		expect(resolveRouteHostPolicy("/start-lending")).toBe("portal");
 		expect(resolveRouteHostPolicy("/start-lending/complete")).toBe("portal");
@@ -109,6 +111,46 @@ describe("route host decisions", () => {
 			currentHost: "localhost:3000",
 			returnTo: "/listings?q=toronto",
 		});
+	});
+
+	it("blocks marketing-host MIC portal access behind a /portal return path", () => {
+		expect(
+			resolveRouteHostDecision({
+				pathname: "/portal",
+				portalContext: {
+					kind: "marketing",
+					requestedHost: "localhost:3000",
+					canonicalHost: "localhost:3000",
+					cacheKey: "marketing:localhost:3000",
+				},
+				returnTo: "/portal",
+				userId: null,
+				viewerPortalAssignment: null,
+			})
+		).toEqual({
+			kind: "boundary",
+			boundaryKind: "portal-required",
+			continueHref: "http://localhost:3000/sign-in?redirect=%2Fportal",
+			continueLabel: "Sign in to continue",
+			currentHost: "localhost:3000",
+			returnTo: "/portal",
+		});
+	});
+
+	it("allows active MIC portal hosts to reach the protected /portal route boundary", () => {
+		expect(
+			resolveRouteHostDecision({
+				pathname: "/portal",
+				portalContext: buildPortalContext({
+					host: "mic.localhost:3000",
+					portalId: "portal_mic",
+					slug: "mic",
+				}),
+				returnTo: "/portal",
+				userId: null,
+				viewerPortalAssignment: null,
+			})
+		).toEqual({ kind: "allow" });
 	});
 
 	it("prefers the current organization portal over the home portal", () => {
