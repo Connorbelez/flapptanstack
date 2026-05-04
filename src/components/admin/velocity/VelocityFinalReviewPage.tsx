@@ -9,6 +9,7 @@ import {
 	Play,
 	ShieldCheck,
 } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAdminBreadcrumbLabel } from "#/components/admin/shell/AdminPageMetadataContext";
 import {
@@ -371,6 +372,8 @@ export function VelocityFinalReviewPage({
 	const activateVelocityPackage = useAction(
 		api.velocity.activation.activateVelocityPackage
 	);
+	const activationPendingRef = useRef(false);
+	const [activationPending, setActivationPending] = useState(false);
 
 	useAdminBreadcrumbLabel(
 		workspace
@@ -383,14 +386,15 @@ export function VelocityFinalReviewPage({
 	const inFlight = workspace
 		? isVelocityActivationInFlight(workspace.activationAttempt)
 		: false;
+	const activationLocked = inFlight || activationPending;
 	const canConfirmReview = Boolean(
-		workspace?.readiness.canFinalReview && reviewSnapshot && !inFlight
+		workspace?.readiness.canFinalReview && reviewSnapshot && !activationLocked
 	);
 	const canActivate = Boolean(
 		workspace?.readiness.canActivate &&
 			workspace.fairlendOwned.finalReview &&
 			!reviewDrifted &&
-			!inFlight
+			!activationLocked
 	);
 	const canRetry = Boolean(
 		canActivate && workspace?.activationAttempt?.status === "failed"
@@ -418,9 +422,11 @@ export function VelocityFinalReviewPage({
 
 	async function handleActivate() {
 		const finalReview = workspace?.fairlendOwned.finalReview;
-		if (!(workspace && finalReview)) {
+		if (!(workspace && finalReview) || activationPendingRef.current) {
 			return;
 		}
+		activationPendingRef.current = true;
+		setActivationPending(true);
 		try {
 			const result = await activateVelocityPackage({
 				reviewedSnapshotHash: finalReview.reviewedSnapshotHash,
@@ -432,6 +438,9 @@ export function VelocityFinalReviewPage({
 			toast.error(
 				error instanceof Error ? error.message : "Velocity activation failed."
 			);
+		} finally {
+			activationPendingRef.current = false;
+			setActivationPending(false);
 		}
 	}
 
@@ -538,7 +547,7 @@ export function VelocityFinalReviewPage({
 			<VelocityActivationStatusPanel
 				attempt={workspace.activationAttempt}
 				canRetry={canRetry}
-				isRetrying={false}
+				isRetrying={activationPending}
 				onRetry={handleActivate}
 			/>
 		</div>

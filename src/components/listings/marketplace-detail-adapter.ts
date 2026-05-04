@@ -515,13 +515,13 @@ function buildCheckoutContract(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>,
 	perFractionAmount: number
 ): ListingDetailData["checkout"] {
-	if (!detail.investment.checkoutReady) {
-		return undefined;
-	}
-
 	const availableFractions = wholeDecilesFromLedger(
 		detail.investment.availableFractions
 	);
+	if (availableFractions <= 0) {
+		return undefined;
+	}
+
 	const minimumFractions = Math.min(1, availableFractions);
 
 	return {

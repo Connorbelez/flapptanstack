@@ -54,9 +54,20 @@ export const create = documentUploadMutation
 		fileHash: v.string(),
 		fileRef: v.id("_storage"),
 		fileSize: v.number(),
+		mimeType: v.optional(
+			v.union(
+				v.literal("application/pdf"),
+				v.literal("image/jpeg"),
+				v.literal("image/png"),
+				v.literal("image/webp")
+			)
+		),
 		name: v.string(),
 		originalFilename: v.string(),
 		pageCount: v.optional(v.number()),
+		source: v.optional(
+			v.union(v.literal("admin_upload"), v.literal("payment_proof_upload"))
+		),
 	})
 	.handler(async (ctx, args) => {
 		const user = await ctx.db
@@ -80,11 +91,11 @@ export const create = documentUploadMutation
 			fileHash: args.fileHash,
 			fileRef: args.fileRef,
 			fileSize: args.fileSize,
-			mimeType: "application/pdf",
+			mimeType: args.mimeType ?? "application/pdf",
 			name: args.name,
 			originalFilename: args.originalFilename,
 			pageCount: args.pageCount,
-			source: "admin_upload",
+			source: args.source ?? "admin_upload",
 			uploadedAt: Date.now(),
 			uploadedByUserId: user._id,
 		});
@@ -105,7 +116,12 @@ export const get = documentQuery
 export const list = documentQuery
 	.input({})
 	.handler(async (ctx) => {
-		return await ctx.db.query("documentAssets").order("desc").collect();
+		const assets = await ctx.db.query("documentAssets").order("desc").collect();
+		return assets.filter(
+			(asset) =>
+				asset.mimeType === "application/pdf" &&
+				asset.source !== "payment_proof_upload"
+		);
 	})
 	.public();
 

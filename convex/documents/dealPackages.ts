@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { ActionCtx, QueryCtx } from "../_generated/server";
+import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
 import { assertDealAccess } from "../authz/resourceAccess";
 import {
 	buildDealParticipantProjection,
@@ -9,28 +9,38 @@ import {
 } from "../deals/participantProjection";
 import {
 	adminAction,
+	adminMutation,
 	convex,
 	dealQuery,
 	documentQuery,
+	requirePermission,
 	requirePermissionAction,
 } from "../fluent";
 import {
 	type DealDocumentPackageStatus,
 	type DealDocumentSourceBlueprintSnapshot,
+	type DealDocumentStoredRemediationAction,
 	type DealPackageBlueprintSnapshot,
 	dealDocumentInstanceKindValidator,
 	dealDocumentInstanceStatusValidator,
 	dealDocumentPackageStatusValidator,
 	dealDocumentSourceBlueprintSnapshotValidator,
+	dealDocumentStoredRemediationActionValidator,
 	dealPackageBlueprintSnapshotValidator,
+	dealSigningExceptionKindValidator,
+	dealSigningExceptionSeverityValidator,
 	generatedDocumentSigningStatusValidator,
 	signatureEnvelopeStatusValidator,
 	signatureProviderCodeValidator,
 	signatureProviderRoleValidator,
 	signatureRecipientStatusValidator,
 } from "./contracts";
+import {
+	buildDealDocumentRemediation,
+	getDealDocumentRemediationEligibility,
+} from "./dealPackageRemediationModel";
 import { listMortgageBlueprintRows } from "./mortgageBlueprints";
-import { isDealStatusOpenForEmbeddedSigning } from "./signature/gates";
+import { canStartSigningForDealStatus } from "./signature/gates";
 import {
 	getSignatureProvider,
 	mapEnvelopeStatusToDealDocumentInstanceStatus,
@@ -143,9 +153,13 @@ interface PackageSurface {
 		packageId: Id<"dealDocumentPackages">;
 		packageKey: string | null;
 		packageLabel: string | null;
+		remediation: ReturnType<typeof buildDealDocumentRemediation>;
+		remediationAction: DealDocumentStoredRemediationAction | null;
+		remediationReason: string | null;
 		sourceBlueprintId: Id<"mortgageDocumentBlueprints"> | null;
 		signingState: PackageSigningState | null;
 		status: Doc<"dealDocumentInstances">["status"];
+		supersededByInstanceId: Id<"dealDocumentInstances"> | null;
 		signing: PackageInstanceSigningSurface | null;
 		templateId: Id<"documentTemplates"> | null;
 		templateVersion: number | null;
@@ -182,6 +196,18 @@ interface CreateDocumentPackageResult {
 	dealId: Id<"deals">;
 	packageId: Id<"dealDocumentPackages">;
 	status: DealDocumentPackageStatus;
+}
+
+interface DealDocumentInstanceRemediationTarget {
+	deal: Doc<"deals">;
+	instance: InstanceRow;
+	mortgage: Doc<"mortgages">;
+	packageRecord: Doc<"dealDocumentPackages">;
+}
+
+interface DealDocumentInstanceRemediationResult {
+	ok: true;
+	replacementInstanceId: Id<"dealDocumentInstances"> | null;
 }
 
 interface DealPackageActionCtx
@@ -242,6 +268,9 @@ interface ArchiveCompletedSignableDocumentsResult {
 const SIGNATORY_MAPPING_ERROR_RE = /signatory mapping validation failed/i;
 const EMPTY_SIGNABLE_RECIPIENTS_ERROR =
 	"Signable template configuration error: no Documenso recipients were generated for this blueprint.";
+const DOCUMENSO_PROVIDER_PREFLIGHT_OR_CREATE_FAILED_MESSAGE =
+	"Documenso provider preflight or create failed.";
+const PROVIDER_ERROR_DETAIL_MAX_LENGTH = 2000;
 
 type DealPackagePreparation =
 	| {
@@ -274,6 +303,32 @@ function toFullName(user: { firstName?: string; lastName?: string }): string {
 function normalizeText(value: string | null | undefined) {
 	const trimmed = value?.trim();
 	return trimmed && trimmed.length > 0 ? trimmed : "";
+}
+
+function truncateProviderDiagnostic(value: string) {
+	return value.length > PROVIDER_ERROR_DETAIL_MAX_LENGTH
+		? `${value.slice(0, PROVIDER_ERROR_DETAIL_MAX_LENGTH - 3)}...`
+		: value;
+}
+
+function stringifyUnknownError(error: unknown) {
+	if (error && typeof error === "object" && "data" in error) {
+		try {
+			return JSON.stringify((error as { data: unknown }).data);
+		} catch {
+			return String((error as { data: unknown }).data);
+		}
+	}
+
+	return error instanceof Error ? error.message : String(error);
+}
+
+function providerFailureLastError(error: unknown) {
+	return truncateProviderDiagnostic(
+		`${DOCUMENSO_PROVIDER_PREFLIGHT_OR_CREATE_FAILED_MESSAGE} ${stringifyUnknownError(
+			error
+		)}`
+	);
 }
 
 export function toDealPackageBlueprintSnapshot(
@@ -735,7 +790,14 @@ function canLaunchEmbeddedSigning(args: {
 	userId: Id<"users"> | null;
 	viewer?: DealPackageViewerContext;
 }) {
-	if (!isDealStatusOpenForEmbeddedSigning(args.dealStatus)) {
+	const hasActiveEnvelope =
+		args.envelopeStatus === "sent" ||
+		args.envelopeStatus === "partially_signed";
+	if (
+		!canStartSigningForDealStatus(args.dealStatus, {
+			hasActiveEnvelope,
+		})
+	) {
 		return false;
 	}
 
@@ -945,9 +1007,14 @@ async function buildPackageSurface(
 					if (
 						row.sourceBlueprintSnapshot.class === "private_templated_signable"
 					) {
+						const hasActiveEnvelope =
+							signing?.status === "sent" ||
+							signing?.status === "partially_signed";
 						url =
 							archivedSigning?.finalPdfUrl ??
-							(isDealStatusOpenForEmbeddedSigning(deal?.status)
+							(canStartSigningForDealStatus(deal?.status, {
+								hasActiveEnvelope,
+							})
 								? null
 								: await ctx.storage.getUrl(generatedDocument.pdfStorageId));
 					} else {
@@ -972,6 +1039,17 @@ async function buildPackageSurface(
 					packageId: row.packageId,
 					packageKey: row.sourceBlueprintSnapshot.packageKey ?? null,
 					packageLabel: row.sourceBlueprintSnapshot.packageLabel ?? null,
+					remediation: buildDealDocumentRemediation({
+						archivedAt: row.archivedAt ?? null,
+						lastError: row.lastError ?? null,
+						remediationAction: row.remediationAction ?? null,
+						sourceBlueprintId: row.sourceBlueprintId ?? null,
+						sourceBlueprintSnapshot: row.sourceBlueprintSnapshot,
+						status: row.status,
+						supersededByInstanceId: row.supersededByInstanceId ?? null,
+					}),
+					remediationAction: row.remediationAction ?? null,
+					remediationReason: row.remediationReason ?? null,
 					sourceBlueprintId: row.sourceBlueprintId ?? null,
 					signingState: buildSigningStateForInstance({
 						attempts,
@@ -980,6 +1058,7 @@ async function buildPackageSurface(
 						recipients,
 					}),
 					status: row.status,
+					supersededByInstanceId: row.supersededByInstanceId ?? null,
 					signing,
 					templateId: row.sourceBlueprintSnapshot.templateId ?? null,
 					templateVersion: row.sourceBlueprintSnapshot.templateVersion ?? null,
@@ -1067,6 +1146,7 @@ function summarizePackageStatus(
 	const failedRows = activeRows.filter(
 		(row) =>
 			row.status === "generation_failed" ||
+			row.status === "provider_error" ||
 			row.status === "signature_pending_recipient_resolution" ||
 			row.status === "signature_draft" ||
 			row.status === "signature_declined" ||
@@ -1146,6 +1226,63 @@ export const listPackageInstancesInternal = convex
 			.query("dealDocumentInstances")
 			.withIndex("by_package", (query) => query.eq("packageId", args.packageId))
 			.collect();
+	})
+	.internal();
+
+export const getDealDocumentInstanceRemediationTargetInternal = convex
+	.query()
+	.input({ instanceId: v.id("dealDocumentInstances") })
+	.handler(
+		async (ctx, args): Promise<DealDocumentInstanceRemediationTarget> => {
+			const instance = await ctx.db.get(args.instanceId);
+			if (!instance) {
+				throw new ConvexError("Deal document instance not found");
+			}
+			const eligibility = getDealDocumentRemediationEligibility({
+				archivedAt: instance.archivedAt ?? null,
+				lastError: instance.lastError ?? null,
+				remediationAction: instance.remediationAction ?? null,
+				sourceBlueprintId: instance.sourceBlueprintId ?? null,
+				sourceBlueprintSnapshot: instance.sourceBlueprintSnapshot,
+				status: instance.status,
+				supersededByInstanceId: instance.supersededByInstanceId ?? null,
+			});
+			if (eligibility !== "remediable_failed_instance") {
+				throw new ConvexError("Deal document instance is not remediable");
+			}
+
+			const [packageRecord, deal, mortgage] = await Promise.all([
+				ctx.db.get(instance.packageId),
+				ctx.db.get(instance.dealId),
+				ctx.db.get(instance.mortgageId),
+			]);
+			if (!packageRecord) {
+				throw new ConvexError("Deal document package not found");
+			}
+			if (!deal) {
+				throw new ConvexError("Deal not found");
+			}
+			if (!mortgage) {
+				throw new ConvexError("Mortgage not found");
+			}
+
+			return { deal, instance, mortgage, packageRecord };
+		}
+	)
+	.internal();
+
+export const getLatestActiveSourceBlueprintSnapshotInternal = convex
+	.query()
+	.input({
+		sourceBlueprintId: v.id("mortgageDocumentBlueprints"),
+	})
+	.handler(async (ctx, args): Promise<DealPackageBlueprintSnapshot> => {
+		const blueprint = await ctx.db.get(args.sourceBlueprintId);
+		if (!blueprint || blueprint.status !== "active") {
+			throw new ConvexError("Active source blueprint not found");
+		}
+
+		return toDealPackageBlueprintSnapshot(blueprint);
 	})
 	.internal();
 
@@ -1319,13 +1456,85 @@ export const createDealDocumentInstance = convex
 		lastError: v.optional(v.string()),
 		mortgageId: v.id("mortgages"),
 		packageId: v.id("dealDocumentPackages"),
+		remediationAction: v.optional(dealDocumentStoredRemediationActionValidator),
+		remediationReason: v.optional(v.string()),
 		sourceBlueprintId: v.optional(v.id("mortgageDocumentBlueprints")),
 		sourceBlueprintSnapshot: dealDocumentSourceBlueprintSnapshotValidator,
 		status: dealDocumentInstanceStatusValidator,
+		supersededByInstanceId: v.optional(v.id("dealDocumentInstances")),
 		updatedAt: v.number(),
 	})
 	.handler(async (ctx, args) => {
 		return ctx.db.insert("dealDocumentInstances", args);
+	})
+	.internal();
+
+export const createDealSigningExceptionInternal = convex
+	.mutation()
+	.input({
+		attemptId: v.optional(v.id("dealEnvelopeAttempts")),
+		dealDocumentInstanceId: v.optional(v.id("dealDocumentInstances")),
+		dealId: v.id("deals"),
+		details: v.optional(v.record(v.string(), v.string())),
+		kind: dealSigningExceptionKindValidator,
+		message: v.string(),
+		now: v.number(),
+		packageId: v.optional(v.id("dealDocumentPackages")),
+		recipientId: v.optional(v.id("dealEnvelopeRecipients")),
+		severity: dealSigningExceptionSeverityValidator,
+	})
+	.handler(async (ctx, args) => {
+		return ctx.db.insert("dealSigningExceptions", {
+			attemptId: args.attemptId,
+			createdAt: args.now,
+			dealDocumentInstanceId: args.dealDocumentInstanceId,
+			dealId: args.dealId,
+			details: args.details,
+			kind: args.kind,
+			message: args.message,
+			packageId: args.packageId,
+			providerEventId: undefined,
+			recipientId: args.recipientId,
+			resolvedAt: undefined,
+			resolvedBy: undefined,
+			severity: args.severity,
+			status: "open",
+			updatedAt: args.now,
+		});
+	})
+	.internal();
+
+export const resolveOpenPreSendSigningExceptionsInternal = convex
+	.mutation()
+	.input({
+		dealId: v.id("deals"),
+		now: v.number(),
+		packageId: v.id("dealDocumentPackages"),
+		resolvedBy: v.string(),
+	})
+	.handler(async (ctx, args) => {
+		const openExceptions = await ctx.db
+			.query("dealSigningExceptions")
+			.withIndex("by_package", (query) =>
+				query.eq("packageId", args.packageId).eq("status", "open")
+			)
+			.collect();
+		const resolvedIds: Id<"dealSigningExceptions">[] = [];
+		for (const exception of openExceptions) {
+			if (
+				exception.dealId === args.dealId &&
+				exception.kind === "pre_send_configuration_failure"
+			) {
+				await ctx.db.patch(exception._id, {
+					resolvedAt: args.now,
+					resolvedBy: args.resolvedBy,
+					status: "resolved",
+					updatedAt: args.now,
+				});
+				resolvedIds.push(exception._id);
+			}
+		}
+		return resolvedIds;
 	})
 	.internal();
 
@@ -1334,6 +1543,8 @@ export const archiveDealDocumentInstance = convex
 	.input({
 		instanceId: v.id("dealDocumentInstances"),
 		now: v.number(),
+		remediationAction: v.optional(dealDocumentStoredRemediationActionValidator),
+		remediationReason: v.optional(v.string()),
 	})
 	.handler(async (ctx, args) => {
 		const instance = await ctx.db.get(args.instanceId);
@@ -1343,8 +1554,199 @@ export const archiveDealDocumentInstance = convex
 
 		await ctx.db.patch(args.instanceId, {
 			archivedAt: args.now,
+			remediationAction: args.remediationAction,
+			remediationReason: args.remediationReason,
 			status: "archived",
 			updatedAt: args.now,
+		});
+	})
+	.internal();
+
+export const claimDealDocumentInstanceForRemediationInternal = convex
+	.mutation()
+	.input({
+		instanceId: v.id("dealDocumentInstances"),
+		now: v.number(),
+		remediationAction: dealDocumentStoredRemediationActionValidator,
+		remediationReason: v.optional(v.string()),
+	})
+	.handler(async (ctx, args) => {
+		const instance = await ctx.db.get(args.instanceId);
+		if (!instance) {
+			throw new ConvexError("Deal document instance not found");
+		}
+		const eligibility = getDealDocumentRemediationEligibility({
+			archivedAt: instance.archivedAt ?? null,
+			lastError: instance.lastError ?? null,
+			remediationAction: instance.remediationAction ?? null,
+			sourceBlueprintId: instance.sourceBlueprintId ?? null,
+			sourceBlueprintSnapshot: instance.sourceBlueprintSnapshot,
+			status: instance.status,
+			supersededByInstanceId: instance.supersededByInstanceId ?? null,
+		});
+		if (eligibility !== "remediable_failed_instance") {
+			throw new ConvexError("Deal document instance is not remediable");
+		}
+
+		await ctx.db.patch(args.instanceId, {
+			archivedAt: args.now,
+			remediationAction: args.remediationAction,
+			remediationReason: args.remediationReason,
+			status: "archived",
+			updatedAt: args.now,
+		});
+
+		return {
+			previousStatus: instance.status,
+		};
+	})
+	.internal();
+
+export const patchDealDocumentInstanceSupersededByInternal = convex
+	.mutation()
+	.input({
+		instanceId: v.id("dealDocumentInstances"),
+		now: v.number(),
+		supersededByInstanceId: v.id("dealDocumentInstances"),
+	})
+	.handler(async (ctx, args) => {
+		await ctx.db.patch(args.instanceId, {
+			supersededByInstanceId: args.supersededByInstanceId,
+			updatedAt: args.now,
+		});
+	})
+	.internal();
+
+function buildDealDocumentRemediationLinkedRecordIds(args: {
+	instance: Pick<
+		InstanceRow,
+		"_id" | "mortgageId" | "packageId" | "sourceBlueprintId"
+	>;
+}) {
+	return {
+		dealDocumentInstanceId: String(args.instance._id),
+		mortgageId: String(args.instance.mortgageId),
+		packageId: String(args.instance.packageId),
+		sourceBlueprintId: args.instance.sourceBlueprintId
+			? String(args.instance.sourceBlueprintId)
+			: undefined,
+	};
+}
+
+function businessDateFromTimestamp(timestamp: number) {
+	return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function remediationAuditEventId(args: {
+	action: string;
+	instanceId: Id<"dealDocumentInstances">;
+	timestamp: number;
+}) {
+	return `${args.action}:${String(args.instanceId)}:${args.timestamp}`;
+}
+
+async function nextAuditJournalSequenceNumber(ctx: Pick<MutationCtx, "db">) {
+	const existingCounter = await ctx.db
+		.query("auditJournalSequenceCounters")
+		.withIndex("by_name", (query) => query.eq("name", "auditJournal"))
+		.unique();
+
+	if (existingCounter) {
+		const nextSequenceNumber = existingCounter.nextSequenceNumber;
+		await ctx.db.patch(existingCounter._id, {
+			nextSequenceNumber: nextSequenceNumber + 1n,
+			updatedAt: Date.now(),
+		});
+		return nextSequenceNumber;
+	}
+
+	await ctx.db.insert("auditJournalSequenceCounters", {
+		name: "auditJournal",
+		nextSequenceNumber: 2n,
+		updatedAt: Date.now(),
+	});
+	return 1n;
+}
+
+async function appendDealDocumentRemediationAudit(
+	ctx: Pick<MutationCtx, "db">,
+	args: {
+		action: string;
+		afterState: Record<string, unknown>;
+		deal: Doc<"deals">;
+		instance: InstanceRow;
+		previousState: string;
+		reason?: string;
+		timestamp: number;
+	}
+) {
+	await ctx.db.insert("auditJournal", {
+		actorId: "system:deal-document-remediation",
+		actorType: "system",
+		afterState: args.afterState,
+		beforeState: { status: args.previousState },
+		channel: "admin_dashboard",
+		delta: args.afterState,
+		entityId: String(args.deal._id),
+		entityType: "deal",
+		effectiveDate: businessDateFromTimestamp(args.timestamp),
+		eventCategory: "document_remediation",
+		eventId: remediationAuditEventId({
+			action: args.action,
+			instanceId: args.instance._id,
+			timestamp: args.timestamp,
+		}),
+		eventType: args.action,
+		legalEntityId: args.deal.orgId,
+		linkedRecordIds: buildDealDocumentRemediationLinkedRecordIds({
+			instance: args.instance,
+		}),
+		mortgageId: String(args.instance.mortgageId),
+		newState: args.afterState.status
+			? String(args.afterState.status)
+			: args.previousState,
+		originSystem: "convex",
+		organizationId: args.deal.orgId,
+		outcome: "transitioned",
+		payload: args.afterState,
+		previousState: args.previousState,
+		reason: args.reason,
+		sequenceNumber: await nextAuditJournalSequenceNumber(ctx),
+		timestamp: args.timestamp,
+	});
+}
+
+export const appendDealDocumentRemediationAuditInternal = convex
+	.mutation()
+	.input({
+		action: v.string(),
+		afterState: v.record(v.string(), v.any()),
+		dealId: v.id("deals"),
+		instanceId: v.id("dealDocumentInstances"),
+		previousState: v.string(),
+		reason: v.optional(v.string()),
+		timestamp: v.number(),
+	})
+	.handler(async (ctx, args) => {
+		const [deal, instance] = await Promise.all([
+			ctx.db.get(args.dealId),
+			ctx.db.get(args.instanceId),
+		]);
+		if (!deal) {
+			throw new ConvexError("Deal not found");
+		}
+		if (!instance) {
+			throw new ConvexError("Deal document instance not found");
+		}
+
+		await appendDealDocumentRemediationAudit(ctx, {
+			action: args.action,
+			afterState: args.afterState,
+			deal,
+			instance,
+			previousState: args.previousState,
+			reason: args.reason,
+			timestamp: args.timestamp,
 		});
 	})
 	.internal();
@@ -1587,13 +1989,14 @@ export const createSignatureEnvelopeWithRecipientsInternal = convex
 			})
 		);
 
+		let instanceId: Id<"dealDocumentInstances"> | null = null;
 		if (
 			args.instanceStatus &&
 			args.mortgageId &&
 			args.packageId &&
 			args.sourceBlueprintSnapshot
 		) {
-			await ctx.db.insert("dealDocumentInstances", {
+			instanceId = await ctx.db.insert("dealDocumentInstances", {
 				archivedAt: undefined,
 				createdAt: args.now,
 				dealId: args.dealId,
@@ -1609,7 +2012,7 @@ export const createSignatureEnvelopeWithRecipientsInternal = convex
 			});
 		}
 
-		return envelopeId;
+		return { envelopeId, instanceId };
 	})
 	.internal();
 
@@ -2284,6 +2687,7 @@ function buildPackageWorkItems(args: {
 		.filter(
 			(instance) =>
 				instance.status === "generation_failed" ||
+				instance.status === "provider_error" ||
 				instance.status === "signature_pending_recipient_resolution" ||
 				instance.status === "signature_draft" ||
 				instance.status === "signature_declined" ||
@@ -2358,7 +2762,10 @@ async function createPackageInstance(
 
 async function archiveRetryInstanceIfNeeded(
 	ctx: DealPackageActionCtx,
-	workItem: PackageWorkItem
+	workItem: PackageWorkItem,
+	args?: {
+		remediationAction?: DealDocumentStoredRemediationAction;
+	}
 ) {
 	if (workItem.type !== "instance_retry") {
 		return;
@@ -2369,6 +2776,7 @@ async function archiveRetryInstanceIfNeeded(
 		{
 			instanceId: workItem.instance._id,
 			now: Date.now(),
+			remediationAction: args?.remediationAction,
 		}
 	);
 }
@@ -2423,7 +2831,7 @@ async function createStaticReferenceInstance(
 ) {
 	const assetId = getWorkItemAssetId(workItem);
 	if (!assetId) {
-		await createPackageInstance(ctx, {
+		return createPackageInstance(ctx, {
 			dealId: runtime.dealId,
 			kind: "static_reference",
 			lastError: "Static blueprint is missing its source asset",
@@ -2433,7 +2841,6 @@ async function createStaticReferenceInstance(
 			sourceBlueprintSnapshot,
 			status: "generation_failed",
 		});
-		return;
 	}
 
 	const asset = await ctx.runQuery(
@@ -2443,7 +2850,7 @@ async function createStaticReferenceInstance(
 		}
 	);
 	if (!asset) {
-		await createPackageInstance(ctx, {
+		return createPackageInstance(ctx, {
 			dealId: runtime.dealId,
 			kind: "static_reference",
 			lastError: "Static blueprint source asset record not found",
@@ -2453,10 +2860,9 @@ async function createStaticReferenceInstance(
 			sourceBlueprintSnapshot,
 			status: "generation_failed",
 		});
-		return;
 	}
 
-	await createPackageInstance(ctx, {
+	return createPackageInstance(ctx, {
 		assetId,
 		dealId: runtime.dealId,
 		kind: "static_reference",
@@ -2548,7 +2954,7 @@ async function createPendingRecipientResolutionInstance(
 	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot,
 	message: string
 ) {
-	await createPackageInstance(ctx, {
+	return createPackageInstance(ctx, {
 		dealId: runtime.dealId,
 		kind: "generated",
 		lastError: message,
@@ -2567,7 +2973,7 @@ async function createGeneratedFailureInstance(
 	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot,
 	message: string
 ) {
-	await createPackageInstance(ctx, {
+	return createPackageInstance(ctx, {
 		dealId: runtime.dealId,
 		kind: "generated",
 		lastError: message,
@@ -2605,7 +3011,7 @@ async function createGeneratedSuccessInstance(
 		}
 	);
 
-	await createPackageInstance(ctx, {
+	return createPackageInstance(ctx, {
 		dealId: runtime.dealId,
 		generatedDocumentId,
 		kind: "generated",
@@ -2819,7 +3225,7 @@ async function retryExistingSignableEnvelopeIfNeeded(
 		providerEnvelopeId: retryState.generatedDocument.documensoEnvelopeId,
 	});
 	const now = Date.now();
-	const envelopeId = await ctx.runMutation(
+	const envelopeResult = await ctx.runMutation(
 		internal.documents.dealPackages
 			.createSignatureEnvelopeWithRecipientsInternal,
 		{
@@ -2840,7 +3246,7 @@ async function retryExistingSignableEnvelopeIfNeeded(
 	await ctx.runMutation(
 		internal.documents.dealPackages.syncSignatureEnvelopeStateInternal,
 		{
-			envelopeId,
+			envelopeId: envelopeResult.envelopeId,
 			lastError: undefined,
 			now,
 			recipients: toSyncEnvelopeMutationRecipients(syncResult.recipients),
@@ -2858,14 +3264,13 @@ async function createSignableGeneratedInstance(
 	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot
 ) {
 	if (!sourceBlueprintSnapshot.templateId) {
-		await createGeneratedFailureInstance(
+		return createGeneratedFailureInstance(
 			ctx,
 			runtime,
 			workItem,
 			sourceBlueprintSnapshot,
 			"Signable generated package instance is missing a templateId"
 		);
-		return;
 	}
 
 	try {
@@ -2888,7 +3293,7 @@ async function createSignableGeneratedInstance(
 		);
 
 		if (!(generationResult.success && generationResult.pdfRef)) {
-			await createGeneratedFailureInstance(
+			return createGeneratedFailureInstance(
 				ctx,
 				runtime,
 				workItem,
@@ -2897,7 +3302,6 @@ async function createSignableGeneratedInstance(
 					missingVariables: generationResult.missingVariables,
 				})
 			);
-			return;
 		}
 
 		const signatureRecipients = toSignatureProviderRecipients(
@@ -2914,8 +3318,8 @@ async function createSignableGeneratedInstance(
 				templateVersionUsed: generationResult.templateVersionUsed,
 			}
 		);
-		if (!isDealStatusOpenForEmbeddedSigning(runtime.dealStatus)) {
-			await createPackageInstance(ctx, {
+		if (!canStartSigningForDealStatus(runtime.dealStatus)) {
+			return createPackageInstance(ctx, {
 				dealId: runtime.dealId,
 				generatedDocumentId,
 				kind: "generated",
@@ -2925,10 +3329,9 @@ async function createSignableGeneratedInstance(
 				sourceBlueprintSnapshot,
 				status: "available",
 			});
-			return;
 		}
 		if (signatureRecipients.length === 0) {
-			await createPackageInstance(ctx, {
+			return createPackageInstance(ctx, {
 				dealId: runtime.dealId,
 				generatedDocumentId,
 				kind: "generated",
@@ -2939,15 +3342,15 @@ async function createSignableGeneratedInstance(
 				sourceBlueprintSnapshot,
 				status: "signature_pending_recipient_resolution",
 			});
-			return;
 		}
-		const provider = getSignatureProvider("documenso", {
-			fetchFn: fetch,
-			getStorageBlob: (storageId) => ctx.storage.get(storageId),
-		});
+		let provider: ReturnType<typeof getSignatureProvider> | null = null;
 		let createdEnvelope: SignatureProviderCreateEnvelopeResult | null = null;
 
 		try {
+			provider = getSignatureProvider("documenso", {
+				fetchFn: fetch,
+				getStorageBlob: (storageId) => ctx.storage.get(storageId),
+			});
 			createdEnvelope = await provider.createEnvelope({
 				dealId: runtime.dealId,
 				generatedDocumentId,
@@ -2970,7 +3373,7 @@ async function createSignableGeneratedInstance(
 				}
 			);
 
-			await ctx.runMutation(
+			const envelopeResult = await ctx.runMutation(
 				internal.documents.dealPackages
 					.createSignatureEnvelopeWithRecipientsInternal,
 				{
@@ -2996,14 +3399,26 @@ async function createSignableGeneratedInstance(
 					status: createdEnvelope.status,
 				}
 			);
+			await ctx.runMutation(
+				internal.documents.dealPackages
+					.resolveOpenPreSendSigningExceptionsInternal,
+				{
+					dealId: runtime.dealId,
+					now,
+					packageId: runtime.packageId,
+					resolvedBy: "system:document-package-signing-ready",
+				}
+			);
+			return envelopeResult.instanceId;
 		} catch (error) {
-			const cleanupError = createdEnvelope
-				? await deleteRemoteEnvelopeAfterPersistenceFailure({
-						provider,
-						providerEnvelopeId: createdEnvelope.providerEnvelopeId,
-					})
-				: null;
-			const message = error instanceof Error ? error.message : String(error);
+			const cleanupError =
+				createdEnvelope && provider
+					? await deleteRemoteEnvelopeAfterPersistenceFailure({
+							provider,
+							providerEnvelopeId: createdEnvelope.providerEnvelopeId,
+						})
+					: null;
+			const message = providerFailureLastError(error);
 			await ctx.runMutation(
 				internal.documents.dealPackages
 					.patchGeneratedDocumentSigningStateInternal,
@@ -3018,13 +3433,15 @@ async function createSignableGeneratedInstance(
 						createdEnvelope && !cleanupError ? "draft" : "provider_error",
 				}
 			);
-			await createPackageInstance(ctx, {
+			const instanceId = await createPackageInstance(ctx, {
 				dealId: runtime.dealId,
 				generatedDocumentId,
 				kind: "generated",
 				lastError:
 					createdEnvelope && cleanupError
-						? `${message}. Remote envelope cleanup failed: ${cleanupError}`
+						? truncateProviderDiagnostic(
+								`${message}. Remote envelope cleanup failed: ${cleanupError}`
+							)
 						: message,
 				mortgageId: runtime.mortgageId,
 				packageId: runtime.packageId,
@@ -3032,21 +3449,40 @@ async function createSignableGeneratedInstance(
 				sourceBlueprintSnapshot,
 				status: "generation_failed",
 			});
+			if (!createdEnvelope) {
+				const now = Date.now();
+				await ctx.runMutation(
+					internal.documents.dealPackages.createDealSigningExceptionInternal,
+					{
+						dealDocumentInstanceId: instanceId,
+						dealId: runtime.dealId,
+						details: {
+							error: truncateProviderDiagnostic(stringifyUnknownError(error)),
+							provider: "documenso",
+						},
+						kind: "pre_send_configuration_failure",
+						message: DOCUMENSO_PROVIDER_PREFLIGHT_OR_CREATE_FAILED_MESSAGE,
+						now,
+						packageId: runtime.packageId,
+						severity: "blocking",
+					}
+				);
+			}
+			return instanceId;
 		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (isRecipientResolutionError(error)) {
-			await createPendingRecipientResolutionInstance(
+			return createPendingRecipientResolutionInstance(
 				ctx,
 				runtime,
 				workItem,
 				sourceBlueprintSnapshot,
 				message
 			);
-			return;
 		}
 
-		await createGeneratedFailureInstance(
+		return createGeneratedFailureInstance(
 			ctx,
 			runtime,
 			workItem,
@@ -3063,14 +3499,13 @@ async function createNonSignableGeneratedInstance(
 	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot
 ) {
 	if (!sourceBlueprintSnapshot.templateId) {
-		await createGeneratedFailureInstance(
+		return createGeneratedFailureInstance(
 			ctx,
 			runtime,
 			workItem,
 			sourceBlueprintSnapshot,
 			"Generated package instance is missing a templateId"
 		);
-		return;
 	}
 
 	try {
@@ -3093,7 +3528,7 @@ async function createNonSignableGeneratedInstance(
 		);
 
 		if (!(generationResult.success && generationResult.pdfRef)) {
-			await createGeneratedFailureInstance(
+			return createGeneratedFailureInstance(
 				ctx,
 				runtime,
 				workItem,
@@ -3102,10 +3537,9 @@ async function createNonSignableGeneratedInstance(
 					missingVariables: generationResult.missingVariables,
 				})
 			);
-			return;
 		}
 
-		await createGeneratedSuccessInstance(
+		return createGeneratedSuccessInstance(
 			ctx,
 			runtime,
 			workItem,
@@ -3116,7 +3550,7 @@ async function createNonSignableGeneratedInstance(
 			}
 		);
 	} catch (error) {
-		await createGeneratedFailureInstance(
+		return createGeneratedFailureInstance(
 			ctx,
 			runtime,
 			workItem,
@@ -3129,49 +3563,75 @@ async function createNonSignableGeneratedInstance(
 async function processPackageWorkItem(
 	ctx: DealPackageActionCtx,
 	runtime: DealPackageRuntimeState,
-	workItem: PackageWorkItem
-) {
+	workItem: PackageWorkItem,
+	args?: {
+		remediationAction?: DealDocumentStoredRemediationAction;
+	}
+): Promise<Id<"dealDocumentInstances"> | null> {
 	const sourceBlueprintSnapshot = getWorkItemSourceBlueprintSnapshot(workItem);
 	if (sourceBlueprintSnapshot.class === "private_templated_signable") {
-		const reusedEnvelope = await retryExistingSignableEnvelopeIfNeeded(
-			ctx,
-			runtime,
-			workItem
-		);
-		if (reusedEnvelope) {
-			return;
+		if (!args?.remediationAction) {
+			const reusedEnvelope = await retryExistingSignableEnvelopeIfNeeded(
+				ctx,
+				runtime,
+				workItem
+			);
+			if (reusedEnvelope) {
+				return null;
+			}
 		}
 
-		await archiveRetryInstanceIfNeeded(ctx, workItem);
-		await createSignableGeneratedInstance(
-			ctx,
-			runtime,
-			workItem,
-			sourceBlueprintSnapshot
+		await archiveRetryInstanceIfNeeded(ctx, workItem, {
+			remediationAction: args?.remediationAction,
+		});
+		return (
+			(await createSignableGeneratedInstance(
+				ctx,
+				runtime,
+				workItem,
+				sourceBlueprintSnapshot
+			)) ?? null
 		);
-		return;
 	}
 
-	await archiveRetryInstanceIfNeeded(ctx, workItem);
+	await archiveRetryInstanceIfNeeded(ctx, workItem, {
+		remediationAction: args?.remediationAction,
+	});
 
 	if (sourceBlueprintSnapshot.class === "private_static") {
-		await createStaticReferenceInstance(
-			ctx,
-			runtime,
-			workItem,
-			sourceBlueprintSnapshot
+		return (
+			(await createStaticReferenceInstance(
+				ctx,
+				runtime,
+				workItem,
+				sourceBlueprintSnapshot
+			)) ?? null
 		);
-		return;
 	}
 
 	if (sourceBlueprintSnapshot.class === "private_templated_non_signable") {
-		await createNonSignableGeneratedInstance(
+		return createNonSignableGeneratedInstance(
 			ctx,
 			runtime,
 			workItem,
 			sourceBlueprintSnapshot
 		);
 	}
+
+	return null;
+}
+
+async function generateDealPackageWorkItem(
+	ctx: DealPackageActionCtx,
+	args: {
+		remediationAction?: DealDocumentStoredRemediationAction;
+		runtime: DealPackageRuntimeState;
+		workItem: PackageWorkItem;
+	}
+): Promise<Id<"dealDocumentInstances"> | null> {
+	return processPackageWorkItem(ctx, args.runtime, args.workItem, {
+		remediationAction: args.remediationAction,
+	});
 }
 
 async function prepareDealPackageRuntime(
@@ -3279,6 +3739,32 @@ async function prepareDealPackageRuntime(
 	};
 }
 
+async function buildRemediationRuntime(
+	ctx: DealPackageActionCtx,
+	args: {
+		dealId: Id<"deals">;
+		mortgageId: Id<"mortgages">;
+		packageId: Id<"dealDocumentPackages">;
+	}
+): Promise<DealPackageRuntimeState> {
+	const snapshot = await ctx.runQuery(
+		internal.documents.dealPackages.resolveDealParticipantSnapshotInternal,
+		{
+			dealId: args.dealId,
+		}
+	);
+
+	return {
+		dealId: args.dealId,
+		dealStatus: snapshot.dealStatus,
+		mortgageId: args.mortgageId,
+		packageId: args.packageId,
+		signatories: buildSignatoryMappings(snapshot),
+		signatoryParticipants: buildSignatoryParticipants(snapshot),
+		variables: buildDealVariableBag(snapshot),
+	};
+}
+
 async function finalizeDealPackage(
 	ctx: DealPackageActionCtx,
 	args: {
@@ -3318,7 +3804,10 @@ async function createDocumentPackageForDeal(
 	}
 
 	for (const workItem of preparation.workItems) {
-		await processPackageWorkItem(ctx, preparation.runtime, workItem);
+		await generateDealPackageWorkItem(ctx, {
+			runtime: preparation.runtime,
+			workItem,
+		});
 	}
 
 	return finalizeDealPackage(ctx, {
@@ -3330,6 +3819,18 @@ async function createDocumentPackageForDeal(
 const retryPackageGenerationAction = adminAction.use(
 	requirePermissionAction("deal:manage")
 );
+const remediationMutation = adminMutation.use(requirePermission("deal:manage"));
+const remediationAction = adminAction.use(
+	requirePermissionAction("deal:manage")
+);
+
+function normalizeRemediationReason(reason: string) {
+	const trimmed = reason.trim();
+	if (trimmed.length < 3 || trimmed.length > 280) {
+		throw new ConvexError("Reason must be between 3 and 280 characters");
+	}
+	return trimmed;
+}
 
 export const runCreateDocumentPackageInternal = convex
 	.action()
@@ -3351,6 +3852,347 @@ export const retryPackageGeneration = retryPackageGenerationAction
 			dealId: args.dealId,
 			retry: true,
 		});
+	})
+	.public();
+
+export const waiveDealDocumentInstance = remediationMutation
+	.input({
+		instanceId: v.id("dealDocumentInstances"),
+		reason: v.string(),
+	})
+	.handler(async (ctx, args) => {
+		const reason = normalizeRemediationReason(args.reason);
+		const instance = await ctx.db.get(args.instanceId);
+		if (!instance) {
+			throw new ConvexError("Deal document instance not found");
+		}
+		const eligibility = getDealDocumentRemediationEligibility({
+			archivedAt: instance.archivedAt ?? null,
+			lastError: instance.lastError ?? null,
+			remediationAction: instance.remediationAction ?? null,
+			sourceBlueprintId: instance.sourceBlueprintId ?? null,
+			sourceBlueprintSnapshot: instance.sourceBlueprintSnapshot,
+			status: instance.status,
+			supersededByInstanceId: instance.supersededByInstanceId ?? null,
+		});
+		if (eligibility !== "remediable_failed_instance") {
+			throw new ConvexError("Deal document instance is not remediable");
+		}
+
+		const deal = await ctx.db.get(instance.dealId);
+		if (!deal) {
+			throw new ConvexError("Deal not found");
+		}
+		const now = Date.now();
+		await ctx.db.patch(instance._id, {
+			archivedAt: now,
+			remediationAction: "waived_for_deal",
+			remediationReason: reason,
+			status: "archived",
+			updatedAt: now,
+		});
+		await appendDealDocumentRemediationAudit(ctx, {
+			action: "deal_document.waived_for_deal",
+			afterState: {
+				remediationAction: "waived_for_deal",
+				remediationReason: reason,
+				status: "archived",
+			},
+			deal,
+			instance,
+			previousState: instance.status,
+			reason,
+			timestamp: now,
+		});
+
+		const packageRows = await ctx.db
+			.query("dealDocumentInstances")
+			.withIndex("by_package", (query) =>
+				query.eq("packageId", instance.packageId)
+			)
+			.collect();
+		const summary = summarizePackageStatus(packageRows);
+		await ctx.db.patch(instance.packageId, {
+			lastError: summary.lastError,
+			readyAt: summary.status === "ready" ? now : undefined,
+			status: summary.status,
+			updatedAt: now,
+		});
+
+		return { ok: true as const };
+	})
+	.public();
+
+export const retryDealDocumentInstance = remediationAction
+	.input({
+		instanceId: v.id("dealDocumentInstances"),
+	})
+	.handler(
+		async (ctx, args): Promise<DealDocumentInstanceRemediationResult> => {
+			const target = await ctx.runQuery(
+				internal.documents.dealPackages
+					.getDealDocumentInstanceRemediationTargetInternal,
+				{ instanceId: args.instanceId }
+			);
+			const runtime = await buildRemediationRuntime(ctx, {
+				dealId: target.instance.dealId,
+				mortgageId: target.instance.mortgageId,
+				packageId: target.instance.packageId,
+			});
+			const claim = await ctx.runMutation(
+				internal.documents.dealPackages
+					.claimDealDocumentInstanceForRemediationInternal,
+				{
+					instanceId: target.instance._id,
+					now: Date.now(),
+					remediationAction: "retried_instance",
+				}
+			);
+			const replacement = await generateDealPackageWorkItem(ctx, {
+				remediationAction: "retried_instance",
+				runtime,
+				workItem: {
+					instance: target.instance,
+					type: "instance_retry",
+				},
+			});
+			if (replacement) {
+				await ctx.runMutation(
+					internal.documents.dealPackages
+						.patchDealDocumentInstanceSupersededByInternal,
+					{
+						instanceId: target.instance._id,
+						now: Date.now(),
+						supersededByInstanceId: replacement,
+					}
+				);
+			}
+			await finalizeDealPackage(ctx, {
+				dealId: target.instance.dealId,
+				packageId: target.instance.packageId,
+			});
+			await ctx.runMutation(
+				internal.documents.dealPackages
+					.appendDealDocumentRemediationAuditInternal,
+				{
+					action: "deal_document.retried_instance",
+					afterState: {
+						remediationAction: "retried_instance",
+						status: "archived",
+						supersededByInstanceId: replacement ? String(replacement) : null,
+					},
+					dealId: target.instance.dealId,
+					instanceId: target.instance._id,
+					previousState: claim.previousStatus,
+					timestamp: Date.now(),
+				}
+			);
+
+			return {
+				ok: true as const,
+				replacementInstanceId: replacement,
+			};
+		}
+	)
+	.public();
+
+export const refreshDealDocumentInstanceSnapshot = remediationAction
+	.input({
+		instanceId: v.id("dealDocumentInstances"),
+	})
+	.handler(
+		async (ctx, args): Promise<DealDocumentInstanceRemediationResult> => {
+			const target = await ctx.runQuery(
+				internal.documents.dealPackages
+					.getDealDocumentInstanceRemediationTargetInternal,
+				{ instanceId: args.instanceId }
+			);
+			const sourceBlueprintId = target.instance.sourceBlueprintId;
+			if (!sourceBlueprintId) {
+				throw new ConvexError("Deal document instance has no source blueprint");
+			}
+			const latestSnapshot = await ctx.runQuery(
+				internal.documents.dealPackages
+					.getLatestActiveSourceBlueprintSnapshotInternal,
+				{ sourceBlueprintId }
+			);
+			const runtime = await buildRemediationRuntime(ctx, {
+				dealId: target.instance.dealId,
+				mortgageId: target.instance.mortgageId,
+				packageId: target.instance.packageId,
+			});
+			const claim = await ctx.runMutation(
+				internal.documents.dealPackages
+					.claimDealDocumentInstanceForRemediationInternal,
+				{
+					instanceId: target.instance._id,
+					now: Date.now(),
+					remediationAction: "refreshed_from_source_snapshot",
+				}
+			);
+			const replacement = await generateDealPackageWorkItem(ctx, {
+				remediationAction: "refreshed_from_source_snapshot",
+				runtime,
+				workItem: {
+					snapshot: latestSnapshot,
+					type: "snapshot",
+				},
+			});
+			if (replacement) {
+				await ctx.runMutation(
+					internal.documents.dealPackages
+						.patchDealDocumentInstanceSupersededByInternal,
+					{
+						instanceId: target.instance._id,
+						now: Date.now(),
+						supersededByInstanceId: replacement,
+					}
+				);
+			}
+			await finalizeDealPackage(ctx, {
+				dealId: target.instance.dealId,
+				packageId: target.instance.packageId,
+			});
+			await ctx.runMutation(
+				internal.documents.dealPackages
+					.appendDealDocumentRemediationAuditInternal,
+				{
+					action: "deal_document.refreshed_from_source_snapshot",
+					afterState: {
+						remediationAction: "refreshed_from_source_snapshot",
+						status: "archived",
+						supersededByInstanceId: replacement ? String(replacement) : null,
+					},
+					dealId: target.instance.dealId,
+					instanceId: target.instance._id,
+					previousState: claim.previousStatus,
+					timestamp: Date.now(),
+				}
+			);
+
+			return {
+				ok: true as const,
+				replacementInstanceId: replacement,
+			};
+		}
+	)
+	.public();
+
+export const archiveSourceBlueprintForFutureDeals = remediationMutation
+	.input({
+		instanceId: v.id("dealDocumentInstances"),
+		reason: v.optional(v.string()),
+		sourceBlueprintId: v.id("mortgageDocumentBlueprints"),
+	})
+	.handler(async (ctx, args) => {
+		const instance = await ctx.db.get(args.instanceId);
+		if (!instance) {
+			throw new ConvexError("Deal document instance not found");
+		}
+		const eligibility = getDealDocumentRemediationEligibility({
+			archivedAt: instance.archivedAt ?? null,
+			lastError: instance.lastError ?? null,
+			remediationAction: instance.remediationAction ?? null,
+			sourceBlueprintId: instance.sourceBlueprintId ?? null,
+			sourceBlueprintSnapshot: instance.sourceBlueprintSnapshot,
+			status: instance.status,
+			supersededByInstanceId: instance.supersededByInstanceId ?? null,
+		});
+		if (eligibility !== "remediable_failed_instance") {
+			throw new ConvexError("Deal document instance is not remediable");
+		}
+		if (instance.sourceBlueprintId !== args.sourceBlueprintId) {
+			throw new ConvexError(
+				"Source blueprint does not match the failed document instance"
+			);
+		}
+
+		const [blueprint, deal, packageRecord] = await Promise.all([
+			ctx.db.get(args.sourceBlueprintId),
+			ctx.db.get(instance.dealId),
+			ctx.db.get(instance.packageId),
+		]);
+		if (!blueprint) {
+			throw new ConvexError("Source blueprint not found");
+		}
+		if (!deal) {
+			throw new ConvexError("Deal not found");
+		}
+		if (!packageRecord) {
+			throw new ConvexError("Deal document package not found");
+		}
+		if (
+			packageRecord.dealId !== instance.dealId ||
+			packageRecord.mortgageId !== instance.mortgageId ||
+			blueprint.mortgageId !== instance.mortgageId
+		) {
+			throw new ConvexError(
+				"Failed document instance is not linked to the source blueprint context"
+			);
+		}
+
+		const actorUser = await ctx.db
+			.query("users")
+			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+			.unique();
+		if (!actorUser) {
+			throw new ConvexError("User not found in database");
+		}
+
+		const now = Date.now();
+		if (blueprint.status !== "archived") {
+			await ctx.db.patch(blueprint._id, {
+				archivedAt: now,
+				archivedByUserId: actorUser._id,
+				status: "archived",
+			});
+		}
+		await ctx.db.insert("auditJournal", {
+			actorId: "system:deal-document-remediation",
+			actorType: "system",
+			afterState: {
+				remediationAction: "archive_source_blueprint",
+				sourceBlueprintId: String(blueprint._id),
+				status: "archived",
+			},
+			beforeState: { status: blueprint.status },
+			channel: "admin_dashboard",
+			delta: {
+				remediationAction: "archive_source_blueprint",
+				sourceBlueprintId: String(blueprint._id),
+				status: "archived",
+			},
+			entityId: String(deal._id),
+			entityType: "deal",
+			effectiveDate: businessDateFromTimestamp(now),
+			eventCategory: "document_remediation",
+			eventId: `deal_document.archived_source_blueprint:${String(
+				blueprint._id
+			)}:${now}`,
+			eventType: "deal_document.archived_source_blueprint",
+			legalEntityId: deal.orgId,
+			linkedRecordIds: {
+				dealDocumentInstanceId: String(instance._id),
+				mortgageId: String(blueprint.mortgageId),
+				packageId: String(instance.packageId),
+				sourceBlueprintId: String(blueprint._id),
+			},
+			mortgageId: String(blueprint.mortgageId),
+			newState: "archived",
+			originSystem: "convex",
+			organizationId: deal.orgId,
+			outcome: "transitioned",
+			payload: {
+				reason: args.reason?.trim() || undefined,
+				sourceBlueprintId: String(blueprint._id),
+			},
+			previousState: blueprint.status,
+			reason: args.reason?.trim() || undefined,
+			sequenceNumber: await nextAuditJournalSequenceNumber(ctx),
+			timestamp: now,
+		});
+
+		return { ok: true as const };
 	})
 	.public();
 

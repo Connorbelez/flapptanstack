@@ -60,6 +60,27 @@ export interface SignatureProviderCreateEnvelopeResult {
 	status: "draft" | "sent";
 }
 
+export type SignatureProviderPreflightErrorCode =
+	| "signer_missing_signature_field"
+	| "invalid_field_type"
+	| "invalid_field_meta"
+	| "invalid_position"
+	| "invalid_page"
+	| "recipient_missing_identity";
+
+export interface SignatureProviderPreflightError {
+	code: SignatureProviderPreflightErrorCode;
+	fieldIdentifier?: number | string;
+	message: string;
+	path: string;
+	platformRole?: string;
+}
+
+export interface SignatureProviderPreflightResult {
+	errors: SignatureProviderPreflightError[];
+	ok: boolean;
+}
+
 export interface SignatureProviderDistributeEnvelopeInput {
 	providerEnvelopeId: string;
 }

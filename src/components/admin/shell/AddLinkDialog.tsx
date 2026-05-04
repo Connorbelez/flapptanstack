@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Button } from "#/components/ui/button";
 import {
 	Dialog,
@@ -149,8 +150,14 @@ export function AddLinkDialog({
 		<Dialog onOpenChange={onOpenChange} open={open}>
 			<DialogContent className="sm:max-w-md">
 				<DialogHeader>
-					<DialogTitle>Add {linkTypeDef.name} link</DialogTitle>
-					<DialogDescription>
+					<div className="flex items-center gap-1.5">
+						<DialogTitle>Add {linkTypeDef.name} link</DialogTitle>
+						<AdminDescriptionHelp
+							content={`Search ${candidateLabel.toLowerCase()} to link to this record.`}
+							label={`Add ${linkTypeDef.name} link details`}
+						/>
+					</div>
+					<DialogDescription className="sr-only">
 						Search {candidateLabel.toLowerCase()} to link to this record.
 					</DialogDescription>
 				</DialogHeader>

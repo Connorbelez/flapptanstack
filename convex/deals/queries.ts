@@ -735,14 +735,48 @@ const ADMIN_DEAL_ACTION_DEFINITIONS: readonly AdminDealOperationAction[] = [
 	},
 ] as const;
 
-function dealActionsForStatus(status: string): AdminDealOperationAction[] {
+function legalGateDisabledReason(args: {
+	action: AdminDealOperationAction;
+	legalRepresentation: LegalRepresentationStatusProjection;
+}) {
+	if (
+		args.action.event === "LAWYER_VERIFIED" &&
+		args.legalRepresentation.gate.reasonCodes.includes(
+			"selected_lawyer_missing"
+		)
+	) {
+		return args.legalRepresentation.gate.message;
+	}
+
+	return null;
+}
+
+function dealActionsForStatus(
+	status: string,
+	legalRepresentation?: LegalRepresentationStatusProjection
+): AdminDealOperationAction[] {
 	return ADMIN_DEAL_ACTION_DEFINITIONS.filter((action) =>
 		canTransitionFromStatus(status, action)
-	);
+	).map((action) => {
+		if (!legalRepresentation) {
+			return action;
+		}
+		const disabledReason = legalGateDisabledReason({
+			action,
+			legalRepresentation,
+		});
+		return disabledReason ? { ...action, disabledReason } : action;
+	});
+}
+
+function actionableActions(actions: AdminDealOperationAction[]) {
+	return actions.filter((action) => !action.disabledReason);
 }
 
 function nonCancelActions(actions: AdminDealOperationAction[]) {
-	return actions.filter((action) => action.event !== "DEAL_CANCELLED");
+	return actions.filter(
+		(action) => action.event !== "DEAL_CANCELLED" && !action.disabledReason
+	);
 }
 
 async function readDealAccessProjection(
@@ -1185,7 +1219,7 @@ async function buildAdminDealOperationsDetail(
 					status: mortgage.status,
 				}
 			: null,
-		nextActions: dealActionsForStatus(deal.status),
+		nextActions: dealActionsForStatus(deal.status, legalRepresentation),
 		participants,
 		property: property
 			? {
@@ -1209,11 +1243,12 @@ async function buildAdminDealOperationsCard(
 	if (!detail) {
 		return null;
 	}
-	const primaryActions = nonCancelActions(detail.nextActions);
+	const actions = actionableActions(detail.nextActions);
+	const primaryActions = nonCancelActions(actions);
 	const signing = signingSummary(detail.signing);
 	return {
 		_id: deal._id,
-		actions: detail.nextActions,
+		actions,
 		blockers: detail.blockers,
 		closingDate: deal.closingDate ?? null,
 		closingTeam: await readClosingTeamProjection(ctx, deal.mortgageId),

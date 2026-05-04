@@ -3,14 +3,25 @@ import { sanitizeRedirectPath } from "#/lib/auth-redirect";
 import { getHostAwareAuthUrl } from "#/lib/portal/auth-initiation";
 
 export const Route = createFileRoute("/sign-in")({
-	validateSearch: (search: Record<string, unknown>) => ({
-		redirect: sanitizeRedirectPath(search.redirect ?? search.redirectTo),
+	validateSearch: (search: Record<string, unknown>) => {
+		const invitationToken =
+			typeof search.invitationToken === "string"
+				? search.invitationToken
+				: undefined;
+		return {
+			...(invitationToken ? { invitationToken } : {}),
+			redirect: sanitizeRedirectPath(search.redirect ?? search.redirectTo),
+		};
+	},
+	loaderDeps: ({ search: { invitationToken, redirect } }) => ({
+		invitationToken,
+		redirect,
 	}),
-	loaderDeps: ({ search: { redirect } }) => ({ redirect }),
-	loader: async ({ deps: { redirect: redirectTarget } }) => {
+	loader: async ({ deps: { invitationToken, redirect: redirectTarget } }) => {
 		const signInUrl = await getHostAwareAuthUrl({
 			data: {
 				flow: "sign-in",
+				invitationToken,
 				redirectTarget,
 			},
 		});

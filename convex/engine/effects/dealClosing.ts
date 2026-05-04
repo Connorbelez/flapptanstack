@@ -54,8 +54,9 @@ export const reserveShares = internalAction({
 			console.info(
 				`[reserveShares] Reservation already exists for deal ${dealId}: ${existingReservation._id}`
 			);
-			// Link the reservation to the deal if not already linked
-			if (!deal.reservationId) {
+			// Repair stale or missing deal links so later close effects use the
+			// canonical reservation created for this deal.
+			if (deal.reservationId !== existingReservation._id) {
 				await ctx.runMutation(internal.deals.queries.setReservationId, {
 					dealId,
 					reservationId: existingReservation._id,

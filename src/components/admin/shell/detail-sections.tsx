@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import type { AdminRelationNavigationTarget } from "#/lib/admin-relation-navigation";
 import { cn } from "#/lib/utils";
 import type { Doc } from "../../../../convex/_generated/dataModel";
@@ -167,14 +168,15 @@ export function SectionedRecordDetails({
 					className="space-y-4 border-border/70 border-t pt-5"
 					key={getDetailSectionKey(section)}
 				>
-					<div className="space-y-1">
+					<div className="flex items-center gap-1.5">
 						<h3 className="font-medium text-sm tracking-[0.02em]">
 							{section.title}
 						</h3>
 						{section.description ? (
-							<p className="text-muted-foreground text-sm">
-								{section.description}
-							</p>
+							<AdminDescriptionHelp
+								content={section.description}
+								label={`${section.title} details`}
+							/>
 						) : null}
 					</div>
 					<DetailFieldGrid
@@ -189,12 +191,15 @@ export function SectionedRecordDetails({
 			{remainingFields.length > 0 ? (
 				<section className="space-y-3">
 					<div>
-						<h3 className="font-medium text-sm tracking-[0.02em]">
-							Additional Details
-						</h3>
-						<p className="text-muted-foreground text-sm">
-							Remaining populated fields on this record.
-						</p>
+						<div className="flex items-center gap-1.5">
+							<h3 className="font-medium text-sm tracking-[0.02em]">
+								Additional Details
+							</h3>
+							<AdminDescriptionHelp
+								content="Remaining populated fields on this record."
+								label="Additional Details details"
+							/>
+						</div>
 					</div>
 					<DetailFieldGrid
 						fields={remainingFields}

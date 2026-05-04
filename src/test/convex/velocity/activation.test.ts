@@ -454,6 +454,79 @@ describe("Velocity package activation", () => {
 		});
 	});
 
+	it("rejects unsupported non-empty Velocity property types during handoff mapping", async () => {
+		const t = createTestConvex();
+		const reviewed = await seedReadyReviewedWorkspace(t);
+		const started = await t.mutation(startVelocityPackageActivationRef, {
+			actorAuthId: FAIRLEND_ADMIN.subject,
+			reviewedSnapshotHash: reviewed.reviewedSnapshotHash,
+			reviewedSnapshotId: reviewed.reviewedSnapshotId,
+			workspaceId: reviewed.workspaceId,
+		});
+		const records = await t.run(async (ctx) => {
+			const actor = await ctx.db
+				.query("users")
+				.withIndex("authId", (query) => query.eq("authId", FAIRLEND_ADMIN.subject))
+				.unique();
+			const workspace = await ctx.db.get(reviewed.workspaceId);
+			const snapshot = await ctx.db.get(reviewed.reviewedSnapshotId);
+			if (!actor || !workspace || !snapshot) {
+				throw new Error("Expected actor, workspace, and snapshot");
+			}
+			const brokerUserId = await ctx.db.insert("users", {
+				authId: "velocity-unsupported-property-broker",
+				email: "velocity-unsupported-property-broker@example.test",
+				firstName: "Velocity",
+				lastName: "Broker",
+			});
+			const brokerId = await ctx.db.insert("brokers", {
+				createdAt: Date.now(),
+				status: "active",
+				userId: brokerUserId,
+			});
+			const borrowerUserId = await ctx.db.insert("users", {
+				authId: "velocity-unsupported-property-borrower",
+				email: "velocity-unsupported-property-borrower@example.test",
+				firstName: "Borrower",
+				lastName: "One",
+			});
+			const borrowerId = await ctx.db.insert("borrowers", {
+				createdAt: Date.now(),
+				status: "active",
+				userId: borrowerUserId,
+			});
+			return {
+				actorUserId: actor._id,
+				borrowerId,
+				brokerId,
+				snapshot,
+				workspace,
+			};
+		});
+
+		expect(() =>
+			buildVelocityActivationHandoff({
+				activationAttemptId: started.activationAttemptId,
+				actorAuthId: FAIRLEND_ADMIN.subject,
+				actorType: "admin",
+				borrowerLinks: [{ borrowerId: records.borrowerId, role: "primary" }],
+				brokerOfRecordId: records.brokerId,
+				reviewedSnapshot: {
+					...records.snapshot,
+					normalizedCore: {
+						...records.snapshot.normalizedCore,
+						subjectProperty: {
+							...records.snapshot.normalizedCore.subjectProperty,
+							propertyTypeRaw: "townhouse",
+						},
+					},
+				},
+				viewerUserId: records.actorUserId,
+				workspace: records.workspace,
+			})
+		).toThrow("Unsupported Velocity property type: townhouse");
+	});
+
 	it("starts activation attempts idempotently after reviewed readiness passes", async () => {
 		const t = createTestConvex();
 		const reviewed = await seedReadyReviewedWorkspace(t);

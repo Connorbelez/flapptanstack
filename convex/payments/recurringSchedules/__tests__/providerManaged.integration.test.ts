@@ -8,6 +8,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import workflowSchema from "../../../../node_modules/@convex-dev/workflow/dist/component/schema.js";
 import workpoolSchema from "../../../../node_modules/@convex-dev/workpool/dist/component/schema.js";
+import { FAIRLEND_ADMIN } from "../../../../src/test/auth/identities";
 import {
 	drainScheduledWork,
 	seedBorrowerProfile,
@@ -176,6 +177,16 @@ const pollProviderManagedSchedulesRef = makeFunctionReference<
 		wavesRun: number;
 	}>
 >("payments/recurringSchedules/poller:pollProviderManagedSchedules");
+
+const syncExternalCollectionScheduleNowRef = makeFunctionReference<
+	"action",
+	{ scheduleId: Id<"externalCollectionSchedules"> },
+	Promise<{
+		errorMessage?: string;
+		ingestedEventCount: number;
+		status: "failed" | "skipped" | "synced";
+	}>
+>("payments/recurringSchedules/poller:syncExternalCollectionScheduleNow");
 
 const previewSchedulesEligibleForPollingRef = makeFunctionReference<
 	"action",
@@ -2027,7 +2038,7 @@ describe("provider-managed recurring schedules", () => {
 		);
 	});
 
-	it("marks polling sync_error when a provider occurrence cannot be matched locally", async () => {
+	it("records a polling warning when a provider occurrence cannot be matched locally", async () => {
 		const rotessa = installRotessaFetchHarness();
 		const fixture = await seedProviderManagedFixture();
 		const activationAsOf = fullScheduleActivationAsOf(fixture.planEntries);
@@ -2065,14 +2076,174 @@ describe("provider-managed recurring schedules", () => {
 		);
 
 		expect(summary.claimedCount).toBe(1);
-		expect(summary.failedCount).toBe(1);
-		expect(summary.syncedCount).toBe(0);
+		expect(summary.failedCount).toBe(0);
+		expect(summary.syncedCount).toBe(1);
 		expect(summary.ingestedEventCount).toBe(0);
-		expect(schedule?.status).toBe("sync_error");
+		expect(schedule?.status).toBe("active");
 		expect(schedule?.lastSyncErrorMessage).toContain(
 			"No matching provider-managed collection plan entry was found for the external occurrence event."
 		);
 		expect(schedule?.lastSyncCursor).toBeUndefined();
+	});
+
+	it("manual sync replays provider occurrences even when the schedule cursor is ahead", async () => {
+		const rotessa = installRotessaFetchHarness();
+		const fixture = await seedProviderManagedFixture();
+		const activationAsOf = fullScheduleActivationAsOf(fixture.planEntries);
+		const activation = await activateRotessaSchedule(fixture.t, {
+			asOf: activationAsOf,
+			bankAccountId: fixture.bankAccountId,
+			mortgageId: fixture.mortgageId,
+			planEntryIds: fixture.planEntries.map((entry) => entry._id),
+		});
+		const firstPlanEntry = fixture.planEntries[0];
+		if (!firstPlanEntry) {
+			throw new Error("expected first plan entry");
+		}
+		const activatedSchedule = await fixture.t.run((ctx) =>
+			ctx.db.get(activation.scheduleId)
+		);
+		const asOf = (activatedSchedule?.nextPollAt ?? Date.now()) + 1;
+		const providerUpdatedAt = new Date(asOf).toISOString();
+		rotessa.setTransactionRows([
+			createRotessaTransactionRow({
+				amountCents: firstPlanEntry.amount,
+				processDate: new Date(firstPlanEntry.scheduledDate)
+					.toISOString()
+					.slice(0, 10),
+				scheduleId: 987,
+				status: "Pending",
+				transactionId: "9004",
+				transactionNumber: "txn-manual-replay",
+				updatedAt: providerUpdatedAt,
+			}),
+		]);
+
+		await fixture.t.run((ctx) =>
+			ctx.db.patch(activation.scheduleId, {
+				lastSyncCursor: JSON.stringify({
+					occurredAt: Date.parse(providerUpdatedAt) + 1,
+					sortKey: "zzzz",
+				}),
+			})
+		);
+		vi.setSystemTime(asOf);
+
+		const regularPollSummary = await fixture.t.action(
+			pollProviderManagedSchedulesRef,
+			{
+				asOf,
+				limit: 10,
+			}
+		);
+		await drainScheduledWork(fixture.t);
+		expect(regularPollSummary.ingestedEventCount).toBe(0);
+
+		const manualSyncSummary = await fixture.t
+			.withIdentity(FAIRLEND_ADMIN)
+			.action(syncExternalCollectionScheduleNowRef, {
+				scheduleId: activation.scheduleId,
+			});
+		await drainScheduledWork(fixture.t);
+
+		const planEntry = await fixture.t.run((ctx) =>
+			ctx.db.get(firstPlanEntry._id)
+		);
+		const attempt = await fixture.t.run((ctx) =>
+			planEntry?.collectionAttemptId
+				? ctx.db.get(planEntry.collectionAttemptId)
+				: Promise.resolve(null)
+		);
+		const transfer = await fixture.t.run((ctx) =>
+			attempt?.transferRequestId
+				? ctx.db.get(attempt.transferRequestId)
+				: Promise.resolve(null)
+		);
+
+		expect(manualSyncSummary.status).toBe("synced");
+		expect(manualSyncSummary.ingestedEventCount).toBe(1);
+		expect(planEntry?.externalProviderEventStatus).toBe("Pending");
+		expect(attempt?.status).toBe("pending");
+		expect(transfer?.status).toBe("processing");
+	});
+
+	it("matches provider occurrences by obligation due date when plan entries use an internal lead date", async () => {
+		const rotessa = installRotessaFetchHarness();
+		const fixture = await seedProviderManagedFixture();
+		const activationAsOf = fullScheduleActivationAsOf(fixture.planEntries);
+		const activation = await activateRotessaSchedule(fixture.t, {
+			asOf: activationAsOf,
+			bankAccountId: fixture.bankAccountId,
+			mortgageId: fixture.mortgageId,
+			planEntryIds: fixture.planEntries.map((entry) => entry._id),
+		});
+		const firstPlanEntry = fixture.planEntries[0];
+		if (!firstPlanEntry) {
+			throw new Error("expected first plan entry");
+		}
+		const firstObligationId = firstPlanEntry.obligationIds[0];
+		if (!firstObligationId) {
+			throw new Error("expected first obligation");
+		}
+		const obligation = await fixture.t.run((ctx) =>
+			ctx.db.get(firstObligationId)
+		);
+		if (!obligation) {
+			throw new Error("expected obligation");
+		}
+		const providerProcessDate = new Date(obligation.dueDate)
+			.toISOString()
+			.slice(0, 10);
+
+		await fixture.t.run((ctx) =>
+			ctx.db.patch(firstPlanEntry._id, {
+				scheduledDate: obligation.dueDate - 5 * 86_400_000,
+			})
+		);
+
+		const activatedSchedule = await fixture.t.run((ctx) =>
+			ctx.db.get(activation.scheduleId)
+		);
+		const asOf = (activatedSchedule?.nextPollAt ?? Date.now()) + 1;
+		rotessa.setTransactionRows([
+			createRotessaTransactionRow({
+				amountCents: firstPlanEntry.amount,
+				processDate: providerProcessDate,
+				scheduleId: 987,
+				status: "Pending",
+				transactionId: "9003",
+				transactionNumber: "txn-due-date-match",
+				updatedAt: new Date(asOf).toISOString(),
+			}),
+		]);
+
+		const summary = await fixture.t.action(pollProviderManagedSchedulesRef, {
+			asOf,
+			limit: 10,
+		});
+		await drainScheduledWork(fixture.t);
+
+		const planEntry = await fixture.t.run((ctx) =>
+			ctx.db.get(firstPlanEntry._id)
+		);
+		const attempt = await fixture.t.run((ctx) =>
+			planEntry?.collectionAttemptId
+				? ctx.db.get(planEntry.collectionAttemptId)
+				: Promise.resolve(null)
+		);
+		const transfer = await fixture.t.run((ctx) =>
+			attempt?.transferRequestId
+				? ctx.db.get(attempt.transferRequestId)
+				: Promise.resolve(null)
+		);
+
+		expect(summary.failedCount).toBe(0);
+		expect(summary.syncedCount).toBe(1);
+		expect(summary.ingestedEventCount).toBe(1);
+		expect(planEntry?.externalProviderEventStatus).toBe("Pending");
+		expect(attempt?.status).toBe("pending");
+		expect(attempt?.providerLifecycleStatus).toBe("Pending");
+		expect(transfer?.status).toBe("processing");
 	});
 
 	it("heals attempt and transfer backlinks when a polled occurrence reuses an existing transfer", async () => {

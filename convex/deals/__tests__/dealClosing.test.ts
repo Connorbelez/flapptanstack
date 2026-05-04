@@ -13,7 +13,7 @@
 import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { assert, beforeEach, describe, expect, it } from "vitest";
-import type { Id } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import {
 	reserveShares,
 	voidReservation,
@@ -66,6 +66,17 @@ interface VoidReservationAction {
 const reserveSharesAction = reserveShares as unknown as ReserveSharesAction;
 const voidReservationAction =
 	voidReservation as unknown as VoidReservationAction;
+
+function buildReserveSharesArgs(dealId: Id<"deals">) {
+	return {
+		effectName: "reserveShares",
+		entityId: dealId,
+		entityType: "deal" as const,
+		eventType: "LAWYER_APPROVED",
+		journalEntryId: "test-journal-1",
+		source: EFFECT_SOURCE,
+	};
+}
 
 // ── Seed helpers ────────────────────────────────────────────────────
 type TestHarness = ReturnType<typeof convexTest>;
@@ -185,6 +196,53 @@ describe("reserveShares effect", () => {
 		// Tested via: reserveShares idempotency - links existing reservation
 		it.skip("returns early if reservation already exists for deal");
 		it.skip("links existing reservation if deal has no reservationId");
+
+		it("relinks an existing deal reservation when the deal has a stale reservationId", async () => {
+			const dealId = "deal_stale_reservation" as Id<"deals">;
+			const staleReservationId =
+				"reservation_stale" as Id<"ledger_reservations">;
+			const canonicalReservationId =
+				"reservation_canonical" as Id<"ledger_reservations">;
+			const deal = {
+				_id: dealId,
+				buyerId: "buyer-user-1",
+				fractionalShare: 5000,
+				mortgageId: "mortgage_test" as Id<"mortgages">,
+				reservationId: staleReservationId,
+				sellerId: "seller-user-1",
+			} satisfies Partial<Doc<"deals">>;
+			const existingReservation = {
+				_id: canonicalReservationId,
+			} satisfies Partial<Doc<"ledger_reservations">>;
+			const setReservationCalls: unknown[] = [];
+
+			let runQueryCallCount = 0;
+			const ctx = {
+				runMutation: async (_mutation: unknown, args: unknown) => {
+					setReservationCalls.push(args);
+					return null;
+				},
+				runQuery: async () => {
+					runQueryCallCount += 1;
+					if (runQueryCallCount === 1) {
+						return deal;
+					}
+					if (runQueryCallCount === 2) {
+						return null;
+					}
+					if (runQueryCallCount === 3) {
+						return existingReservation;
+					}
+					return null;
+				},
+			};
+
+			await reserveSharesAction._handler(ctx, buildReserveSharesArgs(dealId));
+
+			expect(setReservationCalls).toEqual([
+				{ dealId, reservationId: canonicalReservationId },
+			]);
+		});
 	});
 
 	describe("missing deal", () => {

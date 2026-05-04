@@ -18,11 +18,11 @@ import {
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ArrowUpDown, Rows3, SearchX } from "lucide-react";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Checkbox } from "#/components/ui/checkbox";
 import {
 	Empty,
 	EmptyContent,
-	EmptyDescription,
 	EmptyHeader,
 	EmptyMedia,
 	EmptyTitle,
@@ -268,11 +268,14 @@ function renderDefaultEmptyState(
 				<EmptyTitle>
 					{hasActiveFilters ? "No matching rows" : "No records yet"}
 				</EmptyTitle>
-				<EmptyDescription>
-					{hasActiveFilters
-						? "Adjust or clear your current filters to see results."
-						: "Rows will appear here once data is available."}
-				</EmptyDescription>
+				<AdminDescriptionHelp
+					content={
+						hasActiveFilters
+							? "Adjust or clear your current filters to see results."
+							: "Rows will appear here once data is available."
+					}
+					label="Empty table details"
+				/>
 			</EmptyHeader>
 			{hasActiveFilters ? (
 				<EmptyContent>

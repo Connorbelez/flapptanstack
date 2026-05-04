@@ -2,6 +2,7 @@
 
 import { LayoutGrid, Rows3 } from "lucide-react";
 import type { ReactNode } from "react";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import type { EntityTableViewMode } from "#/components/admin/shell/EntityTableToolbar";
 import { Button } from "#/components/ui/button";
 import {
@@ -50,10 +51,13 @@ export function AdminEntityViewToolbar({
 
 	return (
 		<div className="space-y-3">
-			<div className="space-y-1">
+			<div className="flex items-center gap-1.5">
 				<h1 className="font-semibold text-2xl">{title}</h1>
 				{description ? (
-					<p className="text-muted-foreground text-sm">{description}</p>
+					<AdminDescriptionHelp
+						content={description}
+						label={`${title} details`}
+					/>
 				) : null}
 			</div>
 

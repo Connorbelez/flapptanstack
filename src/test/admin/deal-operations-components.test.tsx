@@ -11,7 +11,7 @@ import {
 } from "@testing-library/react";
 import { useMutation, useQuery } from "convex/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../../convex/_generated/dataModel";
 import type {
 	AdminDealOperationsCard,
@@ -23,6 +23,8 @@ import { DealOperationActionControls } from "#/components/admin/deals/DealOperat
 import { DealOperationsConsole } from "#/components/admin/deals/DealOperationsConsole";
 import { DealOperationsPipeline } from "#/components/admin/deals/DealOperationsPipeline";
 
+const openAdminDetailSheetMock = vi.fn();
+
 vi.mock("react", async () => {
 	const { createRequire } =
 		await vi.importActual<typeof import("node:module")>("node:module");
@@ -33,6 +35,17 @@ vi.mock("react", async () => {
 		default: reactCjs,
 	};
 });
+
+vi.mock("#/hooks/useAdminDetailSheet", () => ({
+	useAdminDetailSheet: () => ({
+		close: vi.fn(),
+		detailOpen: false,
+		entityType: "deals",
+		open: openAdminDetailSheetMock,
+		recordId: undefined,
+		setSearch: vi.fn(),
+	}),
+}));
 
 vi.mock("convex/react", () => ({
 	useMutation: vi.fn(),
@@ -73,6 +86,19 @@ const DEAL_ID = "deal_1" as Id<"deals">;
 const MORTGAGE_ID = "mortgage_1" as Id<"mortgages">;
 const useMutationMock = useMutation as unknown as ReturnType<typeof vi.fn>;
 const useQueryMock = useQuery as unknown as ReturnType<typeof vi.fn>;
+const originalResizeObserver = globalThis.ResizeObserver;
+
+beforeAll(() => {
+	globalThis.ResizeObserver = class ResizeObserver {
+		disconnect() {}
+		observe() {}
+		unobserve() {}
+	};
+});
+
+afterAll(() => {
+	globalThis.ResizeObserver = originalResizeObserver;
+});
 
 function createLegalRepresentationProjection(
 	overrides: Partial<LegalRepresentationStatusProjection> = {}
@@ -86,11 +112,17 @@ function createLegalRepresentationProjection(
 		activeLawyerAccessCount: 1,
 		currentInvitation: {
 			acceptedAt: null,
+			deliveredAt: 1_800_000_000_000,
+			deliveryError: null,
+			deliveryProvider: "workos",
+			deliveryStatus: "sent",
 			expiresAt: 1_800_000_100_000,
 			invitationId: "invitation_1" as Id<"lawyerInvitations">,
+			lastDeliveryAttemptAt: 1_800_000_000_000,
 			status: "pending",
 			targetEmail: "lawyer@example.com",
 			updatedAt: 1_800_000_000_000,
+			workosInvitationId: "workos_invitation_1",
 		},
 		gate: {
 			message: "Signed representation engagement evidence is required.",
@@ -349,6 +381,7 @@ describe("deal operations components", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
+		openAdminDetailSheetMock.mockReset();
 	});
 
 	it("renders the admin operations pipeline with server-projected cards", () => {
@@ -373,9 +406,23 @@ describe("deal operations components", () => {
 		expect(
 			screen.getByText("Closing package has not been generated yet.")
 		).not.toBeNull();
-			expect(screen.getByLabelText("Open deal deal_1").getAttribute("href")).toBe(
-				"/admin/deals/deal_1"
-			);
+
+		fireEvent.click(screen.getByText("Buyer One / Seller One"));
+
+		expect(openAdminDetailSheetMock).toHaveBeenCalledWith("deal_1");
+		expect(openAdminDetailSheetMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps card actions from opening the detail sheet", () => {
+		useMutationMock.mockReturnValue(vi.fn(async () => ({ success: true })));
+		useQueryMock.mockReturnValue(createProjection());
+
+		render(<DealOperationsPipeline />);
+
+		fireEvent.click(screen.getByRole("button", { name: "Lock Deal" }));
+
+		expect(openAdminDetailSheetMock).not.toHaveBeenCalled();
+		expect(screen.getByRole("dialog")).not.toBeNull();
 	});
 
 	it("renders the detail console without leaking signing tokens", () => {

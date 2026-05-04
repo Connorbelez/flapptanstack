@@ -10,25 +10,15 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import {
 	AdminPageSkeleton,
 	AdminTableSkeleton,
 } from "#/components/admin/shell/AdminRouteStates";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "#/components/ui/card";
-import {
-	Empty,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyTitle,
-} from "#/components/ui/empty";
+import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
+import { Empty, EmptyHeader, EmptyTitle } from "#/components/ui/empty";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Separator } from "#/components/ui/separator";
@@ -106,10 +96,13 @@ function OrganizationCard({
 		return (
 			<Card>
 				<CardHeader>
-					<CardTitle>Current organization</CardTitle>
-					<CardDescription>
-						No organization record is synced for this session yet.
-					</CardDescription>
+					<div className="flex items-center gap-1.5">
+						<CardTitle>Current organization</CardTitle>
+						<AdminDescriptionHelp
+							content="No organization record is synced for this session yet."
+							label="Current organization details"
+						/>
+					</div>
 				</CardHeader>
 			</Card>
 		);
@@ -126,10 +119,13 @@ function OrganizationCard({
 							<Building2 className="size-5" />
 						</div>
 						<div>
-							<CardTitle>{organization.name}</CardTitle>
-							<CardDescription>
-								Active organization synced from WorkOS AuthKit.
-							</CardDescription>
+							<div className="flex items-center gap-1.5">
+								<CardTitle>{organization.name}</CardTitle>
+								<AdminDescriptionHelp
+									content="Active organization synced from WorkOS AuthKit."
+									label={`${organization.name} details`}
+								/>
+							</div>
 						</div>
 					</div>
 					<Badge variant="outline">WorkOS org</Badge>
@@ -197,10 +193,13 @@ function MembersCard({
 			<CardHeader>
 				<div className="flex items-center justify-between gap-3">
 					<div>
-						<CardTitle>Organization members</CardTitle>
-						<CardDescription>
-							People with a WorkOS membership in this organization.
-						</CardDescription>
+						<div className="flex items-center gap-1.5">
+							<CardTitle>Organization members</CardTitle>
+							<AdminDescriptionHelp
+								content="People with a WorkOS membership in this organization."
+								label="Organization members details"
+							/>
+						</div>
 					</div>
 					<Badge variant="outline">
 						{members.length} {members.length === 1 ? "member" : "members"}
@@ -212,9 +211,10 @@ function MembersCard({
 					<Empty className="rounded-xl border border-border/70 border-dashed p-6">
 						<EmptyHeader>
 							<EmptyTitle>No members synced</EmptyTitle>
-							<EmptyDescription>
-								WorkOS has not synced any memberships for this organization yet.
-							</EmptyDescription>
+							<AdminDescriptionHelp
+								content="WorkOS has not synced any memberships for this organization yet."
+								label="No members synced details"
+							/>
 						</EmptyHeader>
 					</Empty>
 				) : (
@@ -328,11 +328,13 @@ export function BrokerPortalPricingCard({
 			<CardHeader>
 				<div className="flex items-start justify-between gap-3">
 					<div>
-						<CardTitle>Broker portal pricing</CardTitle>
-						<CardDescription>
-							Temporary global control for broker portals. FairLend&apos;s app
-							portal stays pinned to a persisted 0% adjustment.
-						</CardDescription>
+						<div className="flex items-center gap-1.5">
+							<CardTitle>Broker portal pricing</CardTitle>
+							<AdminDescriptionHelp
+								content="Temporary global control for broker portals. FairLend's app portal stays pinned to a persisted 0% adjustment."
+								label="Broker portal pricing details"
+							/>
+						</div>
 					</div>
 					<Badge variant="outline">
 						{brokerPortalPricing.brokerPortalCount} broker
@@ -443,11 +445,13 @@ function BootstrapCard({
 							<Sparkles className="size-5" />
 						</div>
 						<div>
-							<CardTitle>CRM system objects</CardTitle>
-							<CardDescription>
-								Seed the canonical object definitions, fields, and default views
-								that back the admin view engine.
-							</CardDescription>
+							<div className="flex items-center gap-1.5">
+								<CardTitle>CRM system objects</CardTitle>
+								<AdminDescriptionHelp
+									content="Seed the canonical object definitions, fields, and default views that back the admin view engine."
+									label="CRM system objects details"
+								/>
+							</div>
 						</div>
 					</div>
 					{bootstrapStatus.isBootstrapped ? (
@@ -558,11 +562,13 @@ export function FairLendMicPortalCard() {
 							<ShieldCheck className="size-5" />
 						</div>
 						<div>
-							<CardTitle>FairLend MIC portal</CardTitle>
-							<CardDescription>
-								Repair or create the universal MIC portal host and canonical
-								FairLend MIC lender mapping.
-							</CardDescription>
+							<div className="flex items-center gap-1.5">
+								<CardTitle>FairLend MIC portal</CardTitle>
+								<AdminDescriptionHelp
+									content="Repair or create the universal MIC portal host and canonical FairLend MIC lender mapping."
+									label="FairLend MIC portal details"
+								/>
+							</div>
 						</div>
 					</div>
 					<Badge variant="outline">mic.localhost:3000</Badge>
@@ -663,12 +669,13 @@ export function MockMortgagesCard({
 							<Sparkles className="size-5" />
 						</div>
 						<div>
-							<CardTitle>Mock mortgages</CardTitle>
-							<CardDescription>
-								Seed or clean the fixed 12-mortgage QA catalog through the live
-								admin origination workflow, including borrower creation, Rotessa
-								schedule setup, commit, and listing publication.
-							</CardDescription>
+							<div className="flex items-center gap-1.5">
+								<CardTitle>Mock mortgages</CardTitle>
+								<AdminDescriptionHelp
+									content="Seed or clean the fixed 12-mortgage QA catalog through the live admin origination workflow, including borrower creation, Rotessa schedule setup, commit, and listing publication."
+									label="Mock mortgages details"
+								/>
+							</div>
 						</div>
 					</div>
 					<Badge variant={hasActiveBatch ? "default" : "outline"}>
@@ -799,10 +806,10 @@ export function AdminSettingsPage() {
 			<Empty className="rounded-2xl border border-border/70 border-dashed p-8">
 				<EmptyHeader>
 					<EmptyTitle>No organization context</EmptyTitle>
-					<EmptyDescription>
-						This session is not associated with a WorkOS organization. Switch to
-						an organization to manage its settings.
-					</EmptyDescription>
+					<AdminDescriptionHelp
+						content="This session is not associated with a WorkOS organization. Switch to an organization to manage its settings."
+						label="No organization context details"
+					/>
 				</EmptyHeader>
 			</Empty>
 		);

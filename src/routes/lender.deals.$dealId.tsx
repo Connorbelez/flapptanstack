@@ -1,37 +1,10 @@
-import { convexQuery } from "@convex-dev/react-query";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, notFound } from "@tanstack/react-router";
-import { ParticipantDealWorkspacePage } from "#/components/deals/participant/ParticipantDealWorkspacePage";
-import { api } from "../../convex/_generated/api";
-import type { Id } from "../../convex/_generated/dataModel";
-
-function buyerWorkspaceQueryOptions(dealId: string) {
-	return convexQuery(api.deals.queries.getParticipantDealWorkspace, {
-		dealId: dealId as Id<"deals">,
-		persona: "buyer",
-	});
-}
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/lender/deals/$dealId")({
-	loader: async ({ context, params }) => {
-		const workspace = await context.queryClient.ensureQueryData(
-			buyerWorkspaceQueryOptions(params.dealId)
-		);
-		if (!workspace) {
-			throw notFound();
-		}
-		return { dealId: params.dealId };
+	beforeLoad: ({ params }) => {
+		throw redirect({
+			params: { dealId: params.dealId },
+			to: "/deals/$dealId",
+		});
 	},
-	component: RouteComponent,
 });
-
-function RouteComponent() {
-	const { dealId } = Route.useLoaderData();
-	const { data } = useSuspenseQuery(buyerWorkspaceQueryOptions(dealId));
-	if (!data) {
-		throw notFound();
-	}
-	return (
-		<ParticipantDealWorkspacePage backTo="/lender/deals" workspace={data} />
-	);
-}

@@ -19,6 +19,7 @@ import type {
 	VelocityPropertyIntendedUseCode,
 	VelocityPropertyMortgagePaymentFrequencyCode,
 	VelocityPropertyMortgageRateTypeCode,
+	VelocityPropertyOccupancyCode,
 	VelocityReadinessBlockerCode,
 	VelocitySnapshotCreator,
 	VelocitySnapshotType,
@@ -165,7 +166,7 @@ export interface VelocityBorrowerProperty {
 	address?: VelocityAddress | null;
 	futureStatus?: number | null;
 	mortgages?: Array<{ amount?: number | null }> | null;
-	occupancy?: number | null;
+	occupancy?: VelocityPropertyOccupancyCode | number | null;
 	propertyValue?: number | null;
 }
 
@@ -531,7 +532,7 @@ export interface VelocitySyncAttemptRecordV1 {
 	connectorCredentialContext?: VelocityConnectorCredentialContext;
 	dealHref?: string;
 	error?: string;
-	idempotencyKey?: string;
+	idempotencyKey: string;
 	loanCode?: string;
 	normalizedCoreHash?: string;
 	rawDealHash?: string;

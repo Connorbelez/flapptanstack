@@ -12,7 +12,10 @@ import {
 	type CollectionPlanEntryRow,
 	type CollectionRuleRow,
 } from "./readModels";
-import type { ReschedulePlanEntryResult } from "./reschedule";
+import type {
+	CorrectPlanEntryScheduledDateResult,
+	ReschedulePlanEntryResult,
+} from "./reschedule";
 import {
 	type CollectionRuleKind,
 	type CollectionRuleStatus,
@@ -600,6 +603,26 @@ export const rescheduleCollectionPlanEntry = adminAction
 	.handler(async (ctx, args): Promise<ReschedulePlanEntryResult> => {
 		return ctx.runMutation(
 			internal.payments.collectionPlan.reschedule.reschedulePlanEntryInternal,
+			{
+				...args,
+				actorId: ctx.viewer.authId,
+				actorType: "admin",
+				requestedAt: Date.now(),
+			}
+		);
+	})
+	.public();
+
+export const correctCollectionPlanEntryScheduledDate = adminAction
+	.input({
+		newScheduledDate: v.number(),
+		planEntryId: v.id("collectionPlanEntries"),
+		reason: v.string(),
+	})
+	.handler(async (ctx, args): Promise<CorrectPlanEntryScheduledDateResult> => {
+		return ctx.runMutation(
+			internal.payments.collectionPlan.reschedule
+				.correctPlanEntryScheduledDateInternal,
 			{
 				...args,
 				actorId: ctx.viewer.authId,

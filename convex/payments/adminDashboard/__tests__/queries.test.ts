@@ -176,6 +176,31 @@ describe("admin dashboard queries", () => {
 			obligationId,
 			status: "confirmed",
 		});
+		const planEntryId = await seedPlanEntry(t, {
+			amount: 300_000,
+			method: "pad_rotessa",
+			obligationIds: [obligationId],
+			scheduledDate: Date.now(),
+			status: "provider_scheduled",
+			source: "default_schedule",
+		});
+		const collectionAttemptId = await t.run((ctx) =>
+			ctx.db.insert("collectionAttempts", {
+				amount: 300_000,
+				initiatedAt: Date.now(),
+				method: "pad_rotessa",
+				mortgageId,
+				obligationIds: [obligationId],
+				planEntryId,
+				status: "pending",
+				triggerSource: "provider_poller",
+			})
+		);
+		await t.run((ctx) =>
+			ctx.db.patch(planEntryId, {
+				collectionAttemptId,
+			})
+		);
 
 		const snapshot = await t
 			.withIdentity(FAIRLEND_ADMIN)
@@ -196,6 +221,34 @@ describe("admin dashboard queries", () => {
 			(row) => row.transferId === String(transferId)
 		);
 		expect(transferRow?.journalIntegrity).toBe("missing");
+
+		const planEntryRow = snapshot.collectionPlanEntries.find(
+			(row) => row.planEntryId === String(planEntryId)
+		);
+		expect(planEntryRow).toMatchObject({
+			borrowerEmail: "borrower@test.fairlend.ca",
+			borrowerId: String(borrowerId),
+			borrowerLabel: "Test Borrower",
+			mortgageId: String(mortgageId),
+			mortgageLabel: "123 Test St, Toronto",
+		});
+		expect(planEntryRow?.relatedAttempt).toMatchObject({
+			borrowerEmail: "borrower@test.fairlend.ca",
+			borrowerId: String(borrowerId),
+			borrowerLabel: "Test Borrower",
+			collectionAttemptId: String(collectionAttemptId),
+			mortgageLabel: "123 Test St, Toronto",
+		});
+
+		const attemptRow = snapshot.collectionAttempts.find(
+			(row) => row.collectionAttemptId === String(collectionAttemptId)
+		);
+		expect(attemptRow).toMatchObject({
+			borrowerEmail: "borrower@test.fairlend.ca",
+			borrowerId: String(borrowerId),
+			borrowerLabel: "Test Borrower",
+			mortgageLabel: "123 Test St, Toronto",
+		});
 	});
 
 	it("rolls sync errors and healing attempts into financial ops-health summaries", async () => {

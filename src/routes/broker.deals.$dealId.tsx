@@ -1,14 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { BrokerDealDetailPage } from "#/components/broker/deals/BrokerDealDetailPage";
-import { guardRouteAccess } from "#/lib/auth";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/broker/deals/$dealId")({
-	beforeLoad: guardRouteAccess("broker"),
-	component: BrokerDealDetailRoute,
+	beforeLoad: ({ params }) => {
+		throw redirect({
+			params: { dealId: params.dealId },
+			to: "/deals/$dealId",
+		});
+	},
 });
-
-function BrokerDealDetailRoute() {
-	const { dealId } = Route.useParams();
-
-	return <BrokerDealDetailPage dealId={dealId} />;
-}

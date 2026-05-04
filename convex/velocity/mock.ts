@@ -183,10 +183,13 @@ const deliverVelocityMockScenarioReference = makeFunctionReference<
 >("velocity/mock:deliverVelocityMockScenario");
 
 function assertMockVelocityEnabled() {
-	if (
-		process.env.NODE_ENV === "production" &&
-		process.env.ALLOW_VELOCITY_DEV_ENDPOINTS !== "true"
-	) {
+	const nodeEnv =
+		typeof process === "undefined" ? undefined : process.env.NODE_ENV;
+	const allowDevEndpoints =
+		typeof process === "undefined"
+			? undefined
+			: process.env.ALLOW_VELOCITY_DEV_ENDPOINTS;
+	if (nodeEnv === "production" && allowDevEndpoints !== "true") {
 		throw new ConvexError(
 			"Mock Velocity endpoints are disabled in production."
 		);

@@ -272,6 +272,38 @@ describe("marketplace listing detail adapter", () => {
 			{ id: "Mar", label: "Mar", status: "missed" },
 		]);
 	});
+
+	it("keeps the lock workflow visible when provider readiness is false but fractions are available", () => {
+		const detail = createDetailSnapshot();
+		const model = buildMarketplaceListingDetailModel({
+			...detail,
+			investment: {
+				...detail.investment,
+				checkoutReady: false,
+			},
+		});
+
+		expect(model.checkout).toMatchObject({
+			defaultFractions: 1,
+			isEligible: true,
+			maximumFractions: 4,
+			minimumFractions: 1,
+		});
+	});
+
+	it("hides the lock workflow when no whole fractions are available", () => {
+		const detail = createDetailSnapshot();
+		const model = buildMarketplaceListingDetailModel({
+			...detail,
+			investment: {
+				...detail.investment,
+				availableFractions: 0,
+				checkoutReady: false,
+			},
+		});
+
+		expect(model.checkout).toBeUndefined();
+	});
 });
 
 describe("marketplace listing detail page", () => {

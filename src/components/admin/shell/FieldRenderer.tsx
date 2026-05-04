@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Badge } from "#/components/ui/badge";
 import { resolveAdminComputedFieldNavigationTarget } from "#/lib/admin-computed-field-navigation";
 import type { AdminRelationNavigationTarget } from "#/lib/admin-relation-navigation";
@@ -49,6 +50,7 @@ export function FieldRenderer({
 	const resolvedFieldType = field?.fieldType ?? fieldType;
 	const resolvedLabel = field?.label ?? label ?? "Field";
 	const metadataBadge = resolveMetadataBadge(field);
+	const helpContent = resolveFieldHelpContent(field);
 
 	return (
 		<div
@@ -58,9 +60,17 @@ export function FieldRenderer({
 			)}
 		>
 			<div className="flex items-start justify-between gap-3">
-				<p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
-					{resolvedLabel}
-				</p>
+				<div className="flex min-w-0 items-center gap-1.5">
+					<p className="min-w-0 break-words font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
+						{resolvedLabel}
+					</p>
+					{helpContent ? (
+						<AdminDescriptionHelp
+							content={helpContent}
+							label={`${resolvedLabel} details`}
+						/>
+					) : null}
+				</div>
 				{metadataBadge ? (
 					<Badge className="shrink-0" variant={metadataBadge.variant}>
 						{metadataBadge.label}
@@ -77,16 +87,36 @@ export function FieldRenderer({
 					value,
 				})}
 			</div>
-			{field?.description ? (
-				<p className="text-muted-foreground text-xs">{field.description}</p>
-			) : null}
-			{field?.editability.reason &&
-			field.editability.mode !== "editable" &&
-			field.editability.reason !== field.description ? (
-				<p className="text-muted-foreground text-xs">
-					{field.editability.reason}
-				</p>
-			) : null}
+		</div>
+	);
+}
+
+function resolveFieldHelpContent(field: NormalizedFieldDefinition | undefined) {
+	if (!field) {
+		return null;
+	}
+
+	const reasons = [
+		field.description,
+		field.editability.mode !== "editable"
+			? field.editability.reason
+			: undefined,
+	].filter(
+		(reason, index, allReasons): reason is string =>
+			typeof reason === "string" &&
+			reason.trim().length > 0 &&
+			allReasons.indexOf(reason) === index
+	);
+
+	if (reasons.length === 0) {
+		return null;
+	}
+
+	return (
+		<div className="space-y-1">
+			{reasons.map((reason) => (
+				<p key={reason}>{reason}</p>
+			))}
 		</div>
 	);
 }

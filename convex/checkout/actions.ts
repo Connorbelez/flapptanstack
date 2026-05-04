@@ -9,6 +9,7 @@ import {
 	type CheckoutProvider,
 	createStripeCheckoutProviderFromEnv,
 	type HostedCheckoutSession,
+	type RetrievedHostedCheckoutSession,
 	readCheckoutRedirectUrlsFromEnv,
 } from "./stripe";
 import {
@@ -27,6 +28,14 @@ const sweepExpiredCheckoutSessionsArgsValidator = {
 	now: v.optional(v.number()),
 };
 
+const marketplaceCheckoutReceiptArgsValidator = {
+	stripeCheckoutSessionId: v.string(),
+};
+
+const marketplaceCheckoutSyncArgsValidator = {
+	stripeCheckoutSessionId: v.string(),
+};
+
 interface ReleasedCheckoutSession {
 	readonly checkoutSessionId: Id<"checkoutSessions">;
 	readonly providerExpiryAttemptedAt?: number;
@@ -36,6 +45,34 @@ interface ReleasedCheckoutSession {
 }
 
 type ProviderExpiryStatus = "failed" | "not_required" | "succeeded";
+
+type CheckoutReconciliationResult =
+	| {
+			readonly error: string;
+			readonly ok: false;
+	  }
+	| {
+			readonly ok: true;
+			readonly status: string;
+			readonly transferRequestId?: Id<"transferRequests">;
+	  };
+
+type MarketplaceCheckoutSyncResult =
+	| {
+			readonly message: string;
+			readonly ok: false;
+			readonly status:
+				| "not_found"
+				| "provider_lookup_failed"
+				| "reconciliation_failed";
+	  }
+	| {
+			readonly ok: true;
+			readonly paymentStatus: string;
+			readonly status: string;
+			readonly stripePaymentIntentId?: string;
+			readonly stripeStatus?: string;
+	  };
 
 type ProviderExpiryResult =
 	| {
@@ -85,6 +122,158 @@ interface PreparedMarketplaceCheckout {
 
 function providerFailureMessage(error: unknown): string {
 	return error instanceof Error ? error.message : "provider_start_failed";
+}
+
+function errorLogDetails(error: unknown): Record<string, unknown> {
+	if (error instanceof Error) {
+		return {
+			name: error.name,
+			message: error.message,
+			stack: error.stack,
+			data:
+				error && typeof error === "object" && "data" in error
+					? error.data
+					: undefined,
+		};
+	}
+	return { error };
+}
+
+function logMarketplaceCheckoutProviderFailure(args: {
+	error: unknown;
+	prepared: PreparedMarketplaceCheckout;
+	stage: "attach_provider_session" | "create_provider_session";
+	stripeCheckoutSessionId?: string;
+}) {
+	console.error("[checkout.startMarketplaceCheckout] provider failure", {
+		checkoutSessionId: String(args.prepared.checkoutSessionId),
+		idempotencyKey: args.prepared.idempotencyKey,
+		lenderAuthId: args.prepared.lenderAuthId,
+		listingId: String(args.prepared.listingId),
+		mortgageId: String(args.prepared.mortgageId),
+		portalId: String(args.prepared.portalId),
+		requestedFractions: args.prepared.requestedFractions,
+		reservationId: String(args.prepared.reservationId),
+		selectedLawyer: {
+			hasLso: args.prepared.selectedLawyer.lso !== undefined,
+			lawyerId:
+				"lawyerId" in args.prepared.selectedLawyer
+					? args.prepared.selectedLawyer.lawyerId
+					: undefined,
+			source:
+				"source" in args.prepared.selectedLawyer
+					? args.prepared.selectedLawyer.source
+					: undefined,
+			type: args.prepared.selectedLawyer.type,
+		},
+		stage: args.stage,
+		stripeCheckoutSessionId: args.stripeCheckoutSessionId,
+		...errorLogDetails(args.error),
+	});
+}
+
+function requireStripeSecretKey(): string {
+	const secretKey = process.env.STRIPE_SECRET_KEY;
+	if (!secretKey) {
+		throw new Error("STRIPE_SECRET_KEY is not configured");
+	}
+	return secretKey;
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+	return value && typeof value === "object"
+		? (value as Record<string, unknown>)
+		: null;
+}
+
+function readStripeReceiptUrl(value: unknown): string | null {
+	const root = asObject(value);
+	const latestCharge = asObject(root?.latest_charge);
+	const receiptUrl = latestCharge?.receipt_url;
+	return typeof receiptUrl === "string" && receiptUrl.trim().length > 0
+		? receiptUrl
+		: null;
+}
+
+async function fetchStripePaymentIntentReceiptUrl(args: {
+	paymentIntentId: string;
+	secretKey: string;
+}): Promise<string | null> {
+	const encodedPaymentIntentId = encodeURIComponent(args.paymentIntentId);
+	const response = await fetch(
+		`https://api.stripe.com/v1/payment_intents/${encodedPaymentIntentId}?expand[]=latest_charge`,
+		{
+			headers: {
+				Authorization: `Bearer ${args.secretKey}`,
+				"Stripe-Version": "2025-10-29.clover",
+			},
+			method: "GET",
+		}
+	);
+	if (!response.ok) {
+		const body = await response.text();
+		throw new Error(
+			`Stripe PaymentIntent receipt lookup failed with ${response.status}: ${body}`
+		);
+	}
+	return readStripeReceiptUrl(await response.json());
+}
+
+function checkoutLandingSyncProviderEventId(
+	stripeCheckoutSessionId: string
+): string {
+	return `checkout-landing-sync:${stripeCheckoutSessionId}`;
+}
+
+async function persistCheckoutLandingSyncEvent(
+	ctx: Pick<ActionCtx, "runMutation">,
+	args: {
+		readonly stripeCheckoutSession: RetrievedHostedCheckoutSession;
+	}
+): Promise<Id<"webhookEvents">> {
+	return ctx.runMutation(
+		internal.payments.webhooks.transferCore.persistTransferWebhookEvent,
+		{
+			provider: "stripe",
+			providerEventId: checkoutLandingSyncProviderEventId(
+				args.stripeCheckoutSession.stripeCheckoutSessionId
+			),
+			rawBody: JSON.stringify({
+				source: "checkout_landing_sync",
+				stripeCheckoutSession: args.stripeCheckoutSession,
+			}),
+			signatureVerified: false,
+			normalizedEventType: "FUNDS_SETTLED",
+		}
+	);
+}
+
+async function reconcilePaidStripeCheckoutSession(
+	ctx: Pick<ActionCtx, "runMutation">,
+	args: {
+		readonly stripeCheckoutSession: RetrievedHostedCheckoutSession;
+	}
+): Promise<CheckoutReconciliationResult> {
+	const providerEventId = checkoutLandingSyncProviderEventId(
+		args.stripeCheckoutSession.stripeCheckoutSessionId
+	);
+	const webhookEventId = await persistCheckoutLandingSyncEvent(ctx, args);
+	const result: CheckoutReconciliationResult = await ctx.runMutation(
+		internal.checkout.reconciliation.reconcileStripeCheckoutWebhook,
+		{
+			amount: args.stripeCheckoutSession.amountTotal,
+			currency: args.stripeCheckoutSession.currency,
+			kind: "success",
+			metadata: args.stripeCheckoutSession.metadata,
+			occurredAt: Date.now(),
+			providerEventId,
+			stripeCheckoutSessionId:
+				args.stripeCheckoutSession.stripeCheckoutSessionId,
+			stripePaymentIntentId: args.stripeCheckoutSession.paymentIntentId,
+			webhookEventId,
+		}
+	);
+	return result;
 }
 
 function isPreparedMarketplaceCheckout(value: {
@@ -256,13 +445,21 @@ export const startMarketplaceCheckout = authedAction
 		let provider: CheckoutProvider;
 		try {
 			provider = createStripeCheckoutProviderFromEnv();
-			const redirectUrls = readCheckoutRedirectUrlsFromEnv();
+			const redirectUrls = readCheckoutRedirectUrlsFromEnv({
+				listingId: String(prepared.listingId),
+			});
 			hostedSession = await provider.createHostedCheckoutSession({
 				...redirectUrls,
+				expiresAt: prepared.expiresAt,
 				idempotencyKey: prepared.idempotencyKey,
 				metadata,
 			});
 		} catch (error) {
+			logMarketplaceCheckoutProviderFailure({
+				error,
+				prepared,
+				stage: "create_provider_session",
+			});
 			await ctx.runMutation(
 				internal.checkout.mutations.markProviderStartFailed,
 				{
@@ -292,6 +489,12 @@ export const startMarketplaceCheckout = authedAction
 				expiresAt: attached.expiresAt,
 			};
 		} catch (error) {
+			logMarketplaceCheckoutProviderFailure({
+				error,
+				prepared,
+				stage: "attach_provider_session",
+				stripeCheckoutSessionId: hostedSession.stripeCheckoutSessionId,
+			});
 			await expireProviderSession(provider, {
 				checkoutSessionId: prepared.checkoutSessionId,
 				stripeCheckoutSessionId: hostedSession.stripeCheckoutSessionId,
@@ -308,6 +511,133 @@ export const startMarketplaceCheckout = authedAction
 				"Unable to link hosted checkout"
 			);
 		}
+	})
+	.public();
+
+export const getMarketplaceCheckoutReceiptUrl = authedAction
+	.use(requirePermissionAction("listing:invest"))
+	.input(marketplaceCheckoutReceiptArgsValidator)
+	.handler(async (ctx, args) => {
+		const checkoutSession = await ctx.runQuery(
+			internal.checkout.queries.getCheckoutSessionForReceiptInternal,
+			{ stripeCheckoutSessionId: args.stripeCheckoutSessionId }
+		);
+		if (!checkoutSession) {
+			return {
+				ok: false as const,
+				message: "Checkout session was not found.",
+			};
+		}
+		if (checkoutSession.lenderAuthId !== ctx.viewer.authId) {
+			throw new Error("Forbidden: checkout session is not owned by viewer");
+		}
+		if (!checkoutSession.stripePaymentIntentId) {
+			return {
+				ok: false as const,
+				message: "Stripe payment intent is not available yet.",
+			};
+		}
+
+		const receiptUrl = await fetchStripePaymentIntentReceiptUrl({
+			paymentIntentId: checkoutSession.stripePaymentIntentId,
+			secretKey: requireStripeSecretKey(),
+		});
+		return receiptUrl
+			? { ok: true as const, receiptUrl }
+			: {
+					ok: false as const,
+					message: "Stripe receipt URL is not available yet.",
+				};
+	})
+	.public();
+
+export const syncMarketplaceCheckoutFromStripe = authedAction
+	.use(requirePermissionAction("listing:invest"))
+	.input(marketplaceCheckoutSyncArgsValidator)
+	.handler(async (ctx, args): Promise<MarketplaceCheckoutSyncResult> => {
+		const checkoutSession = await ctx.runQuery(
+			internal.checkout.queries.getCheckoutSessionForReceiptInternal,
+			{ stripeCheckoutSessionId: args.stripeCheckoutSessionId }
+		);
+		if (!checkoutSession) {
+			return {
+				ok: false as const,
+				message: "Checkout session was not found.",
+				status: "not_found" as const,
+			};
+		}
+		if (checkoutSession.lenderAuthId !== ctx.viewer.authId) {
+			throw new Error("Forbidden: checkout session is not owned by viewer");
+		}
+
+		let stripeCheckoutSession: RetrievedHostedCheckoutSession;
+		try {
+			const provider = createStripeCheckoutProviderFromEnv();
+			stripeCheckoutSession = await provider.retrieveHostedCheckoutSession({
+				stripeCheckoutSessionId: args.stripeCheckoutSessionId,
+			});
+		} catch (error) {
+			console.error("[checkout.syncMarketplaceCheckoutFromStripe] failed", {
+				checkoutSessionId: String(checkoutSession.checkoutSessionId),
+				stripeCheckoutSessionId: args.stripeCheckoutSessionId,
+				...errorLogDetails(error),
+			});
+			return {
+				ok: false as const,
+				message: "Unable to refresh Stripe checkout status.",
+				status: "provider_lookup_failed" as const,
+			};
+		}
+
+		if (stripeCheckoutSession.paymentStatus !== "paid") {
+			console.info("[checkout.syncMarketplaceCheckoutFromStripe] not paid", {
+				checkoutSessionId: String(checkoutSession.checkoutSessionId),
+				paymentStatus: stripeCheckoutSession.paymentStatus,
+				status: stripeCheckoutSession.status,
+				stripeCheckoutSessionId: stripeCheckoutSession.stripeCheckoutSessionId,
+			});
+			return {
+				ok: true as const,
+				paymentStatus: stripeCheckoutSession.paymentStatus ?? "unknown",
+				status: "waiting_for_payment" as const,
+				stripeStatus: stripeCheckoutSession.status ?? "unknown",
+			};
+		}
+
+		const result: CheckoutReconciliationResult =
+			await reconcilePaidStripeCheckoutSession(ctx, {
+				stripeCheckoutSession,
+			});
+		if (!result.ok) {
+			console.warn(
+				"[checkout.syncMarketplaceCheckoutFromStripe] reconciliation failed",
+				{
+					checkoutSessionId: String(checkoutSession.checkoutSessionId),
+					error: result.error,
+					stripeCheckoutSessionId:
+						stripeCheckoutSession.stripeCheckoutSessionId,
+					stripePaymentIntentId: stripeCheckoutSession.paymentIntentId,
+				}
+			);
+			return {
+				ok: false as const,
+				message: result.error,
+				status: "reconciliation_failed" as const,
+			};
+		}
+
+		console.info("[checkout.syncMarketplaceCheckoutFromStripe] reconciled", {
+			checkoutSessionId: String(checkoutSession.checkoutSessionId),
+			reconciliationStatus: result.status,
+			stripeCheckoutSessionId: stripeCheckoutSession.stripeCheckoutSessionId,
+			stripePaymentIntentId: stripeCheckoutSession.paymentIntentId,
+		});
+		return {
+			ok: true as const,
+			paymentStatus: stripeCheckoutSession.paymentStatus,
+			status: result.status,
+			stripePaymentIntentId: stripeCheckoutSession.paymentIntentId,
+		};
 	})
 	.public();
 
@@ -383,6 +713,8 @@ export const sweepExpiredCheckoutSessions = internalAction({
 			providerExpiryStatus: ProviderExpiryStatus;
 			status: string;
 		}> = [];
+		let provider: CheckoutProvider | null | undefined;
+		let providerConfigError: unknown;
 
 		for (const checkoutSessionId of listed.checkoutSessionIds) {
 			const released = (await ctx.runMutation(
@@ -393,14 +725,6 @@ export const sweepExpiredCheckoutSessions = internalAction({
 					reason: "checkout_expired",
 				}
 			)) as ReleasedCheckoutSession;
-			if (released.status !== "expired") {
-				results.push({
-					checkoutSessionId: released.checkoutSessionId,
-					providerExpiryStatus: released.providerExpiryStatus ?? "not_required",
-					status: released.status,
-				});
-				continue;
-			}
 			if (!shouldExpireProviderForReleasedCheckout(released)) {
 				results.push({
 					checkoutSessionId: released.checkoutSessionId,
@@ -409,23 +733,26 @@ export const sweepExpiredCheckoutSessions = internalAction({
 				});
 				continue;
 			}
-			let provider: CheckoutProvider | null = null;
-			let providerConfigFailureStatus: ProviderExpiryStatus | undefined;
-			try {
-				provider = createStripeCheckoutProviderFromEnv();
-			} catch (error) {
+			if (provider === undefined) {
+				try {
+					provider = createStripeCheckoutProviderFromEnv();
+				} catch (error) {
+					provider = null;
+					providerConfigError = error;
+				}
+			}
+			if (!provider) {
+				let providerConfigFailureStatus: ProviderExpiryStatus | undefined;
 				if (released.stripeCheckoutSessionId) {
 					const recorded = await recordProviderExpiryAttempt(ctx, {
 						checkoutSessionId: released.checkoutSessionId,
-						error: providerFailureMessage(error),
+						error: providerFailureMessage(providerConfigError),
 						now: listed.now,
 						ok: false,
 					});
 					providerConfigFailureStatus =
 						recorded.providerExpiryStatus ?? "failed";
 				}
-			}
-			if (!provider) {
 				results.push({
 					checkoutSessionId: released.checkoutSessionId,
 					providerExpiryStatus:

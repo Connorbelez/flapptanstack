@@ -10,9 +10,10 @@ import {
 	MIC_PORTAL_SLUG as micPortalSlug,
 	normalizePortalHost as normalizeSharedPortalHost,
 	normalizePortalSlug as normalizeSharedPortalSlug,
+	parsePortalHostCandidate as parseSharedPortalHostCandidate,
 	PORTAL_RESERVED_SLUGS as reservedPortalSlugs,
 } from "../../shared/portal/contracts";
-import { FAIRLEND_BROKERAGE_ORG_ID } from "../constants";
+import { FAIRLEND_STAFF_ORG_ID } from "../constants";
 
 export const DEFAULT_PORTAL_POST_AUTH_PATH = "/";
 export const DEFAULT_PORTAL_TEASER_LIMIT = 12;
@@ -27,6 +28,7 @@ export const PORTAL_RESERVED_SLUGS = reservedPortalSlugs;
 export const isReservedPortalSlug = isReservedSharedPortalSlug;
 export const normalizePortalHost = normalizeSharedPortalHost;
 export const normalizePortalSlug = normalizeSharedPortalSlug;
+export const parsePortalHostCandidate = parseSharedPortalHostCandidate;
 
 export function buildPortalHosts(slug: string) {
 	return buildSharedPortalHosts(slug);
@@ -37,7 +39,7 @@ export function fairLendPortalFields(now: number) {
 		slug: fairlendPortalSlug,
 		portalType: "fairlend" as const,
 		brokerId: undefined,
-		orgId: FAIRLEND_BROKERAGE_ORG_ID,
+		orgId: FAIRLEND_STAFF_ORG_ID,
 		productionHost: fairlendPortalProductionHost,
 		localHost: fairlendPortalLocalHost,
 		status: "active" as const,

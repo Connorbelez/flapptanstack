@@ -64,11 +64,20 @@ beforeEach(() => {
 			unobserve() {}
 		}
 	);
+	vi.stubGlobal(
+		"ResizeObserver",
+		class ResizeObserver {
+			disconnect() {}
+			observe() {}
+			unobserve() {}
+		}
+	);
 });
 
 afterEach(() => {
 	cleanup();
 	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 	vi.clearAllMocks();
 });
 
@@ -166,7 +175,30 @@ describe("listing detail hosted checkout launcher", () => {
 		});
 	});
 
+	it("offers a first-screen entry point to the lock workflow", () => {
+		const scrollIntoView = vi.fn();
+		vi.spyOn(document, "getElementById").mockReturnValue({
+			scrollIntoView,
+		} as unknown as HTMLElement);
+		renderInteractiveListing();
+
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "Start listing lock" })[0]!
+		);
+
+		expect(document.getElementById).toHaveBeenCalledWith(
+			"listing-lock-workflow"
+		);
+		expect(scrollIntoView).toHaveBeenCalledWith({
+			behavior: "smooth",
+			block: "start",
+		});
+	});
+
 	it("renders backend failures without redirecting", async () => {
+		const consoleError = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => undefined);
 		const onStartCheckout = vi.fn().mockResolvedValue({
 			ok: false,
 			code: "provider_start_failed",
@@ -180,6 +212,17 @@ describe("listing detail hosted checkout launcher", () => {
 		expect(
 			await screen.findAllByText("Stripe could not start the hosted session.")
 		).toHaveLength(2);
+		expect(consoleError).toHaveBeenCalledWith(
+			"[ListingDetailPage] hosted checkout start failed",
+			expect.objectContaining({
+				listingId: "first-mortgage-north-york",
+				portalId: "portal_test",
+				requestedFractions: 100,
+				resultCode: "provider_start_failed",
+				resultMessage: "Stripe could not start the hosted session.",
+				stage: "backend_result",
+			})
+		);
 		expect(redirectToHostedCheckout).not.toHaveBeenCalled();
 	});
 
@@ -355,6 +398,9 @@ describe("listing detail hosted checkout launcher", () => {
 	});
 
 	it("renders stable copy for thrown checkout start failures", async () => {
+		const consoleError = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => undefined);
 		const onStartCheckout = vi.fn().mockRejectedValue(new Error("internal stack"));
 		renderInteractiveListing({ onStartCheckout });
 
@@ -363,6 +409,16 @@ describe("listing detail hosted checkout launcher", () => {
 		expect(
 			await screen.findAllByText("Unable to start hosted checkout. Please try again.")
 		).toHaveLength(2);
+		expect(consoleError).toHaveBeenCalledWith(
+			"[ListingDetailPage] hosted checkout start failed",
+			expect.objectContaining({
+				listingId: "first-mortgage-north-york",
+				message: "internal stack",
+				portalId: "portal_test",
+				requestedFractions: 100,
+				stage: "start_action",
+			})
+		);
 		expect(screen.queryByText("internal stack")).toBeNull();
 	});
 

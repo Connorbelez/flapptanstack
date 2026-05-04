@@ -13,7 +13,6 @@ import { deriveMarketplacePropertyType } from "../marketplaceShared";
 
 const modules = convexModules;
 const listingApi = anyApi.listings.marketplace;
-const mortgageOwnershipApi = anyApi.admin.mortgages.ownership;
 const platformLawyersApi = anyApi.legalRepresentation.platformLawyers;
 const publicDocumentsApi = anyApi.listings.publicDocuments;
 const CANONICAL_MIC_LENDER_AUTH_ID = seedAuthIdFromEmail(
@@ -615,11 +614,103 @@ describe("marketplace listings", () => {
 		expect(result?.investment.soldPercent).toBe(0);
 	});
 
+	it("counts treasury-held mortgage fractions as FairLend MIC sale inventory", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+		const { mortgageId, propertyId } = await insertMortgageFixture(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			await ctx.db.insert("ledger_accounts", {
+				createdAt: 1_710_000_000_000,
+				cumulativeCredits: 0n,
+				cumulativeDebits: 10_000n,
+				mortgageId: String(mortgageId),
+				pendingCredits: 0n,
+				pendingDebits: 0n,
+				type: "TREASURY",
+			});
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					mortgageId,
+					propertyId,
+					title: "Treasury Held Opportunity",
+				})
+			);
+		});
+
+		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(result?.investment.availableFractions).toBe(10_000);
+		expect(result?.investment.soldPercent).toBe(0);
+	});
+
+	it("aggregates treasury and MIC position sale inventory without counting non-MIC positions as available", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+		const { mortgageId, propertyId } = await insertMortgageFixture(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			await ctx.db.insert("ledger_accounts", {
+				createdAt: 1_710_000_000_000,
+				cumulativeCredits: 2_000n,
+				cumulativeDebits: 10_000n,
+				mortgageId: String(mortgageId),
+				pendingCredits: 0n,
+				pendingDebits: 0n,
+				type: "TREASURY",
+			});
+			await ctx.db.insert("ledger_accounts", {
+				createdAt: 1_710_000_000_000,
+				cumulativeCredits: 0n,
+				cumulativeDebits: 1_250n,
+				lenderId: CANONICAL_MIC_LENDER_AUTH_ID,
+				mortgageId: String(mortgageId),
+				pendingCredits: 0n,
+				pendingDebits: 0n,
+				type: "POSITION",
+			});
+			await ctx.db.insert("ledger_accounts", {
+				createdAt: 1_710_000_000_000,
+				cumulativeCredits: 0n,
+				cumulativeDebits: 750n,
+				lenderId: "private-lender-auth",
+				mortgageId: String(mortgageId),
+				pendingCredits: 0n,
+				pendingDebits: 0n,
+				type: "POSITION",
+			});
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					mortgageId,
+					propertyId,
+					title: "Mixed Inventory Opportunity",
+				})
+			);
+		});
+
+		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(result?.investment.availableFractions).toBe(9250);
+		expect(result?.investment.investorCount).toBe(1);
+		expect(result?.investment.soldPercent).toBe(7.5);
+	});
+
 	it("caps canonical MIC sale availability with the mortgage override", async () => {
 		const t = createHarness();
 		const portalId = await insertBrokerPortalPricingFixture(t);
 		const auth = listingViewer(t);
-		const admin = fairlendAdmin(t);
 		const { mortgageId, propertyId } = await insertMortgageFixture(t);
 
 		let listingId!: Doc<"listings">["_id"];
@@ -644,10 +735,15 @@ describe("marketplace listings", () => {
 			);
 		});
 
-		await admin.mutation(mortgageOwnershipApi.setMicSaleAvailabilityOverride, {
-			availableLedgerUnits: 6000,
-			mortgageId,
-			reason: "Limit MIC sale allocation for staged marketplace release.",
+		await t.run(async (ctx) => {
+			await ctx.db.insert("mortgageMicSaleAvailabilityOverrides", {
+				availableLedgerUnits: 6000,
+				createdAt: 1_710_000_000_000,
+				mortgageId,
+				reason: "Limit MIC sale allocation for staged marketplace release.",
+				updatedAt: 1_710_000_000_000,
+				updatedBy: "marketplace-admin",
+			});
 		});
 
 		const capped = await auth.query(listingApi.getMarketplaceListingDetail, {
@@ -657,13 +753,21 @@ describe("marketplace listings", () => {
 
 		expect(capped?.investment.availableFractions).toBe(6000);
 
-		await admin.mutation(
-			mortgageOwnershipApi.clearMicSaleAvailabilityOverride,
-			{
-				mortgageId,
-				reason: "Restore full MIC availability after staged release.",
+		await t.run(async (ctx) => {
+			const override = await ctx.db
+				.query("mortgageMicSaleAvailabilityOverrides")
+				.withIndex("by_mortgage", (q) => q.eq("mortgageId", mortgageId))
+				.unique();
+			if (!override) {
+				throw new Error("Expected sale availability override");
 			}
-		);
+			await ctx.db.patch(override._id, {
+				availableLedgerUnits: undefined,
+				reason: "Restore full MIC availability after staged release.",
+				updatedAt: 1_710_000_100_000,
+				updatedBy: "marketplace-admin",
+			});
+		});
 
 		const cleared = await auth.query(listingApi.getMarketplaceListingDetail, {
 			listingId,

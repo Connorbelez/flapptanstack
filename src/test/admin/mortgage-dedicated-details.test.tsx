@@ -23,6 +23,8 @@ import { MortgagesDedicatedDetailsContent } from "#/components/admin/shell/dedic
 
 const clearMicSaleAvailabilityOverrideMock = vi.fn(async () => ({}));
 const defaultMutationMock = vi.fn(async () => ({}));
+const hideListingMock = vi.fn(async () => ({}));
+const publishListingMock = vi.fn(async () => ({}));
 const setMicSaleAvailabilityOverrideMock = vi.fn(async () => ({
 	capLedgerUnits: 4000,
 }));
@@ -124,6 +126,12 @@ beforeEach(() => {
 		) {
 			return clearMicSaleAvailabilityOverrideMock;
 		}
+		if (functionName === "admin/settings/mutations:publishListing") {
+			return publishListingMock;
+		}
+		if (functionName === "admin/settings/mutations:hideListing") {
+			return hideListingMock;
+		}
 		return defaultMutationMock;
 	});
 });
@@ -138,10 +146,45 @@ describe("mortgage dedicated details", () => {
 		const detailContext = {
 				borrowers: [
 					{
+						authId: "user_ada_borrower",
 						borrowerId: "borrower_1",
+						email: "ada.borrower@fairlend.test",
 						idvStatus: "verified",
+						linkedExternalSchedules: [
+							{
+								activatedAt: null,
+								bankAccountId: "bank_account_1",
+								borrowerId: "borrower_1",
+								coveredFromPlanEntryId: "plan_entry_1",
+								coveredToPlanEntryId: "plan_entry_1",
+								externalScheduleRef: "rotessa-987",
+								isSelected: true,
+								lastSyncErrorMessage: null,
+								lastSyncedAt: null,
+								nextPollAt: null,
+								providerCode: "pad_rotessa",
+								scheduleId: "schedule_1",
+								status: "active",
+							},
+						],
+						linkedPlanEntries: [
+							{
+								amount: 2_450,
+								obligationIds: ["obligation_1"],
+								planEntryId: "plan_entry_1",
+								scheduledDate: new Date(
+									"2026-05-27T12:00:00.000Z"
+								).getTime(),
+								status: "planned",
+							},
+						],
 						name: "Ada Borrower",
 						role: "primary",
+						rotessaCustomerReference: {
+							customerId: 987,
+							customIdentifier: "borrower-rotessa-987",
+							source: "bank_account_metadata",
+						},
 						status: "active",
 					},
 				],
@@ -165,6 +208,7 @@ describe("mortgage dedicated details", () => {
 					},
 				],
 				listing: {
+					dataSource: "mortgage_pipeline",
 					interestRate: 9.5,
 					listingId: "listing_1",
 					ltvRatio: 62,
@@ -172,6 +216,7 @@ describe("mortgage dedicated details", () => {
 					publishedAt: null,
 					status: "draft",
 					title: "King West bridge opportunity",
+					updatedAt: new Date("2026-05-01T12:00:00.000Z").getTime(),
 				},
 				micSaleAvailability: {
 					availableForSaleLedgerUnits: 6_000,
@@ -187,6 +232,8 @@ describe("mortgage dedicated details", () => {
 					soldLedgerUnits: 0,
 					totalInvestors: 0,
 					totalLedgerUnits: 10_000,
+					treasuryAvailableLedgerUnits: 1_000,
+					treasuryOwnedLedgerUnits: 1_000,
 				},
 				latestValuationSnapshot: {
 					createdByUserId: "user_admin_1",
@@ -230,7 +277,7 @@ describe("mortgage dedicated details", () => {
 					externalSchedule: {
 						activatedAt: null,
 						bankAccountId: "bank_account_1",
-						externalScheduleRef: null,
+						externalScheduleRef: "rotessa-987",
 						lastSyncErrorMessage: "Rotessa provider timeout",
 						lastSyncedAt: null,
 						nextPollAt: null,
@@ -238,10 +285,27 @@ describe("mortgage dedicated details", () => {
 						scheduleId: "schedule_1",
 						status: "activation_failed",
 					},
+					externalSchedules: [
+						{
+							activatedAt: null,
+							bankAccountId: "bank_account_1",
+							borrowerId: "borrower_1",
+							coveredFromPlanEntryId: "plan_entry_1",
+							coveredToPlanEntryId: "plan_entry_1",
+							externalScheduleRef: "rotessa-987",
+							isSelected: true,
+							lastSyncErrorMessage: "Rotessa provider timeout",
+							lastSyncedAt: null,
+							nextPollAt: null,
+							providerCode: "pad_rotessa",
+							scheduleId: "schedule_1",
+							status: "activation_failed",
+						},
+					],
 					obligationCount: 1,
 					obligations: [
 						{
-							amount: 2_450,
+							amount: 245_000,
 							amountSettled: 0,
 							dueDate: new Date("2026-06-01T12:00:00.000Z").getTime(),
 							obligationId: "obligation_1",
@@ -255,16 +319,16 @@ describe("mortgage dedicated details", () => {
 					transferRequestCount: 0,
 				},
 				paymentSnapshot: {
-					mostRecentPaymentAmount: 2_450,
+					mostRecentPaymentAmount: 245_000,
 					mostRecentPaymentDate: new Date(
 						"2026-05-01T12:00:00.000Z"
 					).getTime(),
-					mostRecentPaymentStatus: "failed",
-					nextUpcomingPaymentAmount: 2_450,
+					mostRecentPaymentStatus: "processing",
+					nextUpcomingPaymentAmount: 245_000,
 					nextUpcomingPaymentDate: new Date(
-						"2026-05-27T12:00:00.000Z"
+						"2026-06-01T12:00:00.000Z"
 					).getTime(),
-					nextUpcomingPaymentStatus: "planned",
+					nextUpcomingPaymentStatus: "executing",
 				},
 				obligationStats: {},
 				property: {
@@ -287,6 +351,25 @@ describe("mortgage dedicated details", () => {
 					},
 				],
 				recentObligations: [],
+				activeDeals: [
+					{
+						buyerId: "buyer_1",
+						closingDate: new Date("2026-06-15T12:00:00.000Z").getTime(),
+						dealId: "deal_1",
+						fractionalShare: 2_500,
+						lender: {
+							accreditationStatus: null,
+							activatedAt: null,
+							brokerId: null,
+							email: "lender@test.ca",
+							lenderId: null,
+							name: "Lena Lender",
+							payoutFrequency: null,
+							status: "unresolved",
+						},
+						status: "active",
+					},
+				],
 			};
 
 		const fields = [
@@ -386,86 +469,129 @@ describe("mortgage dedicated details", () => {
 		render(
 			<MortgagesDedicatedDetailsContent
 				canManageMortgageDocuments
+				canManageListingVisibility
 				canManageOwnershipOverrides
 				canRetryCollectionsActivation
+				canSyncExternalSchedules
 				detailContext={detailContext}
 				detailFields={fields}
-				mortgageHistory={[]}
+				editingPlanEntryId={null}
 				objectDefs={objectDefs}
 				onArchiveBlueprint={vi.fn(async () => {})}
+				onCorrectPlanEntryDate={vi.fn(async () => {})}
 				onNavigateRelation={vi.fn()}
 				onReplaceBlueprint={vi.fn()}
 				onRetryCollectionsActivation={vi.fn(async () => {})}
+				onStartPlanEntryDateEdit={vi.fn()}
+				onSyncExternalSchedule={vi.fn(async () => {})}
 				paymentSetup={detailContext.paymentSetup}
+				planEntryDateDraft=""
 				record={record}
+				savingPlanEntryDateId={null}
+				setEditingPlanEntryId={vi.fn()}
+				setPlanEntryDateDraft={vi.fn()}
+				syncingExternalScheduleId={null}
 			/>
 		);
 
-		expect(screen.getByText("Summary")).toBeTruthy();
-		expect(screen.getByText("Payment Snapshot")).toBeTruthy();
-		expect(screen.getByText("Borrowers")).toBeTruthy();
-		expect(screen.getByText("Payment Setup")).toBeTruthy();
-		expect(screen.getByText("Listing Projection")).toBeTruthy();
-		expect(screen.getByText("Documents")).toBeTruthy();
-		expect(screen.getByText("Audit")).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "Mortgage" })).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "Market" })).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "Payments" })).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "Documents" })).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "Deals" })).toBeTruthy();
+		expect(screen.getByText("$25,000,000")).toBeTruthy();
+		expect(screen.getByText("Rotessa linked")).toBeTruthy();
+		expect(
+			screen.getByRole("link", { name: "123 King St W, Toronto, ON" })
+				.getAttribute("href")
+		).toBe("/admin/properties/property_1");
+		expect(
+			screen.getByRole("link", { name: "Ada Borrower" }).getAttribute("href")
+		).toBe("/admin/borrowers/borrower_1");
 		expect(screen.getByText("Schedule rule fallback applied")).toBeTruthy();
 		expect(
 			screen.getByText("Immediate Rotessa activation failed")
 		).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Retry activation" })).toBeTruthy();
-		expect(screen.getByText("Most Recent Payment")).toBeTruthy();
-		expect(screen.getByText("Next Upcoming Payment")).toBeTruthy();
-		const paymentSnapshotSection = screen
-			.getByRole("heading", { exact: true, name: "Payment Snapshot" })
+		expect(screen.getByText("Most Recent")).toBeTruthy();
+		expect(screen.getByText("Next Due")).toBeTruthy();
+		const paymentsSection = screen
+			.getByRole("heading", { exact: true, name: "Payments" })
 			.closest("section");
-		expect(paymentSnapshotSection?.textContent).toContain("Failed");
-		expect(paymentSnapshotSection?.textContent).toContain("Planned");
-		expect(paymentSnapshotSection?.textContent).toContain("$2,450");
-		expect(screen.getByText("External schedule schedule_1")).toBeTruthy();
-		expect(screen.getByText("Open obligation")).toBeTruthy();
-		expect(screen.getAllByText("Plan Entries").length).toBeGreaterThanOrEqual(1);
+		expect(paymentsSection?.textContent).toContain("Processing");
+		expect(paymentsSection?.textContent).toContain("Executing");
+		expect(paymentsSection?.textContent).toContain("$2,450");
+		expect(paymentsSection?.textContent).toContain("App-owned");
+		expect(screen.getByRole("img", { name: "Upcoming: 1" })).toBeTruthy();
+		expect(
+			screen.getByRole("img", { name: "Activation Failed: 1" })
+		).toBeTruthy();
+		expect(screen.getByRole("img", { name: "Active: 1" })).toBeTruthy();
 		expect(screen.getAllByText("Borrower Summary").length).toBeGreaterThanOrEqual(
-			2
+			1
 		);
 		expect(
 			screen.getByText("Public borrower summary staged during origination.")
 		).toBeTruthy();
 		expect(screen.getByRole("link", { name: "Open PDF" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
-		const paymentSetupSection = screen
-			.getByRole("heading", { exact: true, name: "Payment Setup" })
-			.closest("section");
-		expect(paymentSetupSection?.textContent).toContain("App Owned");
-		expect(paymentSetupSection?.textContent).toContain("Failed");
-		expect(paymentSetupSection?.textContent).toContain("Planned");
 		expect(screen.getByText(/425,000/)).toBeTruthy();
-		expect(screen.getByText(/2026-05-01/)).toBeTruthy();
+		expect(screen.getAllByText(/4\/30\/2026|5\/1\/2026/).length).toBeGreaterThan(
+			0
+		);
 		expect(screen.getByText("Admin Origination")).toBeTruthy();
-		expect(
-			screen.getByRole("link", { name: "Ada Borrower" }).getAttribute("href")
-		).toBe("/admin/borrowers/borrower_1");
-			expect(
-				screen
-					.getByRole("link", { name: "Open property record" })
-					.getAttribute("href")
-			).toBe("/admin/properties/property_1");
+		fireEvent.click(screen.getByRole("button", { name: "Borrower details" }));
+		await waitFor(() => {
+			expect(screen.getByText(/ada\.borrower@fairlend\.test/)).toBeTruthy();
+		});
+		expect(screen.getByText(/user_ada_borrower/)).toBeTruthy();
+		expect(screen.getByText(/ID 987 \/ borrower-rotessa-987/)).toBeTruthy();
+			fireEvent.click(
+				screen.getByRole("button", { name: "Payment rows and provider tools" })
+			);
+			expect(screen.getByText("Plan entries")).toBeTruthy();
+			expect(screen.getByRole("button", { name: "Sync now" })).toBeTruthy();
+			expect(screen.getByRole("button", { name: "Change date" })).toBeTruthy();
 			expect(
 				screen
 					.getByRole("link", { name: "Open obligation" })
 					.getAttribute("href")
 			).toBe("/admin/obligations/obligation_1");
+			expect(
+				screen.getByRole("link", { name: "Open deal" }).getAttribute("href")
+			).toBe("/admin/deals/deal_1");
+			fireEvent.click(
+				screen.getByRole("button", { name: "Marketplace controls" })
+			);
 			const micSaleAvailabilitySection = screen
 				.getByRole("heading", {
 					exact: true,
-					name: "MIC Sale Availability",
+					name: "Marketplace Availability",
 				})
 				.closest("section");
-			expect(micSaleAvailabilitySection?.textContent).toContain("MIC Owned");
-			expect(micSaleAvailabilitySection?.textContent).toContain("10 / 10");
+			expect(micSaleAvailabilitySection?.textContent).toContain(
+				"Treasury Saleable"
+			);
+			expect(micSaleAvailabilitySection?.textContent).toContain(
+				"MIC-held Saleable"
+			);
 			expect(micSaleAvailabilitySection?.textContent).toContain(
 				"Available For Sale"
 			);
 			expect(micSaleAvailabilitySection?.textContent).toContain("6 / 10");
+			const visibilitySection = screen
+				.getByRole("heading", {
+					exact: true,
+					name: "Marketplace Visibility",
+				})
+				.closest("section");
+			expect(visibilitySection?.textContent).toContain("Hidden");
+			fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+			await waitFor(() => {
+				expect(publishListingMock).toHaveBeenCalledWith({
+					listingId: "listing_1",
+				});
+			});
 
 			fireEvent.change(
 				within(micSaleAvailabilitySection as HTMLElement).getByLabelText(

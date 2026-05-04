@@ -3,6 +3,7 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
+	BriefcaseBusiness,
 	ChevronLeft,
 	ExternalLink,
 	FileText,
@@ -11,12 +12,14 @@ import {
 	Link2,
 	PanelRightClose,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Sheet, SheetContent, SheetHeader } from "#/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "#/components/ui/tabs";
 import { useAdminRelationNavigation } from "#/hooks/useAdminRelationNavigation";
+import type { AdminDetailTab } from "#/lib/admin-detail-search";
 import { EMPTY_ADMIN_DETAIL_SEARCH } from "#/lib/admin-detail-search";
 import { resolveAdminRecordRouteTarget } from "#/lib/admin-relation-navigation";
 import { cn } from "#/lib/utils";
@@ -65,6 +68,7 @@ const FIELD_SKELETON_IDS = [
 interface RecordDetailSurfaceProps {
 	readonly adapters?: Partial<Record<string, RecordSidebarEntityAdapter>>;
 	readonly canGoBack?: boolean;
+	readonly initialTab?: AdminDetailTab;
 	readonly onBack?: () => void;
 	readonly onClose?: () => void;
 	readonly reference: SidebarRecordRef;
@@ -126,6 +130,7 @@ export function RecordSidebar({
 export function AdminRecordDetailSurface({
 	adapters,
 	canGoBack = false,
+	initialTab = "details",
 	onBack,
 	onClose,
 	reference,
@@ -173,6 +178,7 @@ export function AdminRecordDetailSurface({
 	const navigateRelation = useAdminRelationNavigation({
 		presentation: variant === "sheet" ? "sheet" : "page",
 	});
+	const [activeTab, setActiveTab] = useState<AdminDetailTab>(initialTab);
 
 	const title =
 		adapter?.getRecordTitle?.({
@@ -220,6 +226,13 @@ export function AdminRecordDetailSurface({
 		fields: detailFields ?? [],
 		record,
 	});
+	const hasPortfolioTab = Boolean(adapter?.renderPortfolioTab);
+	const activeRecordKey = `${reference.entityType ?? ""}:${reference.recordId}`;
+	useEffect(() => {
+		if (activeRecordKey.length > 1) {
+			setActiveTab(initialTab);
+		}
+	}, [activeRecordKey, initialTab]);
 	useAdminBreadcrumbLabel(variant === "page" ? title : undefined);
 
 	const tabsContent = (
@@ -229,10 +242,17 @@ export function AdminRecordDetailSurface({
 				variant === "page" && "border-border/70 border-t"
 			)}
 		>
-			<Tabs className="min-h-0 flex-1" defaultValue="details">
+			<Tabs
+				className="min-h-0 flex-1"
+				onValueChange={(value) => setActiveTab(value as AdminDetailTab)}
+				value={activeTab}
+			>
 				<div className="border-b px-4 pt-4 sm:px-6">
 					<TabsList className="w-full justify-start" variant="line">
 						<TabsTrigger value="details">Details</TabsTrigger>
+						{hasPortfolioTab ? (
+							<TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+						) : null}
 						<TabsTrigger value="relations">Relations</TabsTrigger>
 						<TabsTrigger value="notes">Notes</TabsTrigger>
 						<TabsTrigger value="files">Files</TabsTrigger>
@@ -254,6 +274,12 @@ export function AdminRecordDetailSurface({
 						recordId={reference.recordId}
 					/>
 				</TabsContent>
+
+				{hasPortfolioTab ? (
+					<TabsContent className="p-4 sm:p-6" value="portfolio">
+						{adapter?.renderPortfolioTab?.(sharedTabArgs)}
+					</TabsContent>
+				) : null}
 
 				<TabsContent className="p-4 sm:p-6" value="relations">
 					{objectDef && record ? (
@@ -333,7 +359,24 @@ export function AdminRecordDetailSurface({
 				</Link>
 			</Button>
 		) : null;
-		const pageActions = adapter?.renderPageActions?.(sharedTabArgs);
+		const adapterPageActions = adapter?.renderPageActions?.(sharedTabArgs);
+		const pageActions =
+			hasPortfolioTab || adapterPageActions ? (
+				<>
+					{hasPortfolioTab ? (
+						<Button
+							onClick={() => setActiveTab("portfolio")}
+							size="sm"
+							type="button"
+							variant={activeTab === "portfolio" ? "default" : "outline"}
+						>
+							<BriefcaseBusiness className="h-4 w-4" />
+							Portfolio
+						</Button>
+					) : null}
+					{adapterPageActions}
+				</>
+			) : null;
 		const pageAside = (
 			<PageSummaryRail
 				adapterAside={adapter?.renderPageAside?.(sharedTabArgs)}
@@ -368,6 +411,36 @@ export function AdminRecordDetailSurface({
 		);
 	}
 
+	const sheetPortfolioAction =
+		hasPortfolioTab && fullPageTarget ? (
+			<Button asChild size="sm" variant="secondary">
+				<Link
+					onClick={() => onClose?.()}
+					params={fullPageTarget.params}
+					search={{
+						...EMPTY_ADMIN_DETAIL_SEARCH,
+						detailTab: "portfolio",
+					}}
+					to={fullPageTarget.to}
+					viewTransition
+				>
+					<BriefcaseBusiness className="h-4 w-4" />
+					Portfolio
+				</Link>
+			</Button>
+		) : null;
+	const sheetInlinePortfolioAction =
+		hasPortfolioTab && !fullPageTarget ? (
+			<Button
+				onClick={() => setActiveTab("portfolio")}
+				size="sm"
+				type="button"
+				variant={activeTab === "portfolio" ? "default" : "outline"}
+			>
+				<BriefcaseBusiness className="h-4 w-4" />
+				Portfolio
+			</Button>
+		) : null;
 	const content = (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<SheetHeader className="gap-5 border-b pb-5">
@@ -418,6 +491,8 @@ export function AdminRecordDetailSurface({
 								</Link>
 							</Button>
 						) : null}
+						{sheetPortfolioAction}
+						{sheetInlinePortfolioAction}
 						{variant === "sheet" && onClose ? (
 							<Button
 								onClick={onClose}
@@ -621,8 +696,13 @@ function UnavailableTab({
 			<div className="mx-auto flex h-11 w-11 items-center justify-center text-muted-foreground">
 				{icon}
 			</div>
-			<p className="mt-4 font-medium text-sm">{title}</p>
-			<p className="mt-2 text-muted-foreground text-sm">{description}</p>
+			<p className="mt-4 inline-flex items-center gap-1.5 font-medium text-sm">
+				{title}
+				<AdminDescriptionHelp
+					content={description}
+					label={`${title} details`}
+				/>
+			</p>
 		</div>
 	);
 }

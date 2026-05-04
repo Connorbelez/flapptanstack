@@ -5,11 +5,15 @@ import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
 import { projectPlatformLawyerAvailability } from "../availability";
 import { buildEligiblePlatformLawyerProfileFixture } from "../fixtures";
-import { listPlatformLawyerCheckoutOptions } from "../platformLawyers";
+import {
+	assertPlatformLawyerSelectableForCheckout,
+	listPlatformLawyerCheckoutOptions,
+} from "../platformLawyers";
 import { buildManualLawyerVerificationResult } from "../providers";
 import { recordLawyerVerificationRow } from "../verifications";
 
 const NOW = Date.parse("2026-05-01T14:00:00.000Z");
+const CHECKOUT_SELECTION_ERROR = /not eligible for new checkout selection/i;
 
 async function seedPlatformLawyer(
 	t: ReturnType<typeof convexTest>,
@@ -168,7 +172,7 @@ describe("platform lawyer availability and SLA operations", () => {
 		});
 	});
 
-	it("returns over-capacity platform lawyers as selectable checkout options", async () => {
+	it("excludes over-capacity platform lawyers from checkout options", async () => {
 		const t = convexTest(schema, convexModules);
 		await seedPlatformLawyer(t, { capacityLimit: 1 });
 		const mortgageId = await seedMortgage(t);
@@ -198,13 +202,33 @@ describe("platform lawyer availability and SLA operations", () => {
 			return await listPlatformLawyerCheckoutOptions(ctx, { now: NOW });
 		});
 
-		expect(options).toHaveLength(1);
-		expect(options[0]).toMatchObject({
-			activeDealCount: 2,
-			capacityLimit: 1,
-			capacityWarning: "over_capacity",
-			selectable: true,
-		});
+		expect(options).toEqual([]);
+	});
+
+	it("rejects direct checkout selection for a full platform lawyer", async () => {
+		const t = convexTest(schema, convexModules);
+		await seedPlatformLawyer(t, { capacityLimit: 1 });
+		const mortgageId = await seedMortgage(t);
+
+		await expect(
+			t.run(async (ctx) => {
+				await ctx.db.insert("deals", {
+					status: "documentReview.pending",
+					mortgageId,
+					buyerId: "buyer",
+					sellerId: "seller",
+					fractionalShare: 10,
+					lawyerId: "user_platform_lawyer",
+					lawyerType: "platform_lawyer",
+					createdAt: NOW,
+					createdBy: "system:test",
+				});
+				await assertPlatformLawyerSelectableForCheckout(ctx, {
+					lawyerAuthId: "user_platform_lawyer",
+					now: NOW,
+				});
+			})
+		).rejects.toThrow(CHECKOUT_SELECTION_ERROR);
 	});
 
 	it("creates exactly one SLA breach escalation across retries", async () => {

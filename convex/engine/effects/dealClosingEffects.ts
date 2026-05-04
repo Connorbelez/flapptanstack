@@ -10,6 +10,14 @@ const dealEffectPayloadValidator = {
 	entityType: v.literal("deal"),
 };
 
+function isFinalDocumentPackageStatus(status: string): boolean {
+	return status === "ready" || status === "archived";
+}
+
+function isRetryableDocumentPackageStatus(status: string): boolean {
+	return status === "failed" || status === "partial_failure";
+}
+
 /**
  * Stub: notifies buyer, seller, and lawyer that a deal has been locked.
  * // TODO: Phase 2 — replace with real implementation (email via Resend)
@@ -43,24 +51,42 @@ export const createDocumentPackage = internalAction({
 			.runQuery(internal.deals.queries.getInternalDeal, {
 				dealId: args.entityId,
 			})
-			.catch(() => null);
+			.catch((error: unknown) => {
+				console.error(
+					`[createDocumentPackage] Failed to look up deal ${args.entityId} before package generation:`,
+					error
+				);
+				return null;
+			});
+		let retryPackageGeneration = false;
 		if (deal?.checkoutSessionId) {
 			const existingPackage = await ctx.runQuery(
 				internal.documents.dealPackages.getPackageByDealInternal,
 				{ dealId: args.entityId }
 			);
-			if (existingPackage) {
+			if (
+				existingPackage &&
+				isFinalDocumentPackageStatus(existingPackage.status)
+			) {
 				console.info(
 					`[createDocumentPackage] Deal ${args.entityId} was created by checkout handoff and already has package ${existingPackage._id}; skipping duplicate scheduled generation`
 				);
 				return;
+			}
+			if (existingPackage) {
+				retryPackageGeneration = isRetryableDocumentPackageStatus(
+					existingPackage.status
+				);
+				console.info(
+					`[createDocumentPackage] Deal ${args.entityId} was created by checkout handoff and has non-final package ${existingPackage._id} (${existingPackage.status}); running scheduled generation`
+				);
 			}
 		}
 		await ctx.runAction(
 			internal.documents.dealPackages.runCreateDocumentPackageInternal,
 			{
 				dealId: args.entityId,
-				retry: false,
+				retry: retryPackageGeneration,
 			}
 		);
 	},

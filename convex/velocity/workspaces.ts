@@ -26,6 +26,7 @@ import {
 
 type VelocityWorkspace = Doc<"velocityPackageWorkspaces">;
 type DocumentAsset = Doc<"documentAssets">;
+type PdfDocumentAsset = DocumentAsset & { mimeType: "application/pdf" };
 
 const optionalString = v.optional(v.string());
 const optionalNumber = v.optional(v.number());
@@ -149,6 +150,7 @@ function accountLast4(accountNumber?: string) {
 }
 
 function deriveAccountLast4(args: {
+	currentBankInput?: VelocityFairLendEnrichmentV1["bankInput"];
 	nextBankInput?: VelocityFairLendEnrichmentV1["bankInput"];
 	patchBankInput?: Partial<
 		NonNullable<VelocityFairLendEnrichmentV1["bankInput"]>
@@ -158,8 +160,8 @@ function deriveAccountLast4(args: {
 		return accountLast4(args.patchBankInput.accountNumber);
 	}
 	return (
-		args.patchBankInput?.accountLast4 ??
-		args.nextBankInput?.accountLast4 ??
+		args.currentBankInput?.accountLast4 ??
+		accountLast4(args.currentBankInput?.accountNumber) ??
 		accountLast4(args.nextBankInput?.accountNumber)
 	);
 }
@@ -187,6 +189,7 @@ function mergeFairLendEnrichment(
 			}
 		: current.bankInput;
 	const derivedLast4 = deriveAccountLast4({
+		currentBankInput: current.bankInput,
 		nextBankInput,
 		patchBankInput: patch.bankInput,
 	});
@@ -402,10 +405,12 @@ async function appendStaffAuditEntry(
 		actorType: "admin",
 		channel: "admin_dashboard",
 		eventType: args.eventType,
-		newState: args.payload?.state as string | undefined,
+		newState:
+			(args.payload?.state as string | undefined) ?? args.workspace.state,
 		organizationId: viewer.orgId,
+		outcome: "transitioned",
 		payload: args.payload,
-		previousState: args.previousState,
+		previousState: args.previousState ?? args.workspace.state,
 		readiness: args.readiness,
 		workspaceId: args.workspace._id,
 	});
@@ -510,7 +515,7 @@ function activationAttemptDetail(
 		reviewedSnapshotHash: attempt.reviewedSnapshotHash,
 		reviewedSnapshotId: attempt.reviewedSnapshotId,
 		rotessaCustomerRef: attempt.rotessaCustomerRef ?? null,
-		rotessaScheduleRef: attempt.rotessaScheduleRef ?? null,
+		rotessaScheduleRef: null,
 		startedAt: attempt.startedAt,
 		status: attempt.status,
 	};
@@ -547,7 +552,9 @@ async function workspaceDetail(
 				.collect(),
 			ctx.db
 				.query("velocityPackageExceptions")
-				.filter((query) => query.eq(query.field("workspaceId"), workspace._id))
+				.withIndex("by_workspace_status", (query) =>
+					query.eq("workspaceId", workspace._id)
+				)
 				.collect(),
 			ctx.db
 				.query("velocityActivationAttempts")
@@ -623,7 +630,7 @@ async function workspaceDetail(
 async function requireDocumentAsset(
 	ctx: Pick<QueryCtx | MutationCtx, "db">,
 	documentAssetId: Id<"documentAssets">
-): Promise<DocumentAsset> {
+): Promise<PdfDocumentAsset> {
 	const asset = await ctx.db.get(documentAssetId);
 	if (!asset) {
 		throw new ConvexError("Document asset not found");
@@ -633,7 +640,7 @@ async function requireDocumentAsset(
 			"Velocity package documents must reference PDF assets"
 		);
 	}
-	return asset;
+	return asset as PdfDocumentAsset;
 }
 
 export const listVelocityPackageWorkspaces = adminQuery
@@ -987,6 +994,11 @@ export async function applyVelocityPackageExceptionResolution(
 		orgId?: string;
 	}
 ) {
+	const resolutionNote = args.resolutionNote.trim();
+	if (resolutionNote.length === 0) {
+		throw new ConvexError("Resolution note is required");
+	}
+
 	const [exception, resolvedByUserId] = await Promise.all([
 		ctx.db.get(args.exceptionId),
 		requireViewerUserId({ ...ctx, viewer }),
@@ -1006,7 +1018,7 @@ export async function applyVelocityPackageExceptionResolution(
 	await ctx.db.patch(exception._id, {
 		details: {
 			...(exception.details ?? {}),
-			resolutionNote: args.resolutionNote,
+			resolutionNote,
 		},
 		resolvedAt: now,
 		resolvedByUserId,

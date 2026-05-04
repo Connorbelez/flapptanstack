@@ -1,5 +1,5 @@
 import { GripVertical, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { type KeyboardEvent, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -36,6 +36,58 @@ const SIGNATORY_ROLES = [
 
 const CUSTOM_SIGNATORY_VALUE = "__custom__";
 
+function orderedSignatories(signatories: SignatoryConfig[]) {
+	return [...signatories].sort((left, right) => {
+		if (left.order !== right.order) {
+			return left.order - right.order;
+		}
+		return left.platformRole.localeCompare(right.platformRole);
+	});
+}
+
+function normalizeSignatoryOrder(signatories: SignatoryConfig[]) {
+	return signatories.map((signatory, index) => ({
+		...signatory,
+		order: index,
+	}));
+}
+
+function moveSignatory(
+	signatories: SignatoryConfig[],
+	sourcePlatformRole: string,
+	targetPlatformRole: string
+) {
+	const ordered = orderedSignatories(signatories);
+	const sourceIndex = ordered.findIndex(
+		(signatory) => signatory.platformRole === sourcePlatformRole
+	);
+	const targetIndex = ordered.findIndex(
+		(signatory) => signatory.platformRole === targetPlatformRole
+	);
+
+	if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+		return ordered;
+	}
+
+	const next = [...ordered];
+	const [source] = next.splice(sourceIndex, 1);
+	if (!source) {
+		return ordered;
+	}
+	next.splice(targetIndex, 0, source);
+	return normalizeSignatoryOrder(next);
+}
+
+function keyboardReorderDirection(key: string) {
+	if (key === "ArrowUp") {
+		return -1;
+	}
+	if (key === "ArrowDown") {
+		return 1;
+	}
+	return 0;
+}
+
 export function SignatoryPanel({
 	allowCustomRoles = true,
 	roleOptions = DEMO_DOCUMENT_SIGNATORY_ROLE_OPTIONS,
@@ -45,7 +97,14 @@ export function SignatoryPanel({
 }: SignatoryPanelProps) {
 	const [newRole, setNewRole] = useState("");
 	const [customLabel, setCustomLabel] = useState("");
+	const [draggedPlatformRole, setDraggedPlatformRole] = useState<string | null>(
+		null
+	);
+	const [dropTargetPlatformRole, setDropTargetPlatformRole] = useState<
+		string | null
+	>(null);
 	const [showCustomInput, setShowCustomInput] = useState(false);
+	const ordered = orderedSignatories(signatories);
 
 	const usedRoles = new Set(signatories.map((s) => s.platformRole));
 	const availableRoleOptions = roleOptions.filter(
@@ -65,11 +124,11 @@ export function SignatoryPanel({
 			return;
 		}
 		onChange([
-			...signatories,
+			...ordered,
 			{
 				platformRole: newRole,
 				role: "signatory",
-				order: signatories.length,
+				order: ordered.length,
 			},
 		]);
 		setNewRole("");
@@ -78,11 +137,11 @@ export function SignatoryPanel({
 	const handleAddCustom = () => {
 		const id = nextCustomId();
 		onChange([
-			...signatories,
+			...ordered,
 			{
 				platformRole: id,
 				role: "signatory",
-				order: signatories.length,
+				order: ordered.length,
 				label:
 					customLabel.trim() ||
 					id.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -93,7 +152,7 @@ export function SignatoryPanel({
 	};
 
 	const handleRemove = (platformRole: string) => {
-		const updated = signatories
+		const updated = ordered
 			.filter((s) => s.platformRole !== platformRole)
 			.map((s, i) => ({ ...s, order: i }));
 		onChange(updated);
@@ -104,9 +163,7 @@ export function SignatoryPanel({
 		role: "signatory" | "approver" | "viewer"
 	) => {
 		onChange(
-			signatories.map((s) =>
-				s.platformRole === platformRole ? { ...s, role } : s
-			)
+			ordered.map((s) => (s.platformRole === platformRole ? { ...s, role } : s))
 		);
 	};
 
@@ -120,6 +177,34 @@ export function SignatoryPanel({
 		}
 	};
 
+	const handleMove = (
+		sourcePlatformRole: string,
+		targetPlatformRole: string
+	) => {
+		onChange(moveSignatory(ordered, sourcePlatformRole, targetPlatformRole));
+	};
+
+	const handleKeyboardMove = (
+		event: KeyboardEvent<HTMLButtonElement>,
+		platformRole: string
+	) => {
+		const currentIndex = ordered.findIndex(
+			(signatory) => signatory.platformRole === platformRole
+		);
+		const direction = keyboardReorderDirection(event.key);
+		if (direction === 0 || currentIndex < 0) {
+			return;
+		}
+
+		const target = ordered[currentIndex + direction];
+		if (!target) {
+			return;
+		}
+
+		event.preventDefault();
+		handleMove(platformRole, target.platformRole);
+	};
+
 	return (
 		<div className="space-y-3">
 			{signatories.length === 0 && (
@@ -128,64 +213,134 @@ export function SignatoryPanel({
 				</p>
 			)}
 
-			<div className="space-y-2">
-				{signatories.map((sig) => (
-					<div className="rounded-md border p-2" key={sig.platformRole}>
-						<div className="flex items-center gap-2">
-							<GripVertical className="size-4 shrink-0 text-muted-foreground" />
-							<div
-								className="size-3 shrink-0 rounded-full"
-								style={{
-									backgroundColor: getSignatoryColor(
-										sig.platformRole,
-										roleOptions
-									),
-								}}
-							/>
-							<span className="min-w-0 flex-1 truncate text-sm">
-								{getSignatoryLabel(sig.platformRole, sig.label, roleOptions)}
-							</span>
-							{!readOnly && (
-								<Button
-									className="shrink-0"
-									onClick={() => handleRemove(sig.platformRole)}
-									size="icon"
-									variant="ghost"
+			<div className="space-y-2" role="list">
+				{ordered.map((sig) => {
+					const signatoryLabel = getSignatoryLabel(
+						sig.platformRole,
+						sig.label,
+						roleOptions
+					);
+					const isDropTarget = dropTargetPlatformRole === sig.platformRole;
+
+					return (
+						// biome-ignore lint/a11y/noNoninteractiveElementInteractions: This list item is a native drag-and-drop target for the signatory handle.
+						<div
+							aria-label={`${signatoryLabel} signing order ${sig.order + 1}`}
+							className={`rounded-md border p-2 transition-colors ${
+								isDropTarget
+									? "border-primary/70 bg-primary/10"
+									: "border-border"
+							}`}
+							key={sig.platformRole}
+							onDragLeave={() => {
+								if (dropTargetPlatformRole === sig.platformRole) {
+									setDropTargetPlatformRole(null);
+								}
+							}}
+							onDragOver={(event) => {
+								if (
+									!draggedPlatformRole ||
+									draggedPlatformRole === sig.platformRole
+								) {
+									return;
+								}
+								event.preventDefault();
+								event.dataTransfer.dropEffect = "move";
+								setDropTargetPlatformRole(sig.platformRole);
+							}}
+							onDrop={(event) => {
+								event.preventDefault();
+								const sourcePlatformRole =
+									event.dataTransfer.getData("text/plain") ||
+									draggedPlatformRole;
+								setDraggedPlatformRole(null);
+								setDropTargetPlatformRole(null);
+								if (
+									sourcePlatformRole &&
+									sourcePlatformRole !== sig.platformRole
+								) {
+									handleMove(sourcePlatformRole, sig.platformRole);
+								}
+							}}
+							role="listitem"
+						>
+							<div className="flex items-center gap-2">
+								<button
+									aria-label={`Drag ${signatoryLabel} to reorder signing order`}
+									className="inline-flex size-6 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing disabled:cursor-default disabled:opacity-50"
+									disabled={readOnly || ordered.length < 2}
+									draggable={!readOnly && ordered.length > 1}
+									onDragEnd={() => {
+										setDraggedPlatformRole(null);
+										setDropTargetPlatformRole(null);
+									}}
+									onDragStart={(event) => {
+										setDraggedPlatformRole(sig.platformRole);
+										event.dataTransfer.effectAllowed = "move";
+										event.dataTransfer.setData("text/plain", sig.platformRole);
+									}}
+									onKeyDown={(event) =>
+										handleKeyboardMove(event, sig.platformRole)
+									}
+									title="Drag to reorder signing order"
+									type="button"
 								>
-									<Trash2 className="size-3" />
-								</Button>
+									<GripVertical className="size-4" />
+								</button>
+								<div
+									className="size-3 shrink-0 rounded-full"
+									style={{
+										backgroundColor: getSignatoryColor(
+											sig.platformRole,
+											roleOptions
+										),
+									}}
+								/>
+								<span className="min-w-0 flex-1 truncate text-sm">
+									{signatoryLabel}
+								</span>
+								{!readOnly && (
+									<Button
+										className="shrink-0"
+										onClick={() => handleRemove(sig.platformRole)}
+										size="icon"
+										variant="ghost"
+									>
+										<Trash2 className="size-3" />
+									</Button>
+								)}
+							</div>
+							{readOnly ? (
+								<div className="mt-1 pl-9">
+									<Badge variant="outline">{sig.role}</Badge>
+								</div>
+							) : (
+								<div className="mt-1 pl-9">
+									<Select
+										onValueChange={(v) =>
+											handleRoleChange(
+												sig.platformRole,
+												v as SignatoryConfig["role"]
+											)
+										}
+										value={sig.role}
+									>
+										<SelectTrigger className="h-7 text-xs">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{SIGNATORY_ROLES.map((r) => (
+												<SelectItem key={r.value} value={r.value}>
+													{r.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
 							)}
 						</div>
-						{readOnly ? (
-							<div className="mt-1 pl-9">
-								<Badge variant="outline">{sig.role}</Badge>
-							</div>
-						) : (
-							<div className="mt-1 pl-9">
-								<Select
-									onValueChange={(v) =>
-										handleRoleChange(
-											sig.platformRole,
-											v as SignatoryConfig["role"]
-										)
-									}
-									value={sig.role}
-								>
-									<SelectTrigger className="h-7 text-xs">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{SIGNATORY_ROLES.map((r) => (
-											<SelectItem key={r.value} value={r.value}>
-												{r.label}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
-						)}
-					</div>
-				))}
+					);
+				})}
 			</div>
 
 			{!readOnly && (

@@ -75,6 +75,7 @@ import {
 	dealDocumentInstanceStatusValidator,
 	dealDocumentPackageStatusValidator,
 	dealDocumentSourceBlueprintSnapshotValidator,
+	dealDocumentStoredRemediationActionValidator,
 	dealEnvelopeAttemptStatusValidator,
 	dealEnvelopeProviderEventStatusValidator,
 	dealEnvelopeProviderEventTypeValidator,
@@ -200,11 +201,21 @@ import {
 	externalProviderScheduleLinkStatusValidator,
 } from "./payments/recurringSchedules/validators";
 import {
+	paymentScheduleReplacementDateOverrideValidator,
+	paymentScheduleReplacementFrequencyValidator,
+	paymentScheduleReplacementRailValidator,
+	paymentScheduleReplacementSliderBoundsValidator,
+	paymentScheduleReplacementStatusValidator,
+	paymentScheduleReplacementValidationIssueValidator,
+	scheduleReplacementPreviewRowValidator,
+} from "./payments/scheduleReplacement/validators";
+import {
 	counterpartyTypeValidator,
 	directionValidator,
 	manualSettlementValidator,
 	nonCheckoutProviderCodeValidator,
 	providerCodeValidator,
+	transferRequestProviderCodeValidator,
 	transferTypeValidator,
 } from "./payments/transfers/validators";
 import { normalizedEventTypeValidator } from "./payments/webhooks/types";
@@ -1208,6 +1219,9 @@ export default defineSchema({
 		assetId: v.optional(v.id("documentAssets")),
 		generatedDocumentId: v.optional(v.id("generatedDocuments")),
 		lastError: v.optional(v.string()),
+		remediationAction: v.optional(dealDocumentStoredRemediationActionValidator),
+		remediationReason: v.optional(v.string()),
+		supersededByInstanceId: v.optional(v.id("dealDocumentInstances")),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		archivedAt: v.optional(v.number()),
@@ -1451,7 +1465,7 @@ export default defineSchema({
 		trigger: velocitySyncTriggerValidator,
 		loanCode: v.optional(v.string()),
 		dealHref: v.optional(v.string()),
-		idempotencyKey: v.optional(v.string()),
+		idempotencyKey: v.string(),
 		connectorCredentialContext: v.optional(
 			velocityConnectorCredentialContextValidator
 		),
@@ -1855,6 +1869,15 @@ export default defineSchema({
 		feeCode: v.optional(feeCodeValidator),
 		mortgageFeeId: v.optional(v.id("mortgageFees")),
 		settledAt: v.optional(v.number()), // legacy system timestamp: Unix ms, not a YYYY-MM-DD business date
+		replacementDraftId: v.optional(v.id("paymentScheduleReplacementDrafts")),
+		replacementBatchId: v.optional(v.string()),
+		replacedByReplacementBatchId: v.optional(v.string()),
+		archivedByReplacementDraftId: v.optional(
+			v.id("paymentScheduleReplacementDrafts")
+		),
+		archivedByReplacementBatchId: v.optional(v.string()),
+		archivedAt: v.optional(v.number()),
+		archiveReason: v.optional(v.string()),
 
 		createdAt: v.number(), // system timestamp: Unix ms
 	})
@@ -1871,7 +1894,11 @@ export default defineSchema({
 		.index("by_borrower", ["borrowerId"])
 		.index("by_source_obligation", ["sourceObligationId"])
 		.index("by_org", ["orgId"])
-		.index("by_org_status", ["orgId", "status"]),
+		.index("by_org_status", ["orgId", "status"])
+		.index("by_replacement_draft", ["replacementDraftId"])
+		.index("by_replacement_batch", ["replacementBatchId"])
+		.index("by_archived_replacement_draft", ["archivedByReplacementDraftId"])
+		.index("by_archived_replacement_batch", ["archivedByReplacementBatchId"]),
 
 	obligationCronMonitoring: defineTable({
 		jobName: v.string(),
@@ -1999,6 +2026,15 @@ export default defineSchema({
 		),
 		executedAt: v.optional(v.number()),
 		cancelledAt: v.optional(v.number()),
+		replacementDraftId: v.optional(v.id("paymentScheduleReplacementDrafts")),
+		replacementBatchId: v.optional(v.string()),
+		replacedByReplacementBatchId: v.optional(v.string()),
+		archivedByReplacementDraftId: v.optional(
+			v.id("paymentScheduleReplacementDrafts")
+		),
+		archivedByReplacementBatchId: v.optional(v.string()),
+		archivedAt: v.optional(v.number()),
+		archiveReason: v.optional(v.string()),
 		executionIdempotencyKey: v.optional(v.string()),
 		collectionAttemptId: v.optional(v.id("collectionAttempts")),
 		balancePreCheckDecision: v.optional(balancePreCheckDecisionValidator),
@@ -2046,7 +2082,11 @@ export default defineSchema({
 		.index("by_external_schedule_date", [
 			"externalCollectionScheduleId",
 			"scheduledDate",
-		]),
+		])
+		.index("by_replacement_draft", ["replacementDraftId"])
+		.index("by_replacement_batch", ["replacementBatchId"])
+		.index("by_archived_replacement_draft", ["archivedByReplacementDraftId"])
+		.index("by_archived_replacement_batch", ["archivedByReplacementBatchId"]),
 
 	collectionRules: defineTable({
 		kind: collectionRuleKindValidator,
@@ -2176,6 +2216,53 @@ export default defineSchema({
 		.index("by_activation_key", ["activationIdempotencyKey"])
 		.index("by_status", ["status", "createdAt"])
 		.index("by_status_and_next_poll", ["status", "nextPollAt"]),
+
+	paymentScheduleReplacementDrafts: defineTable({
+		mortgageId: v.id("mortgages"),
+		status: paymentScheduleReplacementStatusValidator,
+		replacementRail: paymentScheduleReplacementRailValidator,
+		startDate: v.number(),
+		paymentFrequency: paymentScheduleReplacementFrequencyValidator,
+		interestPaymentAmount: v.number(),
+		outstandingInterestAmount: v.number(),
+		principalPayoffAmount: v.number(),
+		interestInstallmentCount: v.number(),
+		finalPayoffDate: v.number(),
+		deadlineDate: v.number(),
+		sliderBounds: paymentScheduleReplacementSliderBoundsValidator,
+		previewRows: v.array(scheduleReplacementPreviewRowValidator),
+		dateOverrides: v.array(paymentScheduleReplacementDateOverrideValidator),
+		validationIssues: v.array(
+			paymentScheduleReplacementValidationIssueValidator
+		),
+		bankAccountId: v.optional(v.id("bankAccounts")),
+		padAuthorizationAssetId: v.optional(v.id("documentAssets")),
+		replacementBatchId: v.optional(v.string()),
+		newExternalCollectionScheduleId: v.optional(
+			v.id("externalCollectionSchedules")
+		),
+		archivedExternalCollectionScheduleId: v.optional(
+			v.id("externalCollectionSchedules")
+		),
+		activationLeaseId: v.optional(v.string()),
+		activationLeaseExpiresAt: v.optional(v.number()),
+		providerCancelSucceededAt: v.optional(v.number()),
+		activatedAt: v.optional(v.number()),
+		cancelledAt: v.optional(v.number()),
+		lastError: v.optional(v.string()),
+		createdByActorId: v.string(),
+		updatedByActorId: v.string(),
+		activatedByActorId: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_mortgage_status_created", ["mortgageId", "status", "createdAt"])
+		.index("by_mortgage_updated", ["mortgageId", "updatedAt"])
+		.index("by_replacement_batch", ["replacementBatchId"])
+		.index("by_new_external_schedule", ["newExternalCollectionScheduleId"])
+		.index("by_archived_external_schedule", [
+			"archivedExternalCollectionScheduleId",
+		]),
 
 	externalCustomerProfiles: defineTable({
 		providerCode: nonCheckoutProviderCodeValidator,
@@ -2569,6 +2656,46 @@ export default defineSchema({
 		.index("by_leg2_transfer", ["leg2TransferId"])
 		.index("by_source_kind", ["sourceKind", "recordedAt"]),
 
+	dealPaymentProofs: defineTable({
+		dealId: v.id("deals"),
+		submittedBy: v.string(),
+		submittedByRole: v.union(
+			v.literal("lender"),
+			v.literal("platform_lawyer"),
+			v.literal("guest_lawyer"),
+			v.literal("admin")
+		),
+		status: v.union(
+			v.literal("pending_review"),
+			v.literal("approved"),
+			v.literal("rejected")
+		),
+		amount: v.number(),
+		currency: v.literal("CAD"),
+		transferDate: v.number(),
+		sendingParty: v.string(),
+		referenceNumber: v.optional(v.string()),
+		institutionName: v.optional(v.string()),
+		note: v.optional(v.string()),
+		attachmentIds: v.array(v.id("documentAssets")),
+		reviewedBy: v.optional(v.string()),
+		reviewedAt: v.optional(v.number()),
+		reviewReason: v.optional(v.string()),
+		fundsEvidenceId: v.optional(v.id("dealFundsEvidence")),
+		leg1TransferId: v.optional(v.id("transferRequests")),
+		leg2TransferId: v.optional(v.id("transferRequests")),
+		cashLedgerJournalEntryIds: v.optional(
+			v.array(v.id("cash_ledger_journal_entries"))
+		),
+		cashLedgerPostingGroupId: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_deal", ["dealId"])
+		.index("by_deal_status", ["dealId", "status"])
+		.index("by_status_created", ["status", "createdAt"])
+		.index("by_submitter", ["submittedBy", "createdAt"]),
+
 	dealSignedArchives: defineTable({
 		dealId: v.id("deals"),
 		packageId: v.optional(v.id("dealDocumentPackages")),
@@ -2814,6 +2941,14 @@ export default defineSchema({
 		normalizedTargetEmail: v.string(),
 		tokenHash: v.string(),
 		status: lawyerInvitationStatusValidator,
+		deliveryProvider: v.optional(v.literal("workos")),
+		deliveryStatus: v.optional(
+			v.union(v.literal("pending"), v.literal("sent"), v.literal("failed"))
+		),
+		workosInvitationId: v.optional(v.string()),
+		deliveredAt: v.optional(v.number()),
+		lastDeliveryAttemptAt: v.optional(v.number()),
+		deliveryError: v.optional(v.string()),
 		expiresAt: v.number(),
 		acceptedAt: v.optional(v.number()),
 		verifiedAt: v.optional(v.number()),
@@ -2825,6 +2960,7 @@ export default defineSchema({
 	})
 		.index("by_token_hash", ["tokenHash"])
 		.index("by_deal", ["dealId"])
+		.index("by_workos_invitation", ["workosInvitationId"])
 		.index("by_target_email_status", ["normalizedTargetEmail", "status"])
 		.index("by_status_expires_at", ["status", "expiresAt"]),
 
@@ -2845,6 +2981,20 @@ export default defineSchema({
 		.index("by_deal", ["dealId"])
 		.index("by_lawyer", ["lawyerAuthId"])
 		.index("by_deal_status", ["dealId", "status"]),
+
+	representationOverrideEvidence: defineTable({
+		dealId: v.id("deals"),
+		selectedLawyerSnapshot: selectedLawyerSnapshotValidator,
+		adminActorId: v.string(),
+		reason: v.string(),
+		evidenceNote: v.string(),
+		attachmentIds: v.optional(v.array(v.id("documentAssets"))),
+		engagementId: v.optional(v.id("representationEngagements")),
+		transitionJournalEntryId: v.optional(v.string()),
+		createdAt: v.number(),
+	})
+		.index("by_deal", ["dealId", "createdAt"])
+		.index("by_admin", ["adminActorId", "createdAt"]),
 
 	dealAccess: defineTable({
 		userId: v.string(),
@@ -3331,7 +3481,12 @@ export default defineSchema({
 		name: v.string(),
 		description: v.optional(v.string()),
 		originalFilename: v.string(),
-		mimeType: v.literal("application/pdf"),
+		mimeType: v.union(
+			v.literal("application/pdf"),
+			v.literal("image/jpeg"),
+			v.literal("image/png"),
+			v.literal("image/webp")
+		),
 		fileRef: v.id("_storage"),
 		fileHash: v.string(),
 		fileSize: v.number(),
@@ -3341,7 +3496,8 @@ export default defineSchema({
 		source: v.union(
 			v.literal("admin_upload"),
 			v.literal("external_import"),
-			v.literal("signature_archive")
+			v.literal("signature_archive"),
+			v.literal("payment_proof_upload")
 		),
 	})
 		.index("by_hash", ["fileHash"])
@@ -3542,7 +3698,7 @@ export default defineSchema({
 		counterpartyType: counterpartyTypeValidator,
 		/** Domain counterparty identifier, never a WorkOS auth ID. */
 		counterpartyId: v.string(),
-		providerCode: providerCodeValidator,
+		providerCode: transferRequestProviderCodeValidator,
 		idempotencyKey: v.string(),
 		source: sourceValidator,
 		createdAt: v.number(),

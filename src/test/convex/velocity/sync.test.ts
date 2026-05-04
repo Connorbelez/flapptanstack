@@ -208,7 +208,7 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("persists raw webhook events with provenance and deduplicates idempotently", async () => {
+	it("persists raw webhook events with provenance and reprocesses pending duplicates", async () => {
 		const t = createTestConvex();
 		const payload = makeWebhookPayload();
 		const first = await persistWebhookEvent(t, payload);
@@ -234,24 +234,67 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 			duplicateEvents: 0,
 		});
 		expect(second).toMatchObject({
-			acceptedEvents: [{ isDuplicate: true }],
+			acceptedEvents: [{ isDuplicate: false }],
 			duplicateEvents: 1,
 		});
 		expect(state.webhookEvents).toHaveLength(1);
-			expect(state.webhookEvents[0]).toMatchObject({
-				connectorCredentialContext: {
-					credentialId: "velocity-webhook-credential",
-					email: WEBHOOK_AGENT.email,
-					provider: "velocity",
-					scope: "webhook_ingress",
+		expect(state.webhookEvents[0]).toMatchObject({
+			connectorCredentialContext: {
+				credentialId: "velocity-webhook-credential",
+				email: WEBHOOK_AGENT.email,
+				provider: "velocity",
+				scope: "webhook_ingress",
 				usedFor: "webhook_ingress",
 			},
 			loanCode: "LC-1001",
 			rawBody: first.rawBody,
 			status: "pending",
 			webhookAgent: WEBHOOK_AGENT,
+		});
+	});
+
+	it("skips processed webhook duplicates but reprocesses failed duplicates", async () => {
+		const t = createTestConvex();
+		const payload = makeWebhookPayload();
+		const first = await persistWebhookEvent(t, payload);
+		await t.run(async (ctx) => {
+			await ctx.db.patch(first.webhookEventId, {
+				status: "processed",
 			});
 		});
+
+		const processedDuplicate = await t.mutation(
+			internal.velocity.webhook.persistVelocityWebhookEvents,
+			{
+				connectorCredentialContext: WEBHOOK_CREDENTIAL,
+				payload,
+				rawBody: first.rawBody,
+			}
+		);
+		await t.run(async (ctx) => {
+			await ctx.db.patch(first.webhookEventId, {
+				error: "previous failure",
+				status: "failed",
+			});
+		});
+		const failedDuplicate = await t.mutation(
+			internal.velocity.webhook.persistVelocityWebhookEvents,
+			{
+				connectorCredentialContext: WEBHOOK_CREDENTIAL,
+				payload,
+				rawBody: first.rawBody,
+			}
+		);
+
+		expect(processedDuplicate).toMatchObject({
+			acceptedEvents: [{ isDuplicate: true }],
+			duplicateEvents: 1,
+		});
+		expect(failedDuplicate).toMatchObject({
+			acceptedEvents: [{ isDuplicate: false }],
+			duplicateEvents: 1,
+		});
+	});
 
 	it("marks webhook events without loanCode failed instead of leaving them pending", async () => {
 		const t = createTestConvex();
@@ -518,6 +561,9 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 
 		expect(result.result).toBe("exception");
 		expect(result.workspaceId).toBeUndefined();
+		expect(state.syncAttempts[0]?.idempotencyKey).toContain(
+			"missing_identity"
+		);
 		expect(state.workspaces).toHaveLength(0);
 		expect(state.exceptions).toHaveLength(1);
 		expect(state.exceptions[0]).toMatchObject({
@@ -671,6 +717,10 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 		const t = createTestConvex();
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
 		const initial = await applyFullDealSync(t, makeDeal());
+		if (!initial.workspaceId) {
+			throw new Error("Expected workspaceId from initial Velocity sync");
+		}
+		const workspaceId = initial.workspaceId;
 		const changedDeal = makeDeal({
 			lenderReferenceNumber: "LENDER-REF-2002",
 			mortgageRequest: {
@@ -687,13 +737,13 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 		const result = await t
 			.withIdentity(FAIRLEND_ADMIN)
 			.action(api.velocity.sync.syncVelocityPackageNow, {
-				workspaceId: initial.workspaceId as Id<"velocityPackageWorkspaces">,
+				workspaceId,
 			});
 		const state = await readVelocityTables(t);
 
 		expect(result).toMatchObject({
 			result: "succeeded",
-			workspaceId: initial.workspaceId,
+			workspaceId,
 		});
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
@@ -721,6 +771,10 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 		const t = createTestConvex();
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
 		const initial = await applyFullDealSync(t, makeDeal());
+		if (!initial.workspaceId) {
+			throw new Error("Expected workspaceId from initial Velocity sync");
+		}
+		const workspaceId = initial.workspaceId;
 		const mismatchedDeal = makeDeal({
 			linkApplicationId: "LINK-OTHER",
 			loanCode: "LC-OTHER",
@@ -735,13 +789,13 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 		const result = await t
 			.withIdentity(FAIRLEND_ADMIN)
 			.action(api.velocity.sync.syncVelocityPackageNow, {
-				workspaceId: initial.workspaceId as Id<"velocityPackageWorkspaces">,
+				workspaceId,
 			});
 		const state = await readVelocityTables(t);
 
 		expect(result).toMatchObject({
 			result: "exception",
-			workspaceId: initial.workspaceId,
+			workspaceId,
 		});
 		expect(state.workspaces).toHaveLength(1);
 		expect(state.workspaces[0]?.linkApplicationId).toBe("LINK-1001");
@@ -751,7 +805,7 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 					kind: "identity_exception",
 					message:
 						"Velocity manual sync returned a different linkApplicationId than the selected workspace.",
-					workspaceId: initial.workspaceId,
+					workspaceId,
 				}),
 			])
 		);
@@ -761,6 +815,10 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 		const t = createTestConvex();
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
 		const initial = await applyFullDealSync(t, makeDeal());
+		if (!initial.workspaceId) {
+			throw new Error("Expected workspaceId from initial Velocity sync");
+		}
+		const workspaceId = initial.workspaceId;
 		const fetchMock = vi.fn<typeof fetch>(async () => {
 			return new Response("manual provider unavailable", { status: 503 });
 		});
@@ -769,7 +827,7 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 		const result = await t
 			.withIdentity(FAIRLEND_ADMIN)
 			.action(api.velocity.sync.syncVelocityPackageNow, {
-				workspaceId: initial.workspaceId as Id<"velocityPackageWorkspaces">,
+				workspaceId,
 			});
 		const state = await readVelocityTables(t);
 		const manualAttempt = state.syncAttempts.find(
@@ -781,9 +839,10 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 
 		expect(result).toMatchObject({
 			result: "failed",
-			workspaceId: initial.workspaceId,
+			workspaceId,
 		});
 		expect(manualAttempt).toMatchObject({
+			idempotencyKey: expect.stringContaining("fetch_failed"),
 			rawResponseBody: "manual provider unavailable",
 			responseStatus: 503,
 			result: "failed",
@@ -818,6 +877,7 @@ describe("Velocity webhook ingestion and full deal sync", () => {
 
 		expect(result.result).toBe("failed");
 		expect(state.syncAttempts[0]).toMatchObject({
+			idempotencyKey: expect.stringContaining("fetch_failed"),
 			rawResponseBody: "upstream unavailable",
 			responseStatus: 503,
 			result: "failed",

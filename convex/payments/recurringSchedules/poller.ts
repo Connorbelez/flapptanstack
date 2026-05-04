@@ -1,8 +1,9 @@
 import { type FunctionReference, makeFunctionReference } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "../../_generated/api";
+import type { Id } from "../../_generated/dataModel";
 import type { ActionCtx } from "../../_generated/server";
-import { convex } from "../../fluent";
+import { adminAction, convex } from "../../fluent";
 import { drainCursorPages } from "../../lib/drainLoops";
 import { getRecurringCollectionScheduleProvider } from "./providers/registry";
 
@@ -18,7 +19,7 @@ const listSchedulesEligibleForPollingPageRef = makeFunctionReference<
 		continueCursor: string | null;
 		isDone: boolean;
 		page: Array<{
-			_id: string;
+			_id: Id<"externalCollectionSchedules">;
 			endDate: number;
 			externalScheduleRef?: string;
 			lastSyncCursor?: string;
@@ -33,7 +34,7 @@ const listSchedulesEligibleForPollingPageRef = makeFunctionReference<
 >("payments/recurringSchedules/queries:listSchedulesEligibleForPollingPage");
 
 interface PollingCandidate {
-	_id: string;
+	_id: Id<"externalCollectionSchedules">;
 	endDate: number;
 	externalScheduleRef?: string;
 	lastSyncCursor?: string;
@@ -103,10 +104,17 @@ const countSchedulesEligibleForPollingRef = makeFunctionReference<
 	Promise<number>
 >("payments/recurringSchedules/poller:countSchedulesEligibleForPolling");
 
+const getExternalCollectionScheduleDetailRef = makeFunctionReference<
+	"query",
+	{ scheduleId: Id<"externalCollectionSchedules"> },
+	Promise<{ schedule: PollingCandidate } | null>
+>("payments/recurringSchedules/queries:getExternalCollectionScheduleDetail");
+
 const POLL_INTERVAL_MS = 15 * 60 * 1000;
 const POLL_LEASE_MS = 10 * 60 * 1000;
 const LOOKAHEAD_DAYS = 14;
 const LOOKBACK_DAYS = 35;
+const MS_PER_DAY = 86_400_000;
 
 function normalizePollingLimit(limit?: number) {
 	return Math.max(
@@ -117,6 +125,70 @@ function normalizePollingLimit(limit?: number) {
 
 function toBusinessDate(timestamp: number) {
 	return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function parseSyncCursorForOrdering(cursor: string | undefined) {
+	if (!cursor) {
+		return null;
+	}
+	try {
+		const parsed = JSON.parse(cursor) as {
+			occurredAt?: unknown;
+			sortKey?: unknown;
+		};
+		if (
+			typeof parsed.occurredAt === "number" &&
+			Number.isFinite(parsed.occurredAt) &&
+			typeof parsed.sortKey === "string"
+		) {
+			return {
+				occurredAt: parsed.occurredAt,
+				sortKey: parsed.sortKey,
+			};
+		}
+	} catch {
+		const occurredAt = Date.parse(cursor);
+		if (!Number.isNaN(occurredAt)) {
+			return { occurredAt, sortKey: "" };
+		}
+	}
+
+	return null;
+}
+
+function compareSyncCursors(left: string, right: string) {
+	const parsedLeft = parseSyncCursorForOrdering(left);
+	const parsedRight = parseSyncCursorForOrdering(right);
+	if (!(parsedLeft || parsedRight)) {
+		return left.localeCompare(right);
+	}
+	if (!parsedLeft) {
+		return -1;
+	}
+	if (!parsedRight) {
+		return 1;
+	}
+	const occurredAtDelta = parsedLeft.occurredAt - parsedRight.occurredAt;
+	if (occurredAtDelta !== 0) {
+		return occurredAtDelta;
+	}
+	return parsedLeft.sortKey.localeCompare(parsedRight.sortKey);
+}
+
+function chooseNextSyncCursor(args: {
+	currentCursor?: string;
+	forceReplay?: boolean;
+	nextCursor?: string;
+}) {
+	if (!args.nextCursor) {
+		return args.currentCursor;
+	}
+	if (!(args.currentCursor && args.forceReplay)) {
+		return args.nextCursor;
+	}
+	return compareSyncCursors(args.nextCursor, args.currentCursor) > 0
+		? args.nextCursor
+		: args.currentCursor;
 }
 
 function isLeaseActive(
@@ -231,6 +303,119 @@ async function countEligibleSchedulesForStatus(
 	return result.state;
 }
 
+async function syncClaimedExternalCollectionSchedule(
+	ctx: ActionCtx,
+	args: {
+		asOf: number;
+		forceReplay?: boolean;
+		leaseOwner: string;
+		schedule: PollingCandidate;
+	}
+) {
+	try {
+		if (!args.schedule.externalScheduleRef) {
+			throw new ConvexError(
+				`External collection schedule ${args.schedule._id} is missing externalScheduleRef`
+			);
+		}
+
+		const provider = getRecurringCollectionScheduleProvider(
+			args.schedule.providerCode
+		);
+		const pollWindowStart = Math.max(
+			args.schedule.startDate,
+			(args.schedule.lastSyncedAt ?? args.asOf) - LOOKBACK_DAYS * MS_PER_DAY
+		);
+		const pollWindowEnd = Math.min(
+			args.schedule.endDate,
+			args.asOf + LOOKAHEAD_DAYS * MS_PER_DAY
+		);
+
+		const [scheduleStatus, occurrenceUpdates] = await Promise.all([
+			provider.getScheduleStatus(args.schedule.externalScheduleRef),
+			provider.pollOccurrenceUpdates({
+				endDate: toBusinessDate(pollWindowEnd),
+				externalScheduleRef: args.schedule.externalScheduleRef,
+				sinceCursor: args.forceReplay
+					? undefined
+					: args.schedule.lastSyncCursor,
+				startDate: toBusinessDate(pollWindowStart),
+			}),
+		]);
+		const normalizedScheduleStatus =
+			scheduleStatus.status === "completed" ? "completed" : "active";
+		const unresolvedOccurrenceReasons: string[] = [];
+		let ingestedEventCount = 0;
+
+		for (const event of occurrenceUpdates.events) {
+			const ingestionResult = await ctx.runMutation(
+				ingestExternalOccurrenceEventRef,
+				{
+					event: {
+						...event,
+						receivedVia: "poller",
+					},
+				}
+			);
+			if (ingestionResult.outcome === "unresolved") {
+				unresolvedOccurrenceReasons.push(
+					ingestionResult.reason ??
+						`No local match found for provider occurrence on schedule ${args.schedule._id}.`
+				);
+				continue;
+			}
+			ingestedEventCount += 1;
+		}
+		const hasUnresolvedOccurrences = unresolvedOccurrenceReasons.length > 0;
+
+		await ctx.runMutation(
+			makeFunctionReference(
+				"payments/recurringSchedules/poller:recordExternalCollectionScheduleSyncSuccess"
+			) as unknown as FunctionReference<"mutation">,
+			{
+				asOf: args.asOf,
+				lastProviderScheduleStatus: scheduleStatus.status,
+				nextCursor: hasUnresolvedOccurrences
+					? args.schedule.lastSyncCursor
+					: chooseNextSyncCursor({
+							currentCursor: args.schedule.lastSyncCursor,
+							forceReplay: args.forceReplay,
+							nextCursor: occurrenceUpdates.nextCursor,
+						}),
+				nextPollAt: args.asOf + POLL_INTERVAL_MS,
+				providerData: {
+					...(scheduleStatus.providerData ?? {}),
+					...(occurrenceUpdates.providerData ?? {}),
+				},
+				scheduleStatus: normalizedScheduleStatus,
+				scheduleId: args.schedule._id,
+				leaseOwner: args.leaseOwner,
+				syncWarningMessage: hasUnresolvedOccurrences
+					? unresolvedOccurrenceReasons.join("; ")
+					: undefined,
+			}
+		);
+
+		return { failed: false as const, ingestedEventCount };
+	} catch (error) {
+		const errorMessage =
+			error instanceof Error ? error.message : "Unknown polling error";
+		await ctx.runMutation(
+			makeFunctionReference(
+				"payments/recurringSchedules/poller:recordExternalCollectionScheduleSyncFailure"
+			) as unknown as FunctionReference<"mutation">,
+			{
+				asOf: args.asOf,
+				errorMessage,
+				nextPollAt: args.asOf + POLL_INTERVAL_MS,
+				scheduleId: args.schedule._id,
+				leaseOwner: args.leaseOwner,
+			}
+		);
+		return { errorMessage, failed: true as const, ingestedEventCount: 0 };
+	}
+}
+
 export const previewSchedulesEligibleForPolling = convex
 	.action()
 	.input({
@@ -264,6 +449,61 @@ export const countSchedulesEligibleForPolling = convex
 		return activeCount + syncErrorCount;
 	})
 	.internal();
+
+export const syncExternalCollectionScheduleNow = adminAction
+	.input({
+		scheduleId: v.id("externalCollectionSchedules"),
+	})
+	.handler(async (ctx, args) => {
+		const asOf = Date.now();
+		const leaseOwner = `provider-managed-manual-sync:${crypto.randomUUID()}`;
+		const detail = await ctx.runQuery(getExternalCollectionScheduleDetailRef, {
+			scheduleId: args.scheduleId,
+		});
+		if (!detail) {
+			throw new ConvexError("External collection schedule not found.");
+		}
+
+		const claimed = (await ctx.runMutation(
+			makeFunctionReference(
+				"payments/recurringSchedules/poller:claimExternalCollectionScheduleSync"
+			) as unknown as FunctionReference<"mutation">,
+			{
+				asOf,
+				leaseOwner,
+				leaseTtlMs: POLL_LEASE_MS,
+				scheduleId: args.scheduleId,
+			}
+		)) as { claimed: boolean; reason?: string };
+
+		if (!claimed.claimed) {
+			return {
+				errorMessage: claimed.reason ?? "Schedule could not be claimed.",
+				ingestedEventCount: 0,
+				status: "skipped" as const,
+			};
+		}
+
+		const result = await syncClaimedExternalCollectionSchedule(ctx, {
+			asOf,
+			forceReplay: true,
+			leaseOwner,
+			schedule: detail.schedule,
+		});
+		if (result.failed) {
+			return {
+				errorMessage: result.errorMessage,
+				ingestedEventCount: 0,
+				status: "failed" as const,
+			};
+		}
+
+		return {
+			ingestedEventCount: result.ingestedEventCount,
+			status: "synced" as const,
+		};
+	})
+	.public();
 
 export const claimExternalCollectionScheduleSync = convex
 	.mutation()
@@ -325,6 +565,7 @@ export const recordExternalCollectionScheduleSyncSuccess = convex
 		scheduleStatus: v.union(v.literal("active"), v.literal("completed")),
 		scheduleId: v.id("externalCollectionSchedules"),
 		leaseOwner: v.string(),
+		syncWarningMessage: v.optional(v.string()),
 	})
 	.handler(async (ctx, args) => {
 		const schedule = await ctx.db.get(args.scheduleId);
@@ -346,8 +587,9 @@ export const recordExternalCollectionScheduleSyncSuccess = convex
 				...(args.providerData ?? {}),
 			},
 			consecutiveSyncFailures: 0,
-			lastSyncErrorAt: undefined,
-			lastSyncErrorMessage: undefined,
+			lastSyncErrorAt:
+				args.syncWarningMessage === undefined ? undefined : args.asOf,
+			lastSyncErrorMessage: args.syncWarningMessage,
 			lastTransitionAt:
 				schedule.status === nextScheduleStatus
 					? schedule.lastTransitionAt
@@ -438,91 +680,16 @@ export const pollProviderManagedSchedules = convex
 				}
 				claimedCount += 1;
 
-				try {
-					if (!candidate.externalScheduleRef) {
-						throw new ConvexError(
-							`External collection schedule ${candidate._id} is missing externalScheduleRef`
-						);
-					}
-
-					const provider = getRecurringCollectionScheduleProvider(
-						candidate.providerCode
-					);
-					const pollWindowStart = Math.max(
-						candidate.startDate,
-						(candidate.lastSyncedAt ?? asOf) - LOOKBACK_DAYS * 86_400_000
-					);
-					const pollWindowEnd = Math.min(
-						candidate.endDate,
-						asOf + LOOKAHEAD_DAYS * 86_400_000
-					);
-
-					const [scheduleStatus, occurrenceUpdates] = await Promise.all([
-						provider.getScheduleStatus(candidate.externalScheduleRef),
-						provider.pollOccurrenceUpdates({
-							endDate: toBusinessDate(pollWindowEnd),
-							externalScheduleRef: candidate.externalScheduleRef,
-							sinceCursor: candidate.lastSyncCursor,
-							startDate: toBusinessDate(pollWindowStart),
-						}),
-					]);
-					const normalizedScheduleStatus =
-						scheduleStatus.status === "completed" ? "completed" : "active";
-
-					for (const event of occurrenceUpdates.events) {
-						const ingestionResult = await ctx.runMutation(
-							ingestExternalOccurrenceEventRef,
-							{
-								event: {
-									...event,
-									receivedVia: "poller",
-								},
-							}
-						);
-						if (ingestionResult.outcome === "unresolved") {
-							throw new ConvexError(
-								ingestionResult.reason ??
-									`No local match found for provider occurrence on schedule ${candidate._id}.`
-							);
-						}
-						ingestedEventCount += 1;
-					}
-
-					await ctx.runMutation(
-						makeFunctionReference(
-							"payments/recurringSchedules/poller:recordExternalCollectionScheduleSyncSuccess"
-						) as unknown as FunctionReference<"mutation">,
-						{
-							asOf,
-							lastProviderScheduleStatus: scheduleStatus.status,
-							nextCursor: occurrenceUpdates.nextCursor,
-							nextPollAt: asOf + POLL_INTERVAL_MS,
-							providerData: {
-								...(scheduleStatus.providerData ?? {}),
-								...(occurrenceUpdates.providerData ?? {}),
-							},
-							scheduleStatus: normalizedScheduleStatus,
-							scheduleId: candidate._id,
-							leaseOwner,
-						}
-					);
-					syncedCount += 1;
-				} catch (error) {
-					const errorMessage =
-						error instanceof Error ? error.message : "Unknown polling error";
-					await ctx.runMutation(
-						makeFunctionReference(
-							"payments/recurringSchedules/poller:recordExternalCollectionScheduleSyncFailure"
-						) as unknown as FunctionReference<"mutation">,
-						{
-							asOf,
-							errorMessage,
-							nextPollAt: asOf + POLL_INTERVAL_MS,
-							scheduleId: candidate._id,
-							leaseOwner,
-						}
-					);
+				const syncResult = await syncClaimedExternalCollectionSchedule(ctx, {
+					asOf,
+					leaseOwner,
+					schedule: candidate,
+				});
+				if (syncResult.failed) {
 					failedCount += 1;
+				} else {
+					ingestedEventCount += syncResult.ingestedEventCount;
+					syncedCount += 1;
 				}
 			}
 

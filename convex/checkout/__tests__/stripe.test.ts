@@ -3,11 +3,13 @@ import {
 	buildStripeCheckoutSessionParams,
 	type CreateHostedCheckoutSessionRequest,
 	createStripeCheckoutProvider,
+	readCheckoutRedirectUrlsFromEnv,
 } from "../stripe";
 
 const request: CreateHostedCheckoutSessionRequest = {
 	successUrl: "https://portal.example.com/checkout/success",
 	cancelUrl: "https://portal.example.com/checkout/cancel",
+	expiresAt: Date.parse("2026-05-04T16:05:00.000Z"),
 	idempotencyKey: "marketplace-checkout:checkout_123",
 	metadata: {
 		checkoutSessionId: "checkout_123",
@@ -34,6 +36,46 @@ function response(
 }
 
 describe("Stripe Checkout provider", () => {
+	it("defaults hosted Checkout redirects to the in-app confirmation flow", () => {
+		const originalAppUrl = process.env.FAIRLEND_APP_URL;
+		const originalSuccessUrl = process.env.STRIPE_CHECKOUT_SUCCESS_URL;
+		const originalCancelUrl = process.env.STRIPE_CHECKOUT_CANCEL_URL;
+		process.env.FAIRLEND_APP_URL = "http://app.localhost:3000/";
+		process.env.STRIPE_CHECKOUT_SUCCESS_URL = "";
+		process.env.STRIPE_CHECKOUT_CANCEL_URL = "";
+		try {
+			expect(
+				readCheckoutRedirectUrlsFromEnv({ listingId: "listing_123" })
+			).toEqual({
+				successUrl:
+					"http://app.localhost:3000/checkout/complete?stripeCheckoutSessionId={CHECKOUT_SESSION_ID}",
+				cancelUrl:
+					"http://app.localhost:3000/listings/listing_123?checkout=abandoned",
+			});
+		} finally {
+			process.env.FAIRLEND_APP_URL = originalAppUrl;
+			process.env.STRIPE_CHECKOUT_SUCCESS_URL = originalSuccessUrl;
+			process.env.STRIPE_CHECKOUT_CANCEL_URL = originalCancelUrl;
+		}
+	});
+
+	it("keeps explicit hosted Checkout redirects when configured", () => {
+		const originalSuccessUrl = process.env.STRIPE_CHECKOUT_SUCCESS_URL;
+		const originalCancelUrl = process.env.STRIPE_CHECKOUT_CANCEL_URL;
+		process.env.STRIPE_CHECKOUT_SUCCESS_URL = "https://portal.example.com/paid";
+		process.env.STRIPE_CHECKOUT_CANCEL_URL =
+			"https://portal.example.com/canceled";
+		try {
+			expect(readCheckoutRedirectUrlsFromEnv()).toEqual({
+				successUrl: "https://portal.example.com/paid",
+				cancelUrl: "https://portal.example.com/canceled",
+			});
+		} finally {
+			process.env.STRIPE_CHECKOUT_SUCCESS_URL = originalSuccessUrl;
+			process.env.STRIPE_CHECKOUT_CANCEL_URL = originalCancelUrl;
+		}
+	});
+
 	it("builds hosted Checkout params with lock fee and mirrored metadata", () => {
 		const params = buildStripeCheckoutSessionParams(request);
 
@@ -41,6 +83,8 @@ describe("Stripe Checkout provider", () => {
 		expect(params.get("success_url")).toBe(request.successUrl);
 		expect(params.get("cancel_url")).toBe(request.cancelUrl);
 		expect(params.get("automatic_payment_methods[enabled]")).toBe("true");
+		expect(params.has("automatic_payment_methods")).toBe(false);
+		expect(params.has("payment_method_types[0]")).toBe(false);
 		expect(params.get("line_items[0][quantity]")).toBe("1");
 		expect(params.get("line_items[0][price_data][currency]")).toBe("cad");
 		expect(params.get("line_items[0][price_data][unit_amount]")).toBe("25000");
@@ -51,6 +95,17 @@ describe("Stripe Checkout provider", () => {
 		);
 		expect(params.get("metadata[idempotencyKey]")).toBe(
 			"marketplace-checkout:checkout_123"
+		);
+	});
+
+	it("adds Stripe Checkout provider expiry from the prepared checkout expiry", () => {
+		const params = buildStripeCheckoutSessionParams({
+			...request,
+			expiresAt: Date.parse("2026-05-04T16:05:30.000Z"),
+		} as CreateHostedCheckoutSessionRequest & { readonly expiresAt: number });
+
+		expect(params.get("expires_at")).toBe(
+			String(Date.parse("2026-05-04T16:05:30.000Z") / 1000)
 		);
 	});
 
@@ -84,6 +139,30 @@ describe("Stripe Checkout provider", () => {
 		});
 	});
 
+	it("passes timeout signals to Stripe fetch calls", async () => {
+		const signals: Array<AbortSignal | null> = [];
+		const provider = createStripeCheckoutProvider({
+			secretKey: "sk_test_123",
+			apiBaseUrl: "https://stripe.test",
+			requestTimeoutMs: 1000,
+			fetch: async (_url, init) => {
+				signals.push(init?.signal ?? null);
+				return response({
+					id: "cs_test_123",
+					url: "https://checkout.stripe.test/session",
+				});
+			},
+		} as Parameters<typeof createStripeCheckoutProvider>[0] & {
+			readonly requestTimeoutMs: number;
+		});
+
+		await provider.createHostedCheckoutSession(request);
+
+		expect(signals).toHaveLength(1);
+		expect(signals[0]).toBeInstanceOf(AbortSignal);
+		expect(signals[0]?.aborted).toBe(false);
+	});
+
 	it("rejects malformed hosted Checkout responses", async () => {
 		const provider = createStripeCheckoutProvider({
 			secretKey: "sk_test_123",
@@ -102,8 +181,45 @@ describe("Stripe Checkout provider", () => {
 		});
 
 		await expect(provider.createHostedCheckoutSession(request)).rejects.toThrow(
-			"Stripe Checkout request failed with 504"
+			"Stripe API request failed with 504"
 		);
+	});
+
+	it("retrieves paid hosted Checkout sessions for return-page reconciliation", async () => {
+		const urls: string[] = [];
+		const provider = createStripeCheckoutProvider({
+			secretKey: "sk_test_123",
+			apiBaseUrl: "https://stripe.test",
+			fetch: async (url) => {
+				urls.push(String(url));
+				return response({
+					id: "cs_test_123",
+					amount_total: 25_000,
+					currency: "cad",
+					metadata: request.metadata,
+					payment_intent: "pi_test_123",
+					payment_status: "paid",
+					status: "complete",
+				});
+			},
+		});
+
+		await expect(
+			provider.retrieveHostedCheckoutSession({
+				stripeCheckoutSessionId: "cs_test_123",
+			})
+		).resolves.toEqual({
+			amountTotal: 25_000,
+			currency: "cad",
+			metadata: request.metadata,
+			paymentIntentId: "pi_test_123",
+			paymentStatus: "paid",
+			status: "complete",
+			stripeCheckoutSessionId: "cs_test_123",
+		});
+		expect(urls).toEqual([
+			"https://stripe.test/v1/checkout/sessions/cs_test_123",
+		]);
 	});
 
 	it("expires hosted Checkout sessions when provider attach fails", async () => {

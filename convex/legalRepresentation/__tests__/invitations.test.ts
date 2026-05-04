@@ -1,9 +1,13 @@
 import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { FAIRLEND_ADMIN } from "../../../src/test/auth/identities";
 import { registerAuditLogComponent } from "../../../src/test/convex/registerAuditLogComponent";
 import type { Id } from "../../_generated/dataModel";
+import {
+	setWorkosProvisioningForTests,
+	type WorkosProvisioning,
+} from "../../engine/effects/workosProvisioning";
 import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
 import {
@@ -15,11 +19,54 @@ import { normalizeLawyerEmail } from "../normalization";
 const NOW = 1_770_000_000_000;
 const SHA_256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
 const invitationsApi = anyApi.legalRepresentation.invitations;
+const workosInvitationsApi = anyApi.legalRepresentation.workosInvitations;
+
+afterEach(() => {
+	setWorkosProvisioningForTests(null);
+});
 
 function createHarness() {
 	const t = convexTest(schema, convexModules);
 	registerAuditLogComponent(t, "auditLog");
 	return t;
+}
+
+function installWorkosInvitationLookup(args?: {
+	readonly email?: string;
+	readonly invitationId?: string;
+}) {
+	const provisioning = {
+		createOrganization: async () => ({ id: "org_unused" }),
+		createOrganizationMembership: async () => ({ id: "om_unused" }),
+		createUser: async (input: { email: string }) => ({
+			email: input.email,
+			id: "user_unused",
+		}),
+		findInvitationByToken: async (token: string) => ({
+			email: args?.email ?? "riley.guest@example.test",
+			id: args?.invitationId ?? "workos_invitation_1",
+			state: "pending",
+			token,
+		}),
+		listUsers: async () => [],
+		resendInvitation: async (invitationId: string) => ({
+			email: args?.email ?? "riley.guest@example.test",
+			id: invitationId,
+			state: "pending",
+		}),
+		revokeInvitation: async (invitationId: string) => ({
+			email: args?.email ?? "riley.guest@example.test",
+			id: invitationId,
+			state: "revoked",
+		}),
+		sendInvitation: async (input: { email: string }) => ({
+			email: input.email,
+			id: args?.invitationId ?? "workos_invitation_1",
+			state: "pending",
+			token: "workos_token_1",
+		}),
+	} as unknown as WorkosProvisioning;
+	setWorkosProvisioningForTests(provisioning);
 }
 
 function lawyerIdentity(args?: {
@@ -187,7 +234,7 @@ describe("guest lawyer invitations", () => {
 				now: NOW,
 				token: result.token,
 			})
-		).resolves.toMatchObject({ status: "pending" });
+		).resolves.toMatchObject({ dealId, status: "pending" });
 	});
 
 	it("accepts a valid token, records evidence, and migrates provisional email access to auth ID", async () => {
@@ -216,6 +263,7 @@ describe("guest lawyer invitations", () => {
 			});
 
 		expect(accepted.status).toBe("verified");
+		expect(accepted).toMatchObject({ dealId });
 		const rows = await t.run(async (ctx) => {
 			const deal = await ctx.db.get(dealId);
 			const provisional = await ctx.db.get(provisionalAccessId);
@@ -266,10 +314,98 @@ describe("guest lawyer invitations", () => {
 				now: NOW + 2,
 				token: created.token,
 			});
-		expect(reused).toMatchObject({ status: "used" });
+		expect(reused).toMatchObject({ dealId, status: "used" });
 		await expect(
 			t.run(async (ctx) => ctx.db.query("lawyerProfiles").collect())
 		).resolves.toHaveLength(1);
+	});
+
+	it("accepts a matching WorkOS invitation token and migrates provisional email access", async () => {
+		const t = createHarness();
+		installWorkosInvitationLookup();
+		await insertSyncedLawyerIdentity(t);
+		const lsoLawyerId = await t.run(async (ctx) =>
+			ctx.db.insert(
+				"lsoLawyers",
+				buildEligiblePlatformLsoLawyerFixture({ now: NOW })
+			)
+		);
+		const { dealId, provisionalAccessId } = await insertGuestDeal(t, {
+			lsoLawyerId,
+		});
+		const created = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(invitationsApi.createGuestInvitationForDeal, {
+				dealId,
+				now: NOW,
+			});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(created.invitationId, {
+				deliveryProvider: "workos",
+				deliveryStatus: "sent",
+				workosInvitationId: "workos_invitation_1",
+			});
+		});
+
+		const accepted = await t
+			.withIdentity(lawyerIdentity())
+			.action(workosInvitationsApi.completeWorkosGuestInvitation, {
+				invitationToken: "workos_token_1",
+				now: NOW + 1,
+			});
+
+		expect(accepted).toMatchObject({ dealId, status: "verified" });
+		const rows = await t.run(async (ctx) => ({
+			authAccess: await ctx.db
+				.query("dealAccess")
+				.withIndex("by_user_and_deal", (query) =>
+					query.eq("userId", "user_guest_lawyer").eq("dealId", dealId)
+				)
+				.collect(),
+			invitation: await ctx.db.get(created.invitationId),
+			provisional: await ctx.db.get(provisionalAccessId),
+		}));
+		expect(rows.provisional).toMatchObject({ status: "revoked" });
+		expect(rows.authAccess).toEqual([
+			expect.objectContaining({
+				role: "guest_lawyer",
+				status: "active",
+				userId: "user_guest_lawyer",
+			}),
+		]);
+		expect(rows.invitation).toMatchObject({
+			resolvedAuthId: "user_guest_lawyer",
+			status: "verified",
+		});
+	});
+
+	it("rejects WorkOS invitation completion when the WorkOS email does not match the FairLend invitation", async () => {
+		const t = createHarness();
+		installWorkosInvitationLookup({ email: "wrong@example.test" });
+		await insertSyncedLawyerIdentity(t);
+		const { dealId } = await insertGuestDeal(t);
+		const created = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(invitationsApi.createGuestInvitationForDeal, {
+				dealId,
+				now: NOW,
+			});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(created.invitationId, {
+				deliveryProvider: "workos",
+				deliveryStatus: "sent",
+				workosInvitationId: "workos_invitation_1",
+			});
+		});
+
+		await expect(
+			t
+				.withIdentity(lawyerIdentity())
+				.action(workosInvitationsApi.completeWorkosGuestInvitation, {
+					invitationToken: "workos_token_1",
+					now: NOW + 1,
+				})
+		).rejects.toThrow("WorkOS invitation email does not match");
 	});
 
 	it("rejects expired and tampered tokens fail-closed", async () => {
@@ -297,7 +433,7 @@ describe("guest lawyer invitations", () => {
 				token: created.token,
 			});
 
-		expect(expired).toMatchObject({ status: "expired" });
+		expect(expired).toMatchObject({ dealId, status: "expired" });
 		await expect(
 			t.run(async (ctx) =>
 				ctx.db
@@ -340,7 +476,7 @@ describe("guest lawyer invitations", () => {
 				now: NOW + 2,
 				token: resent.token,
 			})
-		).resolves.toMatchObject({ status: "pending" });
+		).resolves.toMatchObject({ dealId, status: "pending" });
 	});
 
 	it("rejects revoked invitations without granting auth ID access", async () => {
@@ -369,7 +505,7 @@ describe("guest lawyer invitations", () => {
 				token: created.token,
 			});
 
-		expect(accepted).toMatchObject({ status: "revoked" });
+		expect(accepted).toMatchObject({ dealId, status: "revoked" });
 		await expect(
 			t.run(async (ctx) =>
 				ctx.db

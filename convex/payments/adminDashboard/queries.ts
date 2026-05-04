@@ -14,6 +14,7 @@ import {
 import {
 	buildCollectionAttemptRow,
 	buildCollectionPlanEntryRow,
+	type CollectionAttemptRow,
 } from "../collectionPlan/readModels";
 
 type CashAccount = Doc<"cash_ledger_accounts">;
@@ -21,6 +22,7 @@ type CashJournalEntry = Doc<"cash_ledger_journal_entries">;
 type Obligation = Doc<"obligations">;
 type TransferRequest = Doc<"transferRequests">;
 interface ReferenceData {
+	borrowerEmails: Map<string, string>;
 	borrowerLabels: Map<string, string>;
 	lenderLabels: Map<string, string>;
 	mortgageLabels: Map<string, string>;
@@ -205,14 +207,16 @@ async function loadReferenceData(
 	);
 
 	const borrowerLabels = new Map<string, string>();
+	const borrowerEmails = new Map<string, string>();
 	for (const borrower of borrowersById.values()) {
+		const user = usersById.get(String(borrower.userId));
 		borrowerLabels.set(
 			String(borrower._id),
-			buildUserLabel(
-				usersById.get(String(borrower.userId)),
-				`Borrower ${idTail(String(borrower._id))}`
-			)
+			buildUserLabel(user, `Borrower ${idTail(String(borrower._id))}`)
 		);
+		if (user?.email) {
+			borrowerEmails.set(String(borrower._id), user.email);
+		}
 	}
 
 	const lenderLabels = new Map<string, string>();
@@ -235,6 +239,7 @@ async function loadReferenceData(
 	}
 
 	return {
+		borrowerEmails,
 		borrowerLabels,
 		lenderLabels,
 		mortgageLabels,
@@ -916,6 +921,8 @@ function buildFinancialLedgerSupportTransferRows(
 }
 
 function collectPaymentOperationsReferenceIds(args: {
+	collectionAttempts: readonly Doc<"collectionAttempts">[];
+	collectionPlanEntries: readonly Doc<"collectionPlanEntries">[];
 	obligations: readonly Obligation[];
 	transfers: readonly TransferRequest[];
 }): ReferenceIdSets {
@@ -929,11 +936,43 @@ function collectPaymentOperationsReferenceIds(args: {
 		),
 		mortgageIds: collectUniqueIds([
 			...args.obligations.map((obligation) => obligation.mortgageId),
+			...args.collectionAttempts.map((attempt) => attempt.mortgageId),
+			...args.collectionPlanEntries.map((entry) => entry.mortgageId),
 			...args.transfers.map((transfer) => transfer.mortgageId),
 		]),
-		obligationIds: collectUniqueIds(
-			args.obligations.map((obligation) => obligation._id)
-		),
+		obligationIds: collectUniqueIds([
+			...args.obligations.map((obligation) => obligation._id),
+			...args.collectionAttempts.flatMap((attempt) => attempt.obligationIds),
+			...args.collectionPlanEntries.flatMap((entry) => entry.obligationIds),
+		]),
+	};
+}
+
+function enrichCollectionAttemptRow(
+	row: CollectionAttemptRow,
+	references: ReferenceData
+) {
+	const firstObligation = row.obligationIds
+		.map((obligationId) => references.obligationsById.get(String(obligationId)))
+		.find((obligation) => obligation !== undefined);
+	const borrowerId = firstObligation
+		? String(firstObligation.borrowerId)
+		: null;
+	const mortgageId = String(row.mortgageId);
+
+	return {
+		...row,
+		borrowerEmail: borrowerId
+			? (references.borrowerEmails.get(borrowerId) ?? null)
+			: null,
+		borrowerId,
+		borrowerLabel: borrowerId
+			? (references.borrowerLabels.get(borrowerId) ??
+				`Borrower ${idTail(borrowerId)}`)
+			: null,
+		mortgageLabel:
+			references.mortgageLabels.get(mortgageId) ??
+			`Mortgage ${idTail(mortgageId)}`,
 	};
 }
 
@@ -1005,7 +1044,12 @@ export const getPaymentOperationsDashboardSnapshot = adminQuery
 		]);
 		const references = await loadReferenceData(
 			ctx,
-			collectPaymentOperationsReferenceIds({ obligations, transfers })
+			collectPaymentOperationsReferenceIds({
+				collectionAttempts,
+				collectionPlanEntries,
+				obligations,
+				transfers,
+			})
 		);
 
 		const obligationRows = buildObligationRows({
@@ -1016,21 +1060,53 @@ export const getPaymentOperationsDashboardSnapshot = adminQuery
 			transfers,
 		});
 
-		const attemptRows = await Promise.all(
-			[...collectionAttempts]
-				.sort((left, right) =>
-					compareDescending(left.initiatedAt, right.initiatedAt)
-				)
-				.map((attempt) => buildCollectionAttemptRow(ctx, attempt))
-		);
+		const attemptRows = (
+			await Promise.all(
+				[...collectionAttempts]
+					.sort((left, right) =>
+						compareDescending(left.initiatedAt, right.initiatedAt)
+					)
+					.map((attempt) => buildCollectionAttemptRow(ctx, attempt))
+			)
+		).map((row) => enrichCollectionAttemptRow(row, references));
 
-		const planEntryRows = await Promise.all(
-			[...collectionPlanEntries]
-				.sort((left, right) =>
-					compareDescending(left.scheduledDate, right.scheduledDate)
+		const planEntryRows = (
+			await Promise.all(
+				[...collectionPlanEntries]
+					.sort((left, right) =>
+						compareDescending(left.scheduledDate, right.scheduledDate)
+					)
+					.map((entry) => buildCollectionPlanEntryRow(ctx, entry))
+			)
+		).map((row) => {
+			const firstObligation = row.obligationIds
+				.map((obligationId) =>
+					references.obligationsById.get(String(obligationId))
 				)
-				.map((entry) => buildCollectionPlanEntryRow(ctx, entry))
-		);
+				.find((obligation) => obligation !== undefined);
+			const borrowerId = firstObligation
+				? String(firstObligation.borrowerId)
+				: null;
+			const mortgageId = String(row.mortgageId);
+
+			return {
+				...row,
+				borrowerId,
+				borrowerEmail: borrowerId
+					? (references.borrowerEmails.get(borrowerId) ?? null)
+					: null,
+				borrowerLabel: borrowerId
+					? (references.borrowerLabels.get(borrowerId) ??
+						`Borrower ${idTail(borrowerId)}`)
+					: null,
+				mortgageLabel:
+					references.mortgageLabels.get(mortgageId) ??
+					`Mortgage ${idTail(mortgageId)}`,
+				relatedAttempt: row.relatedAttempt
+					? enrichCollectionAttemptRow(row.relatedAttempt, references)
+					: null,
+			};
+		});
 
 		const transferLedgerLinks = new Set<string>();
 		const journalEntries = await ctx.db

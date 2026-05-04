@@ -143,7 +143,7 @@ function renderPage({
 					exportState: "ready",
 				},
 			}}
-			portalId={PORTAL_ID}
+			queryMode={{ kind: "portal", portalId: PORTAL_ID }}
 			search={search}
 			setSearch={(updater) => {
 				search = updater(search);
@@ -165,7 +165,7 @@ function getRailQueries() {
 }
 
 describe("lender portfolio rail", () => {
-	it("renders Actions Required above Broker Chat and updates the broker handoff prefill", () => {
+	it("renders Actions Required above Broker Chat and updates the broker message draft", () => {
 		vi.mocked(useIsMobile).mockReturnValue(false);
 
 		renderPage({});
@@ -176,17 +176,13 @@ describe("lender portfolio rail", () => {
 			.map((heading) => heading.textContent);
 
 		expect(headings).toEqual(["Actions Required", "Broker Chat"]);
-		expect(
-			rail.getByText(
-				"Choose an action above or a suggested follow-up below to prefill the broker handoff."
-			)
-		).toBeTruthy();
+		expect(rail.getByLabelText("About broker message draft")).toBeTruthy();
 		expect(
 			rail.getByTestId("renewal-action-surface-mock-compact-mortgage_king")
 		).toBeTruthy();
 		expect(rail.queryByTestId("broker-prefill-textarea")).toBeNull();
 		expect(rail.getByTestId("action-item-action_renewal_king").textContent).not.toContain(
-			"Broker handoff selected"
+			"Broker message ready"
 		);
 
 		fireEvent.click(rail.getByTestId("action-prefill-action_payment_overdue"));
@@ -197,7 +193,7 @@ describe("lender portfolio rail", () => {
 			"Collection follow-up required for overdue lender payment."
 		);
 		expect(rail.getByTestId("action-item-action_payment_overdue").textContent).toContain(
-			"Broker handoff selected"
+			"Broker message ready"
 		);
 
 		const contactLink = rail.getByTestId("broker-contact-cta") as HTMLAnchorElement;
@@ -209,7 +205,7 @@ describe("lender portfolio rail", () => {
 		);
 	});
 
-	it("keeps broker-suggested handoff text distinct from matching action subjects", () => {
+	it("keeps broker-suggested follow-up text distinct from matching action subjects", () => {
 		vi.mocked(useIsMobile).mockReturnValue(false);
 
 		renderPage({});
@@ -225,7 +221,7 @@ describe("lender portfolio rail", () => {
 		);
 		expect(textarea.value).not.toContain("Review King Street renewal");
 		expect(rail.getByTestId("action-item-action_renewal_king").textContent).not.toContain(
-			"Broker handoff selected"
+			"Broker message ready"
 		);
 		const contactLink = rail.getByTestId("broker-contact-cta") as HTMLAnchorElement;
 		expect(contactLink.getAttribute("href")).toContain(
@@ -335,7 +331,7 @@ describe("lender portfolio rail", () => {
 		expect(rail.getByText("Broker assignment missing")).toBeTruthy();
 	});
 
-	it("opens supported detail views from rail actions and leaves deal follow-ups as handoff-only", () => {
+	it("opens supported detail views from rail actions and leaves deal follow-ups as broker-message only", () => {
 		vi.mocked(useIsMobile).mockReturnValue(false);
 		vi.mocked(lenderPortfolioPaymentDetailQueryOptions).mockReturnValue(
 			PAYMENT_DETAIL_QUERY_OPTIONS as never

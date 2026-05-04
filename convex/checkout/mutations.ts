@@ -2,12 +2,16 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { getLenderByAuthId } from "../auth/actorResolution";
+import {
+	selectedLawyerComparisonKey,
+	selectedLawyerIdempotencyFingerprint,
+} from "../auth/guestLawyerIdentity";
 import { convex } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
 import {
 	reserveSharesHandler,
 	voidReservationHandler,
-} from "../ledger/mutations";
+} from "../ledger/reservations";
 import { assertPlatformLawyerSelectableForCheckout } from "../legalRepresentation/platformLawyers";
 import { assertPlatformLawyerAuthSelectableForCheckout } from "../legalRepresentation/profiles";
 import { matchesMarketplaceFilters } from "../listings/marketplace";
@@ -15,7 +19,7 @@ import {
 	clampMarketplaceFiltersToLenderConstraints,
 	resolveViewerLenderConstraintForPortal,
 } from "../listings/portalVisibility";
-import { getCanonicalMicSellerAccountForSale } from "../mortgages/micSaleAvailability";
+import { resolveSellerLotForReservation } from "../marketplace/saleInventory";
 import {
 	assertCheckoutTransitionAllowed,
 	CHECKOUT_ACTIVE_STATUSES,
@@ -143,46 +147,8 @@ function sameSelectedLawyer(
 	right: CheckoutSessionDoc["selectedLawyer"]
 ): boolean {
 	return (
-		left.type === right.type &&
-		left.name === right.name &&
-		left.email === right.email &&
-		left.firm === right.firm &&
-		selectedLawyerLsoPart(left) === selectedLawyerLsoPart(right) &&
-		(left.type === "platform_lawyer" ? left.lawyerId : undefined) ===
-			(right.type === "platform_lawyer" ? right.lawyerId : undefined)
+		selectedLawyerComparisonKey(left) === selectedLawyerComparisonKey(right)
 	);
-}
-
-function selectedLawyerLsoPart(
-	selectedLawyer: CheckoutSessionDoc["selectedLawyer"]
-): string {
-	const lso = selectedLawyer.lso;
-	if (!lso) {
-		return "";
-	}
-	return JSON.stringify({
-		barNumber: lso.barNumber ?? "",
-		jurisdiction: lso.jurisdiction ?? "",
-		licensingStatus: lso.licensingStatus ?? "",
-		lsoLawyerId: lso.lsoLawyerId ?? "",
-		restrictionStatus: lso.restrictionStatus ?? "",
-		restrictionSummary: lso.restrictionSummary ?? "",
-		source: lso.source ?? "",
-		sourceFetchedAt: lso.sourceFetchedAt ?? "",
-	});
-}
-
-function selectedLawyerIdempotencyPart(
-	selectedLawyer: CheckoutSessionDoc["selectedLawyer"]
-): string {
-	return [
-		selectedLawyer.type,
-		selectedLawyer.type === "platform_lawyer" ? selectedLawyer.lawyerId : "",
-		selectedLawyer.email,
-		selectedLawyer.name,
-		selectedLawyer.firm ?? "",
-		selectedLawyerLsoPart(selectedLawyer),
-	].join(":");
 }
 
 async function assertCheckoutLawyerSelectable(
@@ -373,13 +339,19 @@ function resolveLedgerLenderId(lender: LenderDoc): string {
 async function resolveSellerAccount(
 	ctx: MutationCtx,
 	args: {
+		actorAuthId: string;
+		effectiveDate: string;
+		idempotencyKey: string;
 		mortgageId: Id<"mortgages">;
 		requestedFractions: number;
 	}
 ): Promise<LedgerAccountDoc | null> {
 	return (
 		(
-			await getCanonicalMicSellerAccountForSale(ctx, {
+			await resolveSellerLotForReservation(ctx, {
+				actorAuthId: args.actorAuthId,
+				effectiveDate: args.effectiveDate,
+				idempotencyKey: args.idempotencyKey,
 				mortgageId: args.mortgageId,
 				requestedLedgerUnits: args.requestedFractions,
 			})
@@ -512,7 +484,14 @@ export const prepareMarketplaceCheckout = convex
 		}
 
 		const buyerLedgerLenderId = resolveLedgerLenderId(lender);
+		const selectedLawyerFingerprint =
+			await selectedLawyerIdempotencyFingerprint(selectedLawyer);
 		const sellerAccount = await resolveSellerAccount(ctx, {
+			actorAuthId: args.viewerAuthId,
+			effectiveDate: today(),
+			idempotencyKey: `marketplace-checkout:${String(
+				listingCheck._id
+			)}:${String(lender._id)}:${requestedFractions}:${selectedLawyerFingerprint}`,
 			mortgageId: listingCheck.mortgageId,
 			requestedFractions,
 		});
@@ -536,9 +515,9 @@ export const prepareMarketplaceCheckout = convex
 				effectiveDate: today(),
 				idempotencyKey: `marketplace-checkout-reservation:${String(
 					listingCheck._id
-				)}:${String(lender._id)}:${requestedFractions}:${selectedLawyerIdempotencyPart(
-					selectedLawyer
-				)}:${String(now)}`,
+				)}:${String(lender._id)}:${requestedFractions}:${selectedLawyerFingerprint}:${String(
+					now
+				)}`,
 				source: checkoutSource(args.viewerAuthId),
 				metadata: {
 					listingId: String(listingCheck._id),
@@ -612,6 +591,13 @@ export const attachProviderSession = convex
 				checkoutSession.stripeCheckoutSessionId !== args.stripeCheckoutSessionId
 			) {
 				throw new ConvexError("Checkout provider session mismatch");
+			}
+			if (
+				checkoutSession.stripePaymentIntentId &&
+				args.stripePaymentIntentId &&
+				checkoutSession.stripePaymentIntentId !== args.stripePaymentIntentId
+			) {
+				throw new ConvexError("Checkout provider payment intent mismatch");
 			}
 			return checkoutPrepared(checkoutSession);
 		}
@@ -771,6 +757,25 @@ export const listExpiredCheckoutSessions = convex
 				.take(limit - checkoutSessionIds.length);
 			checkoutSessionIds.push(
 				...unfinishedTerminalSessions
+					.filter(isProviderCleanupUnfinished)
+					.map((session) => session._id)
+			);
+		}
+		if (checkoutSessionIds.length < limit) {
+			const abandonedCleanupSessions = await ctx.db
+				.query("checkoutSessions")
+				.withIndex("by_status_expires_at", (q) =>
+					q.eq("status", "abandoned").lte("expiresAt", Number.MAX_SAFE_INTEGER)
+				)
+				.filter((q) =>
+					q.and(
+						q.neq(q.field("providerExpiryStatus"), "succeeded"),
+						q.neq(q.field("providerExpiryStatus"), "not_required")
+					)
+				)
+				.take(limit - checkoutSessionIds.length);
+			checkoutSessionIds.push(
+				...abandonedCleanupSessions
 					.filter(isProviderCleanupUnfinished)
 					.map((session) => session._id)
 			);

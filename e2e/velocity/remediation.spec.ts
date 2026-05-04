@@ -145,4 +145,35 @@ test.describe("Velocity remediation workflows", () => {
 			timeout: 120_000,
 		});
 	});
+
+	test("blocks activation when Velocity-owned data changes after final review", async ({
+		page,
+	}) => {
+		const { client } = await bootstrapVelocityE2e(page);
+		const seed = Math.floor(Date.now() % 80_000) + 250_000;
+		const scenario = await client.createScenario({
+			scenarioName: "upstream_change_after_final_review",
+			seed,
+		});
+		let workspace = await client.applyScenarioFairLendPatch(scenario);
+		workspace = await client.linkPadEvidence(workspace.workspaceId);
+		await client.confirmFinalReview(workspace.workspaceId);
+
+		if (!scenario.nextVelocityPatch) {
+			throw new Error(
+				"upstream_change_after_final_review scenario did not provide drift"
+			);
+		}
+		await client.patchMockDeal(scenario.loanCode, scenario.nextVelocityPatch);
+		await client.deliverWebhook(scenario.loanCode);
+		await client.syncNow(workspace.workspaceId);
+
+		await page.goto(`/admin/velocity/${workspace.workspaceId}/review`);
+		await expect(
+			page.getByText(/Velocity-owned data changed after final review/i)
+		).toBeVisible({ timeout: UI_TIMEOUT });
+		await expect(
+			page.getByRole("button", { name: "Activate package" })
+		).toBeDisabled();
+	});
 });

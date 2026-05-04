@@ -22,7 +22,7 @@ describe("checkout start types", () => {
 	});
 
 	it("keeps TTL and lock fee server-owned", () => {
-		expect(CHECKOUT_SESSION_TTL_MS).toBe(5 * 60 * 1000);
+		expect(CHECKOUT_SESSION_TTL_MS).toBe(15 * 60 * 1000);
 		expect(CHECKOUT_LOCK_FEE).toEqual({ amount: 25_000, currency: "CAD" });
 	});
 

@@ -2,6 +2,8 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWebhookTestHarness } from "../../../../src/test/convex/payments/webhooks/convexTestHarness";
 import { internal } from "../../../_generated/api";
+import { buildCheckoutStripeMetadata } from "../../../checkout/metadata";
+import { CHECKOUT_LOCK_FEE_AMOUNT_CENTS } from "../../../checkout/validators";
 import { DEAL_LOCK_FEE_AMOUNT_CENTS } from "../../../dealLocks/validators";
 import type { StripeWebhookEvent } from "../stripe";
 import {
@@ -58,9 +60,207 @@ function buildStripeSignature(body: string) {
 		.digest("hex")}`;
 }
 
+async function insertHostedMarketplaceCheckout(
+	t: ReturnType<typeof createHarness>
+) {
+	return await t.run(async (ctx) => {
+		const userId = await ctx.db.insert("users", {
+			authId: "checkout-buyer-auth",
+			email: "checkout-buyer@test.fairlend.ca",
+			firstName: "Checkout",
+			lastName: "Buyer",
+		});
+		const brokerId = await ctx.db.insert("brokers", {
+			createdAt: Date.now(),
+			orgId: "org_checkout_webhook",
+			status: "active",
+			userId,
+		});
+		const lenderId = await ctx.db.insert("lenders", {
+			accreditationStatus: "accredited",
+			brokerId,
+			createdAt: Date.now(),
+			onboardingEntryPath: "self_signup",
+			orgId: "org_checkout_webhook",
+			status: "active",
+			userId,
+		});
+		const portalId = await ctx.db.insert("portals", {
+			brokerId,
+			createdAt: Date.now(),
+			defaultPostAuthPath: "/listings",
+			isPublished: true,
+			localHost: "checkout-webhook.localhost:3000",
+			orgId: "org_checkout_webhook",
+			portalType: "broker",
+			productionHost: "checkout-webhook.fairlend.ca",
+			publicTeaserEnabled: true,
+			slug: "checkout-webhook",
+			status: "active",
+			teaserListingLimit: 12,
+			updatedAt: Date.now(),
+		});
+		const brokerUserId = await ctx.db.insert("users", {
+			authId: "checkout-broker-auth",
+			email: "checkout-broker@test.fairlend.ca",
+			firstName: "Checkout",
+			lastName: "Broker",
+		});
+		const brokerOfRecordId = await ctx.db.insert("brokers", {
+			createdAt: Date.now(),
+			orgId: "org_checkout_webhook",
+			status: "active",
+			userId: brokerUserId,
+		});
+		const propertyId = await ctx.db.insert("properties", {
+			city: "Toronto",
+			createdAt: Date.now(),
+			postalCode: "M5V 1A1",
+			propertyType: "residential",
+			province: "ON",
+			streetAddress: "123 King St W",
+		});
+		const mortgageId = await ctx.db.insert("mortgages", {
+			amortizationMonths: 300,
+			brokerOfRecordId,
+			createdAt: Date.now(),
+			firstPaymentDate: "2026-02-01",
+			interestAdjustmentDate: "2026-01-01",
+			interestRate: 9.5,
+			lienPosition: 1,
+			loanType: "conventional",
+			maturityDate: "2031-01-01",
+			orgId: "org_checkout_webhook",
+			paymentAmount: 2500,
+			paymentFrequency: "monthly",
+			principal: 500_000,
+			propertyId,
+			rateType: "fixed",
+			status: "active",
+			termMonths: 60,
+			termStartDate: "2026-01-01",
+		});
+		const listingId = await ctx.db.insert("listings", {
+			city: "Toronto",
+			createdAt: Date.now(),
+			dataSource: "mortgage_pipeline",
+			featured: false,
+			heroImages: [],
+			interestRate: 9.5,
+			lienPosition: 1,
+			loanType: "conventional",
+			ltvRatio: 65,
+			marketplacePropertyType: "Detached Home",
+			maturityDate: "2031-01-01",
+			monthlyPayment: 2500,
+			mortgageId,
+			paymentFrequency: "monthly",
+			principal: 500_000,
+			propertyId,
+			propertyType: "residential",
+			province: "ON",
+			publicDocumentIds: [],
+			rateType: "fixed",
+			status: "published",
+			termMonths: 60,
+			title: "King West Mortgage",
+			updatedAt: Date.now(),
+			viewCount: 0,
+		});
+		const sellerAccountId = await ctx.db.insert("ledger_accounts", {
+			createdAt: Date.now(),
+			cumulativeCredits: 0n,
+			cumulativeDebits: 10_000n,
+			lenderId: "seed_maple_mic_lender_fairlend_ca",
+			mortgageId: String(mortgageId),
+			pendingCredits: 0n,
+			pendingDebits: 2500n,
+			type: "POSITION",
+		});
+		const buyerAccountId = await ctx.db.insert("ledger_accounts", {
+			createdAt: Date.now(),
+			cumulativeCredits: 0n,
+			cumulativeDebits: 0n,
+			lenderId: String(lenderId),
+			mortgageId: String(mortgageId),
+			pendingCredits: 2500n,
+			pendingDebits: 0n,
+			type: "POSITION",
+		});
+		const reserveJournalEntryId = await ctx.db.insert(
+			"ledger_journal_entries",
+			{
+				amount: 2500,
+				creditAccountId: buyerAccountId,
+				debitAccountId: sellerAccountId,
+				effectiveDate: "2026-04-24",
+				entryType: "SHARES_RESERVED",
+				idempotencyKey: "checkout:http-webhook:reserve:journal",
+				mortgageId: String(mortgageId),
+				sequenceNumber: 1n,
+				source: { type: "webhook", channel: "test" },
+				timestamp: Date.now(),
+			}
+		);
+		const reservationId = await ctx.db.insert("ledger_reservations", {
+			amount: 2500,
+			buyerAccountId,
+			createdAt: Date.now(),
+			mortgageId: String(mortgageId),
+			reserveJournalEntryId,
+			sellerAccountId,
+			status: "pending",
+		});
+		const selectedLawyer = {
+			type: "platform_lawyer" as const,
+			lawyerId: "lawyer-auth",
+			name: "Lawyer Auth",
+			email: "lawyer@test.fairlend.ca",
+		};
+		const checkoutSessionId = await ctx.db.insert("checkoutSessions", {
+			status: "hosted_checkout_open",
+			listingId,
+			mortgageId,
+			portalId,
+			lenderId,
+			lenderAuthId: "checkout-buyer-auth",
+			sellerAccountId,
+			buyerAccountId,
+			reservationId,
+			requestedFractions: 2500,
+			lockFeeAmount: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+			lockFeeCurrency: "CAD",
+			selectedLawyer,
+			stripeCheckoutSessionId: "cs_test_http_checkout",
+			stripePaymentIntentId: "pi_test_http_checkout",
+			startedAt: Date.now(),
+			expiresAt: Date.now() + 300_000,
+			idempotencyKey: "marketplace-checkout:http-webhook",
+			createdBy: "checkout-buyer-auth",
+			updatedAt: Date.now(),
+		});
+		const metadata = buildCheckoutStripeMetadata({
+			checkoutSessionId: String(checkoutSessionId),
+			idempotencyKey: "marketplace-checkout:http-webhook",
+			lenderAuthId: "checkout-buyer-auth",
+			lenderId,
+			listingId,
+			mortgageId,
+			portalId,
+			requestedFractions: 2500,
+			reservationId,
+			selectedLawyer,
+		});
+		return { checkoutSessionId, metadata };
+	});
+}
+
 beforeEach(() => {
 	testEnvRestorers.length = 0;
 	setTestEnv("STRIPE_WEBHOOK_SECRET", TEST_STRIPE_SECRET);
+	setTestEnv("WORKOS_CLIENT_ID", "client_test_webhook");
+	setTestEnv("WORKOS_API_KEY", "sk_test_webhook");
+	setTestEnv("WORKOS_WEBHOOK_SECRET", "whsec_test_workos");
 	vi.useFakeTimers();
 	vi.setSystemTime(new Date(TEST_TIMESTAMP * 1000));
 });
@@ -558,6 +758,86 @@ describe("stripe webhook persistence bridge", () => {
 			status: "failed",
 			error: "unsupported_provider",
 			attempts: 1,
+		});
+	});
+
+	it("persists and reconciles marketplace checkout success through the HTTP bridge", async () => {
+		const t = createHarness();
+		const { checkoutSessionId, metadata } =
+			await insertHostedMarketplaceCheckout(t);
+		const event = makeEvent({
+			type: "checkout.session.completed",
+			id: "evt_checkout_success_new_001",
+			data: {
+				object: {
+					id: "cs_test_http_checkout",
+					amount: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+					amount_total: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+					currency: "cad",
+					metadata,
+					payment_intent: "pi_test_http_checkout",
+					payment_status: "paid",
+				},
+			},
+		});
+		const body = JSON.stringify(event);
+		const signature = buildStripeSignature(body);
+
+		const response = await t.fetch("/webhooks/stripe", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"stripe-signature": signature,
+			},
+			body,
+		});
+		const payload = (await response.json()) as {
+			accepted?: boolean;
+			processing?: string;
+			providerEventId?: string;
+			result?: { status?: string };
+		};
+
+		const state = await t.run(async (ctx) => {
+			const session = await ctx.db.get(checkoutSessionId);
+			const deals = await ctx.db.query("deals").collect();
+			const transferRequests = await ctx.db.query("transferRequests").collect();
+			const webhook = await ctx.db
+				.query("webhookEvents")
+				.withIndex("by_provider_event", (q) =>
+					q.eq("provider", "stripe").eq("providerEventId", event.id)
+				)
+				.unique();
+			return { deals, session, transferRequests, webhook };
+		});
+
+		expect(response.status).toBe(200);
+		expect(payload).toMatchObject({
+			accepted: true,
+			processing: "processed",
+			providerEventId: event.id,
+			result: { status: "completed" },
+		});
+		expect(state.session).toMatchObject({
+			status: "completed",
+			stripeCheckoutSessionId: "cs_test_http_checkout",
+			stripePaymentIntentId: "pi_test_http_checkout",
+			lockFeeTransferRequestId: state.transferRequests[0]?._id,
+		});
+		expect(state.transferRequests).toHaveLength(1);
+		expect(state.transferRequests[0]).toMatchObject({
+			amount: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+			providerCode: "stripe",
+			status: "confirmed",
+			transferType: "locking_fee_collection",
+		});
+		expect(state.deals).toHaveLength(0);
+		expect(state.webhook).toMatchObject({
+			attempts: 1,
+			provider: "stripe",
+			providerEventId: event.id,
+			signatureVerified: true,
+			status: "processed",
 		});
 	});
 

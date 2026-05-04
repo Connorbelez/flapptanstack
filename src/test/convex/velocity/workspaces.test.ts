@@ -302,6 +302,59 @@ describe("Velocity package workspace backend", () => {
 		);
 	});
 
+	it("does not trust client-supplied accountLast4 patches", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const sync = await applyFullDealSync(t, makeDeal());
+		const workspaceId = sync.workspaceId as Id<"velocityPackageWorkspaces">;
+
+		await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.velocity.workspaces.updateVelocityPackageFairLendFields,
+			{
+				patch: {
+					bankInput: {
+						accountHolderName: "Borrower One",
+						accountLast4: "9999",
+						accountNumber: "123456789",
+						institutionNumber: "001",
+						transitNumber: "00011",
+					},
+				},
+				workspaceId,
+			}
+		);
+		await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.velocity.workspaces.updateVelocityPackageFairLendFields,
+			{
+				patch: {
+					bankInput: {
+						accountHolderName: "Updated Borrower",
+						accountLast4: "0000",
+					},
+				},
+				workspaceId,
+			}
+		);
+		const workspace = await t.run(async (ctx) => ctx.db.get(workspaceId));
+		const detail = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(api.velocity.workspaces.getVelocityPackageWorkspace, {
+				workspaceId,
+			});
+
+		expect(workspace?.fairlendEnrichment.bankInput).toMatchObject({
+			accountHolderName: "Updated Borrower",
+			accountLast4: "6789",
+			accountNumber: "123456789",
+		});
+		expect(detail?.fairlendOwned.enrichment.bankInput).toMatchObject({
+			accountLast4: "6789",
+		});
+		expect(detail?.fairlendOwned.enrichment.bankInput).not.toHaveProperty(
+			"accountNumber"
+		);
+	});
+
 	it("filters board rows from open exceptions instead of stale workspace summaries", async () => {
 		const t = createTestConvex();
 		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
@@ -460,17 +513,34 @@ describe("Velocity package workspace backend", () => {
 				throw new Error("Expected actor and workspace snapshot");
 			}
 
+			await ctx.db.insert("velocityActivationAttempts", {
+				actorAuthId: FAIRLEND_ADMIN.subject,
+				actorUserId: actor._id,
+				failedAt: 1_700_000_000_000,
+				failureCode: "stale_attempt",
+				failureMessage: "Older failed attempt.",
+				idempotencyKey: "velocity:activation:older-attempt",
+				reviewedSnapshotHash: snapshot.normalizedCoreHash,
+				reviewedSnapshotId: snapshot._id,
+				rotessaCustomerRef: "400",
+				rotessaScheduleRef: "schedule-stale",
+				startedAt: 1_700_000_000_000,
+				status: "failed",
+				workspaceId,
+			});
+
 			return await ctx.db.insert("velocityActivationAttempts", {
 				actorAuthId: FAIRLEND_ADMIN.subject,
 				actorUserId: actor._id,
-				failedAt: Date.now(),
+				failedAt: 1_700_000_100_000,
 				failureCode: "rotessa_request_failed",
 				failureMessage: "Rotessa schedule creation failed.",
 				idempotencyKey: "velocity:activation:test-remediation",
 				reviewedSnapshotHash: snapshot.normalizedCoreHash,
 				reviewedSnapshotId: snapshot._id,
 				rotessaCustomerRef: "501",
-				startedAt: Date.now(),
+				rotessaScheduleRef: "schedule-secret",
+				startedAt: 1_700_000_100_000,
 				status: "failed",
 				workspaceId,
 			});
@@ -554,5 +624,76 @@ describe("Velocity package workspace backend", () => {
 		expect(after.audits.map((audit) => audit.eventType)).toContain(
 			"velocity_exception_resolved"
 		);
+	});
+
+	it("rejects blank exception resolution notes and persists trimmed notes", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const sync = await applyFullDealSync(
+			t,
+			makeDeal({
+				mortgageRequest: {
+					paymentFrequency: 4,
+				},
+			})
+		);
+		const state = await t.run(async (ctx) => {
+			const exceptions = await ctx.db
+				.query("velocityPackageExceptions")
+				.withIndex("by_workspace_status", (query) =>
+					query.eq(
+						"workspaceId",
+						sync.workspaceId as Id<"velocityPackageWorkspaces">
+					)
+				)
+				.collect();
+			if (!sync.workspaceId || exceptions.length < 1) {
+				throw new Error("Expected workspace exception");
+			}
+			const blankExceptionId = await ctx.db.insert("velocityPackageExceptions", {
+				kind: "upstream_sync_exception",
+				message: "Blank note test.",
+				openedAt: Date.now() + 1,
+				severity: "blocking",
+				status: "open",
+				title: "Blank note test",
+				workspaceId: sync.workspaceId,
+			});
+			return {
+				blankExceptionId,
+				exceptionId: exceptions[0]._id,
+				workspaceId: sync.workspaceId,
+			};
+		});
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).mutation(
+				api.velocity.exceptions.resolveVelocityPackageException,
+				{
+					exceptionId: state.blankExceptionId,
+					resolutionNote: "   \t\n  ",
+				}
+			)
+		).rejects.toThrow("Resolution note is required");
+
+		await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.velocity.exceptions.resolveVelocityPackageException,
+			{
+				exceptionId: state.exceptionId,
+				resolutionNote: "  Reviewed with staff.  ",
+			}
+		);
+		const after = await t.run(async (ctx) => ({
+			blankException: await ctx.db.get(state.blankExceptionId),
+			exception: await ctx.db.get(state.exceptionId),
+		}));
+
+		expect(after.blankException?.status).toBe("open");
+		expect(after.exception).toMatchObject({
+			details: {
+				resolutionNote: "Reviewed with staff.",
+			},
+			status: "resolved",
+		});
 	});
 });

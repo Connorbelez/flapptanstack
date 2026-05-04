@@ -19,6 +19,11 @@ export interface PublishListingResult {
 	readonly wasAlreadyPublished: boolean;
 }
 
+export interface HideListingResult {
+	readonly publication: ListingPublicationStatus;
+	readonly wasAlreadyHidden: boolean;
+}
+
 export function toListingPublicationStatus(
 	listing: Doc<"listings">
 ): ListingPublicationStatus {
@@ -99,6 +104,59 @@ export async function publishListingRecord(
 	};
 }
 
+export async function hideListingRecord(
+	ctx: MutationCtx,
+	args: {
+		actorAuthId: string;
+		listingId: Id<"listings">;
+		now: number;
+	}
+): Promise<HideListingResult> {
+	const listing = await ctx.db.get(args.listingId);
+	if (!listing) {
+		throw new ConvexError("Listing not found");
+	}
+	if (listing.status === "draft") {
+		return {
+			publication: toListingPublicationStatus(listing),
+			wasAlreadyHidden: true,
+		};
+	}
+
+	await ctx.db.patch(args.listingId, {
+		delistReason: undefined,
+		delistedAt: undefined,
+		lastTransitionAt: args.now,
+		status: "draft",
+		updatedAt: args.now,
+	});
+
+	const updatedListing = await ctx.db.get(args.listingId);
+	if (!updatedListing) {
+		throw new ConvexError("Listing disappeared during hide");
+	}
+
+	await auditLog.log(ctx, {
+		action: "listing.hidden",
+		actorId: args.actorAuthId,
+		metadata: {
+			listingId: String(updatedListing._id),
+			mortgageId: updatedListing.mortgageId
+				? String(updatedListing.mortgageId)
+				: null,
+			previousStatus: listing.status,
+		},
+		resourceId: updatedListing._id,
+		resourceType: "listings",
+		severity: "info",
+	});
+
+	return {
+		publication: toListingPublicationStatus(updatedListing),
+		wasAlreadyHidden: false,
+	};
+}
+
 export const getListingPublicationStatusInternal = convex
 	.query()
 	.input({
@@ -117,6 +175,21 @@ export const publishListingInternal = convex
 	})
 	.handler(async (ctx, args) =>
 		publishListingRecord(ctx, {
+			actorAuthId: args.actorAuthId,
+			listingId: args.listingId,
+			now: Date.now(),
+		})
+	)
+	.internal();
+
+export const hideListingInternal = convex
+	.mutation()
+	.input({
+		actorAuthId: v.string(),
+		listingId: v.id("listings"),
+	})
+	.handler(async (ctx, args) =>
+		hideListingRecord(ctx, {
 			actorAuthId: args.actorAuthId,
 			listingId: args.listingId,
 			now: Date.now(),

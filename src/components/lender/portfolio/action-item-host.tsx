@@ -7,12 +7,15 @@ import {
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { cn } from "#/lib/utils";
-import type { Id } from "../../../../convex/_generated/dataModel";
 import {
 	formatPortfolioDate,
 	formatPortfolioEnumLabel,
 } from "./portfolio-formatters";
-import type { PortfolioCommandCenterSnapshot } from "./portfolio-types";
+import { PortfolioDescriptionTooltip } from "./portfolio-shell";
+import type {
+	LenderPortfolioQueryMode,
+	PortfolioCommandCenterSnapshot,
+} from "./portfolio-types";
 import { RenewalActionSurface } from "./renewals/renewal-actions";
 
 type PortfolioActionItem =
@@ -22,9 +25,9 @@ type PortfolioBrokerPrefillContext = PortfolioActionItem["prefillContext"];
 export interface ActionItemHostProps {
 	action: PortfolioActionItem;
 	isSelected?: boolean;
+	mode: LenderPortfolioQueryMode;
 	onOpenDetails?: (action: PortfolioActionItem) => void;
 	onPrefill: (context: PortfolioBrokerPrefillContext) => void;
-	portalId: Id<"portals">;
 }
 
 function getActionDetailLabel(action: PortfolioActionItem) {
@@ -57,9 +60,9 @@ function getPriorityBadgeClassName(priority: PortfolioActionItem["priority"]) {
 export function ActionItemHost({
 	action,
 	isSelected = false,
+	mode,
 	onOpenDetails,
 	onPrefill,
-	portalId,
 }: ActionItemHostProps) {
 	const detailLabel = getActionDetailLabel(action);
 
@@ -77,13 +80,14 @@ export function ActionItemHost({
 				<div className="space-y-1.5">
 					<div className="flex flex-wrap items-center gap-2">
 						<h4 className="font-medium text-sm">{action.title}</h4>
+						<PortfolioDescriptionTooltip
+							label={`About ${action.title}`}
+							text={action.summary}
+						/>
 						{isSelected ? (
-							<Badge variant="outline">Selected handoff</Badge>
+							<Badge variant="outline">Message draft selected</Badge>
 						) : null}
 					</div>
-					<p className="text-muted-foreground text-sm leading-6">
-						{action.summary}
-					</p>
 				</div>
 				<div className="flex flex-wrap items-center justify-end gap-2">
 					<Badge
@@ -128,7 +132,7 @@ export function ActionItemHost({
 					variant={isSelected ? "default" : "outline"}
 				>
 					<MessageSquarePlus className="size-4" />
-					{isSelected ? "Broker handoff selected" : "Prefill broker handoff"}
+					{isSelected ? "Broker message ready" : "Draft broker message"}
 				</Button>
 				{detailLabel && onOpenDetails ? (
 					<Button
@@ -147,8 +151,8 @@ export function ActionItemHost({
 			{action.kind === "renewal_prompt" && action.mortgageId ? (
 				<div className="mt-4">
 					<RenewalActionSurface
+						mode={mode}
 						mortgageId={action.mortgageId}
-						portalId={portalId}
 						variant="compact"
 					/>
 				</div>

@@ -160,4 +160,32 @@ describe("admin deal operations projection", () => {
 			"DEAL_CANCELLED",
 		]);
 	});
+
+	it("does not project lawyer verification as actionable without a selected lawyer", async () => {
+		const { dealId } = await seedAdminDeal(t, {
+			status: "lawyerOnboarding.pending",
+		});
+
+		const projection = await t
+			.withIdentity(ADMIN_IDENTITY)
+			.query(api.deals.queries.getAdminDealOperations);
+		const card = projection.cards.find((entry) => entry._id === dealId);
+
+		expect(card?.actions.map((action) => action.event)).toEqual([
+			"DEAL_CANCELLED",
+		]);
+		expect(card?.nextAction).toBeNull();
+		expect(card?.filters).not.toContain("needs_action");
+
+		const detail = await t
+			.withIdentity(ADMIN_IDENTITY)
+			.query(api.deals.queries.getAdminDealOperationsDetail, { dealId });
+
+		expect(detail?.nextActions).toContainEqual(
+			expect.objectContaining({
+				disabledReason: "No selected lawyer is recorded for this deal.",
+				event: "LAWYER_VERIFIED",
+			})
+		);
+	});
 });

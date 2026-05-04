@@ -5,9 +5,12 @@ import { Component } from "react";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
-import type { Id } from "../../../../../convex/_generated/dataModel";
+import { useAuthorization } from "#/lib/auth";
 import { formatPortfolioDate } from "../portfolio-formatters";
-import type { PortfolioLenderRenewalIntentChoice } from "../portfolio-types";
+import type {
+	LenderPortfolioQueryMode,
+	PortfolioLenderRenewalIntentChoice,
+} from "../portfolio-types";
 import { PartialExitForm } from "./partial-exit-form";
 import { RenewalStatus, type RenewalSurfaceVariant } from "./renewal-status";
 import {
@@ -23,8 +26,8 @@ import {
 } from "./use-renewal-actions";
 
 interface RenewalActionSurfaceProps {
+	mode: LenderPortfolioQueryMode;
 	mortgageId: string;
-	portalId: Id<"portals">;
 	variant?: RenewalSurfaceVariant;
 }
 
@@ -43,13 +46,44 @@ interface RenewalActionSurfaceViewState {
 }
 
 export function RenewalActionSurface({
+	mode,
 	mortgageId,
-	portalId,
 	variant = "full",
 }: RenewalActionSurfaceProps) {
+	const renewalAuthorization = useAuthorization({
+		kind: "permission",
+		permission: "portfolio:signal_renewal",
+	});
+
+	if (renewalAuthorization.loading) {
+		return (
+			<RenewalActionSurfaceLoading mortgageId={mortgageId} variant={variant} />
+		);
+	}
+
+	if (!renewalAuthorization.allowed) {
+		return (
+			<RenewalActionSurfaceReadOnly mortgageId={mortgageId} variant={variant} />
+		);
+	}
+
+	return (
+		<ConnectedRenewalActionSurface
+			mode={mode}
+			mortgageId={mortgageId}
+			variant={variant}
+		/>
+	);
+}
+
+function ConnectedRenewalActionSurface({
+	mode,
+	mortgageId,
+	variant,
+}: Required<RenewalActionSurfaceProps>) {
 	const renewalActions = usePortfolioRenewalActions({
+		mode,
 		mortgageId,
-		portalId,
 	});
 
 	return (
@@ -58,6 +92,49 @@ export function RenewalActionSurface({
 			renewalActions={renewalActions}
 			variant={variant}
 		/>
+	);
+}
+
+function RenewalActionSurfaceLoading({
+	mortgageId,
+	variant,
+}: {
+	mortgageId: string;
+	variant: RenewalSurfaceVariant;
+}) {
+	return (
+		<div
+			className={
+				variant === "compact"
+					? "space-y-3 border-border/70 border-y py-3"
+					: "space-y-4 border-border/70 border-y py-4"
+			}
+			data-testid={`renewal-permission-loading-${mortgageId}`}
+		>
+			<Skeleton className="h-5 w-36" />
+			<Skeleton className="h-20 w-full" />
+			<Skeleton className="h-9 w-full" />
+		</div>
+	);
+}
+
+function RenewalActionSurfaceReadOnly({
+	mortgageId,
+}: {
+	mortgageId: string;
+	variant: RenewalSurfaceVariant;
+}) {
+	return (
+		<Alert
+			className="border-border/70 bg-muted/20"
+			data-testid={`renewal-read-only-${mortgageId}`}
+		>
+			<AlertCircle />
+			<AlertTitle>Renewal actions unavailable</AlertTitle>
+			<AlertDescription>
+				This role can view the portfolio but cannot signal renewal intent.
+			</AlertDescription>
+		</Alert>
 	);
 }
 
@@ -150,6 +227,8 @@ class RenewalActionSurfaceView extends Component<
 			if (args.intent !== "partial_exit") {
 				this.setState({ activeChoice: null });
 			}
+		} catch {
+			return;
 		} finally {
 			this.setState((state) => ({
 				submittingChoice:

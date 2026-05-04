@@ -38,6 +38,28 @@ import type {
 
 type VelocityWorkspace = Doc<"velocityPackageWorkspaces">;
 
+function buildVelocityFailureSyncIdempotencyKey(args: {
+	expectedLinkApplicationId?: string;
+	expectedWorkspaceId?: Id<"velocityPackageWorkspaces">;
+	loanCode: string;
+	reason: string;
+	startedAt: number;
+	trigger: VelocitySyncTrigger;
+	webhookEventId?: Id<"velocityWebhookEvents">;
+}) {
+	return [
+		"velocity:sync_failure",
+		args.trigger,
+		args.reason,
+		args.expectedLinkApplicationId ??
+			(args.expectedWorkspaceId ? String(args.expectedWorkspaceId) : "unknown"),
+		args.loanCode,
+		args.webhookEventId ? String(args.webhookEventId) : String(args.startedAt),
+	]
+		.map((part) => encodeURIComponent(part))
+		.join(":");
+}
+
 export interface ProcessVelocityFullDealSyncArgs {
 	dealHref?: string;
 	expectedLinkApplicationId?: string;
@@ -901,7 +923,9 @@ async function appendSyncAuditEntries(
 				snapshotId: args.snapshotId ? String(args.snapshotId) : undefined,
 				syncAttemptId: String(args.syncAttemptId),
 			},
-			previousState: args.previousState,
+			newState: "none",
+			outcome: "transitioned",
+			previousState: args.previousState ?? "none",
 			readiness: args.readiness,
 			webhookAgent: args.webhookAgent,
 			workspaceId: args.workspaceId,
@@ -955,6 +979,8 @@ async function appendSyncFailureAuditEntry(
 			loanCode: args.loanCode,
 			syncAttemptId: String(args.syncAttemptId),
 		},
+		newState: "none",
+		previousState: "none",
 		reason: args.error,
 		webhookAgent: args.webhookAgent,
 		workspaceId: fallbackVelocityAuditWorkspaceId(args),
@@ -998,6 +1024,8 @@ async function appendIdentityExceptionAuditEntry(
 			syncAttemptId: String(args.syncAttemptId),
 			webhookCredentialContext: args.webhookCredentialContext,
 		},
+		newState: "none",
+		previousState: "none",
 		reason: args.blocker.message,
 		webhookAgent: args.webhookAgent,
 		workspaceId: fallbackVelocityAuditWorkspaceId(args),
@@ -1220,6 +1248,15 @@ export const recordVelocitySyncFailure = convex
 			connectorCredentialContext: args.fetchCredentialContext,
 			dealHref: args.dealHref,
 			error: args.error,
+			idempotencyKey: buildVelocityFailureSyncIdempotencyKey({
+				expectedLinkApplicationId: args.expectedLinkApplicationId,
+				expectedWorkspaceId: args.expectedWorkspaceId,
+				loanCode: args.loanCode,
+				reason: "fetch_failed",
+				startedAt: args.startedAt,
+				trigger: args.trigger,
+				webhookEventId: args.webhookEventId,
+			}),
 			loanCode: args.loanCode,
 			rawResponseBody: args.rawResponseBody,
 			request: args.request,
@@ -1296,6 +1333,15 @@ export const applyVelocityFullDealSync = convex
 				connectorCredentialContext: args.fetchCredentialContext,
 				dealHref: args.dealHref,
 				error: normalized.error,
+				idempotencyKey: buildVelocityFailureSyncIdempotencyKey({
+					expectedLinkApplicationId: args.expectedLinkApplicationId,
+					expectedWorkspaceId: args.expectedWorkspaceId,
+					loanCode: args.loanCode,
+					reason: "missing_identity",
+					startedAt: args.startedAt,
+					trigger: args.trigger,
+					webhookEventId: args.webhookEventId,
+				}),
 				loanCode: args.loanCode,
 				rawDealHash: await hashStableVelocityJson(args.rawDeal),
 				rawResponseBody: args.rawResponseBody,

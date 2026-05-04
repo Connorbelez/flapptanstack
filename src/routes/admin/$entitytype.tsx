@@ -4,10 +4,19 @@ import {
 	redirect,
 	useMatch,
 } from "@tanstack/react-router";
+import { lazy, Suspense } from "react";
 import { AdminEntityViewPage } from "#/components/admin/shell/AdminEntityViewPage";
-import { VelocityPackagesIndexPage } from "#/components/admin/velocity/VelocityPackagesIndexPage";
+import { AdminPageSkeleton } from "#/components/admin/shell/AdminRouteStates";
 import { EMPTY_ADMIN_DETAIL_SEARCH } from "#/lib/admin-detail-search";
 import { isReservedAdminRouteSegment } from "#/lib/admin-entities";
+
+const VelocityPackagesIndexPage = lazy(() =>
+	import("#/components/admin/velocity/VelocityPackagesIndexPage").then(
+		(module) => ({
+			default: module.VelocityPackagesIndexPage,
+		})
+	)
+);
 
 export const Route = createFileRoute("/admin/$entitytype")({
 	beforeLoad: ({ params }) => {
@@ -39,7 +48,15 @@ function TypedEntityList({ entityType }: { entityType: string }) {
 	}
 
 	if (entityType === "velocity") {
-		return <VelocityPackagesIndexPage />;
+		return (
+			<Suspense
+				fallback={
+					<AdminPageSkeleton descriptionWidth="w-72" titleWidth="w-64" />
+				}
+			>
+				<VelocityPackagesIndexPage />
+			</Suspense>
+		);
 	}
 
 	return <AdminEntityViewPage entityType={entityType} />;

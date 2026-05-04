@@ -1401,7 +1401,7 @@ export function CollectionsStep({
 				<DialogContent className="sm:max-w-lg">
 					<DialogHeader>
 						<DialogTitle>Create borrower for Rotessa</DialogTitle>
-						<DialogDescription>
+						<DialogDescription className="sr-only">
 							This track provisions the borrower canonically and captures the
 							bank details needed to create a new Rotessa payment schedule.
 						</DialogDescription>

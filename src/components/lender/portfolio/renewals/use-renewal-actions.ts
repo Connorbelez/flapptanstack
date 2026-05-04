@@ -1,16 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMutation } from "convex/react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type {
+	LenderPortfolioQueryMode,
 	PortfolioLenderRenewalIntentChoice,
 	PortfolioLenderRenewalIntentRecord,
 } from "../portfolio-types";
-import { lenderPortfolioRenewalIntentQueryOptions } from "../query-options";
+import {
+	adminLenderPortfolioRenewalIntentQueryOptions,
+	lenderPortfolioRenewalIntentQueryOptions,
+} from "../query-options";
 
 function toErrorMessage(error: unknown, fallback: string) {
 	return error instanceof Error ? error.message : fallback;
+}
+
+function getRenewalActionScopeKey(args: {
+	mode: LenderPortfolioQueryMode;
+	mortgageId: string;
+}) {
+	const ownerKey =
+		args.mode.kind === "admin" ? args.mode.targetLenderId : args.mode.portalId;
+	return `${args.mode.kind}:${ownerKey}:${args.mortgageId}`;
 }
 
 export interface SubmitRenewalIntentArgs {
@@ -28,44 +41,101 @@ export interface UsePortfolioRenewalActionsResult {
 }
 
 export function usePortfolioRenewalActions(args: {
+	mode: LenderPortfolioQueryMode;
 	mortgageId: string;
-	portalId: Id<"portals">;
 }): UsePortfolioRenewalActionsResult {
 	const signalLenderRenewalIntent = useMutation(
 		api.renewals.portal.signalLenderRenewalIntent
 	);
-	const renewalQuery = useQuery({
-		...lenderPortfolioRenewalIntentQueryOptions(args.portalId, args.mortgageId),
-	});
+	const signalAdminLenderRenewalIntent = useMutation(
+		api.admin.portfolio.renewals.signalAdminLenderRenewalIntent
+	);
+	const renewalQueryOptions =
+		args.mode.kind === "admin"
+			? adminLenderPortfolioRenewalIntentQueryOptions(
+					args.mode.targetLenderId,
+					args.mortgageId
+				)
+			: lenderPortfolioRenewalIntentQueryOptions(
+					args.mode.portalId,
+					args.mortgageId
+				);
+	const renewalQuery = useQuery(
+		renewalQueryOptions as unknown as Parameters<
+			typeof useQuery<PortfolioLenderRenewalIntentRecord>
+		>[0]
+	);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [submitErrorMessage, setSubmitErrorMessage] = useState<
 		string | undefined
 	>(undefined);
+	const scopeKey = getRenewalActionScopeKey(args);
+	const activeScopeKeyRef = useRef(scopeKey);
+	const submitOperationRef = useRef(0);
+
+	useEffect(() => {
+		activeScopeKeyRef.current = scopeKey;
+		submitOperationRef.current += 1;
+		setIsSubmitting(false);
+		setSubmitErrorMessage(undefined);
+	}, [scopeKey]);
 
 	const submitIntent = useCallback(
 		async ({ intent, partialExitFractions }: SubmitRenewalIntentArgs) => {
+			const operationId = submitOperationRef.current + 1;
+			submitOperationRef.current = operationId;
+			const operationScopeKey = scopeKey;
 			setIsSubmitting(true);
 			setSubmitErrorMessage(undefined);
 
 			try {
-				await signalLenderRenewalIntent({
-					intent,
-					mortgageId: args.mortgageId as Id<"mortgages">,
-					partialExitFractions,
-					portalId: args.portalId,
-				});
+				if (args.mode.kind === "admin") {
+					await signalAdminLenderRenewalIntent({
+						intent,
+						mortgageId: args.mortgageId as Id<"mortgages">,
+						partialExitFractions,
+						reason:
+							args.mode.actionReason ??
+							"Admin submitted lender renewal decision from portfolio tab.",
+						targetLenderId: args.mode.targetLenderId,
+					});
+				} else {
+					await signalLenderRenewalIntent({
+						intent,
+						mortgageId: args.mortgageId as Id<"mortgages">,
+						partialExitFractions,
+						portalId: args.mode.portalId,
+					});
+				}
 			} catch (error) {
-				setSubmitErrorMessage(
-					toErrorMessage(
-						error,
-						"Unable to save the renewal decision right now."
-					)
-				);
+				if (
+					submitOperationRef.current === operationId &&
+					activeScopeKeyRef.current === operationScopeKey
+				) {
+					setSubmitErrorMessage(
+						toErrorMessage(
+							error,
+							"Unable to save the renewal decision right now."
+						)
+					);
+				}
+				throw error;
 			} finally {
-				setIsSubmitting(false);
+				if (
+					submitOperationRef.current === operationId &&
+					activeScopeKeyRef.current === operationScopeKey
+				) {
+					setIsSubmitting(false);
+				}
 			}
 		},
-		[args.mortgageId, args.portalId, signalLenderRenewalIntent]
+		[
+			args.mortgageId,
+			args.mode,
+			scopeKey,
+			signalAdminLenderRenewalIntent,
+			signalLenderRenewalIntent,
+		]
 	);
 
 	return {

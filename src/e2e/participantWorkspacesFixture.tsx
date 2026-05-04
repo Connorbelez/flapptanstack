@@ -109,11 +109,17 @@ const baseWorkspace: ParticipantDealWorkspace = {
 		activeLawyerAccessCount: 1,
 		currentInvitation: {
 			acceptedAt: null,
+			deliveredAt: null,
+			deliveryError: null,
+			deliveryProvider: null,
+			deliveryStatus: null,
 			expiresAt: null,
 			invitationId: null,
+			lastDeliveryAttemptAt: null,
 			status: "none",
 			targetEmail: null,
 			updatedAt: null,
+			workosInvitationId: null,
 		},
 		gate: {
 			message: "Legal representation gate is satisfied.",
@@ -158,6 +164,29 @@ const baseWorkspace: ParticipantDealWorkspace = {
 			validationError: null,
 		},
 		fractionalShareUnits: 2500,
+		involvedParties: [
+			{
+				email: "buyer@test.fairlend.ca",
+				hasWorkspaceAccess: true,
+				label: "Buyer",
+				name: "Bianca Buyer",
+				role: "buyer",
+			},
+			{
+				email: "seller@test.fairlend.ca",
+				hasWorkspaceAccess: true,
+				label: "Seller",
+				name: "Sam Seller",
+				role: "seller",
+			},
+			{
+				email: "lawyer@test.fairlend.ca",
+				hasWorkspaceAccess: true,
+				label: "Buyer's Lawyer",
+				name: "Laura Lawyer",
+				role: "buyer_lawyer",
+			},
+		],
 		lawyer: {
 			authId: "lawyer-auth",
 			displayName: "Laura Lawyer",

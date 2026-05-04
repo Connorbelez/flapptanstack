@@ -12,6 +12,7 @@ import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
 import { Textarea } from "#/components/ui/textarea";
 import { formatPortfolioEnumLabel } from "./portfolio-formatters";
+import { PortfolioDescriptionTooltip } from "./portfolio-shell";
 import type {
 	PortfolioBrokerContextSource,
 	PortfolioCommandCenterSnapshot,
@@ -181,12 +182,11 @@ export function BrokerChatPanel({
 					<div className="flex items-center gap-2">
 						<MessageSquareText className="size-4 text-muted-foreground" />
 						<h3 className="font-semibold text-base">Broker Chat</h3>
+						<PortfolioDescriptionTooltip
+							label="About Broker Chat"
+							text="Day-one coordination stays assigned-broker oriented and reuses the explicit broker contract instead of inventing an inbox or live transport state in the UI."
+						/>
 					</div>
-					<p className="text-muted-foreground text-sm leading-6">
-						Day-one coordination stays assigned-broker oriented and reuses the
-						explicit broker contract instead of inventing an inbox or live
-						transport state in the UI.
-					</p>
 				</div>
 				<Badge variant="outline">
 					{buildTransportBadgeLabel(brokerCoordination)}
@@ -205,18 +205,16 @@ export function BrokerChatPanel({
 						<div className="space-y-1.5">
 							<div className="flex flex-wrap items-center gap-2">
 								<p className="font-medium text-sm">{broker.name}</p>
+								<PortfolioDescriptionTooltip
+									label={`About ${broker.name} availability`}
+									text={`Availability is ${formatPortfolioEnumLabel(
+										brokerCoordination.availabilityState
+									).toLowerCase()}. The rail keeps direct coordination available even before live in-app chat is ready.`}
+								/>
 								{broker.brokerageName ? (
 									<Badge variant="outline">{broker.brokerageName}</Badge>
 								) : null}
 							</div>
-							<p className="text-muted-foreground text-sm leading-6">
-								Availability is{" "}
-								{formatPortfolioEnumLabel(
-									brokerCoordination.availabilityState
-								).toLowerCase()}
-								. The rail keeps direct coordination available even before live
-								in-app chat is ready.
-							</p>
 							<div className="flex flex-wrap gap-3 text-muted-foreground text-xs">
 								{broker.email ? (
 									<span className="flex items-center gap-1.5">
@@ -257,8 +255,16 @@ export function BrokerChatPanel({
 					className="rounded-xl border border-border/70 p-4"
 					data-testid="broker-chat-prefill"
 				>
-					<div className="flex flex-wrap items-center justify-between gap-2">
-						<p className="font-medium text-sm">Selected handoff</p>
+					<div className="flex flex-wrap items-start justify-between gap-2">
+						<div className="flex items-center gap-2">
+							<p className="font-medium text-sm">Broker message draft</p>
+							{selectedPrefillContext ? null : (
+								<PortfolioDescriptionTooltip
+									label="About broker message draft"
+									text="Choose an action or suggested follow-up to draft a broker message with the relevant status, due date, and property context."
+								/>
+							)}
+						</div>
 						{selectedPrefillContext ? (
 							<Badge variant="outline">
 								{formatPortfolioEnumLabel(selectedPrefillContext.contextType)}
@@ -271,6 +277,10 @@ export function BrokerChatPanel({
 								<p className="font-medium text-sm">
 									{selectedPrefillContext.title}
 								</p>
+								<p className="text-muted-foreground text-sm leading-6">
+									This drafts a broker follow-up using the selected action
+									context.
+								</p>
 								<p className="text-muted-foreground text-sm">
 									{selectedPrefillContext.propertyLabel}
 								</p>
@@ -282,19 +292,14 @@ export function BrokerChatPanel({
 								value={draftMessage}
 							/>
 						</div>
-					) : (
-						<p className="mt-3 text-muted-foreground text-sm leading-6">
-							Choose an action above or a suggested follow-up below to prefill
-							the broker handoff.
-						</p>
-					)}
+					) : null}
 				</div>
 
 				{prefillSections.length > 0 ? (
 					<div className="space-y-3">
 						<div className="flex items-center gap-2 font-medium text-sm">
 							<Waypoints className="size-4 text-muted-foreground" />
-							Suggested handoffs
+							Suggested broker follow-ups
 						</div>
 						{prefillSections.map((section, sectionIndex) => (
 							<div className="space-y-2" key={section.label}>
@@ -332,13 +337,13 @@ export function BrokerChatPanel({
 					<div className="space-y-3">
 						<div className="flex items-center gap-2 font-medium text-sm">
 							<Building2 className="size-4 text-muted-foreground" />
-							Broker handoff
+							Broker contact
 						</div>
 						{renderBrokerContactAction(brokerCoordination, contactHref)}
 						<p className="text-muted-foreground text-xs leading-5">
 							Live rail chat transport is not enabled in this slice yet. This
 							panel stays contract-backed and non-destructive by routing the
-							handoff through the explicit broker coordination CTA.
+							follow-up through the explicit broker coordination CTA.
 						</p>
 					</div>
 				</div>

@@ -15,6 +15,10 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
+import {
+	describeSigningProgress,
+	groupSignableDealDocuments,
+} from "#/lib/deal-document-signing-presentation";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
@@ -137,17 +141,12 @@ function groupDocuments(documents: DealDocumentListItem[]) {
 	const availableDocuments = documents.filter(
 		(document) => document.status === "available" && document.url
 	);
-	const signableDocuments = documents.filter(
-		(document) => document.class === "private_templated_signable"
-	);
+	const groupedSignableDocuments = groupSignableDealDocuments(documents);
 
 	return {
-		activeSignableDocuments: signableDocuments.filter(
-			(document) => !document.archivedSigning?.finalPdfUrl
-		),
-		archivedSignableDocuments: signableDocuments.filter((document) =>
-			Boolean(document.archivedSigning?.finalPdfUrl)
-		),
+		activeSignableDocuments: groupedSignableDocuments.activeSignableDocuments,
+		archivedSignableDocuments:
+			groupedSignableDocuments.archivedSignableDocuments,
 		generatedReadOnly: availableDocuments.filter(
 			(document) => document.class === "private_templated_non_signable"
 		),
@@ -158,11 +157,19 @@ function groupDocuments(documents: DealDocumentListItem[]) {
 }
 
 function describeLifecycle(args: {
-	archivedArtifactCount: number;
+	archivedSignedArtifactCount: number;
+	archivedSignableDocumentCount: number;
 	packageStatus: string | null | undefined;
 }) {
-	if (args.archivedArtifactCount > 0 || args.packageStatus === "archived") {
+	if (args.archivedSignedArtifactCount > 0) {
 		return "Locked -> signed -> archived";
+	}
+
+	if (
+		args.archivedSignableDocumentCount > 0 ||
+		args.packageStatus === "archived"
+	) {
+		return "Locked -> archived";
 	}
 
 	if (args.packageStatus === "ready") {
@@ -254,8 +261,16 @@ export function PortalDealDetailContent({
 
 	const groupedDocuments = groupDocuments(detail.documentInstances);
 	const resolvedDealId = detail.deal.dealId;
+	const archivedSignedArtifactCount =
+		groupedDocuments.archivedSignableDocuments.filter(
+			(document) =>
+				Boolean(document.archivedSigning?.finalPdfUrl) ||
+				Boolean(document.archivedSigning?.signingCompletedAt)
+		).length;
 	const lifecycleLabel = describeLifecycle({
-		archivedArtifactCount: groupedDocuments.archivedSignableDocuments.length,
+		archivedSignedArtifactCount,
+		archivedSignableDocumentCount:
+			groupedDocuments.archivedSignableDocuments.length,
 		packageStatus: detail.documentPackage?.status,
 	});
 
@@ -373,8 +388,11 @@ export function PortalDealDetailContent({
 					<Badge variant="secondary">
 						{formatEnumLabel(detail.mortgage.status)}
 					</Badge>
-					{groupedDocuments.archivedSignableDocuments.length > 0 ? (
+					{archivedSignedArtifactCount > 0 ? (
 						<Badge variant="secondary">Signed archive ready</Badge>
+					) : null}
+					{groupedDocuments.archivedSignableDocuments.length > 0 ? (
+						<Badge variant="outline">Archived signables</Badge>
 					) : null}
 				</div>
 				<div className="space-y-1">
@@ -385,7 +403,7 @@ export function PortalDealDetailContent({
 				</div>
 			</div>
 
-			{groupedDocuments.archivedSignableDocuments.length > 0 ? (
+			{archivedSignedArtifactCount > 0 ? (
 				<div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-4">
 					<p className="font-medium text-emerald-900 text-sm dark:text-emerald-100">
 						Signed archive captured
@@ -705,6 +723,19 @@ export function PortalDealDetailContent({
 
 								<div className="grid gap-2 text-muted-foreground text-xs sm:grid-cols-2">
 									<p>
+										Envelope status:{" "}
+										{formatEnumLabel(
+											document.signing?.status ??
+												document.signing?.generatedDocumentSigningStatus ??
+												"not_created"
+										)}
+									</p>
+									<p>{describeSigningProgress(document.signing)}</p>
+									<p>
+										Provider envelope:{" "}
+										{document.signing?.providerEnvelopeId ?? "Not created"}
+									</p>
+									<p>
 										Last provider sync:{" "}
 										{formatDateTime(
 											document.signing?.lastProviderSyncAt ?? null
@@ -769,7 +800,7 @@ export function PortalDealDetailContent({
 					) : (
 						<p className="text-muted-foreground text-sm">
 							{groupedDocuments.archivedSignableDocuments.length > 0
-								? "All signable documents have completed signing and moved into the signed archive."
+								? "All signable documents are archived."
 								: "No signable package documents are available yet."}
 						</p>
 					)}
@@ -778,10 +809,10 @@ export function PortalDealDetailContent({
 
 			<Card>
 				<CardHeader>
-					<CardTitle>Archived Signed Artifacts</CardTitle>
+					<CardTitle>Archived Signable Documents</CardTitle>
 					<CardDescription>
-						Completed envelopes sealed into FairLend storage for post-close
-						review.
+						Archived signable package members retained for audit, regeneration,
+						and post-close review.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-3">
@@ -806,12 +837,42 @@ export function PortalDealDetailContent({
 											<Badge variant={formatBadgeVariant(document.status)}>
 												{formatEnumLabel(document.status)}
 											</Badge>
+											{document.signing?.status ? (
+												<Badge
+													variant={formatBadgeVariant(document.signing.status)}
+												>
+													{formatEnumLabel(document.signing.status)}
+												</Badge>
+											) : null}
+											{document.signing?.generatedDocumentSigningStatus ? (
+												<Badge
+													variant={formatBadgeVariant(
+														document.signing.generatedDocumentSigningStatus
+													)}
+												>
+													{formatEnumLabel(
+														document.signing.generatedDocumentSigningStatus
+													)}
+												</Badge>
+											) : null}
 											{document.archivedSigning?.signingCompletedAt ? (
 												<Badge variant="secondary">Signed</Badge>
 											) : null}
 										</div>
 									</div>
 									<div className="flex flex-wrap gap-2">
+										{document.signing?.envelopeId ? (
+											<Button
+												onClick={() =>
+													void syncEnvelope({ instanceId: document.instanceId })
+												}
+												size="sm"
+												type="button"
+												variant="outline"
+											>
+												Refresh status
+											</Button>
+										) : null}
 										{document.archivedSigning?.finalPdfUrl ? (
 											<Button asChild size="sm" variant="outline">
 												<a
@@ -840,6 +901,56 @@ export function PortalDealDetailContent({
 										) : null}
 									</div>
 								</div>
+								<div className="grid gap-2 text-muted-foreground text-xs sm:grid-cols-2">
+									<p>
+										Envelope status:{" "}
+										{formatEnumLabel(
+											document.signing?.status ??
+												document.signing?.generatedDocumentSigningStatus ??
+												"not_created"
+										)}
+									</p>
+									<p>{describeSigningProgress(document.signing)}</p>
+									<p>
+										Provider envelope:{" "}
+										{document.signing?.providerEnvelopeId ?? "Not created"}
+									</p>
+									<p>
+										Last provider sync:{" "}
+										{formatDateTime(
+											document.signing?.lastProviderSyncAt ?? null
+										)}
+									</p>
+								</div>
+								{document.signing?.recipients.length ? (
+									<div className="flex flex-wrap gap-2">
+										{document.signing.recipients.map((recipient) => (
+											<div
+												className="rounded-full border border-border/60 px-3 py-1 text-xs"
+												key={`${document.instanceId}-${recipient.platformRole}`}
+											>
+												<span className="font-medium">{recipient.name}</span>
+												<span className="text-muted-foreground">
+													{" "}
+													• {formatEnumLabel(recipient.status)}
+												</span>
+												{recipient.isCurrentViewer ? (
+													<span className="text-muted-foreground"> • You</span>
+												) : null}
+											</div>
+										))}
+									</div>
+								) : (
+									<p className="text-muted-foreground text-sm">
+										Recipient routing has not been resolved for this signable
+										document yet.
+									</p>
+								)}
+								{document.signing?.lastError || document.lastError ? (
+									<p className="text-destructive text-sm">
+										{document.signing?.lastError ?? document.lastError}
+									</p>
+								) : null}
 								<div className="grid gap-2 text-muted-foreground text-xs sm:grid-cols-3">
 									<p>
 										Signed at:{" "}
@@ -859,7 +970,7 @@ export function PortalDealDetailContent({
 						))
 					) : (
 						<p className="text-muted-foreground text-sm">
-							No archived signed artifacts are available yet.
+							No archived signable documents are available yet.
 						</p>
 					)}
 				</CardContent>

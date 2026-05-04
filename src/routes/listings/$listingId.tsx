@@ -1,11 +1,34 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { AlertCircle, ArrowLeft } from "lucide-react";
+import type { ListingCheckoutReturnState } from "#/components/listings/listing-detail-types";
 import { MarketplaceListingDetailPage } from "#/components/listings/MarketplaceListingDetailPage";
 import { marketplaceListingDetailQueryOptions } from "#/components/listings/query-options";
 import { guardRouteAccess } from "#/lib/auth";
 import { assertActivePortalId } from "#/lib/portal/active-portal";
 import { Route as RootRoute } from "../__root";
+
+const LISTING_CHECKOUT_RETURN_STATES = new Set<ListingCheckoutReturnState>([
+	"abandoned",
+	"error",
+	"expired",
+	"provider_start_failed",
+	"success_pending",
+]);
+
+export function parseListingCheckoutReturnState(
+	search: Record<string, unknown>
+): ListingCheckoutReturnState | undefined {
+	const checkout = search.checkout;
+	if (typeof checkout !== "string") {
+		return undefined;
+	}
+	return LISTING_CHECKOUT_RETURN_STATES.has(
+		checkout as ListingCheckoutReturnState
+	)
+		? (checkout as ListingCheckoutReturnState)
+		: undefined;
+}
 
 export const Route = createFileRoute("/listings/$listingId")({
 	beforeLoad: guardRouteAccess("listings"),
@@ -29,6 +52,9 @@ export const Route = createFileRoute("/listings/$listingId")({
 
 function RouteComponent() {
 	const { listingId } = Route.useLoaderData();
+	const checkoutReturnState = parseListingCheckoutReturnState(
+		Route.useSearch() as Record<string, unknown>
+	);
 	const { portalContext } = RootRoute.useRouteContext();
 	const portalId = assertActivePortalId(
 		portalContext,
@@ -42,7 +68,13 @@ function RouteComponent() {
 		throw notFound();
 	}
 
-	return <MarketplaceListingDetailPage portalId={portalId} snapshot={data} />;
+	return (
+		<MarketplaceListingDetailPage
+			checkoutReturnState={checkoutReturnState}
+			portalId={portalId}
+			snapshot={data}
+		/>
+	);
 }
 
 function MarketplaceListingNotFoundComponent() {

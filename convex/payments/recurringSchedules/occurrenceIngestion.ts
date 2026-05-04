@@ -134,6 +134,7 @@ type OccurrenceMatchedBy =
 	| "existing_transfer"
 	| "external_occurrence_ref"
 	| "external_schedule_ordinal"
+	| "external_schedule_obligation_date"
 	| "external_schedule_date"
 	| "unresolved";
 
@@ -227,6 +228,51 @@ async function resolvePlanEntryByOccurrence(
 	}
 
 	return null;
+}
+
+async function resolvePlanEntryByObligationDueDate(
+	ctx: IngestOccurrenceMutationCtx,
+	args: {
+		event: IngestOccurrenceEvent;
+		externalCollectionScheduleId?: Id<"externalCollectionSchedules">;
+	}
+): Promise<CollectionPlanEntryDoc | null> {
+	if (!(args.externalCollectionScheduleId && args.event.scheduledDate)) {
+		return null;
+	}
+
+	const dayRange = parseBusinessDateToUtcRange(args.event.scheduledDate);
+	const candidates = await ctx.db
+		.query("collectionPlanEntries")
+		.withIndex("by_external_schedule_date", (q) =>
+			q.eq("externalCollectionScheduleId", args.externalCollectionScheduleId)
+		)
+		.collect();
+	const matchedEntries: CollectionPlanEntryDoc[] = [];
+
+	for (const entry of candidates) {
+		const obligations = await Promise.all(
+			entry.obligationIds.map((obligationId) => ctx.db.get(obligationId))
+		);
+		if (
+			obligations.some(
+				(obligation) =>
+					obligation &&
+					obligation.dueDate >= dayRange.start &&
+					obligation.dueDate < dayRange.endExclusive
+			)
+		) {
+			matchedEntries.push(entry);
+		}
+	}
+
+	if (matchedEntries.length > 1) {
+		throw new ConvexError(
+			`Multiple collection plan entries matched external schedule ${args.externalCollectionScheduleId} for obligation due date ${args.event.scheduledDate}`
+		);
+	}
+
+	return matchedEntries[0] ?? null;
 }
 
 async function resolveExistingTransfer(
@@ -592,6 +638,16 @@ async function resolveOccurrenceMatch(args: {
 			} else {
 				matchedBy = "external_schedule_date";
 			}
+		}
+	}
+
+	if (!planEntry) {
+		planEntry = await resolvePlanEntryByObligationDueDate(args.ctx, {
+			event: args.event,
+			externalCollectionScheduleId: args.linkedScheduleId,
+		});
+		if (planEntry) {
+			matchedBy = "external_schedule_obligation_date";
 		}
 	}
 

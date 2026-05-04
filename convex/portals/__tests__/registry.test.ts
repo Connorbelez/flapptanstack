@@ -8,10 +8,7 @@ import {
 import { FAIRLEND_ADMIN } from "../../../src/test/auth/identities";
 import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
-import {
-	FAIRLEND_BROKERAGE_ORG_ID,
-	FAIRLEND_STAFF_ORG_ID,
-} from "../../constants";
+import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
 import { getLatestOnboardingPortalIdForUser } from "../borrowerPortalAttribution";
 import {
 	DEFAULT_PORTAL_POST_AUTH_PATH,
@@ -179,7 +176,7 @@ async function seedPortalBackfillFixture(t: ReturnType<typeof createHarness>) {
 				requestedRole: "lender",
 				status: "pending_review",
 				referralSource: "self_signup",
-				targetOrganizationId: FAIRLEND_BROKERAGE_ORG_ID,
+				targetOrganizationId: FAIRLEND_STAFF_ORG_ID,
 				createdAt: now + 1,
 			}
 		);
@@ -567,6 +564,24 @@ describe("portal registry backfill", () => {
 			},
 		});
 
+		const byAlternateLocalPort = await t.query(
+			api.portals.queries.resolvePortalByHost,
+			{
+				host: "MIC.localhost:3001",
+			}
+		);
+		expect(byAlternateLocalPort).toMatchObject({
+			availability: "active",
+			canonicalHost: MIC_PORTAL_LOCAL_HOST,
+			matchedHostType: "local",
+			requestedHost: "mic.localhost:3001",
+			portal: {
+				portalId: micPortalId,
+				portalType: "mic",
+				slug: MIC_PORTAL_SLUG,
+			},
+		});
+
 		const byProductionHost = await t.query(
 			api.portals.queries.resolvePortalByHost,
 			{
@@ -782,7 +797,7 @@ describe("portal registry backfill", () => {
 				"portals",
 				buildPortalRecord({
 					localHost: "legacy-app.localhost:3000",
-					orgId: FAIRLEND_BROKERAGE_ORG_ID,
+					orgId: FAIRLEND_STAFF_ORG_ID,
 					portalType: "fairlend",
 					productionHost: "legacy-app.fairlend.ca",
 					slug: "app",
@@ -886,8 +901,10 @@ describe("portal registry backfill", () => {
 		expect(String(adminResult.homePortalId)).toBe(
 			String(adminResult.homePortal?.portalId)
 		);
-		expect(adminResult.currentOrgPortalId).toBeNull();
-		expect(adminResult.currentOrgPortal).toBeNull();
+		expect(String(adminResult.currentOrgPortalId)).toBe(
+			String(adminResult.currentOrgPortal?.portalId)
+		);
+		expect(adminResult.currentOrgPortal?.slug).toBe("app");
 
 		await t.run(async (ctx) => {
 			await ctx.db.insert("organizationMemberships", {

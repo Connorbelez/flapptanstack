@@ -24,14 +24,12 @@ vi.mock("@tanstack/react-router", () => ({
 		children: ReactNode;
 		className?: string;
 		params?: Record<string, string>;
+		search?: Record<string, string | boolean | undefined>;
 		to: string;
 	}) => (
 		<a
 			className={props.className}
-			href={props.to.replace(
-				"$recordid",
-				props.params?.recordid ?? "$recordid"
-			)}
+			href={buildMockHref(props.to, props.params, props.search)}
 		>
 			{props.children}
 		</a>
@@ -66,6 +64,25 @@ const REFERENCE: SidebarRecordRef = {
 	recordId: "borrower_1",
 	recordKind: "native",
 };
+
+function buildMockHref(
+	to: string,
+	params?: Record<string, string>,
+	search?: Record<string, string | boolean | undefined>
+) {
+	const path = to
+		.replace("$entitytype", params?.entitytype ?? "$entitytype")
+		.replace("$recordid", params?.recordid ?? "$recordid");
+	const query = Object.entries(search ?? {})
+		.filter((entry): entry is [string, string | boolean] => entry[1] !== undefined)
+		.map(
+			([key, value]) =>
+				`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`
+		)
+		.join("&");
+
+	return query ? `${path}?${query}` : path;
+}
 
 function buildBorrowerObjectDef(): Doc<"objectDefs"> {
 	return {
@@ -195,5 +212,49 @@ describe("AdminRecordDetailSurface", () => {
 		expect(screen.getByText("Adapter details ready")).toBeTruthy();
 		expect(adapterSpy).toHaveBeenCalledTimes(1);
 		expect(adapterSpy.mock.calls[0]?.[0]?.record).toBe(record);
+	});
+
+	it("opens lender portfolio from the sheet as a full-page portfolio view", () => {
+		const record: UnifiedRecord = {
+			...buildBorrowerRecord(),
+			_id: "lender_1",
+		};
+		const adapter: RecordSidebarEntityAdapter = {
+			renderDetailsTab: () => <div>Adapter details ready</div>,
+			renderPortfolioTab: () => <div>Portfolio tab ready</div>,
+		};
+		const objectDef = buildBorrowerObjectDef();
+		const useQueryMock = useQuery as unknown as QueryMock;
+
+		useQueryMock.mockImplementation((_, queryArgs) =>
+			queryArgs === undefined
+				? [objectDef]
+				: {
+						adapterContract: {
+							...buildAdapterContract(),
+							entityType: "lenders",
+						},
+						fields: [],
+						objectDef,
+						record,
+					}
+		);
+
+		render(
+			<AdminRecordDetailSurface
+				adapters={{ lenders: adapter }}
+				reference={{
+					entityType: "lenders",
+					recordId: "lender_1",
+					recordKind: "native",
+				}}
+				variant="sheet"
+			/>
+		);
+
+		expect(screen.getByRole("link", { name: /portfolio/i }).getAttribute("href")).toBe(
+			"/admin/lenders/lender_1?detailOpen=false&detailTab=portfolio"
+		);
+		expect(screen.queryByText("Portfolio tab ready")).toBeNull();
 	});
 });

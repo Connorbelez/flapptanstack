@@ -3,6 +3,7 @@
 import { Link } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, Compass, Home, Search, Sparkles } from "lucide-react";
+import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
 import { AppErrorComponent } from "#/components/error-boundary";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -294,12 +295,15 @@ export function AdminNotFoundState({
 						</Badge>
 					</div>
 					<div className="max-w-2xl space-y-3">
-						<h1 className="font-semibold text-3xl tracking-tight md:text-4xl">
-							{title}
-						</h1>
-						<p className="max-w-xl text-base/7 text-muted-foreground md:text-[15px]">
-							{description}
-						</p>
+						<div className="flex items-center gap-2">
+							<h1 className="font-semibold text-3xl tracking-tight md:text-4xl">
+								{title}
+							</h1>
+							<AdminDescriptionHelp
+								content={description}
+								label={`${title} details`}
+							/>
+						</div>
 					</div>
 					<div className="flex flex-wrap gap-3">
 						{variant === "record" && entity ? (

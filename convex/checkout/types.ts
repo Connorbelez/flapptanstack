@@ -7,7 +7,7 @@ import {
 	selectedLawyerSnapshotValidator,
 } from "./validators";
 
-export const CHECKOUT_SESSION_TTL_MS = 5 * 60 * 1000;
+export const CHECKOUT_SESSION_TTL_MS = 15 * 60 * 1000;
 
 export const startMarketplaceCheckoutErrorCodes = [
 	"unauthorized",

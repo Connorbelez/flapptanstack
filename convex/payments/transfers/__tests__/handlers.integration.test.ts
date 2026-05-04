@@ -34,6 +34,9 @@ const ONLY_MANUAL_CONFIRM_RE =
 	/Only manual and manual_review transfers can be confirmed manually/;
 const OUTBOUND_CONFIRM_AFTER_INITIATE_RE =
 	/Transfer must be in "pending" or "processing" status to confirm manually/;
+const HOSTED_CHECKOUT_RE = /hosted checkout flow/;
+const STRIPE_CHECKOUT_METADATA_RE = /checkout metadata/;
+const STRIPE_LOCK_FEE_AMOUNT_RE = /exactly 25000 cents/;
 
 const ADMIN_SOURCE = {
 	channel: "admin_dashboard" as const,
@@ -791,6 +794,98 @@ describe("transfer handlers integration: mutations", () => {
 			(retriedRows[0]?.metadata as Record<string, unknown> | undefined)
 				?.retryOfTransferId
 		).toBe(`${failedTransferId}`);
+	});
+
+	it("retryTransfer rejects checkout Stripe lock-fee transfers before cloning", async () => {
+		const t = createHarness();
+		const auth = asPaymentUser(t);
+		const seeded = await seedCoreEntities(t);
+
+		const failedTransferId = await insertTransfer(t, {
+			status: "failed",
+			direction: "inbound",
+			transferType: "locking_fee_collection",
+			amount: 25_000,
+			counterpartyType: "lender",
+			counterpartyId: `${seeded.lenderId}`,
+			lenderId: seeded.lenderId,
+			mortgageId: seeded.mortgageId,
+			providerCode: "stripe",
+			providerRef: "cs_test_failed_retry",
+			idempotencyKey: "checkout-lock-fee:failed-retry",
+			metadata: {
+				checkoutSessionId: "checkout_failed_retry",
+				idempotencyKey: "checkout-lock-fee:failed-retry",
+				providerEventId: "evt_failed_retry",
+				reservationId: "reservation_failed_retry",
+				stripeCheckoutSessionId: "cs_test_failed_retry",
+			},
+			createdAt: 3100,
+			lastTransitionAt: 3100,
+		});
+
+		await expect(
+			auth.mutation(api.payments.transfers.mutations.retryTransfer, {
+				transferId: failedTransferId,
+			})
+		).rejects.toThrow(HOSTED_CHECKOUT_RE);
+
+		const retryRows = await t.run(async (ctx) => {
+			return ctx.db
+				.query("transferRequests")
+				.withIndex("by_idempotency", (q) =>
+					q.eq("idempotencyKey", `retry:${failedTransferId}`)
+				)
+				.collect();
+		});
+		expect(retryRows).toHaveLength(0);
+	});
+
+	it("createTransferRequest enforces strict Stripe checkout lock-fee metadata and amount", async () => {
+		const t = createHarness();
+		const auth = asPaymentUser(t);
+		const seeded = await seedCoreEntities(t);
+
+		await expect(
+			auth.mutation(api.payments.transfers.mutations.createTransferRequest, {
+				direction: "inbound",
+				transferType: "locking_fee_collection",
+				amount: 25_000,
+				counterpartyType: "lender",
+				counterpartyId: `${seeded.lenderId}`,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderId,
+				providerCode: "stripe",
+				idempotencyKey: "checkout-lock-fee:missing-stripe-session",
+				metadata: {
+					checkoutSessionId: "checkout_missing_stripe_session",
+					idempotencyKey: "checkout-lock-fee:missing-stripe-session",
+					providerEventId: "evt_missing_stripe_session",
+					reservationId: "reservation_missing_stripe_session",
+				},
+			})
+		).rejects.toThrow(STRIPE_CHECKOUT_METADATA_RE);
+
+		await expect(
+			auth.mutation(api.payments.transfers.mutations.createTransferRequest, {
+				direction: "inbound",
+				transferType: "locking_fee_collection",
+				amount: 10_000,
+				counterpartyType: "lender",
+				counterpartyId: `${seeded.lenderId}`,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderId,
+				providerCode: "stripe",
+				idempotencyKey: "checkout-lock-fee:wrong-amount",
+				metadata: {
+					checkoutSessionId: "checkout_wrong_amount",
+					idempotencyKey: "checkout-lock-fee:wrong-amount",
+					providerEventId: "evt_wrong_amount",
+					reservationId: "reservation_wrong_amount",
+					stripeCheckoutSessionId: "cs_test_wrong_amount",
+				},
+			})
+		).rejects.toThrow(STRIPE_LOCK_FEE_AMOUNT_RE);
 	});
 
 	it("confirmManualTransfer rejects non-manual providers", async () => {

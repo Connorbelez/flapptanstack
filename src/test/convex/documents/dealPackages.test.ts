@@ -918,6 +918,38 @@ async function seedDealPackageFixture(
 	});
 }
 
+async function seedFailedCounselMemoPackage() {
+	installMockDocumensoFetch();
+	const t = createTestConvex({ includeWorkflowComponents: true });
+	const fixture = await seedDealPackageFixture(t, {
+		includeListing: true,
+		templatedVariableKey: "unmapped_deal_variable",
+	});
+	await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+		dealId: fixture.dealId,
+		retry: false,
+	});
+	const failedInstance = await t.run(async (ctx) => {
+		const row = await ctx.db
+			.query("dealDocumentInstances")
+			.withIndex("by_deal", (query) => query.eq("dealId", fixture.dealId))
+			.collect()
+			.then((rows) =>
+				rows.find(
+					(instance) =>
+						instance.status === "generation_failed" &&
+						instance.sourceBlueprintSnapshot.displayName === "Counsel memo"
+				)
+			);
+		if (!row) {
+			throw new Error("Expected failed Counsel memo instance");
+		}
+		return row;
+	});
+
+	return { failedInstance, fixture, t };
+}
+
 describe("documents/dealPackages", () => {
 	it("materializes every canonical system variable when a locked deal package is generated", async () => {
 		const { fetchMock } = installMockDocumensoFetch();
@@ -1088,6 +1120,65 @@ describe("documents/dealPackages", () => {
 					instance.status === "archived"
 			)
 		).toHaveLength(1);
+	});
+
+	it("keeps onboarding signable packages as generated previews without provider side effects", async () => {
+		for (const dealStatus of [
+			"lawyerOnboarding.pending",
+			"lawyerOnboarding.verified",
+		]) {
+			const { fetchMock } = installMockDocumensoFetch();
+			const t = createTestConvex({ includeWorkflowComponents: false });
+			const fixture = await seedDealPackageFixture(t, {
+				includeListing: true,
+				templatedVariableKey: "borrower_primary_full_name",
+			});
+			await setDealStatus(t, fixture.dealId, dealStatus);
+
+			const result = await t.action(
+				internal.documents.dealPackages.runCreateDocumentPackageInternal,
+				{
+					dealId: fixture.dealId,
+					retry: false,
+				}
+			);
+			const packageSurface = await t.withIdentity(FAIRLEND_ADMIN).query(
+				api.documents.dealPackages.getPortalDocumentPackage,
+				{
+					dealId: fixture.dealId,
+				}
+			);
+			const generatedDocuments = await t.run((ctx) =>
+				ctx.db.query("generatedDocuments").collect()
+			);
+			const signatureEnvelopes = await t.run((ctx) =>
+				ctx.db.query("signatureEnvelopes").collect()
+			);
+			const dealEnvelopeAttempts = await t.run((ctx) =>
+				ctx.db.query("dealEnvelopeAttempts").collect()
+			);
+			const signableInstance = packageSurface.instances.find(
+				(instance) => instance.class === "private_templated_signable"
+			);
+
+			expect(result.status).toBe("ready");
+			expect(signableInstance).toMatchObject({
+				displayName: "Borrower signature packet",
+				generatedDocumentId: expect.any(String),
+				status: "available",
+			});
+			expect(generatedDocuments).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						name: "Borrower signature packet",
+						signingStatus: "draft",
+					}),
+				])
+			);
+			expect(signatureEnvelopes).toHaveLength(0);
+			expect(dealEnvelopeAttempts).toHaveLength(0);
+			expect(fetchMock).not.toHaveBeenCalled();
+		}
 	});
 
 	it("materializes immutable deal packages from active private mortgage blueprints", async () => {
@@ -1819,16 +1910,140 @@ describe("documents/dealPackages", () => {
 		const signatureEnvelopes = await t.run((ctx) =>
 			ctx.db.query("signatureEnvelopes").collect()
 		);
+		const signingExceptions = await t.run((ctx) =>
+			ctx.db.query("dealSigningExceptions").collect()
+		);
 
 		expect(result.status).toBe("partial_failure");
 		expect(signableInstance).toMatchObject({
-			lastError: expect.stringContaining(
-				"Documenso signer recipients must have at least one SIGNATURE field"
-			),
+			lastError: expect.stringContaining("Documenso provider preflight"),
 			status: "generation_failed",
 		});
 		expect(signatureEnvelopes).toHaveLength(0);
-		expect(fetchMock).not.toHaveBeenCalledWith(
+		expect(signingExceptions).toEqual([
+			expect.objectContaining({
+				dealId: fixture.dealId,
+				kind: "pre_send_configuration_failure",
+				message: "Documenso provider preflight or create failed.",
+				severity: "blocking",
+				status: "open",
+				details: expect.objectContaining({
+					provider: "documenso",
+					error: expect.stringContaining(
+						"DOCUMENSO_PROVIDER_PREFLIGHT_FAILED"
+					),
+				}),
+			}),
+		]);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("resolves stale pre-send exceptions after a successful signing retry", async () => {
+		const { fetchMock } = installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signableFieldPlatformRole: "borrower_primary",
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		const firstResult = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: false,
+			}
+		);
+		const [openException] = await t.run((ctx) =>
+			ctx.db
+				.query("dealSigningExceptions")
+				.withIndex("by_deal", (query) =>
+					query.eq("dealId", fixture.dealId).eq("status", "open")
+				)
+				.collect()
+		);
+
+		expect(firstResult.status).toBe("partial_failure");
+		expect(openException).toMatchObject({
+			kind: "pre_send_configuration_failure",
+			status: "open",
+		});
+		expect(fetchMock).not.toHaveBeenCalled();
+
+		await t.run(async (ctx) => {
+			const template = await ctx.db
+				.query("documentTemplates")
+				.withIndex("by_name", (query) =>
+					query.eq("name", "Borrower Signature Packet")
+				)
+				.unique();
+			if (!template) {
+				throw new Error("Expected signable template");
+			}
+			const version = await ctx.db
+				.query("documentTemplateVersions")
+				.withIndex("by_template", (query) =>
+					query.eq("templateId", template._id).eq("version", 1)
+				)
+				.unique();
+			if (!version) {
+				throw new Error("Expected signable template version");
+			}
+			const fixedSnapshot = {
+				...version.snapshot,
+				fields: version.snapshot.fields.map((field) =>
+					field.type === "signable"
+						? {
+								...field,
+								signatoryPlatformRole: "lender_primary",
+							}
+						: field
+				),
+			};
+			await ctx.db.patch(version._id, { snapshot: fixedSnapshot });
+			await ctx.db.patch(template._id, { draft: fixedSnapshot });
+		});
+
+		const retryResult = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: true,
+			}
+		);
+		const resolvedExceptions = await t.run((ctx) =>
+			ctx.db
+				.query("dealSigningExceptions")
+				.withIndex("by_deal", (query) =>
+					query.eq("dealId", fixture.dealId).eq("status", "resolved")
+				)
+				.collect()
+		);
+		const envelopes = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+
+		expect(retryResult.status).toBe("ready");
+		expect(resolvedExceptions).toEqual([
+			expect.objectContaining({
+				_id: openException?._id,
+				kind: "pre_send_configuration_failure",
+				resolvedBy: "system:document-package-signing-ready",
+				status: "resolved",
+			}),
+		]);
+		expect(envelopes).toEqual([
+			expect.objectContaining({
+				dealId: fixture.dealId,
+				status: "sent",
+			}),
+		]);
+		expect(fetchMock).toHaveBeenCalledWith(
 			expect.stringContaining("/envelope/create"),
 			expect.anything()
 		);
@@ -2046,6 +2261,7 @@ describe("documents/dealPackages", () => {
 			dealId: fixture.dealId,
 			retry: false,
 		});
+		await setDealStatus(t, fixture.dealId, "documentReview.signed");
 		const packageSurface = await t.withIdentity(fixture.lenderIdentity).query(
 			api.documents.dealPackages.getPortalDocumentPackage,
 			{
@@ -2058,6 +2274,11 @@ describe("documents/dealPackages", () => {
 		if (!signableInstance) {
 			throw new Error("Expected a signable package instance");
 		}
+		expect(signableInstance.signing).toMatchObject({
+			canLaunchEmbeddedSigning: true,
+			status: "sent",
+		});
+		expect(signableInstance.url).toBeNull();
 
 		const session = await t.withIdentity(fixture.lenderIdentity).action(
 			api.documents.signature.sessions.createEmbeddedSigningSession,
@@ -2768,6 +2989,357 @@ describe("documents/dealPackages", () => {
 		expect(signableAfterRetry).toMatchObject({
 			archivedAt: expect.any(Number),
 			status: "archived",
+		});
+	});
+
+	it("exposes remediation state for failed document rows", async () => {
+		const { failedInstance, fixture, t } = await seedFailedCounselMemoPackage();
+
+		const surface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const failedSurfaceRow = surface.instances.find(
+			(instance) => instance.instanceId === failedInstance._id
+		);
+
+		expect(failedSurfaceRow).toMatchObject({
+			instanceId: failedInstance._id,
+			remediationAction: null,
+			remediationReason: null,
+			supersededByInstanceId: null,
+			remediation: {
+				eligibility: "remediable_failed_instance",
+				primaryAction: "open_mapping",
+				summary: expect.stringContaining("variable mapping"),
+			},
+			sourceBlueprintId: expect.any(String),
+			templateId: expect.any(String),
+		});
+	});
+
+	it("treats provider-error document rows as failed and remediable", async () => {
+		const { failedInstance, fixture, t } = await seedFailedCounselMemoPackage();
+		await t.run(async (ctx) => {
+			await ctx.db.patch(failedInstance._id, {
+				lastError: "Documenso POST /envelope/create failed with status 400",
+				status: "provider_error",
+			});
+			await ctx.db.patch(failedInstance.packageId, {
+				status: "pending",
+			});
+		});
+
+		const surface = await t.withIdentity(FAIRLEND_ADMIN).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const failedSurfaceRow = surface.instances.find(
+			(instance) => instance.instanceId === failedInstance._id
+		);
+
+		expect(failedSurfaceRow).toMatchObject({
+			remediation: {
+				eligibility: "remediable_failed_instance",
+				primaryAction: "open_authoring",
+				summary: expect.stringContaining("provider"),
+			},
+			status: "provider_error",
+		});
+
+		await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.documents.dealPackages.waiveDealDocumentInstance,
+			{
+				instanceId: failedInstance._id,
+				reason: "Provider failed row intentionally waived",
+			}
+		);
+		const packageRecord = await t.run((ctx) =>
+			ctx.db.get(failedInstance.packageId)
+		);
+
+		expect(packageRecord).toMatchObject({
+			status: "ready",
+		});
+	});
+
+	it("waives a failed document row for the current deal and journals the decision", async () => {
+		const { failedInstance, fixture, t } = await seedFailedCounselMemoPackage();
+
+		const result = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.documents.dealPackages.waiveDealDocumentInstance,
+			{
+				instanceId: failedInstance._id,
+				reason: "Borrower counsel memo intentionally waived for this deal",
+			}
+		);
+		const state = await t.run(async (ctx) => ({
+			auditJournal: await ctx.db.query("auditJournal").collect(),
+			instance: await ctx.db.get(failedInstance._id),
+		}));
+
+		expect(result).toEqual({ ok: true });
+		expect(state.instance).toMatchObject({
+			archivedAt: expect.any(Number),
+			remediationAction: "waived_for_deal",
+			remediationReason:
+				"Borrower counsel memo intentionally waived for this deal",
+			status: "archived",
+		});
+		expect(state.auditJournal).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					actorType: "system",
+					entityId: String(fixture.dealId),
+					entityType: "deal",
+					eventType: "deal_document.waived_for_deal",
+					afterState: expect.objectContaining({
+						remediationAction: "waived_for_deal",
+					}),
+				}),
+			])
+		);
+	});
+
+	it("rejects invalid waive reasons", async () => {
+		const { failedInstance, t } = await seedFailedCounselMemoPackage();
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).mutation(
+				api.documents.dealPackages.waiveDealDocumentInstance,
+				{
+					instanceId: failedInstance._id,
+					reason: "no",
+				}
+			)
+		).rejects.toThrow(/reason must be between 3 and 280 characters/i);
+	});
+
+	it("archives a failed row source blueprint for future deals only after validating the row relationship", async () => {
+		const { failedInstance, fixture, t } = await seedFailedCounselMemoPackage();
+		if (!failedInstance.sourceBlueprintId) {
+			throw new Error("Expected source blueprint id");
+		}
+
+		const result = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.documents.dealPackages.archiveSourceBlueprintForFutureDeals,
+			{
+				instanceId: failedInstance._id,
+				reason: "Do not include this failed memo in future deals",
+				sourceBlueprintId: failedInstance.sourceBlueprintId,
+			}
+		);
+		const state = await t.run(async (ctx) => ({
+			auditJournal: await ctx.db.query("auditJournal").collect(),
+			blueprint: failedInstance.sourceBlueprintId
+				? await ctx.db.get(failedInstance.sourceBlueprintId)
+				: null,
+			instance: await ctx.db.get(failedInstance._id),
+		}));
+
+		expect(result).toEqual({ ok: true });
+		expect(state.blueprint).toMatchObject({
+			status: "archived",
+		});
+		expect(state.instance).toMatchObject({
+			status: "generation_failed",
+		});
+		expect(state.auditJournal).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					entityId: String(fixture.dealId),
+					eventType: "deal_document.archived_source_blueprint",
+					linkedRecordIds: expect.objectContaining({
+						dealDocumentInstanceId: String(failedInstance._id),
+						packageId: String(failedInstance.packageId),
+						sourceBlueprintId: String(failedInstance.sourceBlueprintId),
+					}),
+				}),
+			])
+		);
+	});
+
+	it("rejects source blueprint archival when the failed row does not own that source", async () => {
+		const { failedInstance, t } = await seedFailedCounselMemoPackage();
+		const otherSourceBlueprintId = await t.run(async (ctx) => {
+			const blueprint = (
+				await ctx.db.query("mortgageDocumentBlueprints").collect()
+			).find(
+				(candidate) =>
+					candidate.mortgageId === failedInstance.mortgageId &&
+					candidate._id !== failedInstance.sourceBlueprintId
+			);
+			if (!blueprint || blueprint._id === failedInstance.sourceBlueprintId) {
+				throw new Error("Expected another blueprint");
+			}
+			return blueprint._id;
+		});
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).mutation(
+				api.documents.dealPackages.archiveSourceBlueprintForFutureDeals,
+				{
+					instanceId: failedInstance._id,
+					sourceBlueprintId: otherSourceBlueprintId,
+				}
+			)
+		).rejects.toThrow(/does not match/i);
+	});
+
+	it("row retry archives only the selected failed row and creates one replacement", async () => {
+		const { failedInstance, fixture, t } = await seedFailedCounselMemoPackage();
+		const secondFailedInstanceId = await t.run(async (ctx) => {
+			return ctx.db.insert("dealDocumentInstances", {
+				archivedAt: undefined,
+				assetId: undefined,
+				createdAt: Date.now(),
+				dealId: failedInstance.dealId,
+				generatedDocumentId: undefined,
+				kind: "generated",
+				lastError: "Missing variables: another_missing_variable",
+				mortgageId: failedInstance.mortgageId,
+				packageId: failedInstance.packageId,
+				sourceBlueprintId: failedInstance.sourceBlueprintId,
+				sourceBlueprintSnapshot: {
+					...failedInstance.sourceBlueprintSnapshot,
+					displayName: "Second failed memo",
+					displayOrder: 10,
+				},
+				status: "generation_failed",
+				updatedAt: Date.now(),
+			});
+		});
+
+		const result = await t.withIdentity(FAIRLEND_ADMIN).action(
+			api.documents.dealPackages.retryDealDocumentInstance,
+			{
+				instanceId: failedInstance._id,
+			}
+		);
+		const state = await t.run(async (ctx) => ({
+			instances: await ctx.db
+				.query("dealDocumentInstances")
+				.withIndex("by_package", (query) =>
+					query.eq("packageId", failedInstance.packageId)
+				)
+				.collect(),
+			packageRecord: await ctx.db.get(failedInstance.packageId),
+		}));
+
+		const selectedAfter = state.instances.find(
+			(instance) => instance._id === failedInstance._id
+		);
+		const untouchedAfter = state.instances.find(
+			(instance) => instance._id === secondFailedInstanceId
+		);
+		const replacement = state.instances.find(
+			(instance) => instance._id === result.replacementInstanceId
+		);
+
+		expect(result.replacementInstanceId).toEqual(expect.any(String));
+		expect(selectedAfter).toMatchObject({
+			remediationAction: "retried_instance",
+			status: "archived",
+			supersededByInstanceId: result.replacementInstanceId,
+		});
+		expect(untouchedAfter?.archivedAt).toBeUndefined();
+		expect(untouchedAfter).toMatchObject({ status: "generation_failed" });
+		expect(replacement).toMatchObject({
+			dealId: fixture.dealId,
+			status: "generation_failed",
+		});
+		expect(state.packageRecord?.status).toBe("partial_failure");
+	});
+
+	it("rejects a second row retry after the failed row has been claimed", async () => {
+		const { failedInstance, t } = await seedFailedCounselMemoPackage();
+
+		const firstResult = await t.withIdentity(FAIRLEND_ADMIN).action(
+			api.documents.dealPackages.retryDealDocumentInstance,
+			{
+				instanceId: failedInstance._id,
+			}
+		);
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).action(
+				api.documents.dealPackages.retryDealDocumentInstance,
+				{
+					instanceId: failedInstance._id,
+				}
+			)
+		).rejects.toThrow(/not remediable/i);
+
+		const state = await t.run(async (ctx) => ({
+			instances: await ctx.db
+				.query("dealDocumentInstances")
+				.withIndex("by_package", (query) =>
+					query.eq("packageId", failedInstance.packageId)
+				)
+				.collect(),
+			original: await ctx.db.get(failedInstance._id),
+		}));
+
+		expect(firstResult.replacementInstanceId).toEqual(expect.any(String));
+		expect(state.original).toMatchObject({
+			remediationAction: "retried_instance",
+			supersededByInstanceId: firstResult.replacementInstanceId,
+		});
+		expect(
+			state.instances.filter(
+				(instance) =>
+					instance.sourceBlueprintId === failedInstance.sourceBlueprintId &&
+					instance._id !== failedInstance._id
+			)
+		).toHaveLength(1);
+	});
+
+	it("refreshes a failed row from the latest active source blueprint snapshot", async () => {
+		const { failedInstance, t } = await seedFailedCounselMemoPackage();
+		if (!failedInstance.sourceBlueprintId) {
+			throw new Error("Expected source blueprint id");
+		}
+		await t.run(async (ctx) => {
+			await ctx.db.patch(failedInstance.sourceBlueprintId, {
+				displayName: "Counsel memo refreshed",
+			});
+		});
+
+		const result = await t.withIdentity(FAIRLEND_ADMIN).action(
+			api.documents.dealPackages.refreshDealDocumentInstanceSnapshot,
+			{
+				instanceId: failedInstance._id,
+			}
+		);
+		const state = await t.run(async (ctx) => ({
+			instances: await ctx.db
+				.query("dealDocumentInstances")
+				.withIndex("by_package", (query) =>
+					query.eq("packageId", failedInstance.packageId)
+				)
+				.collect(),
+		}));
+		const original = state.instances.find(
+			(instance) => instance._id === failedInstance._id
+		);
+		const replacement = state.instances.find(
+			(instance) => instance._id === result.replacementInstanceId
+		);
+
+		expect(original).toMatchObject({
+			remediationAction: "refreshed_from_source_snapshot",
+			status: "archived",
+			supersededByInstanceId: result.replacementInstanceId,
+		});
+		expect(replacement).toMatchObject({
+			sourceBlueprintSnapshot: expect.objectContaining({
+				displayName: "Counsel memo refreshed",
+			}),
+			status: "generation_failed",
 		});
 	});
 });

@@ -69,7 +69,9 @@ export const nonCheckoutProviderCodeValidator = v.union(
 
 export const checkoutLockFeeProviderCodeValidator = v.literal("stripe");
 
-export const providerCodeValidator = v.union(
+export const providerCodeValidator = nonCheckoutProviderCodeValidator;
+
+export const transferRequestProviderCodeValidator = v.union(
 	nonCheckoutProviderCodeValidator,
 	checkoutLockFeeProviderCodeValidator
 );

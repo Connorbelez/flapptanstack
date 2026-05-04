@@ -38,17 +38,16 @@ type AttemptSource = Pick<
 	| "settledAt"
 	| "status"
 	| "transferRequestId"
->;
+> & {
+	obligationIds?: readonly unknown[];
+};
 
 type ObligationSource = Pick<
 	Doc<"obligations">,
 	"amount" | "dueDate" | "status"
->;
-
-type PlanEntrySource = Pick<
-	Doc<"collectionPlanEntries">,
-	"amount" | "scheduledDate" | "status"
->;
+> & {
+	_id?: Id<"obligations">;
+};
 
 type ExternalScheduleCandidate = Pick<
 	Doc<"externalCollectionSchedules">,
@@ -165,10 +164,39 @@ function toMostRecentStatusFromObligation(
 	}
 }
 
+function getLinkedObligationDate(args: {
+	attempt: AttemptSource;
+	obligationsById: ReadonlyMap<string, ObligationSource>;
+}) {
+	const dates =
+		args.attempt.obligationIds
+			?.map(
+				(obligationId) =>
+					args.obligationsById.get(String(obligationId))?.dueDate
+			)
+			.filter((dueDate): dueDate is number => dueDate !== undefined) ?? [];
+	return dates.sort((left, right) => right - left)[0];
+}
+
 function getAttemptEffectiveTimestamp(args: {
 	attempt: AttemptSource;
+	obligationsById: ReadonlyMap<string, ObligationSource>;
 	transfer?: TransferSource | null;
 }) {
+	if (
+		toMostRecentStatusFromAttempt({
+			attempt: args.attempt,
+			transfer: args.transfer,
+		}) === "processing"
+	) {
+		return (
+			getLinkedObligationDate({
+				attempt: args.attempt,
+				obligationsById: args.obligationsById,
+			}) ?? args.attempt.initiatedAt
+		);
+	}
+
 	return (
 		args.transfer?.reversedAt ??
 		args.attempt.reversedAt ??
@@ -180,25 +208,6 @@ function getAttemptEffectiveTimestamp(args: {
 		args.attempt.confirmedAt ??
 		args.attempt.initiatedAt
 	);
-}
-
-function toNextUpcomingStatusFromPlanEntry(args: {
-	asOf: number;
-	entry: PlanEntrySource;
-}): NextUpcomingPaymentStatus {
-	if (args.entry.status === "executing") {
-		return "executing";
-	}
-
-	if (args.entry.scheduledDate <= args.asOf) {
-		return "due";
-	}
-
-	if (args.entry.status === "provider_scheduled") {
-		return "provider_scheduled";
-	}
-
-	return "planned";
 }
 
 function toNextUpcomingStatusFromObligation(args: {
@@ -217,6 +226,33 @@ function toNextUpcomingStatusFromObligation(args: {
 		default:
 			return args.obligation.dueDate <= args.asOf ? "due" : "planned";
 	}
+}
+
+function isActiveAttemptStatus(status: AttemptSource["status"]) {
+	return (
+		status === "initiated" ||
+		status === "pending" ||
+		status === "executing" ||
+		status === "processing"
+	);
+}
+
+function hasActiveAttemptForObligation(args: {
+	attempts: readonly AttemptSource[];
+	obligation: ObligationSource;
+}) {
+	if (!args.obligation._id) {
+		return false;
+	}
+
+	const obligationId = String(args.obligation._id);
+	return args.attempts.some(
+		(attempt) =>
+			isActiveAttemptStatus(attempt.status) &&
+			attempt.obligationIds?.some((attemptObligationId) => {
+				return String(attemptObligationId) === obligationId;
+			}) === true
+	);
 }
 
 function sortDescendingByDate<T extends { date: number }>(left: T, right: T) {
@@ -281,6 +317,7 @@ function buildTransfersByAttemptId(args: {
 }
 
 export function deriveMostRecentPaymentSnapshot(args: {
+	asOf: number;
 	attempts: readonly AttemptSource[];
 	obligations: readonly ObligationSource[];
 	transfersByAttemptId: ReadonlyMap<string, TransferSource | null | undefined>;
@@ -289,14 +326,21 @@ export function deriveMostRecentPaymentSnapshot(args: {
 	date: number | null;
 	status: MostRecentPaymentStatus;
 } {
+	const obligationsById = new Map(
+		args.obligations
+			.filter((obligation) => obligation._id !== undefined)
+			.map((obligation) => [String(obligation._id), obligation] as const)
+	);
 	const latestAttempt = [...args.attempts]
 		.map((attempt) => ({
 			attempt,
 			date: getAttemptEffectiveTimestamp({
 				attempt,
+				obligationsById,
 				transfer: args.transfersByAttemptId.get(String(attempt._id)),
 			}),
 		}))
+		.filter((candidate) => candidate.date <= args.asOf)
 		.sort(sortDescendingByDate)[0];
 
 	if (latestAttempt) {
@@ -314,12 +358,17 @@ export function deriveMostRecentPaymentSnapshot(args: {
 	}
 
 	const latestSettledLikeObligation = args.obligations
-		.filter((obligation) => isSettledLikeObligationStatus(obligation.status))
+		.filter(
+			(obligation) =>
+				isSettledLikeObligationStatus(obligation.status) &&
+				obligation.dueDate <= args.asOf
+		)
 		.map((obligation) => ({ obligation, date: obligation.dueDate }))
 		.sort(sortDescendingByDate)[0];
 	const latestObligation =
 		latestSettledLikeObligation ??
 		[...args.obligations]
+			.filter((obligation) => obligation.dueDate <= args.asOf)
 			.map((obligation) => ({ obligation, date: obligation.dueDate }))
 			.sort(sortDescendingByDate)[0];
 
@@ -340,47 +389,23 @@ export function deriveMostRecentPaymentSnapshot(args: {
 
 export function deriveNextUpcomingPaymentSnapshot(args: {
 	asOf: number;
+	attempts: readonly AttemptSource[];
 	externalSchedule: ExternalScheduleSource;
 	obligations: readonly ObligationSource[];
-	planEntries: readonly PlanEntrySource[];
 }): {
 	amount: number | null;
 	date: number | null;
 	status: NextUpcomingPaymentStatus;
 } {
-	const nextPlanEntry = [...args.planEntries]
-		.filter(
-			(entry) =>
-				entry.status !== "completed" &&
-				entry.status !== "cancelled" &&
-				entry.status !== "rescheduled"
-		)
-		.map((entry) => ({ entry, date: entry.scheduledDate }))
-		.sort(sortAscendingByDate)[0];
-
-	if (nextPlanEntry) {
-		return {
-			amount: nextPlanEntry.entry.amount,
-			date: nextPlanEntry.entry.scheduledDate,
-			status: toNextUpcomingStatusFromPlanEntry({
-				asOf: args.asOf,
-				entry: nextPlanEntry.entry,
-			}),
-		};
-	}
-
-	if (args.externalSchedule?.nextPollAt !== undefined) {
-		return {
-			amount: null,
-			date: args.externalSchedule.nextPollAt,
-			status: "provider_scheduled",
-		};
-	}
-
 	const nextObligation = [...args.obligations]
 		.filter(
 			(obligation) =>
-				obligation.status !== "settled" && obligation.status !== "waived"
+				obligation.status !== "settled" &&
+				obligation.status !== "waived" &&
+				!hasActiveAttemptForObligation({
+					attempts: args.attempts,
+					obligation,
+				})
 		)
 		.map((obligation) => ({ obligation, date: obligation.dueDate }))
 		.sort(sortAscendingByDate)[0];
@@ -396,6 +421,14 @@ export function deriveNextUpcomingPaymentSnapshot(args: {
 		};
 	}
 
+	if (args.externalSchedule?.nextPollAt !== undefined) {
+		return {
+			amount: null,
+			date: args.externalSchedule.nextPollAt,
+			status: "provider_scheduled",
+		};
+	}
+
 	return {
 		amount: null,
 		date: null,
@@ -408,7 +441,6 @@ export function buildMortgagePaymentSnapshot(args: {
 	attempts: readonly AttemptSource[];
 	mortgage: MortgageSource | null;
 	obligations: readonly ObligationSource[];
-	planEntries: readonly PlanEntrySource[];
 	schedules: readonly ExternalScheduleCandidate[];
 	transfersById: ReadonlyMap<string, TransferSource | null | undefined>;
 }): MortgagePaymentSnapshot {
@@ -417,18 +449,19 @@ export function buildMortgagePaymentSnapshot(args: {
 		transfersById: args.transfersById,
 	});
 	const mostRecent = deriveMostRecentPaymentSnapshot({
+		asOf: args.asOf,
 		attempts: args.attempts,
 		obligations: args.obligations,
 		transfersByAttemptId,
 	});
 	const nextUpcoming = deriveNextUpcomingPaymentSnapshot({
 		asOf: args.asOf,
+		attempts: args.attempts,
 		externalSchedule: pickPreferredExternalCollectionSchedule({
 			mortgage: args.mortgage,
 			schedules: args.schedules,
 		}),
 		obligations: args.obligations,
-		planEntries: args.planEntries,
 	});
 
 	return {
@@ -448,40 +481,31 @@ async function loadMortgagePaymentSnapshotsPerMortgage(args: {
 }) {
 	const mortgageData = await Promise.all(
 		args.mortgages.map(async (mortgage) => {
-			const [obligations, planEntries, attempts, schedules] = await Promise.all(
-				[
-					args.ctx.db
-						.query("obligations")
-						.withIndex("by_mortgage_and_date", (query) =>
-							query.eq("mortgageId", mortgage._id)
-						)
-						.collect(),
-					args.ctx.db
-						.query("collectionPlanEntries")
-						.withIndex("by_mortgage_status_scheduled", (query) =>
-							query.eq("mortgageId", mortgage._id)
-						)
-						.collect(),
-					args.ctx.db
-						.query("collectionAttempts")
-						.withIndex("by_mortgage_status", (query) =>
-							query.eq("mortgageId", mortgage._id)
-						)
-						.collect(),
-					args.ctx.db
-						.query("externalCollectionSchedules")
-						.withIndex("by_mortgage", (query) =>
-							query.eq("mortgageId", mortgage._id)
-						)
-						.collect(),
-				]
-			);
+			const [obligations, attempts, schedules] = await Promise.all([
+				args.ctx.db
+					.query("obligations")
+					.withIndex("by_mortgage_and_date", (query) =>
+						query.eq("mortgageId", mortgage._id)
+					)
+					.collect(),
+				args.ctx.db
+					.query("collectionAttempts")
+					.withIndex("by_mortgage_status", (query) =>
+						query.eq("mortgageId", mortgage._id)
+					)
+					.collect(),
+				args.ctx.db
+					.query("externalCollectionSchedules")
+					.withIndex("by_mortgage", (query) =>
+						query.eq("mortgageId", mortgage._id)
+					)
+					.collect(),
+			]);
 
 			return {
 				attempts,
 				mortgage,
 				obligations,
-				planEntries,
 				schedules,
 			};
 		})
@@ -517,7 +541,6 @@ async function loadMortgagePaymentSnapshotsPerMortgage(args: {
 				attempts: entry.attempts,
 				mortgage: entry.mortgage,
 				obligations: entry.obligations,
-				planEntries: entry.planEntries,
 				schedules: entry.schedules,
 				transfersById,
 			}),

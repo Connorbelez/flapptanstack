@@ -94,6 +94,12 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../admin/origination/validators.ts"),
 	"/convex/admin/mortgages/ownership.ts": async () =>
 		await import("./../admin/mortgages/ownership.ts"),
+	"/convex/admin/portfolio/queries.ts": async () =>
+		await import("./../admin/portfolio/queries.ts"),
+	"/convex/admin/portfolio/renewals.ts": async () =>
+		await import("./../admin/portfolio/renewals.ts"),
+	"/convex/admin/portfolio/target.ts": async () =>
+		await import("./../admin/portfolio/target.ts"),
 	"/convex/admin/settings/actions.ts": async () =>
 		await import("./../admin/settings/actions.ts"),
 	"/convex/admin/settings/mutations.ts": async () =>
@@ -215,6 +221,10 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../deals/mutations.ts"),
 	"/convex/deals/participantProjection.ts": async () =>
 		await import("./../deals/participantProjection.ts"),
+	"/convex/deals/paymentProofs.ts": async () =>
+		await import("./../deals/paymentProofs.ts"),
+	"/convex/deals/portalQueries.ts": async () =>
+		await import("./../deals/portalQueries.ts"),
 	"/convex/deals/queries.ts": async () => await import("./../deals/queries.ts"),
 	"/convex/demo/actionCache.ts": async () =>
 		await import("./../demo/actionCache.ts"),
@@ -478,6 +488,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../legalRepresentation/validators.ts"),
 	"/convex/legalRepresentation/verifications.ts": async () =>
 		await import("./../legalRepresentation/verifications.ts"),
+	"/convex/legalRepresentation/workosInvitations.ts": async () =>
+		await import("./../legalRepresentation/workosInvitations.ts"),
 	"/convex/listings/create.ts": async () =>
 		await import("./../listings/create.ts"),
 	"/convex/listings/curation.ts": async () =>
@@ -499,6 +511,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../listings/queries.ts"),
 	"/convex/listings/validators.ts": async () =>
 		await import("./../listings/validators.ts"),
+	"/convex/marketplace/saleInventory.ts": async () =>
+		await import("./../marketplace/saleInventory.ts"),
 	"/convex/lib/businessDates.ts": async () =>
 		await import("./../lib/businessDates.ts"),
 	"/convex/lib/businessDays.ts": async () =>
@@ -608,6 +622,12 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../payments/bankAccounts/validation.ts"),
 	"/convex/payments/adminDashboard/queries.ts": async () =>
 		await import("./../payments/adminDashboard/queries.ts"),
+	"/convex/payments/scheduleReplacement/drafts.ts": async () =>
+		await import("./../payments/scheduleReplacement/drafts.ts"),
+	"/convex/payments/scheduleReplacement/apply.ts": async () =>
+		await import("./../payments/scheduleReplacement/apply.ts"),
+	"/convex/payments/scheduleReplacement/readModel.ts": async () =>
+		await import("./../payments/scheduleReplacement/readModel.ts"),
 	"/convex/payments/cashLedger/accounts.ts": async () =>
 		await import("./../payments/cashLedger/accounts.ts"),
 	"/convex/payments/cashLedger/disbursementGate.ts": async () =>
@@ -842,6 +862,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../seed/seedPlatformOwnership.ts"),
 	"/convex/test/authTestEndpoints.ts": async () =>
 		await import("./authTestEndpoints.ts"),
+	"/convex/test/dealPortalE2e.ts": async () =>
+		await import("./dealPortalE2e.ts"),
 	"/convex/test/lawyerWorkspaceE2e.ts": async () =>
 		await import("./lawyerWorkspaceE2e.ts"),
 	"/convex/test/moduleMaps.ts": async () => await import("./moduleMaps.ts"),

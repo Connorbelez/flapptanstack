@@ -17,10 +17,7 @@ import {
 	reconcileAttemptLinkedInboundSettlement,
 } from "../../payments/transfers/collectionAttemptReconciliation";
 import { extractLeg1Metadata } from "../../payments/transfers/pipeline.types";
-import type {
-	NonCheckoutTransferProviderCode,
-	ProviderCode,
-} from "../../payments/transfers/types";
+import type { NonCheckoutTransferProviderCode } from "../../payments/transfers/types";
 import { NON_CHECKOUT_TRANSFER_PROVIDER_CODES } from "../../payments/transfers/types";
 import { appendAuditJournalEntry } from "../auditJournal";
 import type { CommandSource } from "../types";
@@ -448,6 +445,7 @@ function mapProviderToFundsMethod(
 		case "wire":
 			return "wire_receipt";
 		case "manual":
+		case "manual_review":
 			return "manual";
 		default:
 			// Mock providers and future providers default to "manual".
@@ -568,6 +566,8 @@ async function handlePipelineLegConfirmed(
 			`[handlePipelineLegConfirmed] Leg 2 confirmed for pipeline ${transfer.pipelineId} — firing FUNDS_RECEIVED on deal ${transfer.dealId}`
 		);
 
+		const providerCode = assertNonCheckoutProviderCode(transfer.providerCode);
+
 		await ctx.scheduler.runAfter(
 			0,
 			internal.payments.transfers.mutations.fireDealTransitionInternal,
@@ -575,12 +575,12 @@ async function handlePipelineLegConfirmed(
 				dealId: transfer.dealId,
 				eventType: "FUNDS_RECEIVED",
 				payload: {
-					method: mapProviderToFundsMethod(transfer.providerCode),
+					method: mapProviderToFundsMethod(providerCode),
 					fundsReceiptSource: {
 						kind: "transfer_pipeline",
 						pipelineId: transfer.pipelineId,
 						leg2TransferId: transfer._id,
-						providerCode: transfer.providerCode as ProviderCode,
+						providerCode,
 					},
 				},
 			}

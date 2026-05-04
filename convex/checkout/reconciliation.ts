@@ -4,6 +4,8 @@ import type { MutationCtx } from "../_generated/server";
 import { executeTransition } from "../engine/transition";
 import type { CommandSource } from "../engine/types";
 import { convex } from "../fluent";
+import { getAccountLenderId } from "../ledger/accountOwnership";
+import { reserveSharesHandler } from "../ledger/reservations";
 import { createTransferRequestRecord } from "../payments/transfers/mutations";
 import { parseCheckoutStripeMetadata } from "./metadata";
 import {
@@ -21,6 +23,22 @@ import {
 
 type CheckoutSessionDoc = Doc<"checkoutSessions">;
 type TransferRequestDoc = Doc<"transferRequests">;
+interface CheckoutPatchBase {
+	readonly lastProviderEventId: string;
+	readonly stripeCheckoutSessionId: string;
+	readonly stripePaymentIntentId?: string;
+	readonly updatedAt: number;
+}
+interface StripeSuccessReconciliationArgs {
+	readonly amount?: number;
+	readonly checkoutSession: CheckoutSessionDoc;
+	readonly currency?: string;
+	readonly occurredAt: number;
+	readonly providerEventId: string;
+	readonly stripeCheckoutSessionId: string;
+	readonly stripePaymentIntentId?: string;
+	readonly webhookEventId: Id<"webhookEvents">;
+}
 
 const checkoutReconciliationKindValidator = v.union(
 	v.literal("success"),
@@ -46,6 +64,8 @@ const checkoutWebhookSource: CommandSource = {
 	channel: "api_webhook",
 };
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 function isKnownTerminalInvalidForLateSuccess(
 	status: CheckoutSessionDoc["status"]
 ) {
@@ -65,6 +85,18 @@ function isActiveExpiredForLateSuccess(
 		(checkoutSession.status === "hosted_checkout_open" ||
 			checkoutSession.status === "payment_failed_retryable") &&
 		checkoutSession.expiresAt <= now
+	);
+}
+
+function canAttemptLateRelock(
+	checkoutSession: CheckoutSessionDoc,
+	now: number
+) {
+	return (
+		checkoutSession.status === "expired" ||
+		isActiveExpiredForLateSuccess(checkoutSession, now) ||
+		(checkoutSession.status === "refunded_late_success" &&
+			checkoutSession.lateSuccessRefund?.status !== "completed")
 	);
 }
 
@@ -92,6 +124,19 @@ function checkoutTransferMetadata(args: {
 			? { stripePaymentIntentId: args.stripePaymentIntentId }
 			: {}),
 	};
+}
+
+function shallowMetadataEqual(
+	left: Record<string, unknown> | undefined,
+	right: Record<string, unknown>
+): boolean {
+	const leftRecord = left ?? {};
+	const leftKeys = Object.keys(leftRecord);
+	const rightKeys = Object.keys(right);
+	return (
+		leftKeys.length === rightKeys.length &&
+		rightKeys.every((key) => leftRecord[key] === right[key])
+	);
 }
 
 async function patchWebhookStatus(
@@ -273,11 +318,21 @@ async function createOrConfirmLockFeeTransfer(
 	if (transfer.providerRef !== providerRef) {
 		transferPatch.providerRef = providerRef;
 	}
-	transferPatch.metadata = {
+	const mergedMetadata = {
 		...(transfer.metadata as Record<string, unknown> | undefined),
 		...metadata,
 	};
-	await ctx.db.patch(transferId, transferPatch);
+	if (
+		!shallowMetadataEqual(
+			transfer.metadata as Record<string, unknown> | undefined,
+			mergedMetadata
+		)
+	) {
+		transferPatch.metadata = mergedMetadata;
+	}
+	if (Object.keys(transferPatch).length > 0) {
+		await ctx.db.patch(transferId, transferPatch);
+	}
 
 	if (transfer.status !== "confirmed") {
 		await executeTransition(ctx, {
@@ -299,18 +354,241 @@ async function createOrConfirmLockFeeTransfer(
 	return transferId;
 }
 
-async function reconcileSuccess(
+async function relockExpiredCheckoutReservation(
 	ctx: MutationCtx,
 	args: {
-		readonly amount?: number;
 		readonly checkoutSession: CheckoutSessionDoc;
-		readonly currency?: string;
+		readonly providerEventId: string;
+		readonly stripeCheckoutSessionId: string;
+		readonly stripePaymentIntentId?: string;
+	}
+): Promise<CheckoutSessionDoc | null> {
+	const reservation = await ctx.db.get(args.checkoutSession.reservationId);
+	if (reservation?.status === "pending") {
+		return args.checkoutSession;
+	}
+	if (reservation?.status !== "voided") {
+		return null;
+	}
+
+	const [sellerAccount, buyerAccount] = await Promise.all([
+		ctx.db.get(args.checkoutSession.sellerAccountId),
+		ctx.db.get(args.checkoutSession.buyerAccountId),
+	]);
+	const sellerLenderId = sellerAccount
+		? getAccountLenderId(sellerAccount)
+		: undefined;
+	const buyerLenderId = buyerAccount
+		? getAccountLenderId(buyerAccount)
+		: undefined;
+	if (!(sellerLenderId && buyerLenderId)) {
+		return null;
+	}
+
+	try {
+		const replacement = await reserveSharesHandler(ctx, {
+			amount: args.checkoutSession.requestedFractions,
+			buyerLenderId,
+			effectiveDate: today(),
+			idempotencyKey: `marketplace-checkout-late-relock:${String(
+				args.checkoutSession._id
+			)}:${providerRefForCheckoutTransfer(args)}`,
+			metadata: {
+				checkoutSessionId: String(args.checkoutSession._id),
+				originalReservationId: String(args.checkoutSession.reservationId),
+				providerEventId: args.providerEventId,
+				stripeCheckoutSessionId: args.stripeCheckoutSessionId,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+			},
+			mortgageId: String(args.checkoutSession.mortgageId),
+			sellerLenderId,
+			source: { type: "webhook", actor: "stripe", channel: "api_webhook" },
+		});
+		const replacementReservation = await ctx.db.get(replacement.reservationId);
+		if (!replacementReservation) {
+			throw new ConvexError("Late checkout re-lock reservation missing");
+		}
+		await ctx.db.patch(args.checkoutSession._id, {
+			buyerAccountId: replacementReservation.buyerAccountId,
+			failureReason: undefined,
+			reservationId: replacementReservation._id,
+			sellerAccountId: replacementReservation.sellerAccountId,
+			updatedAt: Date.now(),
+		});
+		const updated = await ctx.db.get(args.checkoutSession._id);
+		if (!updated) {
+			throw new ConvexError("Checkout session missing after late re-lock");
+		}
+		return updated;
+	} catch (error) {
+		console.warn("[checkout.reconciliation] late checkout re-lock failed", {
+			checkoutSessionId: String(args.checkoutSession._id),
+			error: error instanceof Error ? error.message : error,
+			providerEventId: args.providerEventId,
+			stripeCheckoutSessionId: args.stripeCheckoutSessionId,
+			stripePaymentIntentId: args.stripePaymentIntentId,
+		});
+		return null;
+	}
+}
+
+async function completeCheckoutFromStripeSuccess(
+	ctx: MutationCtx,
+	args: {
+		readonly checkoutPatchBase: CheckoutPatchBase;
+		readonly checkoutSession: CheckoutSessionDoc;
 		readonly occurredAt: number;
 		readonly providerEventId: string;
 		readonly stripeCheckoutSessionId: string;
 		readonly stripePaymentIntentId?: string;
 		readonly webhookEventId: Id<"webhookEvents">;
 	}
+) {
+	assertStripeSuccessCompletionAllowed(args.checkoutSession);
+	const transferId = await createOrConfirmLockFeeTransfer(ctx, {
+		checkoutSession: args.checkoutSession,
+		providerEventId: args.providerEventId,
+		settledAt: args.occurredAt,
+		stripeCheckoutSessionId: args.stripeCheckoutSessionId,
+		stripePaymentIntentId: args.stripePaymentIntentId,
+	});
+	await ctx.db.patch(args.checkoutSession._id, {
+		...args.checkoutPatchBase,
+		status: "completed",
+		completedAt: args.occurredAt,
+		failureReason: undefined,
+		lateSuccessRefund: undefined,
+		resolvedAt: args.occurredAt,
+		lockFeeTransferRequestId: transferId,
+	});
+	await patchWebhookStatus(ctx, {
+		status: "processed",
+		transferRequestId: transferId,
+		webhookEventId: args.webhookEventId,
+	});
+	return {
+		ok: true as const,
+		status: "completed" as const,
+		transferRequestId: transferId,
+	};
+}
+
+function assertStripeSuccessCompletionAllowed(
+	checkoutSession: CheckoutSessionDoc
+) {
+	if (
+		checkoutSession.status === "expired" ||
+		(checkoutSession.status === "refunded_late_success" &&
+			checkoutSession.lateSuccessRefund?.status !== "completed")
+	) {
+		return;
+	}
+	assertCheckoutTransitionAllowed(checkoutSession.status, "completed");
+}
+
+async function reconcileLateSuccess(
+	ctx: MutationCtx,
+	args: StripeSuccessReconciliationArgs & {
+		readonly checkoutPatchBase: CheckoutPatchBase;
+		readonly now: number;
+	}
+) {
+	if (canAttemptLateRelock(args.checkoutSession, args.now)) {
+		const relockedCheckoutSession = await relockExpiredCheckoutReservation(
+			ctx,
+			args
+		);
+		if (relockedCheckoutSession) {
+			return completeCheckoutFromStripeSuccess(ctx, {
+				checkoutPatchBase: args.checkoutPatchBase,
+				checkoutSession: relockedCheckoutSession,
+				occurredAt: args.occurredAt,
+				providerEventId: args.providerEventId,
+				stripeCheckoutSessionId: args.stripeCheckoutSessionId,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+				webhookEventId: args.webhookEventId,
+			});
+		}
+	}
+
+	const refundRequest = buildLateSuccessRefundRequest({
+		checkoutSessionId: String(args.checkoutSession._id),
+		paymentIntentId: args.stripePaymentIntentId,
+		providerEventId: args.providerEventId,
+		webhookEventId: args.webhookEventId,
+	});
+	if (args.checkoutSession.lateSuccessRefund) {
+		if (
+			args.checkoutSession.lateSuccessRefund.paymentIntentId !==
+			refundRequest.paymentIntentId
+		) {
+			return failReconciliation(ctx, {
+				checkoutSessionId: args.checkoutSession._id,
+				error: "late_success_refund_payment_intent_mismatch",
+				providerEventId: args.providerEventId,
+				webhookEventId: args.webhookEventId,
+			});
+		}
+		if (args.checkoutSession.lateSuccessRefund.status === "failed") {
+			return {
+				ok: true as const,
+				status: "refund_required" as const,
+				refundRequest: {
+					amount: args.checkoutSession.lateSuccessRefund.amount,
+					checkoutSessionId: args.checkoutSession._id,
+					idempotencyKey: args.checkoutSession.lateSuccessRefund.idempotencyKey,
+					paymentIntentId:
+						args.checkoutSession.lateSuccessRefund.paymentIntentId,
+					providerEventId:
+						args.checkoutSession.lateSuccessRefund.providerEventId,
+					webhookEventId: args.webhookEventId,
+				},
+			};
+		}
+		await patchWebhookStatus(ctx, {
+			status: "processed",
+			webhookEventId: args.webhookEventId,
+		});
+		return {
+			ok: true as const,
+			status: "refund_already_recorded" as const,
+		};
+	}
+	if (args.checkoutSession.status !== "refunded_late_success") {
+		assertCheckoutTransitionAllowed(
+			args.checkoutSession.status,
+			"refunded_late_success"
+		);
+	}
+	await ctx.db.patch(args.checkoutSession._id, {
+		...args.checkoutPatchBase,
+		status: "refunded_late_success",
+		lateSuccessRefund: {
+			status: "intent_recorded",
+			amount: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+			currency: lateSuccessRefundCurrency,
+			idempotencyKey: refundRequest.idempotencyKey,
+			providerEventId: args.providerEventId,
+			paymentIntentId: refundRequest.paymentIntentId,
+			webhookEventId: args.webhookEventId,
+			attemptedAt: args.now,
+		},
+		resolvedAt: args.checkoutSession.resolvedAt ?? args.now,
+	});
+	return {
+		ok: true as const,
+		status: "refund_required" as const,
+		refundRequest: {
+			...refundRequest,
+			checkoutSessionId: args.checkoutSession._id,
+			webhookEventId: args.webhookEventId,
+		},
+	};
+}
+
+async function reconcileSuccess(
+	ctx: MutationCtx,
+	args: StripeSuccessReconciliationArgs
 ) {
 	const now = Date.now();
 	if (args.amount !== args.checkoutSession.lockFeeAmount) {
@@ -359,91 +637,22 @@ async function reconcileSuccess(
 		isActiveCheckoutStatus(args.checkoutSession.status) &&
 		args.checkoutSession.expiresAt > now
 	) {
-		assertCheckoutTransitionAllowed(args.checkoutSession.status, "completed");
-		const transferId = await createOrConfirmLockFeeTransfer(ctx, {
-			...args,
-			settledAt: args.occurredAt,
-		});
-		await ctx.db.patch(args.checkoutSession._id, {
-			...checkoutPatchBase,
-			status: "completed",
-			completedAt: args.occurredAt,
-			resolvedAt: args.occurredAt,
-			lockFeeTransferRequestId: transferId,
-		});
-		await patchWebhookStatus(ctx, {
-			status: "processed",
-			transferRequestId: transferId,
+		return completeCheckoutFromStripeSuccess(ctx, {
+			checkoutPatchBase,
+			checkoutSession: args.checkoutSession,
+			occurredAt: args.occurredAt,
+			providerEventId: args.providerEventId,
+			stripeCheckoutSessionId: args.stripeCheckoutSessionId,
+			stripePaymentIntentId: args.stripePaymentIntentId,
 			webhookEventId: args.webhookEventId,
 		});
-		return {
-			ok: true as const,
-			status: "completed" as const,
-			transferRequestId: transferId,
-		};
 	}
 
 	if (
 		isKnownTerminalInvalidForLateSuccess(args.checkoutSession.status) ||
 		isActiveExpiredForLateSuccess(args.checkoutSession, now)
 	) {
-		const refundRequest = buildLateSuccessRefundRequest({
-			checkoutSessionId: String(args.checkoutSession._id),
-			paymentIntentId: args.stripePaymentIntentId,
-			providerEventId: args.providerEventId,
-			webhookEventId: args.webhookEventId,
-		});
-		if (args.checkoutSession.lateSuccessRefund) {
-			if (
-				args.checkoutSession.lateSuccessRefund.paymentIntentId !==
-				refundRequest.paymentIntentId
-			) {
-				return failReconciliation(ctx, {
-					checkoutSessionId: args.checkoutSession._id,
-					error: "late_success_refund_payment_intent_mismatch",
-					providerEventId: args.providerEventId,
-					webhookEventId: args.webhookEventId,
-				});
-			}
-			await patchWebhookStatus(ctx, {
-				status: "processed",
-				webhookEventId: args.webhookEventId,
-			});
-			return {
-				ok: true as const,
-				status: "refund_already_recorded" as const,
-			};
-		}
-		if (args.checkoutSession.status !== "refunded_late_success") {
-			assertCheckoutTransitionAllowed(
-				args.checkoutSession.status,
-				"refunded_late_success"
-			);
-		}
-		await ctx.db.patch(args.checkoutSession._id, {
-			...checkoutPatchBase,
-			status: "refunded_late_success",
-			lateSuccessRefund: {
-				status: "intent_recorded",
-				amount: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
-				currency: lateSuccessRefundCurrency,
-				idempotencyKey: refundRequest.idempotencyKey,
-				providerEventId: args.providerEventId,
-				paymentIntentId: refundRequest.paymentIntentId,
-				webhookEventId: args.webhookEventId,
-				attemptedAt: now,
-			},
-			resolvedAt: args.checkoutSession.resolvedAt ?? now,
-		});
-		return {
-			ok: true as const,
-			status: "refund_required" as const,
-			refundRequest: {
-				...refundRequest,
-				checkoutSessionId: args.checkoutSession._id,
-				webhookEventId: args.webhookEventId,
-			},
-		};
+		return reconcileLateSuccess(ctx, { ...args, checkoutPatchBase, now });
 	}
 
 	return failReconciliation(ctx, {
@@ -466,10 +675,10 @@ async function reconcileFailure(
 	}
 ) {
 	const now = Date.now();
-	if (
+	const transitioned =
 		isActiveCheckoutStatus(args.checkoutSession.status) &&
-		args.checkoutSession.expiresAt > now
-	) {
+		args.checkoutSession.expiresAt > now;
+	if (transitioned) {
 		if (args.checkoutSession.status !== "payment_failed_retryable") {
 			assertCheckoutTransitionAllowed(
 				args.checkoutSession.status,
@@ -493,7 +702,13 @@ async function reconcileFailure(
 		status: "processed",
 		webhookEventId: args.webhookEventId,
 	});
-	return { ok: true as const, status: "payment_failed_retryable" as const };
+	return {
+		ok: true as const,
+		status: transitioned
+			? ("payment_failed_retryable" as const)
+			: args.checkoutSession.status,
+		...(transitioned ? {} : { result: "failure_ignored" as const }),
+	};
 }
 
 export const reconcileStripeCheckoutWebhook = convex

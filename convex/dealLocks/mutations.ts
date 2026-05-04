@@ -8,14 +8,14 @@ import type { CommandSource } from "../engine/types";
 import {
 	reserveSharesHandler,
 	voidReservationHandler,
-} from "../ledger/mutations";
+} from "../ledger/reservations";
 import { unixMsToBusinessDate } from "../lib/businessDates";
 import { matchesMarketplaceFilters } from "../listings/marketplace";
 import {
 	clampMarketplaceFiltersToLenderConstraints,
 	resolveViewerLenderConstraintForPortal,
 } from "../listings/portalVisibility";
-import { getCanonicalMicSellerAccountForSale } from "../mortgages/micSaleAvailability";
+import { resolveSellerLotForReservation } from "../marketplace/saleInventory";
 import {
 	DEAL_LOCK_CHECKOUT_TIMEOUT_MS,
 	DEAL_LOCK_FEE_AMOUNT_CENTS,
@@ -328,7 +328,13 @@ export const prepareCheckoutSession = internalMutation({
 			return existing;
 		}
 
-		const seller = await getCanonicalMicSellerAccountForSale(ctx, {
+		const persistedIdempotencyKey = existing
+			? `${args.idempotencyKey}:retry:${String(now)}`
+			: args.idempotencyKey;
+		const seller = await resolveSellerLotForReservation(ctx, {
+			actorAuthId: args.buyerAuthId,
+			effectiveDate: unixMsToBusinessDate(now),
+			idempotencyKey: `deal-lock:${persistedIdempotencyKey}`,
 			mortgageId: listing.mortgageId,
 			requestedLedgerUnits: args.fractionalShareUnits,
 		});
@@ -339,9 +345,6 @@ export const prepareCheckoutSession = internalMutation({
 			});
 		}
 
-		const persistedIdempotencyKey = existing
-			? `${args.idempotencyKey}:retry:${String(now)}`
-			: args.idempotencyKey;
 		const reservation = await reserveSharesHandler(ctx, {
 			amount: args.fractionalShareUnits,
 			buyerLenderId: args.buyerAuthId,

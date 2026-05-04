@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
-import type { Id } from "../../../../convex/_generated/dataModel";
 import {
 	PortfolioDetailHost,
 	PortfolioDetailSection,
@@ -18,14 +17,20 @@ import {
 	formatPortfolioEnumLabel,
 	formatPortfolioPercent,
 } from "./portfolio-formatters";
-import type { PortfolioPaymentDetail } from "./portfolio-types";
-import { lenderPortfolioPaymentDetailQueryOptions } from "./query-options";
+import type {
+	LenderPortfolioQueryMode,
+	PortfolioPaymentDetail,
+} from "./portfolio-types";
+import {
+	adminLenderPortfolioPaymentDetailQueryOptions,
+	lenderPortfolioPaymentDetailQueryOptions,
+} from "./query-options";
 
 interface PaymentSheetProps {
+	mode: LenderPortfolioQueryMode;
 	obligationId: string;
 	onOpenChange: (open: boolean) => void;
 	open: boolean;
-	portalId: Id<"portals">;
 }
 
 const PAYMENT_SHEET_LOADING_KEYS = [
@@ -209,14 +214,23 @@ function PaymentSheetLoaded({ data }: { data: PortfolioPaymentDetail }) {
 }
 
 export function PaymentSheet({
+	mode,
 	obligationId,
 	onOpenChange,
 	open,
-	portalId,
 }: PaymentSheetProps) {
-	const { data, error, isPending } = useQuery({
-		...lenderPortfolioPaymentDetailQueryOptions(portalId, obligationId),
-	});
+	const paymentDetailQueryOptions =
+		mode.kind === "admin"
+			? adminLenderPortfolioPaymentDetailQueryOptions(
+					mode.targetLenderId,
+					obligationId
+				)
+			: lenderPortfolioPaymentDetailQueryOptions(mode.portalId, obligationId);
+	const { data, error, isPending } = useQuery(
+		paymentDetailQueryOptions as unknown as Parameters<
+			typeof useQuery<PortfolioPaymentDetail>
+		>[0]
+	);
 
 	let content: ReactNode;
 	if (isPending) {

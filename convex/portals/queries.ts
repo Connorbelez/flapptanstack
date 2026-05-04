@@ -7,10 +7,12 @@ import {
 	type MarketplaceListingsSnapshotArgs,
 } from "../listings/marketplace";
 import {
+	buildPortalHosts,
 	FAIRLEND_PORTAL_LOCAL_HOST,
 	FAIRLEND_PORTAL_PRODUCTION_HOST,
 	FAIRLEND_PORTAL_SLUG,
 	normalizePortalHost,
+	parsePortalHostCandidate,
 } from "./helpers";
 import {
 	loadPortalPricingSelection,
@@ -583,6 +585,31 @@ export const resolvePortalByHost = convex
 				matchedHostType: "local" as const,
 				portal: toPublicPortalSummary(localPortal),
 			};
+		}
+
+		const parsedPortalHost = parsePortalHostCandidate(requestedHost);
+		if (parsedPortalHost?.hostType === "local") {
+			const canonicalLocalHost = buildPortalHosts(
+				parsedPortalHost.slug
+			).localHost;
+			if (canonicalLocalHost !== requestedHost) {
+				const canonicalLocalPortal = await getPortalByLocalHost(
+					ctx,
+					canonicalLocalHost
+				);
+				if (canonicalLocalPortal) {
+					return {
+						availability: await resolvePortalAvailability(
+							ctx,
+							canonicalLocalPortal
+						),
+						requestedHost,
+						canonicalHost: canonicalLocalPortal.localHost,
+						matchedHostType: "local" as const,
+						portal: toPublicPortalSummary(canonicalLocalPortal),
+					};
+				}
+			}
 		}
 
 		return null;

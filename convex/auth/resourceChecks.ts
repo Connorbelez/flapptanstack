@@ -8,6 +8,7 @@ import {
 	getBrokerByAuthId,
 	getLenderByAuthId,
 } from "./actorResolution";
+import { normalizeGuestLawyerEmail } from "./guestLawyerIdentity";
 import { hasPermissionGrant } from "./permissionCatalog";
 
 /** The 4 entity types that generatedDocuments can be linked to. */
@@ -192,7 +193,7 @@ export async function canAccessDeal(
 
 	const viewerEmail = viewer.email;
 	if (viewerEmail) {
-		const normalizedViewerEmail = viewerEmail.trim().toLowerCase();
+		const normalizedViewerEmail = normalizeGuestLawyerEmail(viewerEmail);
 		const guestLawyerAccessRecords = await ctx.db
 			.query("dealAccess")
 			.withIndex("by_user_and_deal", (q) =>

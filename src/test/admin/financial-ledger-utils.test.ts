@@ -10,6 +10,12 @@ import {
 	parseFinancialLedgerSearch,
 	parsePaymentOperationsSearch,
 } from "#/components/admin/financial-ledger/search";
+import {
+	buildPaymentOperationBorrowerScheduleGroups,
+	deriveScheduleContextFromSelectedRecord,
+	getPaymentOperationScheduleRecords,
+	UNASSIGNED_BORROWER_SCHEDULE_ID,
+} from "#/components/admin/financial-ledger/payment-operations-schedules";
 import type {
 	FinancialLedgerSnapshot,
 	LedgerChartOfAccountsRow,
@@ -187,8 +193,63 @@ const financialLedgerSnapshot: FinancialLedgerSnapshot = {
 };
 
 const paymentOperationsSnapshot: PaymentOperationsSnapshot = {
-	collectionAttempts: [],
-	collectionPlanEntries: [],
+	collectionAttempts: [
+		{
+			amount: 25_000,
+			borrowerEmail: "borrower@example.test",
+			borrowerId: "borrower-1",
+			borrowerLabel: "Borrower One",
+			collectionAttemptId: "attempt-1",
+			initiatedAt: Date.parse("2026-04-02T10:00:00.000Z"),
+			method: "pad_rotessa",
+			mortgageId: "mortgage-1",
+			mortgageLabel: "12 King St",
+			obligationIds: ["obligation-1"],
+			planEntryId: "plan-1",
+			reconciliation: null,
+			status: "pending",
+		},
+	],
+	collectionPlanEntries: [
+		{
+			amount: 100_000,
+			balancePreCheck: {},
+			borrowerEmail: "borrower@example.test",
+			borrowerId: "borrower-1",
+			borrowerLabel: "Borrower One",
+			createdAt: Date.parse("2026-03-01T00:00:00.000Z"),
+			executionMode: "provider_managed",
+			lineage: {},
+			method: "pad_rotessa",
+			mortgageId: "mortgage-1",
+			mortgageLabel: "12 King St",
+			obligationIds: ["obligation-1"],
+			planEntryId: "plan-1",
+			reschedule: {},
+			scheduledDate: Date.parse("2026-04-01T00:00:00.000Z"),
+			source: "default_schedule",
+			status: "provider_scheduled",
+		},
+		{
+			amount: 50_000,
+			balancePreCheck: { decision: "defer" },
+			borrowerEmail: "second@example.test",
+			borrowerId: "borrower-2",
+			borrowerLabel: "Borrower Two",
+			createdAt: Date.parse("2026-03-02T00:00:00.000Z"),
+			executionMode: "app_owned",
+			lineage: {},
+			method: "manual",
+			mortgageId: "mortgage-2",
+			mortgageLabel: "34 Queen St",
+			obligationIds: ["obligation-2"],
+			planEntryId: "plan-2",
+			reschedule: {},
+			scheduledDate: Date.parse("2026-04-03T00:00:00.000Z"),
+			source: "admin",
+			status: "planned",
+		},
+	],
 	generatedAt: Date.parse("2026-04-14T12:00:00.000Z"),
 	obligations: [
 		{
@@ -215,6 +276,31 @@ const paymentOperationsSnapshot: PaymentOperationsSnapshot = {
 			projectedOutstandingBalance: 40_000,
 			sourceObligationId: null,
 			status: "due",
+			type: "scheduled_payment",
+		},
+		{
+			amount: 50_000,
+			amountSettled: 0,
+			borrowerId: "borrower-2",
+			borrowerLabel: "Borrower Two",
+			correctiveCount: 0,
+			dueDate: Date.parse("2026-04-03T00:00:00.000Z"),
+			hasActiveCollection: false,
+			hasJournalDrift: true,
+			isCorrective: false,
+			journalOutstandingBalance: 50_000,
+			latestCollectionAttemptId: null,
+			latestCollectionStatus: null,
+			latestTransferId: null,
+			latestTransferStatus: null,
+			mortgageId: "mortgage-2",
+			mortgageLabel: "34 Queen St",
+			obligationId: "obligation-2",
+			paymentNumber: 2,
+			postingGroupId: "posting-group-2",
+			projectedOutstandingBalance: 50_000,
+			sourceObligationId: null,
+			status: "overdue",
 			type: "scheduled_payment",
 		},
 	],
@@ -265,8 +351,11 @@ describe("admin financial ledger search parsers", () => {
 				borrowerId: "borrower-1",
 				detailOpen: "true",
 				entityType: "mortgages",
+				metricFilter: " active_collections ",
 				recordId: '"mortgage_123"',
 				search: "  pending  ",
+				scheduleBorrowerId: " borrower-1 ",
+				scheduleMortgageId: " mortgage-1 ",
 				showOnlyExceptions: "yes",
 				status: "due",
 				tab: "collections",
@@ -277,6 +366,8 @@ describe("admin financial ledger search parsers", () => {
 			entityType: "mortgages",
 			recordId: "mortgage_123",
 			search: "pending",
+			scheduleBorrowerId: "borrower-1",
+			scheduleMortgageId: "mortgage-1",
 			selectedCheck: undefined,
 			selectedId: undefined,
 			showOnlyExceptions: true,
@@ -286,6 +377,7 @@ describe("admin financial ledger search parsers", () => {
 			dateFrom: undefined,
 			dateTo: undefined,
 			lenderId: undefined,
+			metricFilter: "active_collections",
 			mortgageId: undefined,
 		});
 	});
@@ -306,15 +398,89 @@ describe("admin financial ledger search parsers", () => {
 			detailOpen: false,
 			entityType: undefined,
 			lenderId: undefined,
+			metricFilter: undefined,
 			mortgageId: undefined,
 			recordId: undefined,
 			search: undefined,
+			scheduleBorrowerId: undefined,
+			scheduleMortgageId: undefined,
 			selectedCheck: undefined,
 			selectedId: "account-1",
 			showOnlyExceptions: false,
 			status: undefined,
 			tab: "reconciliation",
 			type: "credit",
+		});
+	});
+});
+
+describe("payment operations schedule drill-down helpers", () => {
+	it("groups tab records by borrower and then mortgage schedule", () => {
+		const records = getPaymentOperationScheduleRecords(
+			paymentOperationsSnapshot,
+			"collection-plans"
+		);
+		const groups = buildPaymentOperationBorrowerScheduleGroups(records);
+
+		expect(groups).toHaveLength(2);
+		expect(groups[0]).toMatchObject({
+			borrowerId: "borrower-1",
+			mortgageCount: 1,
+			recordCount: 1,
+		});
+		expect(groups[0].mortgages[0]).toMatchObject({
+			borrowerId: "borrower-1",
+			executionModes: ["provider_managed"],
+			mortgageId: "mortgage-1",
+			recordCount: 1,
+		});
+		expect(groups[1]).toMatchObject({
+			borrowerId: "borrower-2",
+			exceptionCount: 1,
+			recordCount: 1,
+		});
+	});
+
+	it("derives drill-down context from an existing selected record id", () => {
+		expect(
+			deriveScheduleContextFromSelectedRecord({
+				selectedId: "plan-2",
+				snapshot: paymentOperationsSnapshot,
+				tab: "collection-plans",
+			})
+		).toEqual({
+			borrowerId: "borrower-2",
+			mortgageId: "mortgage-2",
+		});
+	});
+
+	it("places records missing borrower context under an unassigned borrower", () => {
+		const records = getPaymentOperationScheduleRecords(
+			paymentOperationsSnapshot,
+			"transfers"
+		);
+		const groups = buildPaymentOperationBorrowerScheduleGroups(records);
+
+		expect(groups).toHaveLength(1);
+		expect(groups[0]).toMatchObject({
+			borrowerId: null,
+			id: UNASSIGNED_BORROWER_SCHEDULE_ID,
+			recordCount: 1,
+		});
+	});
+
+	it("builds groups from already-filtered records", () => {
+		const records = getPaymentOperationScheduleRecords(
+			paymentOperationsSnapshot,
+			"obligations"
+		).filter((record) => record.borrowerId === "borrower-2");
+		const groups = buildPaymentOperationBorrowerScheduleGroups(records);
+
+		expect(groups).toHaveLength(1);
+		expect(groups[0]).toMatchObject({
+			borrowerId: "borrower-2",
+			exceptionCount: 1,
+			recordCount: 1,
 		});
 	});
 });

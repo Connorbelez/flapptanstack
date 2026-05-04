@@ -72,6 +72,9 @@ describe("Velocity package contracts", () => {
 		expect(buildVelocityMortgageWorkflowSourceKey("link-app-123")).toBe(
 			"velocity_package:mortgage:link-app-123"
 		);
+		expect(() => buildVelocityMortgageWorkflowSourceKey("")).toThrow(
+			"Velocity linkApplicationId is required for key generation"
+		);
 		expect(
 			buildVelocityWebhookEventIdempotencyKey({
 				eventTimestamp: "2026-04-23T15:00:00.000Z",
@@ -124,6 +127,31 @@ describe("Velocity package contracts", () => {
 			})
 		).toBe(
 			"velocity_package:borrower:link%2Fapp%3A123:workspace%3A123%3BvelocityPackageWorkspaces:borrower%3Aexternal%2F1"
+		);
+		expect(
+			buildVelocityBorrowerWorkflowSourceKey({
+				borrowerDiscriminator: "co.borrower@example.test",
+				linkApplicationId: "link-app-123",
+				role: "co_borrower",
+				workspaceId: "workspace-123" as Id<"velocityPackageWorkspaces">,
+			})
+		).toBe(
+			"velocity_package:borrower:link-app-123:workspace-123:co.borrower%40example.test"
+		);
+		expect(
+			buildVelocityBorrowerWorkflowSourceKey({
+				borrowerDiscriminator: "other.co@example.test",
+				linkApplicationId: "link-app-123",
+				role: "co_borrower",
+				workspaceId: "workspace-123" as Id<"velocityPackageWorkspaces">,
+			})
+		).not.toBe(
+			buildVelocityBorrowerWorkflowSourceKey({
+				borrowerDiscriminator: "co.borrower@example.test",
+				linkApplicationId: "link-app-123",
+				role: "co_borrower",
+				workspaceId: "workspace-123" as Id<"velocityPackageWorkspaces">,
+			})
 		);
 	});
 
@@ -270,6 +298,9 @@ describe("Velocity package contracts", () => {
 					loanCode: "LC-123",
 					rawDealHash: undefined,
 				},
+				newState: "none",
+				outcome: "transitioned",
+				previousState: "none",
 				readiness: {
 					blockers: [],
 					canActivate: false,

@@ -3,7 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader } from "../_generated/server";
 import { adminQuery, authedQuery } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
-import { buildMortgageMicSaleAvailabilitySummary } from "../mortgages/micSaleAvailability";
+import { buildMortgageSaleInventorySummary } from "../marketplace/saleInventory";
 import { projectListingForPortal } from "../portals/pricing";
 import {
 	buildMarketplaceAvailabilitySummary,
@@ -444,7 +444,7 @@ async function buildListingAvailability(
 		return null;
 	}
 
-	const [accounts, summary, micSummary] = await Promise.all([
+	const [accounts, summary, saleInventory] = await Promise.all([
 		ctx.db
 			.query("ledger_accounts")
 			.withIndex("by_type_and_mortgage", (q) =>
@@ -452,7 +452,7 @@ async function buildListingAvailability(
 			)
 			.collect(),
 		buildMarketplaceAvailabilitySummary(ctx, mortgageId),
-		buildMortgageMicSaleAvailabilitySummary(ctx, mortgageId),
+		buildMortgageSaleInventorySummary(ctx, mortgageId),
 	]);
 
 	const positions = accounts
@@ -473,13 +473,13 @@ async function buildListingAvailability(
 
 	const inferredMicPosition =
 		positions.find(
-			(position) => position.lenderId === micSummary.canonicalMicLenderAuthId
+			(position) => position.lenderId === saleInventory.canonicalMicLenderAuthId
 		) ?? null;
 
 	return {
 		availableFractions: summary.availableFractions,
 		micPosition: {
-			balance: micSummary.micOwnedLedgerUnits,
+			balance: saleInventory.micOwnedLedgerUnits,
 			hasPosition: inferredMicPosition !== null,
 			inferred: inferredMicPosition !== null,
 			lenderId: inferredMicPosition?.lenderId ?? null,

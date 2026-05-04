@@ -78,9 +78,13 @@ vi.mock("@workos/authkit-tanstack-react-start/client", () => ({
 }));
 
 vi.mock("#/components/lender/portfolio/query-options", () => ({
+	adminLenderPortfolioPaymentDetailQueryOptions: vi.fn(),
+	adminLenderPortfolioPositionDetailQueryOptions: vi.fn(),
+	adminLenderPortfolioRenewalIntentQueryOptions: vi.fn(),
 	lenderPortfolioCommandCenterQueryOptions: vi.fn(),
 	lenderPortfolioPaymentDetailQueryOptions: vi.fn(),
 	lenderPortfolioPositionDetailQueryOptions: vi.fn(),
+	lenderPortfolioRenewalIntentQueryOptions: vi.fn(),
 }));
 
 vi.mock("#/components/lender/portfolio/renewals/renewal-actions", () => ({
@@ -200,7 +204,7 @@ function renderPage({
 	const renderPageNode = () => (
 		<LenderPortfolioPage
 			leafStateOverrides={leafStateOverrides}
-			portalId={PORTAL_ID}
+			queryMode={{ kind: "portal", portalId: PORTAL_ID }}
 			search={search}
 			setSearch={(updater) => {
 				search = updater(search);
@@ -332,7 +336,7 @@ describe("lender portfolio route", () => {
 
 		render(
 			<LenderPortfolioPage
-				portalId={PORTAL_ID}
+				queryMode={{ kind: "portal", portalId: PORTAL_ID }}
 				search={DEFAULT_LENDER_PORTFOLIO_SEARCH}
 				setSearch={() => undefined}
 				snapshot={portfolioCommandCenterFixture}
