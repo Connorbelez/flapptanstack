@@ -60,6 +60,20 @@ export const convexModules: ModuleMap = withModuleAliases({
 	"/convex/auth/internal.ts": async () => await import("./../auth/internal.ts"),
 	"/convex/auth/resourceChecks.ts": async () =>
 		await import("./../auth/resourceChecks.ts"),
+	"/convex/checkout/actions.ts": async () =>
+		await import("./../checkout/actions.ts"),
+	"/convex/checkout/metadata.ts": async () =>
+		await import("./../checkout/metadata.ts"),
+	"/convex/checkout/mutations.ts": async () =>
+		await import("./../checkout/mutations.ts"),
+	"/convex/checkout/status.ts": async () =>
+		await import("./../checkout/status.ts"),
+	"/convex/checkout/stripe.ts": async () =>
+		await import("./../checkout/stripe.ts"),
+	"/convex/checkout/types.ts": async () =>
+		await import("./../checkout/types.ts"),
+	"/convex/checkout/validators.ts": async () =>
+		await import("./../checkout/validators.ts"),
 	"/convex/admin/origination/caseDocuments.ts": async () =>
 		await import("./../admin/origination/caseDocuments.ts"),
 	"/convex/admin/origination/cases.ts": async () =>

@@ -49,8 +49,12 @@ import type * as borrowers_resolveOrProvisionForOrigination from "../borrowers/r
 import type * as brokers_activation from "../brokers/activation.js";
 import type * as brokers_migrations from "../brokers/migrations.js";
 import type * as brokers_resolveOrProvision from "../brokers/resolveOrProvision.js";
+import type * as checkout_actions from "../checkout/actions.js";
 import type * as checkout_metadata from "../checkout/metadata.js";
+import type * as checkout_mutations from "../checkout/mutations.js";
 import type * as checkout_status from "../checkout/status.js";
+import type * as checkout_stripe from "../checkout/stripe.js";
+import type * as checkout_types from "../checkout/types.js";
 import type * as checkout_validators from "../checkout/validators.js";
 import type * as constants from "../constants.js";
 import type * as crm_activityQueries from "../crm/activityQueries.js";
@@ -471,8 +475,12 @@ declare const fullApi: ApiFromModules<{
   "brokers/activation": typeof brokers_activation;
   "brokers/migrations": typeof brokers_migrations;
   "brokers/resolveOrProvision": typeof brokers_resolveOrProvision;
+  "checkout/actions": typeof checkout_actions;
   "checkout/metadata": typeof checkout_metadata;
+  "checkout/mutations": typeof checkout_mutations;
   "checkout/status": typeof checkout_status;
+  "checkout/stripe": typeof checkout_stripe;
+  "checkout/types": typeof checkout_types;
   "checkout/validators": typeof checkout_validators;
   constants: typeof constants;
   "crm/activityQueries": typeof crm_activityQueries;
