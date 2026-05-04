@@ -7,6 +7,7 @@ export const micInvestorAccessRequestStatusValidator = v.union(
 );
 
 export const micInvestorAccessRequestProvisioningStateValidator = v.union(
+	v.literal("pending"),
 	v.literal("not_started"),
 	v.literal("in_progress"),
 	v.literal("completed"),

@@ -70,11 +70,15 @@ const baseWorkspace: ParticipantDealWorkspace = {
 	},
 	documentInstances: [
 		{
+			archivedAt: null,
+			archivedSigning: null,
 			class: "private_templated_signable",
 			displayName: "Closing Signature Package",
 			instanceId: "instance_123" as never,
 			kind: "generated",
+			lastError: null,
 			packageLabel: "Closing",
+			signing: null,
 			signingState: null,
 			status: "signature_sent",
 			url: null,
