@@ -4,7 +4,12 @@ import type {
 } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
-import { assertBehaviorMatchesDefinition } from "./behavior";
+import { assertBehaviorMatchesDefinition, type FeeBehavior } from "./behavior";
+import {
+	type CompatibleFeeTemplate,
+	normalizeFeeTemplate,
+	repairFeeTemplateIfNeeded,
+} from "./templateCompatibility";
 
 export const DEFAULT_FEE_SET_NAME = "Standard Mortgage Fees";
 export const MIN_EFFECTIVE_FROM = "0000-01-01";
@@ -32,7 +37,7 @@ export interface BulkApplyPreview {
 
 export interface BulkApplyFeeSetItem {
 	item: Doc<"feeSetTemplateItems">;
-	template: Doc<"feeTemplates">;
+	template: CompatibleFeeTemplate;
 }
 
 export interface FeeParameters {
@@ -43,7 +48,7 @@ export interface FeeParameters {
 }
 
 export interface FeeDefinitionInput {
-	behavior: Doc<"feeTemplates">["behavior"];
+	behavior: FeeBehavior;
 	calculationType: Doc<"feeTemplates">["calculationType"];
 	code: FeeCode;
 	displayCode: string;
@@ -570,14 +575,15 @@ export async function loadFeeSetTemplateItemsForApplication(
 		if (template.status !== "active") {
 			throw new ConvexError(`Fee template is inactive: ${template._id}`);
 		}
-		const surfaceCode = `${template.surface}:${template.code}`;
+		const normalizedTemplate = normalizeFeeTemplate(template);
+		const surfaceCode = `${normalizedTemplate.surface}:${normalizedTemplate.code}`;
 		if (seenSurfaceCodes.has(surfaceCode)) {
 			throw new ConvexError(
-				`Fee set contains duplicate fee surface/code: ${template.surface}/${template.code}`
+				`Fee set contains duplicate fee surface/code: ${normalizedTemplate.surface}/${normalizedTemplate.code}`
 			);
 		}
 		seenSurfaceCodes.add(surfaceCode);
-		resolvedItems.push({ item, template });
+		resolvedItems.push({ item, template: normalizedTemplate });
 	}
 	return resolvedItems;
 }
@@ -754,7 +760,9 @@ export async function ensureDefaultFeeTemplatesAndSet(
 	const now = Date.now();
 
 	let servicingTemplate = await getFeeTemplateByCode(db, "servicing");
-	if (!servicingTemplate) {
+	if (servicingTemplate) {
+		servicingTemplate = await repairFeeTemplateIfNeeded(db, servicingTemplate);
+	} else {
 		const id = await db.insert("feeTemplates", {
 			name: "Standard Servicing Fee",
 			description:
@@ -778,7 +786,9 @@ export async function ensureDefaultFeeTemplatesAndSet(
 	}
 
 	let lateFeeTemplate = await getFeeTemplateByCode(db, "late_fee");
-	if (!lateFeeTemplate) {
+	if (lateFeeTemplate) {
+		lateFeeTemplate = await repairFeeTemplateIfNeeded(db, lateFeeTemplate);
+	} else {
 		const id = await db.insert("feeTemplates", {
 			name: "Standard Late Fee",
 			description: "Borrower late fee assessed after grace expiry",
@@ -803,7 +813,9 @@ export async function ensureDefaultFeeTemplatesAndSet(
 	}
 
 	let nsfTemplate = await getFeeTemplateByCode(db, "nsf");
-	if (!nsfTemplate) {
+	if (nsfTemplate) {
+		nsfTemplate = await repairFeeTemplateIfNeeded(db, nsfTemplate);
+	} else {
 		const id = await db.insert("feeTemplates", {
 			name: "Standard NSF Fee",
 			description:
@@ -904,52 +916,53 @@ export async function attachFeeTemplateToMortgageSnapshot(
 		waterfallPriority?: number;
 	}
 ) {
+	const feeTemplate = normalizeFeeTemplate(args.feeTemplate);
 	const effectiveFrom = normalizeEffectiveFrom(args.effectiveFrom);
 	const parameters: FeeParameters = {
-		...args.feeTemplate.parameters,
+		...feeTemplate.parameters,
 		...args.parameterOverrides,
 	};
 
 	assertValidFeeDefinition({
-		behavior: args.feeTemplate.behavior,
-		calculationType: args.feeTemplate.calculationType,
-		code: args.feeTemplate.code,
-		displayCode: args.feeTemplate.displayCode,
+		behavior: feeTemplate.behavior,
+		calculationType: feeTemplate.calculationType,
+		code: feeTemplate.code,
+		displayCode: feeTemplate.displayCode,
 		parameters,
-		paymentRail: args.feeTemplate.paymentRail,
-		recurrence: args.feeTemplate.recurrence,
-		revenueDestination: args.feeTemplate.revenueDestination,
-		surface: args.feeTemplate.surface,
+		paymentRail: feeTemplate.paymentRail,
+		recurrence: feeTemplate.recurrence,
+		revenueDestination: feeTemplate.revenueDestination,
+		surface: feeTemplate.surface,
 	});
 
 	await assertNoOverlappingMortgageFee(db, {
 		mortgageId: args.mortgageId,
-		code: args.feeTemplate.code,
-		surface: args.feeTemplate.surface,
+		code: feeTemplate.code,
+		surface: feeTemplate.surface,
 		effectiveFrom,
 		effectiveTo: args.effectiveTo,
 	});
 
 	return db.insert("mortgageFees", {
 		mortgageId: args.mortgageId,
-		code: args.feeTemplate.code,
-		behavior: args.feeTemplate.behavior,
-		displayCode: args.feeTemplate.displayCode,
-		surface: args.feeTemplate.surface,
-		revenueDestination: args.feeTemplate.revenueDestination,
-		calculationType: args.feeTemplate.calculationType,
+		code: feeTemplate.code,
+		behavior: feeTemplate.behavior,
+		displayCode: feeTemplate.displayCode,
+		surface: feeTemplate.surface,
+		revenueDestination: feeTemplate.revenueDestination,
+		calculationType: feeTemplate.calculationType,
 		parameters,
-		paymentRail: args.feeTemplate.paymentRail,
-		recurrence: args.feeTemplate.recurrence,
+		paymentRail: feeTemplate.paymentRail,
+		recurrence: feeTemplate.recurrence,
 		defaultApplication: args.defaultApplication ?? "mortgage_specific",
 		effectiveFrom,
 		effectiveTo: args.effectiveTo,
 		status: "active",
-		feeTemplateId: args.feeTemplate._id,
+		feeTemplateId: feeTemplate._id,
 		feeSetTemplateId: args.feeSetTemplateId,
 		feeSetTemplateItemId: args.feeSetTemplateItemId,
 		waterfallPriority:
-			args.feeTemplate.behavior === "payment_waterfall_deduction"
+			feeTemplate.behavior === "payment_waterfall_deduction"
 				? (args.waterfallPriority ?? DEFAULT_DIRECT_WATERFALL_PRIORITY)
 				: undefined,
 		createdAt: Date.now(),

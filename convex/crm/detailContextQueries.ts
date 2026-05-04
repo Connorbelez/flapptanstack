@@ -4,6 +4,7 @@ import type { QueryCtx } from "../_generated/server";
 import { canAccessCrmOrgScopedRecord } from "../authz/crm";
 import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { listMortgageBlueprintRows } from "../documents/mortgageBlueprints";
+import { formatFeeValue } from "../fees/behavior";
 import { crmQuery } from "../fluent";
 import { readListingPublicDocuments } from "../listings/publicDocuments";
 import { buildMortgageMicSaleAvailabilitySummary } from "../mortgages/micSaleAvailability";
@@ -445,6 +446,8 @@ export const getMortgageDetailContext = crmQuery
 			documentBlueprints,
 			micSaleAvailability,
 			deals,
+			mortgageFees,
+			feeAssessments,
 		] = await Promise.all([
 			ctx.db.get(mortgage.propertyId),
 			ctx.db
@@ -505,6 +508,14 @@ export const getMortgageDetailContext = crmQuery
 			buildMortgageMicSaleAvailabilitySummary(ctx, args.mortgageId),
 			ctx.db
 				.query("deals")
+				.withIndex("by_mortgage", (q) => q.eq("mortgageId", args.mortgageId))
+				.collect(),
+			ctx.db
+				.query("mortgageFees")
+				.withIndex("by_mortgage", (q) => q.eq("mortgageId", args.mortgageId))
+				.collect(),
+			ctx.db
+				.query("feeAssessments")
 				.withIndex("by_mortgage", (q) => q.eq("mortgageId", args.mortgageId))
 				.collect(),
 		]);
@@ -805,6 +816,52 @@ export const getMortgageDetailContext = crmQuery
 				transferRequestCount: transferRequests.length,
 			},
 			paymentSnapshot: paymentSnapshot ?? EMPTY_MORTGAGE_PAYMENT_SNAPSHOT,
+			fees: {
+				activeFees: mortgageFees
+					.filter((fee) => fee.status === "active")
+					.map((fee) => ({
+						code: fee.code,
+						behavior: fee.behavior,
+						defaultApplication: fee.defaultApplication,
+						displayCode: fee.displayCode,
+						effectiveFrom: fee.effectiveFrom,
+						effectiveTo: fee.effectiveTo ?? null,
+						feeId: fee._id,
+						recurrence: fee.recurrence ?? null,
+						surface: fee.surface,
+						traceCount: feeAssessments.filter(
+							(assessment) => assessment.mortgageFeeId === fee._id
+						).length,
+						valueLabel: formatFeeValue({
+							calculationType: fee.calculationType,
+							parameters: fee.parameters,
+							recurrence: fee.recurrence,
+						}),
+					})),
+				openAccountsReceivableCents: feeAssessments.reduce(
+					(total, assessment) =>
+						assessment.status === "reversed"
+							? total
+							: total +
+								Math.max(
+									0,
+									assessment.amountCents - assessment.amountSettledCents
+								),
+					0
+				),
+				recentAssessments: [...feeAssessments]
+					.sort((left, right) => right.assessedAt - left.assessedAt)
+					.slice(0, 8)
+					.map((assessment) => ({
+						amountCents: assessment.amountCents,
+						amountSettledCents: assessment.amountSettledCents,
+						assessedAt: assessment.assessedAt,
+						displayCode: assessment.displayCode,
+						feeAssessmentId: assessment._id,
+						obligationId: assessment.obligationId ?? null,
+						status: assessment.status,
+					})),
+			},
 			documents: documentBlueprints.map((blueprint) => {
 				const asset = blueprint.assetId
 					? (assetsById.get(blueprint.assetId) ?? null)

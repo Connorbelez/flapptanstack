@@ -191,6 +191,13 @@ export const STATIC_ADMIN_NAV_ITEMS = [
 	},
 	{
 		kind: "route",
+		label: "Fees",
+		route: "/admin/fees",
+		domain: "payments",
+		iconName: "badge-dollar-sign",
+	},
+	{
+		kind: "route",
 		label: "Document Engine",
 		route: "/admin/document-engine",
 		domain: "system",

@@ -1,7 +1,10 @@
 import { ConvexError, v } from "convex/values";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { auditLog } from "../auditLog";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
+import { feeCodeValidator } from "../fees/validators";
 import { orgIdFromMortgageId } from "../lib/orgScope";
 import { postObligationAccrued } from "../payments/cashLedger/integrations";
 
@@ -13,6 +16,170 @@ import { postObligationAccrued } from "../payments/cashLedger/integrations";
  */
 const VALID_INITIAL_STATUSES = ["upcoming"] as const;
 type ValidInitialStatus = (typeof VALID_INITIAL_STATUSES)[number];
+
+export interface CreateObligationImplArgs {
+	amount: number;
+	amountSettled: number;
+	borrowerId: Id<"borrowers">;
+	dueDate: number;
+	feeCode?: Doc<"obligations">["feeCode"];
+	gracePeriodEnd: number;
+	mortgageFeeId?: Id<"mortgageFees">;
+	mortgageId: Id<"mortgages">;
+	paymentNumber: number;
+	sourceObligationId?: Id<"obligations">;
+	status: string;
+	type: Doc<"obligations">["type"];
+}
+
+export async function createObligationImpl(
+	ctx: MutationCtx,
+	args: CreateObligationImplArgs
+) {
+	// Validate initial status — only machine-initial states are allowed
+	if (!VALID_INITIAL_STATUSES.includes(args.status as ValidInitialStatus)) {
+		throw new ConvexError(
+			`Invalid initial status "${args.status}". Obligations must be created in a valid initial state: ${VALID_INITIAL_STATUSES.join(", ")}. Post-transition states must be reached via Governed Transitions.`
+		);
+	}
+
+	// Validate monetary invariants
+	if (args.amount <= 0) {
+		throw new ConvexError(
+			`Invalid amount: ${args.amount}. Obligation amount must be greater than 0.`
+		);
+	}
+	if (args.amountSettled < 0) {
+		throw new ConvexError(
+			`Invalid amountSettled: ${args.amountSettled}. amountSettled must be >= 0.`
+		);
+	}
+	if (args.amountSettled > args.amount) {
+		throw new ConvexError(
+			`Invalid amountSettled: ${args.amountSettled} exceeds amount: ${args.amount}. amountSettled must be <= amount.`
+		);
+	}
+
+	const createdAt = Date.now();
+	const orgId = await orgIdFromMortgageId(ctx, args.mortgageId);
+
+	const obligationId = await ctx.db.insert("obligations", {
+		orgId,
+		mortgageId: args.mortgageId,
+		borrowerId: args.borrowerId,
+		paymentNumber: args.paymentNumber,
+		type: args.type,
+		amount: args.amount,
+		amountSettled: args.amountSettled,
+		dueDate: args.dueDate,
+		gracePeriodEnd: args.gracePeriodEnd,
+		sourceObligationId: args.sourceObligationId,
+		feeCode: args.feeCode,
+		mortgageFeeId: args.mortgageFeeId,
+		status: args.status,
+		createdAt,
+		lastTransitionAt: createdAt,
+		machineContext: undefined,
+		settledAt: undefined,
+	});
+	const obligationSnapshot = {
+		_id: `${obligationId}`,
+		amount: args.amount,
+		amountSettled: args.amountSettled,
+		borrowerId: `${args.borrowerId}`,
+		createdAt,
+		dueDate: args.dueDate,
+		feeCode: args.feeCode,
+		gracePeriodEnd: args.gracePeriodEnd,
+		lastTransitionAt: createdAt,
+		machineContext: undefined,
+		mortgageFeeId: args.mortgageFeeId ? `${args.mortgageFeeId}` : undefined,
+		mortgageId: `${args.mortgageId}`,
+		orgId,
+		paymentNumber: args.paymentNumber,
+		settledAt: undefined,
+		sourceObligationId: args.sourceObligationId
+			? `${args.sourceObligationId}`
+			: undefined,
+		status: args.status,
+		type: args.type,
+	};
+
+	const journalEntryId = await appendAuditJournalEntry(ctx, {
+		actorId: "system",
+		actorType: "system",
+		channel: "scheduler",
+		organizationId: orgId,
+		entityId: obligationId,
+		entityType: "obligation",
+		eventType: "CREATED",
+		payload: {
+			type: args.type,
+			amount: args.amount,
+			mortgageId: args.mortgageId,
+			borrowerId: args.borrowerId,
+			paymentNumber: args.paymentNumber,
+			dueDate: args.dueDate,
+			sourceObligationId: args.sourceObligationId,
+			feeCode: args.feeCode,
+			mortgageFeeId: args.mortgageFeeId,
+		},
+		eventCategory: "domain_write",
+		previousState: "none",
+		newState: args.status,
+		linkedRecordIds: {
+			borrowerId: `${args.borrowerId}`,
+			mortgageId: `${args.mortgageId}`,
+			obligationId: `${obligationId}`,
+		},
+		afterState: obligationSnapshot,
+		outcome: "transitioned",
+		timestamp: createdAt,
+	});
+
+	await auditLog.log(ctx, {
+		action: "transition.obligation.created",
+		actorId: "system",
+		resourceType: "obligations",
+		resourceId: obligationId,
+		severity: "info",
+		metadata: {
+			entityType: "obligation",
+			eventType: "CREATED",
+			previousState: "none",
+			newState: args.status,
+			outcome: "transitioned",
+			journalEntryId,
+			type: args.type,
+			amount: args.amount,
+			mortgageId: args.mortgageId,
+			borrowerId: args.borrowerId,
+			sourceObligationId: args.sourceObligationId,
+			feeCode: args.feeCode,
+			mortgageFeeId: args.mortgageFeeId,
+			source: {
+				channel: "scheduler",
+				actorId: "system",
+				actorType: "system",
+			},
+		},
+	});
+
+	// Only accrue the obligation immediately if it is already due at creation time.
+	// Future-dated "upcoming" obligations will be accrued later when they become due.
+	if (args.dueDate <= createdAt) {
+		await postObligationAccrued(ctx, {
+			obligationId,
+			source: {
+				channel: "scheduler",
+				actorId: "system",
+				actorType: "system",
+			},
+		});
+	}
+
+	return obligationId;
+}
 
 /**
  * Creates a new obligation record.
@@ -35,155 +202,11 @@ export const createObligation = internalMutation({
 		dueDate: v.number(),
 		gracePeriodEnd: v.number(),
 		sourceObligationId: v.optional(v.id("obligations")),
-		feeCode: v.optional(
-			v.union(v.literal("servicing"), v.literal("late_fee"), v.literal("nsf"))
-		),
+		feeCode: v.optional(feeCodeValidator),
 		mortgageFeeId: v.optional(v.id("mortgageFees")),
 		status: v.string(),
 	},
 	handler: async (ctx, args) => {
-		// Validate initial status — only machine-initial states are allowed
-		if (!VALID_INITIAL_STATUSES.includes(args.status as ValidInitialStatus)) {
-			throw new ConvexError(
-				`Invalid initial status "${args.status}". Obligations must be created in a valid initial state: ${VALID_INITIAL_STATUSES.join(", ")}. Post-transition states must be reached via Governed Transitions.`
-			);
-		}
-
-		// Validate monetary invariants
-		if (args.amount <= 0) {
-			throw new ConvexError(
-				`Invalid amount: ${args.amount}. Obligation amount must be greater than 0.`
-			);
-		}
-		if (args.amountSettled < 0) {
-			throw new ConvexError(
-				`Invalid amountSettled: ${args.amountSettled}. amountSettled must be >= 0.`
-			);
-		}
-		if (args.amountSettled > args.amount) {
-			throw new ConvexError(
-				`Invalid amountSettled: ${args.amountSettled} exceeds amount: ${args.amount}. amountSettled must be <= amount.`
-			);
-		}
-
-		const createdAt = Date.now();
-		const orgId = await orgIdFromMortgageId(ctx, args.mortgageId);
-
-		const obligationId = await ctx.db.insert("obligations", {
-			orgId,
-			mortgageId: args.mortgageId,
-			borrowerId: args.borrowerId,
-			paymentNumber: args.paymentNumber,
-			type: args.type,
-			amount: args.amount,
-			amountSettled: args.amountSettled,
-			dueDate: args.dueDate,
-			gracePeriodEnd: args.gracePeriodEnd,
-			sourceObligationId: args.sourceObligationId,
-			feeCode: args.feeCode,
-			mortgageFeeId: args.mortgageFeeId,
-			status: args.status,
-			createdAt,
-			lastTransitionAt: createdAt,
-			machineContext: undefined,
-			settledAt: undefined,
-		});
-		const obligationSnapshot = {
-			_id: `${obligationId}`,
-			amount: args.amount,
-			amountSettled: args.amountSettled,
-			borrowerId: `${args.borrowerId}`,
-			createdAt,
-			dueDate: args.dueDate,
-			feeCode: args.feeCode,
-			gracePeriodEnd: args.gracePeriodEnd,
-			lastTransitionAt: createdAt,
-			machineContext: undefined,
-			mortgageFeeId: args.mortgageFeeId ? `${args.mortgageFeeId}` : undefined,
-			mortgageId: `${args.mortgageId}`,
-			orgId,
-			paymentNumber: args.paymentNumber,
-			settledAt: undefined,
-			sourceObligationId: args.sourceObligationId
-				? `${args.sourceObligationId}`
-				: undefined,
-			status: args.status,
-			type: args.type,
-		};
-
-		const journalEntryId = await appendAuditJournalEntry(ctx, {
-			actorId: "system",
-			actorType: "system",
-			channel: "scheduler",
-			organizationId: orgId,
-			entityId: obligationId,
-			entityType: "obligation",
-			eventType: "CREATED",
-			payload: {
-				type: args.type,
-				amount: args.amount,
-				mortgageId: args.mortgageId,
-				borrowerId: args.borrowerId,
-				paymentNumber: args.paymentNumber,
-				dueDate: args.dueDate,
-				sourceObligationId: args.sourceObligationId,
-				feeCode: args.feeCode,
-				mortgageFeeId: args.mortgageFeeId,
-			},
-			eventCategory: "domain_write",
-			previousState: "none",
-			newState: args.status,
-			linkedRecordIds: {
-				borrowerId: `${args.borrowerId}`,
-				mortgageId: `${args.mortgageId}`,
-				obligationId: `${obligationId}`,
-			},
-			afterState: obligationSnapshot,
-			outcome: "transitioned",
-			timestamp: createdAt,
-		});
-
-		await auditLog.log(ctx, {
-			action: "transition.obligation.created",
-			actorId: "system",
-			resourceType: "obligations",
-			resourceId: obligationId,
-			severity: "info",
-			metadata: {
-				entityType: "obligation",
-				eventType: "CREATED",
-				previousState: "none",
-				newState: args.status,
-				outcome: "transitioned",
-				journalEntryId,
-				type: args.type,
-				amount: args.amount,
-				mortgageId: args.mortgageId,
-				borrowerId: args.borrowerId,
-				sourceObligationId: args.sourceObligationId,
-				feeCode: args.feeCode,
-				mortgageFeeId: args.mortgageFeeId,
-				source: {
-					channel: "scheduler",
-					actorId: "system",
-					actorType: "system",
-				},
-			},
-		});
-
-		// Only accrue the obligation immediately if it is already due at creation time.
-		// Future-dated "upcoming" obligations will be accrued later when they become due.
-		if (args.dueDate <= createdAt) {
-			await postObligationAccrued(ctx, {
-				obligationId,
-				source: {
-					channel: "scheduler",
-					actorId: "system",
-					actorType: "system",
-				},
-			});
-		}
-
-		return obligationId;
+		return await createObligationImpl(ctx, args);
 	},
 });

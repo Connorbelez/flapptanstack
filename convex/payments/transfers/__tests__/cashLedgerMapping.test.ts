@@ -57,10 +57,10 @@ function getCashLedgerMapping(
 }
 
 describe("T-006: Cash ledger bridge mapping — transfer type → entry type + accounts", () => {
-	describe("all 10 transfer types are accounted for", () => {
+	describe("all 12 transfer types are accounted for", () => {
 		it("covers all transfer types", () => {
-			expect(ALL_TRANSFER_TYPES).toHaveLength(10);
-			expect(INBOUND_TRANSFER_TYPES).toHaveLength(7);
+			expect(ALL_TRANSFER_TYPES).toHaveLength(12);
+			expect(INBOUND_TRANSFER_TYPES).toHaveLength(9);
 			expect(OUTBOUND_TRANSFER_TYPES).toHaveLength(3);
 		});
 	});
@@ -70,6 +70,8 @@ describe("T-006: Cash ledger bridge mapping — transfer type → entry type + a
 			"borrower_interest_collection",
 			"borrower_principal_collection",
 			"borrower_late_fee_collection",
+			"borrower_one_time_fee_collection",
+			"borrower_recurring_fee_collection",
 			"borrower_arrears_cure",
 		];
 
@@ -214,11 +216,11 @@ describe("T-006: Cash ledger bridge mapping — transfer type → entry type + a
 	});
 
 	describe("obligation-backed classification is correct", () => {
-		it("exactly 4 transfer types are obligation-backed", () => {
+		it("exactly 6 transfer types are obligation-backed", () => {
 			const obligationBacked = ALL_TRANSFER_TYPES.filter(
 				(t) => TRANSFER_TYPE_TO_OBLIGATION_TYPE[t] !== null
 			);
-			expect(obligationBacked).toHaveLength(4);
+			expect(obligationBacked).toHaveLength(6);
 		});
 
 		it("obligation-backed types map to expected obligation types", () => {
@@ -230,6 +232,12 @@ describe("T-006: Cash ledger bridge mapping — transfer type → entry type + a
 			).toBe("principal_repayment");
 			expect(
 				TRANSFER_TYPE_TO_OBLIGATION_TYPE.borrower_late_fee_collection
+			).toBe("late_fee");
+			expect(
+				TRANSFER_TYPE_TO_OBLIGATION_TYPE.borrower_one_time_fee_collection
+			).toBe("late_fee");
+			expect(
+				TRANSFER_TYPE_TO_OBLIGATION_TYPE.borrower_recurring_fee_collection
 			).toBe("late_fee");
 			expect(TRANSFER_TYPE_TO_OBLIGATION_TYPE.borrower_arrears_cure).toBe(
 				"arrears_cure"

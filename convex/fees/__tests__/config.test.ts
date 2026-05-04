@@ -5,7 +5,7 @@ import {
 	ensureSeededIdentity,
 } from "../../../src/test/auth/helpers";
 import { FAIRLEND_ADMIN } from "../../../src/test/auth/identities";
-import type { Id } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import {
 	attachDefaultFeeSetToMortgage,
 	DEFAULT_FEE_SET_NAME,
@@ -302,6 +302,77 @@ describe("mortgage fee configuration", () => {
 		expect(rows.find((row) => row._id === id)).toMatchObject({
 			behavior: "borrower_one_time_charge",
 			displayCode: "document_preparation",
+			paymentRail: "manual",
+			recurrence: "one_time",
+		});
+	});
+
+	it("normalizes legacy fee templates without behavior metadata for admin reads", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+		const legacyId = await t.run(async (ctx) => {
+			const now = Date.now();
+			const legacyTemplate = {
+				name: "Standard NSF Fee",
+				description:
+					"Config-ready NSF fee definition; auto-generation is deferred in v1",
+				code: "nsf" as const,
+				surface: "borrower_charge" as const,
+				revenueDestination: "platform_revenue" as const,
+				calculationType: "fixed_amount_cents" as const,
+				parameters: { fixedAmountCents: 5000, dueDays: 30, graceDays: 45 },
+				status: "active" as const,
+				createdAt: now,
+				updatedAt: now,
+			};
+			return await ctx.db.insert(
+				"feeTemplates",
+				legacyTemplate as unknown as Doc<"feeTemplates">
+			);
+		});
+
+		const rows = await asAdmin.query(listFeeTemplatesRef, {});
+
+		expect(rows.find((row) => row._id === legacyId)).toMatchObject({
+			behavior: "borrower_one_time_charge",
+			displayCode: "nsf",
+			paymentRail: "manual",
+			recurrence: "one_time",
+		});
+	});
+
+	it("repairs legacy default fee template rows when ensuring defaults", async () => {
+		const t = createTestConvex();
+		const legacyId = await t.run(async (ctx) => {
+			const now = Date.now();
+			const legacyTemplate = {
+				name: "Standard NSF Fee",
+				description:
+					"Config-ready NSF fee definition; auto-generation is deferred in v1",
+				code: "nsf" as const,
+				surface: "borrower_charge" as const,
+				revenueDestination: "platform_revenue" as const,
+				calculationType: "fixed_amount_cents" as const,
+				parameters: { fixedAmountCents: 5000, dueDays: 30, graceDays: 45 },
+				status: "active" as const,
+				createdAt: now,
+				updatedAt: now,
+			};
+			return await ctx.db.insert(
+				"feeTemplates",
+				legacyTemplate as unknown as Doc<"feeTemplates">
+			);
+		});
+
+		await t.run(async (ctx) => {
+			await ensureDefaultFeeTemplatesAndSet(ctx.db);
+		});
+
+		const row = await t.run(async (ctx) => await ctx.db.get(legacyId));
+		expect(row).toMatchObject({
+			behavior: "borrower_one_time_charge",
+			displayCode: "nsf",
 			paymentRail: "manual",
 			recurrence: "one_time",
 		});

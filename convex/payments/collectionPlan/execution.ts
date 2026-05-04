@@ -21,6 +21,7 @@ import { convex } from "../../fluent";
 import { createTransferRequestRecord } from "../transfers/mutations";
 import {
 	NON_CHECKOUT_TRANSFER_PROVIDER_CODES,
+	type ObligationTransferContext,
 	obligationTypeToTransferType,
 	type ProviderCode,
 } from "../transfers/types";
@@ -90,6 +91,8 @@ function recoverExecutionTriggerSource(args: {
 interface TransferHandoffContextSuccess {
 	borrowerId: Id<"borrowers">;
 	mortgageId: Id<"mortgages">;
+	primaryFeeCode?: ObligationTransferContext["feeCode"];
+	primaryMortgageFeeId?: Id<"mortgageFees">;
 	primaryObligationType?: string;
 	providerCode: ProviderCode;
 	source: ReturnType<typeof buildExecutionSource>;
@@ -145,7 +148,9 @@ function prepareTransferHandoffContext(args: {
 
 	return {
 		borrowerId: firstObligation.borrowerId,
+		primaryFeeCode: firstObligation.feeCode,
 		mortgageId: firstObligation.mortgageId,
+		primaryMortgageFeeId: firstObligation.mortgageFeeId,
 		primaryObligationType: firstObligation.type,
 		providerCode,
 		source: buildExecutionSource({
@@ -170,11 +175,31 @@ function buildTransferHandoffRequest(args: {
 		method: args.planEntry.method,
 		mortgageId: args.context.mortgageId,
 		obligationIds: args.planEntry.obligationIds,
+		primaryFeeCode: args.context.primaryFeeCode,
+		primaryMortgageFeeId: args.context.primaryMortgageFeeId,
 		primaryObligationType: args.context.primaryObligationType,
 		providerCode: args.context.providerCode,
 		planEntryId: args.planEntry._id,
 		source: args.context.source,
 	};
+}
+
+async function resolveTransferTypeForHandoff(
+	ctx: Pick<MutationCtx, "db">,
+	request: {
+		primaryFeeCode?: ObligationTransferContext["feeCode"];
+		primaryMortgageFeeId?: Id<"mortgageFees">;
+		primaryObligationType?: string;
+	}
+) {
+	const primaryFeeBehavior = request.primaryMortgageFeeId
+		? (await ctx.db.get(request.primaryMortgageFeeId))?.behavior
+		: undefined;
+
+	return obligationTypeToTransferType(request.primaryObligationType, {
+		feeCode: request.primaryFeeCode,
+		feeBehavior: primaryFeeBehavior,
+	});
 }
 
 class MissingTransferRequestError extends Error {
@@ -315,12 +340,14 @@ async function handleExistingPlanEntryExecution(args: {
 				idempotencyKey: reconciledExecutionIdempotencyKey,
 				planEntry,
 			});
+			const transferType = await resolveTransferTypeForHandoff(
+				args.ctx,
+				transferHandoffRequest
+			);
 
 			recoveredTransferRequestId = await createTransferRequestRecord(args.ctx, {
 				direction: "inbound",
-				transferType: obligationTypeToTransferType(
-					transferHandoffRequest.primaryObligationType
-				),
+				transferType,
 				amount: transferHandoffRequest.amount,
 				counterpartyType: "borrower",
 				counterpartyId: transferHandoffRequest.counterpartyId,
@@ -529,12 +556,14 @@ const stagePlanEntryExecution = convex
 			idempotencyKey: normalizedIdempotencyKey,
 			planEntry,
 		});
+		const transferType = await resolveTransferTypeForHandoff(
+			ctx,
+			transferHandoffRequest
+		);
 
 		const transferRequestId = await createTransferRequestRecord(ctx, {
 			direction: "inbound",
-			transferType: obligationTypeToTransferType(
-				transferHandoffRequest.primaryObligationType
-			),
+			transferType,
 			amount: transferHandoffRequest.amount,
 			counterpartyType: "borrower",
 			counterpartyId: transferHandoffRequest.counterpartyId,

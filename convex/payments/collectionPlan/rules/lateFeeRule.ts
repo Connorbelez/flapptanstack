@@ -121,19 +121,45 @@ export const lateFeeRuleHandler: RuleHandler = {
 		const dueDays = mortgageFee.parameters.dueDays ?? 30;
 		const graceDays = mortgageFee.parameters.graceDays ?? 45;
 
-		await ctx.runMutation(internal.obligations.mutations.createObligation, {
-			mortgageId,
-			borrowerId: sourceObligation.borrowerId,
-			paymentNumber: 0,
-			type: "late_fee",
-			amount: feeAmountCents,
-			amountSettled: 0,
-			dueDate: now + dueDays * MS_PER_DAY,
-			gracePeriodEnd: now + graceDays * MS_PER_DAY,
-			sourceObligationId: obligationId,
-			feeCode: config.feeCode,
-			mortgageFeeId: mortgageFee._id,
-			status: "upcoming",
+		const feeAssessmentId = await ctx.runMutation(
+			internal.fees.assessments.createFeeAssessment,
+			{
+				mortgageId,
+				mortgageFeeId: mortgageFee._id,
+				amountCents: feeAmountCents,
+				source: "late_fee_rule",
+				effectiveDate: toIsoDateString(now),
+				sourceObligationId: obligationId,
+				metadata: {
+					collectionRuleId: evalCtx.rule._id,
+					source: "collection_plan_late_fee_rule",
+				},
+			}
+		);
+
+		const lateFeeObligationId = await ctx.runMutation(
+			internal.obligations.mutations.createObligation,
+			{
+				mortgageId,
+				borrowerId: sourceObligation.borrowerId,
+				paymentNumber: 0,
+				type: "late_fee",
+				amount: feeAmountCents,
+				amountSettled: 0,
+				dueDate: now + dueDays * MS_PER_DAY,
+				gracePeriodEnd: now + graceDays * MS_PER_DAY,
+				sourceObligationId: obligationId,
+				feeCode: config.feeCode,
+				mortgageFeeId: mortgageFee._id,
+				status: "upcoming",
+			}
+		);
+
+		await ctx.runMutation(internal.fees.assessments.linkFeeAssessment, {
+			feeAssessmentId,
+			status: "invoiced",
+			amountSettledCents: 0,
+			obligationId: lateFeeObligationId,
 		});
 	},
 };

@@ -3,6 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { materializeMortgageBlueprintsFromCaseDrafts } from "../documents/mortgageBlueprints";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
+import { attachDefaultFeeSetToMortgage } from "../fees/resolver";
 import { TOTAL_SUPPLY } from "../ledger/constants";
 import { issueSharesHandler, mintMortgageHandler } from "../ledger/mutations";
 import {
@@ -352,6 +353,8 @@ export interface ActivateMortgageAggregateInput {
 	}>;
 	brokerOfRecordId: Id<"brokers">;
 	collectionsDraft?: Doc<"adminOriginationCases">["collectionsDraft"];
+	feeDefaultMode?: "opt_out" | "platform_default";
+	feeSetTemplateId?: Id<"feeSetTemplates">;
 	listingOverrides?: Doc<"adminOriginationCases">["listingOverrides"];
 	mortgageDraft: NonNullable<Doc<"adminOriginationCases">["mortgageDraft"]>;
 	now: number;
@@ -480,6 +483,14 @@ export async function activateMortgageAggregate(
 			mortgageId,
 			role: borrowerLink.role,
 		});
+	}
+
+	if (args.feeDefaultMode !== "opt_out") {
+		await attachDefaultFeeSetToMortgage(
+			ctx.db,
+			mortgageId,
+			args.mortgageDraft.annualServicingRate
+		);
 	}
 
 	const paymentBootstrap = await bootstrapOriginationPayments(ctx, {

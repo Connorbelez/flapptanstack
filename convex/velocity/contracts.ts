@@ -421,6 +421,8 @@ export interface VelocityActivationHandoffV1 {
 		providerCode: "pad_rotessa";
 		selectedBankAccountId?: Id<"bankAccounts">;
 	};
+	feeDefaultMode?: "opt_out" | "platform_default";
+	feeSetTemplateId?: Id<"feeSetTemplates">;
 	listingOverrides?: VelocityFairLendEnrichmentV1["listingOverrides"];
 	mortgageDraft: {
 		amortizationMonths: number;

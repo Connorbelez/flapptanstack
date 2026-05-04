@@ -272,7 +272,11 @@ describe("LateFeeRule", () => {
 
 	beforeEach(() => {
 		runQuery = vi.fn();
-		runMutation = vi.fn().mockResolvedValue("mock_obligation_id");
+		runMutation = vi
+			.fn()
+			.mockResolvedValueOnce("mock_fee_assessment_id")
+			.mockResolvedValueOnce("mock_obligation_id")
+			.mockResolvedValueOnce("mock_fee_assessment_id");
 		ctx = { runQuery, runMutation } as unknown as ActionCtx;
 	});
 
@@ -324,9 +328,21 @@ describe("LateFeeRule", () => {
 
 		await lateFeeRuleHandler.evaluate(ctx, lateFeeEvalCtx());
 
-		expect(runMutation).toHaveBeenCalledOnce();
-		expect(runMutation).toHaveBeenCalledWith(
-			expect.anything(), // internal.obligations.mutations.createObligation
+		expect(runMutation).toHaveBeenCalledTimes(3);
+		expect(runMutation).toHaveBeenNthCalledWith(
+			1,
+			expect.anything(),
+			expect.objectContaining({
+				mortgageId: "mortgage_1",
+				mortgageFeeId: mortgageFee._id,
+				amountCents: 5000,
+				source: "late_fee_rule",
+				sourceObligationId: "obligation_1",
+			})
+		);
+		expect(runMutation).toHaveBeenNthCalledWith(
+			2,
+			expect.anything(),
 			expect.objectContaining({
 				type: "late_fee",
 				amount: 5000,
@@ -338,6 +354,16 @@ describe("LateFeeRule", () => {
 				sourceObligationId: "obligation_1",
 				feeCode: "late_fee",
 				mortgageFeeId: mortgageFee._id,
+			})
+		);
+		expect(runMutation).toHaveBeenNthCalledWith(
+			3,
+			expect.anything(),
+			expect.objectContaining({
+				feeAssessmentId: "mock_fee_assessment_id",
+				obligationId: "mock_obligation_id",
+				status: "invoiced",
+				amountSettledCents: 0,
 			})
 		);
 	});
@@ -368,7 +394,7 @@ describe("LateFeeRule", () => {
 		const before = Date.now();
 		await lateFeeRuleHandler.evaluate(ctx, lateFeeEvalCtx());
 
-		const args = runMutation.mock.calls[0][1] as Record<string, unknown>;
+		const args = runMutation.mock.calls[1][1] as Record<string, unknown>;
 		expect(args.amount).toBe(5000);
 
 		const dueDate = args.dueDate as number;

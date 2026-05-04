@@ -1,7 +1,11 @@
 import type { GenericDatabaseWriter } from "convex/server";
 import { ConvexError, v } from "convex/values";
-import type { DataModel, Id } from "../_generated/dataModel";
+import type { DataModel, Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { adminMutation } from "../fluent";
+import { createObligationImpl } from "../obligations/mutations";
+import { createEntryImpl } from "../payments/collectionPlan/initialScheduling";
+import { calculateFeeAmountCents } from "./behavior";
 import {
 	assertNoOverlappingMortgageFee,
 	assertValidFeeDefinition,
@@ -40,6 +44,44 @@ const feeTemplateInputValidator = {
 function assertDateRange(effectiveFrom: string, effectiveTo?: string) {
 	if (effectiveTo !== undefined && effectiveTo < effectiveFrom) {
 		throw new ConvexError("effectiveTo must be on or after effectiveFrom");
+	}
+}
+
+async function getPrimaryBorrowerIdForMortgage(
+	ctx: Pick<MutationCtx, "db">,
+	mortgageId: Id<"mortgages">
+) {
+	const links = await ctx.db
+		.query("mortgageBorrowers")
+		.withIndex("by_mortgage", (q) => q.eq("mortgageId", mortgageId))
+		.collect();
+	const primaryLink =
+		links.find((link) => link.role === "primary") ?? links[0] ?? null;
+	if (!primaryLink) {
+		throw new ConvexError(
+			`Mortgage ${mortgageId} has no borrower link for fee application`
+		);
+	}
+	return primaryLink.borrowerId;
+}
+
+function assertBorrowerChargeMortgageFee(
+	fee: Doc<"mortgageFees">
+): asserts fee is Doc<"mortgageFees"> & {
+	behavior: "borrower_one_time_charge" | "borrower_recurring_charge";
+} {
+	if (
+		fee.behavior !== "borrower_one_time_charge" &&
+		fee.behavior !== "borrower_recurring_charge"
+	) {
+		throw new ConvexError(
+			"applyBorrowerFeeToMortgage requires a borrower-charge mortgage fee"
+		);
+	}
+	if (!fee.paymentRail || fee.paymentRail === "stripe") {
+		throw new ConvexError(
+			"applyBorrowerFeeToMortgage requires a non-checkout paymentRail"
+		);
 	}
 }
 
@@ -309,6 +351,110 @@ export const optOutMortgageFeeSet = adminMutation
 			});
 		}
 		return { mortgageId: args.mortgageId, optedOutAt: now };
+	})
+	.public();
+
+export const applyBorrowerFeeToMortgage = adminMutation
+	.input({
+		mortgageId: v.id("mortgages"),
+		mortgageFeeId: v.id("mortgageFees"),
+		effectiveDate: v.string(),
+		dueDate: v.number(),
+		gracePeriodEnd: v.number(),
+	})
+	.handler(async (ctx, args) => {
+		const mortgageFee = await ctx.db.get(args.mortgageFeeId);
+		if (!mortgageFee) {
+			throw new ConvexError(`Mortgage fee not found: ${args.mortgageFeeId}`);
+		}
+		if (mortgageFee.mortgageId !== args.mortgageId) {
+			throw new ConvexError(
+				`Mortgage fee ${args.mortgageFeeId} does not belong to mortgage ${args.mortgageId}`
+			);
+		}
+		assertBorrowerChargeMortgageFee(mortgageFee);
+		const paymentRail = mortgageFee.paymentRail;
+		if (!paymentRail || paymentRail === "stripe") {
+			throw new ConvexError(
+				"applyBorrowerFeeToMortgage requires a non-checkout paymentRail"
+			);
+		}
+
+		const mortgage = await ctx.db.get(args.mortgageId);
+		if (!mortgage) {
+			throw new ConvexError(`Mortgage not found: ${args.mortgageId}`);
+		}
+
+		const amountCents = calculateFeeAmountCents({
+			calculationType: mortgageFee.calculationType,
+			parameters: mortgageFee.parameters,
+			paymentFrequency: mortgage.paymentFrequency,
+			principalCents: mortgage.principal,
+		});
+		const borrowerId = await getPrimaryBorrowerIdForMortgage(
+			ctx,
+			args.mortgageId
+		);
+		const now = Date.now();
+		const feeAssessmentId = await ctx.db.insert("feeAssessments", {
+			orgId: mortgage.orgId,
+			mortgageId: args.mortgageId,
+			mortgageFeeId: args.mortgageFeeId,
+			feeTemplateId: mortgageFee.feeTemplateId,
+			feeSetTemplateId: mortgageFee.feeSetTemplateId,
+			behavior: mortgageFee.behavior,
+			code: mortgageFee.code,
+			displayCode: mortgageFee.displayCode,
+			amountCents,
+			amountSettledCents: 0,
+			source: "admin_manual",
+			status: "assessed",
+			assessedAt: now,
+			effectiveDate: args.effectiveDate,
+			metadata: {
+				appliedBy: ctx.viewer.authId,
+				paymentRail,
+			},
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		const obligationId = await createObligationImpl(ctx, {
+			mortgageId: args.mortgageId,
+			borrowerId,
+			paymentNumber: 0,
+			type: "late_fee",
+			amount: amountCents,
+			amountSettled: 0,
+			dueDate: args.dueDate,
+			gracePeriodEnd: args.gracePeriodEnd,
+			feeCode: mortgageFee.code,
+			mortgageFeeId: args.mortgageFeeId,
+			status: "upcoming",
+		});
+
+		await ctx.db.patch(feeAssessmentId, {
+			status: "invoiced",
+			obligationId,
+			updatedAt: Date.now(),
+		});
+
+		const collectionPlanEntryId = await createEntryImpl(ctx, {
+			amount: amountCents,
+			executionIdempotencyKey: `borrower-fee:${feeAssessmentId}`,
+			method: paymentRail,
+			obligationIds: [obligationId],
+			scheduledDate: args.dueDate,
+			source: "admin",
+			status: "planned",
+		});
+
+		return {
+			amountCents,
+			collectionPlanEntryId,
+			feeAssessmentId,
+			obligationId,
+		};
 	})
 	.public();
 

@@ -32,6 +32,7 @@ import { Route as PortalIndexRouteImport } from './routes/portal/index'
 import { Route as ListingsIndexRouteImport } from './routes/listings/index'
 import { Route as LawyerIndexRouteImport } from './routes/lawyer/index'
 import { Route as BrokerIndexRouteImport } from './routes/broker/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as StartLendingCompleteRouteImport } from './routes/start-lending.complete'
 import { Route as SignOutLocalRouteImport } from './routes/sign-out/local'
 import { Route as ListingsListingIdRouteImport } from './routes/listings/$listingId'
@@ -79,6 +80,7 @@ import { Route as AdminRotessaReconciliationRouteImport } from './routes/admin/r
 import { Route as AdminPaymentOperationsRouteImport } from './routes/admin/payment-operations'
 import { Route as AdminOriginationsRouteImport } from './routes/admin/originations'
 import { Route as AdminFinancialLedgerRouteImport } from './routes/admin/financial-ledger'
+import { Route as AdminFeesRouteImport } from './routes/admin/fees'
 import { Route as AdminDocumentEngineRouteImport } from './routes/admin.document-engine'
 import { Route as AdminEntitytypeRouteImport } from './routes/admin/$entitytype'
 import { Route as AuthenticatedAuthenticatedRouteImport } from './routes/_authenticated/authenticated'
@@ -291,6 +293,11 @@ const BrokerIndexRoute = BrokerIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => BrokerRouteRoute,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRouteRoute,
 } as any)
 const StartLendingCompleteRoute = StartLendingCompleteRouteImport.update({
   id: '/complete',
@@ -530,6 +537,11 @@ const AdminOriginationsRoute = AdminOriginationsRouteImport.update({
 const AdminFinancialLedgerRoute = AdminFinancialLedgerRouteImport.update({
   id: '/financial-ledger',
   path: '/financial-ledger',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminFeesRoute = AdminFeesRouteImport.update({
+  id: '/fees',
+  path: '/fees',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminDocumentEngineRoute = AdminDocumentEngineRouteImport.update({
@@ -1101,6 +1113,7 @@ export interface FileRoutesByFullPath {
   '/authenticated': typeof AuthenticatedAuthenticatedRoute
   '/admin/$entitytype': typeof AdminEntitytypeRouteWithChildren
   '/admin/document-engine': typeof AdminDocumentEngineRouteWithChildren
+  '/admin/fees': typeof AdminFeesRoute
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
@@ -1148,6 +1161,7 @@ export interface FileRoutesByFullPath {
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
+  '/admin/': typeof AdminIndexRoute
   '/broker/': typeof BrokerIndexRoute
   '/lawyer/': typeof LawyerIndexRoute
   '/listings/': typeof ListingsIndexRoute
@@ -1233,7 +1247,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRouteRouteWithChildren
   '/borrower': typeof BorrowerRouteRouteWithChildren
   '/deals': typeof DealsRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
@@ -1257,6 +1270,7 @@ export interface FileRoutesByTo {
   '/admin/underwriting': typeof AdminUnderwritingRouteRoute
   '/authenticated': typeof AuthenticatedAuthenticatedRoute
   '/admin/$entitytype': typeof AdminEntitytypeRouteWithChildren
+  '/admin/fees': typeof AdminFeesRoute
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
@@ -1303,6 +1317,7 @@ export interface FileRoutesByTo {
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
+  '/admin': typeof AdminIndexRoute
   '/broker': typeof BrokerIndexRoute
   '/lawyer': typeof LawyerIndexRoute
   '/listings': typeof ListingsIndexRoute
@@ -1425,6 +1440,7 @@ export interface FileRoutesById {
   '/_authenticated/authenticated': typeof AuthenticatedAuthenticatedRoute
   '/admin/$entitytype': typeof AdminEntitytypeRouteWithChildren
   '/admin/document-engine': typeof AdminDocumentEngineRouteWithChildren
+  '/admin/fees': typeof AdminFeesRoute
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
@@ -1472,6 +1488,7 @@ export interface FileRoutesById {
   '/listings/$listingId': typeof ListingsListingIdRoute
   '/sign-out/local': typeof SignOutLocalRoute
   '/start-lending/complete': typeof StartLendingCompleteRoute
+  '/admin/': typeof AdminIndexRoute
   '/broker/': typeof BrokerIndexRoute
   '/lawyer/': typeof LawyerIndexRoute
   '/listings/': typeof ListingsIndexRoute
@@ -1596,6 +1613,7 @@ export interface FileRouteTypes {
     | '/authenticated'
     | '/admin/$entitytype'
     | '/admin/document-engine'
+    | '/admin/fees'
     | '/admin/financial-ledger'
     | '/admin/originations'
     | '/admin/payment-operations'
@@ -1643,6 +1661,7 @@ export interface FileRouteTypes {
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/start-lending/complete'
+    | '/admin/'
     | '/broker/'
     | '/lawyer/'
     | '/listings/'
@@ -1728,7 +1747,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/admin'
     | '/borrower'
     | '/deals'
     | '/lender'
@@ -1752,6 +1770,7 @@ export interface FileRouteTypes {
     | '/admin/underwriting'
     | '/authenticated'
     | '/admin/$entitytype'
+    | '/admin/fees'
     | '/admin/financial-ledger'
     | '/admin/originations'
     | '/admin/payment-operations'
@@ -1798,6 +1817,7 @@ export interface FileRouteTypes {
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/start-lending/complete'
+    | '/admin'
     | '/broker'
     | '/lawyer'
     | '/listings'
@@ -1919,6 +1939,7 @@ export interface FileRouteTypes {
     | '/_authenticated/authenticated'
     | '/admin/$entitytype'
     | '/admin/document-engine'
+    | '/admin/fees'
     | '/admin/financial-ledger'
     | '/admin/originations'
     | '/admin/payment-operations'
@@ -1966,6 +1987,7 @@ export interface FileRouteTypes {
     | '/listings/$listingId'
     | '/sign-out/local'
     | '/start-lending/complete'
+    | '/admin/'
     | '/broker/'
     | '/lawyer/'
     | '/listings/'
@@ -2278,6 +2300,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/broker/'
       preLoaderRoute: typeof BrokerIndexRouteImport
       parentRoute: typeof BrokerRouteRoute
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRouteRoute
     }
     '/start-lending/complete': {
       id: '/start-lending/complete'
@@ -2606,6 +2635,13 @@ declare module '@tanstack/react-router' {
       path: '/financial-ledger'
       fullPath: '/admin/financial-ledger'
       preLoaderRoute: typeof AdminFinancialLedgerRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/fees': {
+      id: '/admin/fees'
+      path: '/fees'
+      fullPath: '/admin/fees'
+      preLoaderRoute: typeof AdminFeesRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/document-engine': {
@@ -3436,12 +3472,14 @@ interface AdminRouteRouteChildren {
   AdminUnderwritingRouteRoute: typeof AdminUnderwritingRouteRoute
   AdminEntitytypeRoute: typeof AdminEntitytypeRouteWithChildren
   AdminDocumentEngineRoute: typeof AdminDocumentEngineRouteWithChildren
+  AdminFeesRoute: typeof AdminFeesRoute
   AdminFinancialLedgerRoute: typeof AdminFinancialLedgerRoute
   AdminOriginationsRoute: typeof AdminOriginationsRouteWithChildren
   AdminPaymentOperationsRoute: typeof AdminPaymentOperationsRoute
   AdminRotessaReconciliationRoute: typeof AdminRotessaReconciliationRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminLegalLsoRoute: typeof AdminLegalLsoRoute
+  AdminIndexRoute: typeof AdminIndexRoute
   AdminVelocityWorkspaceIdReviewRoute: typeof AdminVelocityWorkspaceIdReviewRoute
 }
 
@@ -3456,12 +3494,14 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminUnderwritingRouteRoute: AdminUnderwritingRouteRoute,
   AdminEntitytypeRoute: AdminEntitytypeRouteWithChildren,
   AdminDocumentEngineRoute: AdminDocumentEngineRouteWithChildren,
+  AdminFeesRoute: AdminFeesRoute,
   AdminFinancialLedgerRoute: AdminFinancialLedgerRoute,
   AdminOriginationsRoute: AdminOriginationsRouteWithChildren,
   AdminPaymentOperationsRoute: AdminPaymentOperationsRoute,
   AdminRotessaReconciliationRoute: AdminRotessaReconciliationRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminLegalLsoRoute: AdminLegalLsoRoute,
+  AdminIndexRoute: AdminIndexRoute,
   AdminVelocityWorkspaceIdReviewRoute: AdminVelocityWorkspaceIdReviewRoute,
 }
 

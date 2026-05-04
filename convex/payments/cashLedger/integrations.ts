@@ -2019,7 +2019,8 @@ export async function postTransferReversal(
  * Maps an inbound transfer type to the credit account family.
  *
  * - borrower_interest_collection, borrower_principal_collection,
- *   borrower_late_fee_collection, borrower_arrears_cure → BORROWER_RECEIVABLE
+ *   borrower_late_fee_collection, borrower_one_time_fee_collection,
+ *   borrower_recurring_fee_collection, borrower_arrears_cure → BORROWER_RECEIVABLE
  * - locking_fee_collection, commitment_deposit_collection → UNAPPLIED_CASH
  * - deal_principal_transfer → CASH_CLEARING
  */
@@ -2030,6 +2031,8 @@ export function inboundTransferCreditFamily(
 		case "borrower_interest_collection":
 		case "borrower_principal_collection":
 		case "borrower_late_fee_collection":
+		case "borrower_one_time_fee_collection":
+		case "borrower_recurring_fee_collection":
 		case "borrower_arrears_cure":
 			return "BORROWER_RECEIVABLE";
 		case "locking_fee_collection":

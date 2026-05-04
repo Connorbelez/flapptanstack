@@ -13,6 +13,7 @@ import {
 	DocumentRemediationPanel,
 	type DocumentRemediationPanelDocument,
 } from "#/components/admin/deals/DocumentRemediationPanel";
+import { FeeValue } from "#/components/admin/fees/fee-value";
 import { MortgagePackageApplyButton } from "#/components/admin/mortgages/MortgagePackageApplyButton";
 import {
 	Accordion,
@@ -3847,6 +3848,70 @@ export function MortgagesDedicatedDetailsContent({
 							</AccordionContent>
 						</AccordionItem>
 					</Accordion>
+				</div>
+			</DetailSectionShell>
+
+			<DetailSectionShell title="Fees">
+				<div className="space-y-5">
+					<EssentialGrid
+						items={[
+							{
+								label: "Active Fees",
+								value: detailContext?.fees?.activeFees.length ?? 0,
+							},
+							{
+								emphasis: true,
+								label: "Open Receivable",
+								value: formatCurrency(
+									detailContext?.fees?.openAccountsReceivableCents ?? 0,
+									100
+								),
+							},
+							{
+								label: "Recent Assessments",
+								value: detailContext?.fees?.recentAssessments.length ?? 0,
+							},
+						]}
+					/>
+					{detailContext?.fees?.activeFees.length ? (
+						<div className="overflow-hidden rounded-md border border-border/70">
+							<table className="w-full text-sm">
+								<thead className="bg-muted/40 text-muted-foreground">
+									<tr>
+										<th className="px-3 py-2 text-left font-medium">Fee</th>
+										<th className="px-3 py-2 text-left font-medium">
+											Behavior
+										</th>
+										<th className="px-3 py-2 text-right font-medium">Value</th>
+										<th className="px-3 py-2 text-right font-medium">Trace</th>
+									</tr>
+								</thead>
+								<tbody>
+									{detailContext.fees.activeFees.map((fee) => (
+										<tr className="border-border/60 border-t" key={fee.feeId}>
+											<td className="px-3 py-2">
+												<div className="font-medium">{fee.displayCode}</div>
+												<div className="text-muted-foreground text-xs">
+													{formatEnumLabel(fee.defaultApplication)}
+												</div>
+											</td>
+											<td className="px-3 py-2">
+												{formatEnumLabel(fee.behavior)}
+											</td>
+											<td className="px-3 py-2 text-right">
+												<FeeValue valueLabel={fee.valueLabel} />
+											</td>
+											<td className="px-3 py-2 text-right tabular-nums">
+												{fee.traceCount}
+											</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</div>
+					) : (
+						<EmptyContext message="No active fees found for this mortgage." />
+					)}
 				</div>
 			</DetailSectionShell>
 

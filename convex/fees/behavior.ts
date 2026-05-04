@@ -1,7 +1,7 @@
 import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 
-export type FeeBehavior = Doc<"feeTemplates">["behavior"];
+export type FeeBehavior = NonNullable<Doc<"feeTemplates">["behavior"]>;
 export type FeeRecurrence = Doc<"feeTemplates">["recurrence"];
 export type FeeParameters = Doc<"feeTemplates">["parameters"];
 

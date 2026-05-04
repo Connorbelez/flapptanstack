@@ -220,6 +220,7 @@ import type * as fees_config from "../fees/config.js";
 import type * as fees_migrations from "../fees/migrations.js";
 import type * as fees_queries from "../fees/queries.js";
 import type * as fees_resolver from "../fees/resolver.js";
+import type * as fees_templateCompatibility from "../fees/templateCompatibility.js";
 import type * as fees_validators from "../fees/validators.js";
 import type * as fluent from "../fluent.js";
 import type * as http from "../http.js";
@@ -719,6 +720,7 @@ declare const fullApi: ApiFromModules<{
   "fees/migrations": typeof fees_migrations;
   "fees/queries": typeof fees_queries;
   "fees/resolver": typeof fees_resolver;
+  "fees/templateCompatibility": typeof fees_templateCompatibility;
   "fees/validators": typeof fees_validators;
   fluent: typeof fluent;
   http: typeof http;
