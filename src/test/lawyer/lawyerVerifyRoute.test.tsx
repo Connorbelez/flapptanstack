@@ -5,7 +5,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
-import { useAction } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LawyerWorkosInvitationRouteContent } from "#/routes/lawyer/invitation";
@@ -13,9 +13,10 @@ import {
 	buildLawyerWorkosInvitationPath,
 } from "#/routes/lawyer/invitation";
 import {
-	buildLawyerOnboardingPath,
+	buildLawyerOnboardingSessionPath,
 	buildLawyerVerifyRedirectPath,
 	buildVerifiedLawyerReturnPath,
+	LawyerVerifyRouteContent,
 	getLawyerVerifyTerminalCopy,
 } from "#/routes/lawyer/verify.$token";
 
@@ -64,9 +65,9 @@ describe("lawyer verification route helpers", () => {
 		);
 	});
 
-	it("preserves deal portal return through lawyer onboarding", () => {
-		expect(buildLawyerOnboardingPath("deal_123")).toBe(
-			"/onboard?context=deal-representation&redirect=%2Fdeals%2Fdeal_123"
+	it("links legacy verification fallback to the orchestrator session route", () => {
+		expect(buildLawyerOnboardingSessionPath("session_123")).toBe(
+			"/lawyer/onboarding/session_123"
 		);
 	});
 
@@ -136,6 +137,51 @@ describe("lawyer WorkOS invitation route", () => {
 		await waitFor(() =>
 			expect(mockNavigate).toHaveBeenCalledWith({
 				href: "/lawyer/onboarding/session_123",
+			})
+		);
+	});
+});
+
+describe("lawyer legacy verification route", () => {
+	it("routes authenticated selected targets without lawyer role into deal onboarding session", async () => {
+		const mockNavigate = vi.fn().mockResolvedValue(undefined);
+		const acceptInvitation = vi.fn();
+		const startOrResumeForDeal = vi.fn().mockResolvedValue({
+			session: {
+				_id: "session_from_deal",
+				nextRoute: "/lawyer/onboarding/session_from_deal",
+			},
+		});
+
+		vi.mocked(useNavigate).mockReturnValue(mockNavigate);
+		vi.mocked(useAuth).mockReturnValue({
+			loading: false,
+			permissions: [],
+			role: "member",
+			roles: ["member"],
+			user: { id: "user_123" },
+		} as never);
+		vi.mocked(useQuery).mockReturnValue({
+			dealId: "deal_123",
+			status: "pending",
+		} as never);
+		let mutationCallIndex = 0;
+		vi.mocked(useMutation).mockImplementation(() => {
+			mutationCallIndex += 1;
+			return mutationCallIndex % 2 === 1
+				? acceptInvitation
+				: startOrResumeForDeal;
+		});
+
+		render(<LawyerVerifyRouteContent token="manual_token" />);
+
+		await waitFor(() =>
+			expect(startOrResumeForDeal).toHaveBeenCalledWith({ dealId: "deal_123" })
+		);
+		expect(acceptInvitation).not.toHaveBeenCalled();
+		await waitFor(() =>
+			expect(mockNavigate).toHaveBeenCalledWith({
+				href: "/lawyer/onboarding/session_from_deal",
 			})
 		);
 	});

@@ -8,6 +8,7 @@ import { convexModules } from "../../test/moduleMaps";
 import { normalizeLawyerEmail } from "../normalization";
 
 const NOW = 1_777_800_000_000;
+const FUTURE_EXPIRES_AT = 4_102_444_800_000;
 const onboardingApi = anyApi.legalRepresentation.onboarding;
 const IDV_CHECKPOINT_REQUIRED_PATTERN = /IDV checkpoint is required/i;
 const INVITATION_EXPIRED_PATTERN = /invitation expired/i;
@@ -162,7 +163,7 @@ async function seedPendingGuestInvitation(
 			dealId,
 			deliveryProvider: "workos",
 			deliveryStatus: "pending",
-			expiresAt: args?.expiresAt ?? NOW + 86_400_000,
+			expiresAt: args?.expiresAt ?? FUTURE_EXPIRES_AT,
 			normalizedTargetEmail: "guest@example.test",
 			selectedLawyerSnapshot: {
 				type: "guest_lawyer",
@@ -349,20 +350,103 @@ describe("lawyer onboarding sessions", () => {
 		expect(resumed.session._id).toBe(result.session._id);
 	});
 
-	it("does not expose public invitation-id onboarding start", async () => {
+	it("starts or resumes public invitation onboarding only for the target lawyer", async () => {
 		const t = createHarness();
+		const auth = t.withIdentity(lawyerIdentity());
 		const { invitationId } = await seedPendingGuestInvitation(t);
 
+		const result = await auth.mutation(
+			onboardingApi.startOrResumeForInvitation,
+			{
+				invitationId,
+			}
+		);
+		const resumed = await auth.mutation(
+			onboardingApi.startOrResumeForInvitation,
+			{
+				invitationId,
+			}
+		);
+
+		expect(result.session).toMatchObject({
+			invitationId,
+			path: "guest_invited",
+			status: "auth_pending",
+		});
+		expect(resumed.session._id).toBe(result.session._id);
 		await expect(
 			t.mutation(onboardingApi.startOrResumeForInvitation, {
 				invitationId,
 			})
 		).rejects.toThrow();
-		const sessions = await t.run((ctx) =>
-			ctx.db.query("lawyerOnboardingSessions").collect()
-		);
+	});
 
-		expect(sessions).toHaveLength(0);
+	it("starts or resumes onboarding from deal context for the selected guest target", async () => {
+		const t = createHarness();
+		const auth = t.withIdentity(lawyerIdentity());
+		const { dealId, invitationId } = await seedPendingGuestInvitation(t);
+
+		const result = await auth.mutation(onboardingApi.startOrResumeForDeal, {
+			dealId,
+		});
+		const resumed = await auth.mutation(onboardingApi.startOrResumeForDeal, {
+			dealId,
+		});
+
+		expect(result.session).toMatchObject({
+			dealId,
+			invitationId,
+			path: "guest_invited",
+			status: "auth_pending",
+		});
+		expect(resumed.session._id).toBe(result.session._id);
+	});
+
+	it("starts platform-assigned onboarding from deal context", async () => {
+		const t = createHarness();
+		const auth = t.withIdentity(
+			lawyerIdentity({
+				authId: "user_platform_lawyer",
+				email: "platform-lawyer@example.test",
+			})
+		);
+		const { dealId } = await seedGuestDeal(t);
+		const profileId = await t.run(async (ctx) => {
+			const lawyerProfileId = await ctx.db.insert("lawyerProfiles", {
+				authId: "user_platform_lawyer",
+				createdAt: NOW,
+				displayName: "Platform Lawyer",
+				email: "platform-lawyer@example.test",
+				normalizedEmail: "platform-lawyer@example.test",
+				platformStatus: "active",
+				profileKind: "platform",
+				updatedAt: NOW,
+			});
+			await ctx.db.patch(dealId, {
+				lawyerId: "user_platform_lawyer",
+				lawyerType: "platform_lawyer",
+				selectedLawyer: {
+					email: "platform-lawyer@example.test",
+					lawyerId: "user_platform_lawyer",
+					name: "Platform Lawyer",
+					type: "platform_lawyer",
+				},
+			});
+			return lawyerProfileId;
+		});
+
+		const result = await auth.mutation(onboardingApi.startOrResumeForDeal, {
+			dealId,
+		});
+
+		expect(result.session).toMatchObject({
+			currentStep: "lso",
+			dealId,
+			lawyerProfileId: profileId,
+			path: "platform_assigned",
+			status: "lso_pending",
+			workosUserId: "user_platform_lawyer",
+		});
 	});
 
 	it("does not start onboarding for revoked or expired invitations", async () => {
@@ -481,12 +565,21 @@ describe("lawyer onboarding sessions", () => {
 		expect(verifications.map((row) => row.checkType).sort()).toEqual([
 			"idv",
 			"initial_lso",
+			"manual_admin",
 		]);
 		expect(
 			verifications.some((row) =>
 				row.reasonCodes.includes("identity_confirmed")
 			)
 		).toBe(true);
+		expect(
+			verifications.find((row) => row.checkType === "manual_admin")
+				?.sourceSnapshot
+		).toMatchObject({
+			authId: "user_guest_lawyer",
+			invitationTargetEmail: normalizedEmail,
+			source: "lawyer_onboarding_identity_confirmation",
+		});
 		expect(engagement).toMatchObject({
 			lawyerAuthId: "user_guest_lawyer",
 			provider: "manual_admin",
@@ -592,7 +685,7 @@ describe("lawyer onboarding sessions", () => {
 			ctx.db.query("lawyerVerifications").collect()
 		);
 
-		expect(verifications).toHaveLength(0);
+		expect(verifications.map((row) => row.checkType)).toEqual(["manual_admin"]);
 	});
 
 	it("rejects restricted LSO registry rows before recording eligible evidence", async () => {
@@ -636,7 +729,9 @@ describe("lawyer onboarding sessions", () => {
 		}));
 
 		expect(rows.access).toEqual([]);
-		expect(rows.verifications).toEqual([]);
+		expect(rows.verifications.map((row) => row.checkType)).toEqual([
+			"manual_admin",
+		]);
 	});
 
 	it("does not allow a lawyer to complete engagement before prior checkpoints", async () => {

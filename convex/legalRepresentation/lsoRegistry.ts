@@ -1,7 +1,12 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { adminMutation, authedMutation, listingQuery } from "../fluent";
+import {
+	adminMutation,
+	adminQuery,
+	authedMutation,
+	listingQuery,
+} from "../fluent";
 import {
 	normalizeBarNumber,
 	normalizeJurisdiction,
@@ -200,6 +205,22 @@ function requireNormalizedJurisdiction(value: string): string {
 	return normalized;
 }
 
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function safeImportRowKey(row: {
+	readonly barNumber: string;
+	readonly jurisdiction: string;
+}): string | undefined {
+	const barNumber = normalizeBarNumber(row.barNumber);
+	const jurisdiction = normalizeJurisdiction(row.jurisdiction);
+	if (!(barNumber && jurisdiction)) {
+		return undefined;
+	}
+	return `${barNumber}:${jurisdiction}`;
+}
+
 async function getRefreshTargetLsoLawyer(
 	ctx: Pick<MutationCtx, "db">,
 	args: {
@@ -268,45 +289,82 @@ export const importBatch = adminMutation
 			importedBy: ctx.viewer.authId,
 			rowCount: args.rows.length,
 			sourceName,
-			status: "completed",
+			status: "pending",
 			updatedAt: now,
 		});
-		for (const row of args.rows) {
-			const barNumber = requireNormalizedBarNumber(row.barNumber);
-			const displayName = requireNormalizedText(row.displayName, "displayName");
-			const jurisdiction = requireNormalizedJurisdiction(row.jurisdiction);
-			const lsoLawyerId = await ctx.db.insert("lsoLawyers", {
-				barNumber,
-				displayName,
-				entitledToPractise: row.entitledToPractise,
-				firmName: row.firmName,
-				jurisdiction,
-				licenseeType: row.licenseeType,
-				licensingStatus: row.licensingStatus,
-				normalizedName: normalizeName(displayName),
-				primaryEmail: row.email,
-				restrictionStatus: row.restrictionStatus,
-				restrictionSummary: row.restrictionSummary,
-				source: "lso_import",
-				sourceFetchedAt: now,
-				sourceSnapshot: {
-					batchId: String(batchId),
-					sourceName,
-				},
-				updatedAt: now,
-			});
-			await Promise.all(
-				buildLawyerSearchTokens({ barNumber, displayName }).map((token) =>
-					ctx.db.insert("lsoLawyerSearchTokens", {
-						createdAt: now,
-						lsoLawyerId,
-						token: token.token,
-						tokenKind: token.tokenKind,
-					})
-				)
-			);
+		let imported = 0;
+		let errors = 0;
+		for (const [index, row] of args.rows.entries()) {
+			try {
+				const barNumber = requireNormalizedBarNumber(row.barNumber);
+				const displayName = requireNormalizedText(
+					row.displayName,
+					"displayName"
+				);
+				const jurisdiction = requireNormalizedJurisdiction(row.jurisdiction);
+				const lsoLawyerId = await ctx.db.insert("lsoLawyers", {
+					barNumber,
+					displayName,
+					entitledToPractise: row.entitledToPractise,
+					firmName: row.firmName,
+					jurisdiction,
+					licenseeType: row.licenseeType,
+					licensingStatus: row.licensingStatus,
+					normalizedName: normalizeName(displayName),
+					primaryEmail: row.email,
+					restrictionStatus: row.restrictionStatus,
+					restrictionSummary: row.restrictionSummary,
+					source: "lso_import",
+					sourceFetchedAt: now,
+					sourceSnapshot: {
+						batchId: String(batchId),
+						sourceName,
+					},
+					updatedAt: now,
+				});
+				await Promise.all(
+					buildLawyerSearchTokens({ barNumber, displayName }).map((token) =>
+						ctx.db.insert("lsoLawyerSearchTokens", {
+							createdAt: now,
+							lsoLawyerId,
+							token: token.token,
+							tokenKind: token.tokenKind,
+						})
+					)
+				);
+				imported += 1;
+			} catch (error) {
+				errors += 1;
+				await ctx.db.insert("lsoImportRowErrors", {
+					batchId,
+					errorCode: "invalid_row",
+					message: errorMessage(error),
+					normalizedKey: safeImportRowKey(row),
+					rowNumber: index + 1,
+				});
+			}
 		}
-		return { batchId, imported: args.rows.length };
+		await ctx.db.patch(batchId, {
+			errorCount: errors,
+			status: errors > 0 ? "failed" : "completed",
+			updatedAt: Date.now(),
+		});
+		return { batchId, errors, imported };
+	})
+	.public();
+
+export const getImportBatch = adminQuery
+	.input({ batchId: v.id("lsoImportBatches") })
+	.handler(async (ctx, args) => {
+		const batch = await ctx.db.get(args.batchId);
+		if (!batch) {
+			return null;
+		}
+		const errors = await ctx.db
+			.query("lsoImportRowErrors")
+			.withIndex("by_batch", (query) => query.eq("batchId", args.batchId))
+			.collect();
+		return { batch, errors };
 	})
 	.public();
 

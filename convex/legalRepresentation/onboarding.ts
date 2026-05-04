@@ -2,7 +2,13 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { grantDealAccess } from "../deals/mutations";
-import { convex, lawyerMutation, lawyerQuery, type Viewer } from "../fluent";
+import {
+	authedMutation,
+	convex,
+	lawyerMutation,
+	lawyerQuery,
+	type Viewer,
+} from "../fluent";
 import { recordSignedRepresentationEngagementRow } from "./engagements";
 import {
 	normalizeBarNumber,
@@ -28,6 +34,7 @@ type OwnedSessionResult =
 
 const LSO_VERIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 90;
 const IDV_VERIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 365;
+const IDENTITY_CONFIRMATION_TTL_MS = 1000 * 60 * 60 * 24 * 365;
 
 function onboardingRoute(sessionId: Id<"lawyerOnboardingSessions">) {
 	return `/lawyer/onboarding/${String(sessionId)}`;
@@ -43,6 +50,22 @@ function viewerEmail(viewer: Viewer) {
 
 function isActiveInvitationStatus(status: Doc<"lawyerInvitations">["status"]) {
 	return status === "pending" || status === "accepted";
+}
+
+function latestSession(
+	sessions: readonly Doc<"lawyerOnboardingSessions">[]
+): Doc<"lawyerOnboardingSessions"> | null {
+	return (
+		[...sessions].sort((left, right) => {
+			if (right.updatedAt !== left.updatedAt) {
+				return right.updatedAt - left.updatedAt;
+			}
+			if (right.createdAt !== left.createdAt) {
+				return right.createdAt - left.createdAt;
+			}
+			return String(right._id).localeCompare(String(left._id));
+		})[0] ?? null
+	);
 }
 
 async function assertActiveInvitation(
@@ -99,6 +122,39 @@ async function getSessionAfterPatch(
 	return session;
 }
 
+async function insertOnboardingSession(
+	ctx: OnboardingMutationCtx,
+	args: {
+		readonly currentStep: string;
+		readonly dealId: Id<"deals">;
+		readonly invitationId?: Id<"lawyerInvitations">;
+		readonly lawyerProfileId?: Id<"lawyerProfiles">;
+		readonly normalizedTargetEmail?: string;
+		readonly path: Doc<"lawyerOnboardingSessions">["path"];
+		readonly status: Doc<"lawyerOnboardingSessions">["status"];
+		readonly workosUserId?: string;
+	}
+) {
+	const now = Date.now();
+	const sessionId = await ctx.db.insert("lawyerOnboardingSessions", {
+		createdAt: now,
+		currentStep: args.currentStep,
+		dealId: args.dealId,
+		invitationId: args.invitationId,
+		lawyerProfileId: args.lawyerProfileId,
+		normalizedTargetEmail: args.normalizedTargetEmail,
+		path: args.path,
+		returnPath: dealRoute(args.dealId),
+		status: args.status,
+		updatedAt: now,
+		workosUserId: args.workosUserId,
+	});
+	await ctx.db.patch(sessionId, {
+		nextRoute: onboardingRoute(sessionId),
+	});
+	return await getSessionAfterPatch(ctx, sessionId);
+}
+
 export async function startOrResumeForInvitationInMutation(
 	ctx: OnboardingMutationCtx,
 	args: {
@@ -121,21 +177,14 @@ export async function startOrResumeForInvitationInMutation(
 	if (existing) {
 		return existing;
 	}
-	const sessionId = await ctx.db.insert("lawyerOnboardingSessions", {
-		createdAt: now,
+	return await insertOnboardingSession(ctx, {
 		currentStep: "auth",
 		dealId: invitation.dealId,
 		invitationId: invitation._id,
 		normalizedTargetEmail: invitation.normalizedTargetEmail,
 		path: "guest_invited",
-		returnPath: dealRoute(invitation.dealId),
 		status: "auth_pending",
-		updatedAt: now,
 	});
-	await ctx.db.patch(sessionId, {
-		nextRoute: onboardingRoute(sessionId),
-	});
-	return await getSessionAfterPatch(ctx, sessionId);
 }
 
 async function getOwnedSession(
@@ -206,6 +255,94 @@ async function loadActiveInvitationForSession(
 	}
 	await assertActiveInvitation(ctx, invitation, now);
 	return invitation;
+}
+
+function assertViewerMatchesInvitation(
+	viewer: Viewer,
+	invitation: Doc<"lawyerInvitations">
+) {
+	const email = viewerEmail(viewer);
+	const normalizedViewerEmail =
+		email === undefined ? undefined : normalizeLawyerEmail(email);
+	if (
+		invitation.resolvedAuthId !== undefined &&
+		invitation.resolvedAuthId !== viewer.authId
+	) {
+		throw new ConvexError("Lawyer invitation belongs to another user");
+	}
+	if (normalizedViewerEmail !== invitation.normalizedTargetEmail) {
+		throw new ConvexError("Lawyer invitation email does not match");
+	}
+}
+
+async function getActiveInvitationForDealTarget(
+	ctx: OnboardingMutationCtx,
+	args: {
+		readonly dealId: Id<"deals">;
+		readonly normalizedTargetEmail: string;
+	}
+) {
+	const invitations = await ctx.db
+		.query("lawyerInvitations")
+		.withIndex("by_deal", (query) => query.eq("dealId", args.dealId))
+		.collect();
+	return (
+		invitations
+			.filter(
+				(invitation) =>
+					invitation.normalizedTargetEmail === args.normalizedTargetEmail &&
+					isActiveInvitationStatus(invitation.status)
+			)
+			.sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null
+	);
+}
+
+async function findExistingSessionForViewerDeal(
+	ctx: OnboardingMutationCtx,
+	args: {
+		readonly dealId: Id<"deals">;
+		readonly viewer: Viewer;
+	}
+) {
+	const matches: Doc<"lawyerOnboardingSessions">[] = [];
+	const byWorkos = await ctx.db
+		.query("lawyerOnboardingSessions")
+		.withIndex("by_workos_deal", (query) =>
+			query.eq("workosUserId", args.viewer.authId).eq("dealId", args.dealId)
+		)
+		.collect();
+	matches.push(...byWorkos);
+	const email = viewerEmail(args.viewer);
+	if (email !== undefined) {
+		const normalizedViewerEmail = normalizeLawyerEmail(email);
+		const byEmail = await ctx.db
+			.query("lawyerOnboardingSessions")
+			.withIndex("by_target_email_deal", (query) =>
+				query
+					.eq("normalizedTargetEmail", normalizedViewerEmail)
+					.eq("dealId", args.dealId)
+			)
+			.collect();
+		matches.push(...byEmail);
+	}
+	const uniqueMatches = new Map<
+		Id<"lawyerOnboardingSessions">,
+		Doc<"lawyerOnboardingSessions">
+	>();
+	for (const session of matches) {
+		uniqueMatches.set(session._id, session);
+	}
+	return latestSession([...uniqueMatches.values()]);
+}
+
+async function getPlatformProfileForViewer(
+	ctx: OnboardingMutationCtx,
+	authId: string
+) {
+	return await ctx.db
+		.query("lawyerProfiles")
+		.withIndex("by_auth_id", (query) => query.eq("authId", authId))
+		.first();
 }
 
 async function selectedLsoEvidenceForSession(
@@ -405,6 +542,89 @@ export const startOrResumeForInvitationInternal = convex
 	})
 	.internal();
 
+export const startOrResumeForInvitation = authedMutation
+	.input({ invitationId: v.id("lawyerInvitations") })
+	.handler(async (ctx, args) => {
+		const invitation = await ctx.db.get(args.invitationId);
+		if (!invitation) {
+			throw new ConvexError("Lawyer invitation not found");
+		}
+		assertViewerMatchesInvitation(ctx.viewer, invitation);
+		const session = await startOrResumeForInvitationInMutation(ctx, {
+			invitationId: invitation._id,
+		});
+		return { session };
+	})
+	.public();
+
+export const startOrResumeForDeal = authedMutation
+	.input({ dealId: v.id("deals") })
+	.handler(async (ctx, args) => {
+		const existing = await findExistingSessionForViewerDeal(ctx, {
+			dealId: args.dealId,
+			viewer: ctx.viewer,
+		});
+		if (existing) {
+			return { session: existing };
+		}
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal) {
+			throw new ConvexError("Deal not found");
+		}
+		const viewerTargetEmail = viewerEmail(ctx.viewer);
+		const normalizedViewerEmail =
+			viewerTargetEmail === undefined
+				? undefined
+				: normalizeLawyerEmail(viewerTargetEmail);
+		if (
+			deal.lawyerType === "guest_lawyer" &&
+			deal.selectedLawyer?.type === "guest_lawyer" &&
+			normalizedViewerEmail !== undefined &&
+			normalizeLawyerEmail(deal.selectedLawyer.email) === normalizedViewerEmail
+		) {
+			const invitation = await getActiveInvitationForDealTarget(ctx, {
+				dealId: deal._id,
+				normalizedTargetEmail: normalizedViewerEmail,
+			});
+			if (invitation) {
+				const session = await startOrResumeForInvitationInMutation(ctx, {
+					invitationId: invitation._id,
+				});
+				return { session };
+			}
+			const session = await insertOnboardingSession(ctx, {
+				currentStep: "auth",
+				dealId: deal._id,
+				normalizedTargetEmail: normalizedViewerEmail,
+				path: "guest_invited",
+				status: "auth_pending",
+			});
+			return { session };
+		}
+		const selectedPlatformLawyerId =
+			deal.selectedLawyer?.type === "platform_lawyer"
+				? deal.selectedLawyer.lawyerId
+				: undefined;
+		if (
+			deal.lawyerType === "platform_lawyer" &&
+			(deal.lawyerId === ctx.viewer.authId ||
+				selectedPlatformLawyerId === ctx.viewer.authId)
+		) {
+			const profile = await getPlatformProfileForViewer(ctx, ctx.viewer.authId);
+			const session = await insertOnboardingSession(ctx, {
+				currentStep: "lso",
+				dealId: deal._id,
+				lawyerProfileId: profile?._id,
+				path: "platform_assigned",
+				status: "lso_pending",
+				workosUserId: ctx.viewer.authId,
+			});
+			return { session };
+		}
+		throw new ConvexError("Viewer is not the selected lawyer for this deal");
+	})
+	.public();
+
 export const getLawyerOnboardingSession = lawyerQuery
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(async (ctx, args) => {
@@ -444,6 +664,44 @@ export const confirmIdentity = lawyerMutation
 		if (session.identityConfirmedAt !== undefined) {
 			return session;
 		}
+		const normalizedEmail = viewerEmail(ctx.viewer);
+		const identitySnapshot = {
+			authId: ctx.viewer.authId,
+			...(session.normalizedTargetEmail === undefined
+				? {}
+				: { invitationTargetEmail: session.normalizedTargetEmail }),
+			source: "lawyer_onboarding_identity_confirmation",
+			...(ctx.viewer.email === undefined
+				? {}
+				: { userEmail: ctx.viewer.email }),
+			...(ctx.viewer.firstName === undefined
+				? {}
+				: { userFirstName: ctx.viewer.firstName }),
+			...(ctx.viewer.lastName === undefined
+				? {}
+				: { userLastName: ctx.viewer.lastName }),
+			...(ctx.viewer.verifiedEmail === undefined
+				? {}
+				: { userVerifiedEmail: ctx.viewer.verifiedEmail }),
+		};
+		await recordLawyerVerificationRow(ctx, {
+			authId: ctx.viewer.authId,
+			checkType: "manual_admin",
+			createdAt: now,
+			createdBy: `lawyer-onboarding:${String(session._id)}`,
+			dealId: session.dealId,
+			lawyerProfileId: session.lawyerProfileId,
+			normalizedEmail,
+			providerResult: {
+				evidenceHash: `sha256:onboarding-identity:${String(session._id)}:${ctx.viewer.authId}:${now}`,
+				expiresAt: now + IDENTITY_CONFIRMATION_TTL_MS,
+				outcome: "eligible",
+				provider: "manual_admin",
+				providerReferenceId: `workos:${ctx.viewer.authId}`,
+				reasonCodes: ["identity_confirmed"],
+				sourceSnapshot: normalizeLegalSourceSnapshot(identitySnapshot),
+			},
+		});
 		await ctx.db.patch(session._id, {
 			authCompletedAt: session.authCompletedAt ?? now,
 			currentStep: "lso",

@@ -148,6 +148,7 @@ import { Route as AdminOriginationsCaseIdRouteImport } from './routes/admin/orig
 import { Route as AdminObligationsRecordidRouteImport } from './routes/admin/obligations/$recordid'
 import { Route as AdminMortgagesRecordidRouteImport } from './routes/admin/mortgages/$recordid'
 import { Route as AdminListingsRecordidRouteImport } from './routes/admin/listings/$recordid'
+import { Route as AdminLegalLsoRouteImport } from './routes/admin/legal/lso'
 import { Route as AdminDocumentEngineVariablesRouteImport } from './routes/admin.document-engine.variables'
 import { Route as AdminDocumentEngineTemplatesRouteImport } from './routes/admin.document-engine.templates'
 import { Route as AdminDocumentEnginePublishedTemplatesRouteImport } from './routes/admin.document-engine.published-templates'
@@ -901,6 +902,11 @@ const AdminListingsRecordidRoute = AdminListingsRecordidRouteImport.update({
   path: '/$recordid',
   getParentRoute: () => AdminListingsRouteRoute,
 } as any)
+const AdminLegalLsoRoute = AdminLegalLsoRouteImport.update({
+  id: '/legal/lso',
+  path: '/legal/lso',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const AdminDocumentEngineVariablesRoute =
   AdminDocumentEngineVariablesRouteImport.update({
     id: '/variables',
@@ -1142,6 +1148,7 @@ export interface FileRoutesByFullPath {
   '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
+  '/admin/legal/lso': typeof AdminLegalLsoRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
   '/admin/mortgages/$recordid': typeof AdminMortgagesRecordidRoute
   '/admin/obligations/$recordid': typeof AdminObligationsRecordidRoute
@@ -1292,6 +1299,7 @@ export interface FileRoutesByTo {
   '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
+  '/admin/legal/lso': typeof AdminLegalLsoRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
   '/admin/mortgages/$recordid': typeof AdminMortgagesRecordidRoute
   '/admin/obligations/$recordid': typeof AdminObligationsRecordidRoute
@@ -1458,6 +1466,7 @@ export interface FileRoutesById {
   '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
+  '/admin/legal/lso': typeof AdminLegalLsoRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
   '/admin/mortgages/$recordid': typeof AdminMortgagesRecordidRoute
   '/admin/obligations/$recordid': typeof AdminObligationsRecordidRoute
@@ -1625,6 +1634,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
+    | '/admin/legal/lso'
     | '/admin/listings/$recordid'
     | '/admin/mortgages/$recordid'
     | '/admin/obligations/$recordid'
@@ -1775,6 +1785,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
+    | '/admin/legal/lso'
     | '/admin/listings/$recordid'
     | '/admin/mortgages/$recordid'
     | '/admin/obligations/$recordid'
@@ -1940,6 +1951,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
+    | '/admin/legal/lso'
     | '/admin/listings/$recordid'
     | '/admin/mortgages/$recordid'
     | '/admin/obligations/$recordid'
@@ -3043,6 +3055,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminListingsRecordidRouteImport
       parentRoute: typeof AdminListingsRouteRoute
     }
+    '/admin/legal/lso': {
+      id: '/admin/legal/lso'
+      path: '/legal/lso'
+      fullPath: '/admin/legal/lso'
+      preLoaderRoute: typeof AdminLegalLsoRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/document-engine/variables': {
       id: '/admin/document-engine/variables'
       path: '/variables'
@@ -3353,6 +3372,7 @@ interface AdminRouteRouteChildren {
   AdminPaymentOperationsRoute: typeof AdminPaymentOperationsRoute
   AdminRotessaReconciliationRoute: typeof AdminRotessaReconciliationRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminLegalLsoRoute: typeof AdminLegalLsoRoute
   AdminVelocityWorkspaceIdReviewRoute: typeof AdminVelocityWorkspaceIdReviewRoute
 }
 
@@ -3371,6 +3391,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminPaymentOperationsRoute: AdminPaymentOperationsRoute,
   AdminRotessaReconciliationRoute: AdminRotessaReconciliationRoute,
   AdminSettingsRoute: AdminSettingsRoute,
+  AdminLegalLsoRoute: AdminLegalLsoRoute,
   AdminVelocityWorkspaceIdReviewRoute: AdminVelocityWorkspaceIdReviewRoute,
 }
 

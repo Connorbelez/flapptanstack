@@ -326,7 +326,7 @@ describe("deal portal shared projection", () => {
 		expect(result.payment.adminReview).toBeNull();
 	});
 
-	it("resolves selected lawyer persona from guest lawyer email deal access", async () => {
+	it("treats guest lawyer email deal access as onboarding-required until completion", async () => {
 		const t = createHarness();
 		const guestEmail = "guest-lawyer@example.test";
 		const { dealId } = await seedPortalDeal(t, {
@@ -347,9 +347,10 @@ describe("deal portal shared projection", () => {
 
 		expect(result.viewer).toMatchObject({
 			authId: "workos-guest-lawyer-auth",
-			persona: "selected_lawyer",
+			persona: "selected_lawyer_onboarding_required",
 		});
-		expect(result.onboarding.required).toBe(false);
+		expect(result.capabilities).toEqual(["representation.onboarding.resume"]);
+		expect(result.onboarding.required).toBe(true);
 	});
 
 	it("resolves selected lawyer persona from completed onboarding session", async () => {

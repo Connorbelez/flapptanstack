@@ -189,21 +189,11 @@ function activeAccessRowsForViewer(
 	accessRows: readonly DealAccessRow[],
 	viewer: Viewer
 ) {
-	const normalizedViewerEmail = normalizeEmail(
-		viewer.verifiedEmail ?? viewer.email
-	);
 	return accessRows.filter((row) => {
 		if (row.status !== "active") {
 			return false;
 		}
-		if (row.userId === viewer.authId) {
-			return true;
-		}
-		return (
-			row.role === "guest_lawyer" &&
-			normalizedViewerEmail !== null &&
-			normalizeEmail(row.userId) === normalizedViewerEmail
-		);
+		return row.userId === viewer.authId;
 	});
 }
 

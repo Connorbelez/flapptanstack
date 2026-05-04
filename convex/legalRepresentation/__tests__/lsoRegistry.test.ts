@@ -300,27 +300,51 @@ describe("LSO registry behavior", () => {
 		});
 	});
 
-	it("rejects import rows with empty normalized registry keys", async () => {
+	it("quarantines import rows with empty normalized registry keys", async () => {
 		const t = convexTest(schema, convexModules);
 		const admin = t.withIdentity(FAIRLEND_ADMIN);
 
-		await expect(
-			admin.mutation(lsoRegistryApi.importBatch, {
-				rows: [
-					{
-						barNumber: "   ",
-						displayName: "Jane Eligible",
-						entitledToPractise: true,
-						jurisdiction: "ON",
-						licenseeType: "lawyer",
-						licensingStatus: "licensed",
-						restrictionStatus: "clear",
-					},
-				],
-				sourceName: "fixture.csv",
-				checksum: "sha256:fixture",
-			})
-		).rejects.toThrow("barNumber is required");
+		const result = await admin.mutation(lsoRegistryApi.importBatch, {
+			rows: [
+				{
+					barNumber: "   ",
+					displayName: "Jane Eligible",
+					entitledToPractise: true,
+					jurisdiction: "ON",
+					licenseeType: "lawyer",
+					licensingStatus: "licensed",
+					restrictionStatus: "clear",
+				},
+				{
+					barNumber: "L99999",
+					displayName: "Valid Import",
+					entitledToPractise: true,
+					jurisdiction: "ON",
+					licenseeType: "lawyer",
+					licensingStatus: "licensed",
+					restrictionStatus: "clear",
+				},
+			],
+			sourceName: "fixture.csv",
+			checksum: "sha256:fixture",
+		});
+		const diagnostics = await admin.query(lsoRegistryApi.getImportBatch, {
+			batchId: result.batchId,
+		});
+
+		expect(result).toMatchObject({ errors: 1, imported: 1 });
+		expect(diagnostics).toMatchObject({
+			batch: {
+				errorCount: 1,
+				rowCount: 2,
+				status: "failed",
+			},
+		});
+		expect(diagnostics.errors).toHaveLength(1);
+		expect(diagnostics.errors[0]).toMatchObject({
+			errorCode: "invalid_row",
+			rowNumber: 1,
+		});
 	});
 
 	it("writes a refresh request and provider-shaped verification evidence", async () => {
