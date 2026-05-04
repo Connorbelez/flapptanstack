@@ -786,6 +786,49 @@ async function supersedeStaleFingerprintExceptions(
 	}
 }
 
+async function openOrUpdatePostLiveDriftException(
+	ctx: MutationCtx,
+	args: {
+		details: Record<string, unknown>;
+		message: string;
+		sourceSyncAttemptId: Id<"velocitySyncAttempts">;
+		sourceWebhookEventId?: Id<"velocityWebhookEvents">;
+		workspaceId: Id<"velocityPackageWorkspaces">;
+	}
+) {
+	const existing = (
+		await ctx.db
+			.query("velocityPackageExceptions")
+			.withIndex("by_workspace_status", (query) =>
+				query.eq("workspaceId", args.workspaceId).eq("status", "open")
+			)
+			.collect()
+	).find((row) => row.kind === "live_drift_exception");
+
+	if (existing) {
+		await ctx.db.patch(existing._id, {
+			details: args.details,
+			message: args.message,
+			sourceSyncAttemptId: args.sourceSyncAttemptId,
+			sourceWebhookEventId: args.sourceWebhookEventId,
+		});
+		return existing._id;
+	}
+
+	return await ctx.db.insert("velocityPackageExceptions", {
+		details: args.details,
+		kind: "live_drift_exception",
+		message: args.message,
+		openedAt: Date.now(),
+		severity: "blocking",
+		sourceSyncAttemptId: args.sourceSyncAttemptId,
+		sourceWebhookEventId: args.sourceWebhookEventId,
+		status: "open",
+		title: "Activated Velocity package changed upstream",
+		workspaceId: args.workspaceId,
+	});
+}
+
 async function patchWebhookEvent(
 	ctx: MutationCtx,
 	args: {
@@ -1311,7 +1354,7 @@ export const applyVelocityFullDealSync = convex
 				query.eq("idempotencyKey", syncIdempotencyKey)
 			)
 			.first();
-		if (existingSync) {
+		if (existingSync && existingSync.result !== "succeeded") {
 			const replayedSync = await replayExistingTerminalSyncAttempt(ctx, {
 				existingSync,
 				webhookEventId: args.webhookEventId,
@@ -1386,6 +1429,128 @@ export const applyVelocityFullDealSync = convex
 				syncAttemptId,
 				workspaceId: workspace?._id,
 			};
+		}
+
+		if (
+			workspace?.activation?.mortgageId &&
+			workspace.normalizedCoreHash !== core.normalizedHash
+		) {
+			const driftMessage =
+				"Velocity-owned core data changed after the package was activated. Canonical mortgage data was left unchanged.";
+			const syncAttemptId = await ctx.db.insert("velocitySyncAttempts", {
+				completedAt: now,
+				connectorCredentialContext: args.fetchCredentialContext,
+				dealHref: args.dealHref,
+				idempotencyKey: syncIdempotencyKey,
+				loanCode: core.identity.loanCode,
+				normalizedCoreHash: core.normalizedHash,
+				rawDealHash: core.rawDealHash,
+				rawResponseBody: args.rawResponseBody,
+				request: args.request,
+				responseStatus: args.responseStatus,
+				result: "exception",
+				startedAt: args.startedAt,
+				trigger: args.trigger,
+				workspaceId: workspace._id,
+			});
+			const snapshotId = await ctx.db.insert("velocityPackageSnapshots", {
+				createdAt: now,
+				createdBy:
+					args.trigger === "manual_sync_now" ? "manual_sync_now" : "webhook",
+				linkApplicationId: core.identity.linkApplicationId,
+				loanCode: core.identity.loanCode,
+				normalizedCore: core,
+				normalizedCoreHash: core.normalizedHash,
+				rawDealHash: core.rawDealHash,
+				rawDealJson: stableVelocityJsonStringify(args.rawDeal),
+				snapshotType: "post_live_drift",
+				workspaceId: workspace._id,
+			});
+			const readiness = computeVelocityReadiness({
+				core: workspace.normalizedCore,
+				enrichment: workspace.fairlendEnrichment,
+				workspace,
+			});
+			await ctx.db.patch(workspace._id, {
+				currentVelocityStatusCode: core.upstream.statusCode ?? undefined,
+				currentVelocityStatusLabel: core.upstream.statusLabel ?? undefined,
+				exceptionKind: "live_drift_exception",
+				exceptionSummary: driftMessage,
+				lastSyncAttemptId: syncAttemptId,
+				lastWebhookEventId: args.webhookEventId,
+				updatedAt: now,
+			});
+			await openOrUpdatePostLiveDriftException(ctx, {
+				details: {
+					activatedMortgageId: String(workspace.activation.mortgageId),
+					fetchCredentialContext: args.fetchCredentialContext,
+					linkApplicationId: core.identity.linkApplicationId,
+					loanCode: core.identity.loanCode,
+					newNormalizedCoreHash: core.normalizedHash,
+					previousNormalizedCoreHash: workspace.normalizedCoreHash,
+					rawDealHash: core.rawDealHash,
+					snapshotId: String(snapshotId),
+					webhookAgent: args.webhookAgent,
+					webhookCredentialContext: args.webhookCredentialContext,
+				},
+				message: driftMessage,
+				sourceSyncAttemptId: syncAttemptId,
+				sourceWebhookEventId: args.webhookEventId,
+				workspaceId: workspace._id,
+			});
+			await appendVelocityPackageAuditEntry(ctx, {
+				actorId: args.webhookAgent?.email ?? "velocity_sync_system",
+				actorType: "system",
+				channel: args.webhookEventId ? "api_webhook" : "scheduler",
+				connectorCredentialContext: args.fetchCredentialContext,
+				eventType: "velocity_post_live_drift_detected",
+				idempotencyKey: `velocity_post_live_drift_detected:${String(syncAttemptId)}`,
+				linkedRecordIds: {
+					mortgageId: String(workspace.activation.mortgageId),
+					snapshotId: String(snapshotId),
+					syncAttemptId: String(syncAttemptId),
+					webhookEventId: args.webhookEventId
+						? String(args.webhookEventId)
+						: undefined,
+				},
+				newState: workspace.state,
+				outcome: "rejected",
+				payload: {
+					exceptionKind: "live_drift_exception",
+					linkApplicationId: core.identity.linkApplicationId,
+					loanCode: core.identity.loanCode,
+					normalizedCoreHash: core.normalizedHash,
+					rawDealHash: core.rawDealHash,
+					snapshotId: String(snapshotId),
+					workspaceId: String(workspace._id),
+				},
+				previousState: workspace.state,
+				reason: driftMessage,
+				readiness,
+				webhookAgent: args.webhookAgent,
+				workspaceId: workspace._id,
+			});
+			await patchWebhookEvent(ctx, {
+				error: "live_drift_exception",
+				status: "processed",
+				webhookEventId: args.webhookEventId,
+				workspaceId: workspace._id,
+			});
+			return {
+				result: "exception",
+				syncAttemptId,
+				workspaceId: workspace._id,
+			};
+		}
+
+		if (existingSync) {
+			const replayedSync = await replayExistingTerminalSyncAttempt(ctx, {
+				existingSync,
+				webhookEventId: args.webhookEventId,
+			});
+			if (replayedSync) {
+				return replayedSync;
+			}
 		}
 
 		const fairlendEnrichment = workspace?.fairlendEnrichment ?? {};

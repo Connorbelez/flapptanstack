@@ -18,6 +18,7 @@ import {
 	resolveVelocityStatusSemantics,
 	velocityFairLendEnrichmentValidator,
 	velocityNormalizedCoreValidator,
+	velocityPackageAuditEventTypeValidator,
 	velocityPackageWorkspaceStateValidator,
 	type VelocityActivationHandoffV1,
 	type VelocityActivationAttemptRecordV1,
@@ -133,6 +134,16 @@ describe("Velocity package contracts", () => {
 		expect(VELOCITY_PACKAGE_AUDIT_EVENT_TYPES).toContain(
 			"velocity_webhook_provenance_recorded"
 		);
+	});
+
+	it("keeps package audit event constants and validator literals aligned", () => {
+		const validatorMembers = (
+			velocityPackageAuditEventTypeValidator as unknown as {
+				members: Array<{ value: string }>;
+			}
+		).members.map((member) => member.value);
+
+		expect(validatorMembers).toEqual([...VELOCITY_PACKAGE_AUDIT_EVENT_TYPES]);
 	});
 
 	it("models package-owned activation remediation and handoff fields", () => {
