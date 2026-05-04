@@ -1,6 +1,5 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { dealPersonaValidator } from "../src/lib/deals/access-policy/types";
 import {
 	originationCaseStatusValidator,
 	originationCollectionsDraftValidator,
@@ -110,7 +109,7 @@ import {
 } from "./engine/validators";
 import {
 	feeAssessmentSourceValidator,
-	feeAssessmentStatusValidator,
+	feeAssessmentStoredStatusValidator,
 	feeBehaviorValidator,
 	feeCalculationParametersValidator,
 	feeCalculationTypeValidator,
@@ -225,6 +224,7 @@ import {
 import {
 	counterpartyTypeValidator,
 	directionValidator,
+	manualSettlementInstrumentValidator,
 	manualSettlementValidator,
 	nonCheckoutProviderCodeValidator,
 	providerCodeValidator,
@@ -1100,6 +1100,9 @@ export default defineSchema({
 		adjustments: v.optional(v.any()),
 		adjustedValue: v.optional(v.number()),
 
+		// ─── Linked evidence ───
+		evidenceAssetIds: v.optional(v.array(v.id("documentAssets"))),
+
 		sortOrder: v.number(),
 		createdAt: v.number(),
 	}).index("by_appraisal", ["appraisalId"]),
@@ -1533,7 +1536,9 @@ export default defineSchema({
 		trigger: velocitySyncTriggerValidator,
 		loanCode: v.optional(v.string()),
 		dealHref: v.optional(v.string()),
-		//TODO: Run migration and remove optional from these fields
+		// Optional during the online migration from legacy Velocity sync rows.
+		// New writes still provide it; older failed attempts are tolerated so
+		// schema validation cannot block unrelated function deploys.
 		idempotencyKey: v.optional(v.string()),
 		connectorCredentialContext: v.optional(
 			velocityConnectorCredentialContextValidator
@@ -1983,6 +1988,9 @@ export default defineSchema({
 		name: v.string(),
 		description: v.optional(v.string()),
 		code: feeCodeValidator,
+		// Optional during the online migration from legacy fee-template rows.
+		// Backfill to canonical behavior/display labels, then these can be
+		// tightened back to required.
 		behavior: v.optional(feeBehaviorValidator),
 		displayCode: v.optional(v.string()),
 		surface: feeSurfaceValidator,
@@ -2024,15 +2032,17 @@ export default defineSchema({
 	mortgageFees: defineTable({
 		mortgageId: v.id("mortgages"),
 		code: feeCodeValidator,
-		behavior: feeBehaviorValidator,
-		displayCode: v.string(),
+		// Optional during the online migration from legacy mortgage fee snapshots.
+		// Backfill from the linked template/surface defaults, then tighten back.
+		behavior: v.optional(feeBehaviorValidator),
+		displayCode: v.optional(v.string()),
 		surface: feeSurfaceValidator,
 		revenueDestination: feeRevenueDestinationValidator,
 		calculationType: feeCalculationTypeValidator,
 		parameters: feeCalculationParametersValidator,
 		paymentRail: v.optional(feePaymentRailValidator),
 		recurrence: v.optional(feeRecurrenceValidator),
-		defaultApplication: feeDefaultApplicationValidator,
+		defaultApplication: v.optional(feeDefaultApplicationValidator),
 		effectiveFrom: v.string(),
 		effectiveTo: v.optional(v.string()),
 		status: feeStatusValidator,
@@ -2081,7 +2091,7 @@ export default defineSchema({
 		amountCents: v.number(),
 		amountSettledCents: v.number(),
 		source: feeAssessmentSourceValidator,
-		status: feeAssessmentStatusValidator,
+		status: feeAssessmentStoredStatusValidator,
 		assessedAt: v.number(),
 		effectiveDate: v.string(),
 		obligationId: v.optional(v.id("obligations")),
@@ -2089,6 +2099,8 @@ export default defineSchema({
 		dispersalEntryId: v.optional(v.id("dispersalEntries")),
 		servicingFeeEntryId: v.optional(v.id("servicingFeeEntries")),
 		cashLedgerJournalEntryId: v.optional(v.id("cash_ledger_journal_entries")),
+		lastTransitionAt: v.optional(v.number()),
+		machineContext: v.optional(v.any()),
 		metadata: v.optional(v.any()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
@@ -2171,6 +2183,10 @@ export default defineSchema({
 		archiveReason: v.optional(v.string()),
 		executionIdempotencyKey: v.optional(v.string()),
 		collectionAttemptId: v.optional(v.id("collectionAttempts")),
+		assignedCollectorActorId: v.optional(v.string()),
+		assignedAt: v.optional(v.number()),
+		assignedByActorId: v.optional(v.string()),
+		assignmentReason: v.optional(v.string()),
 		balancePreCheckDecision: v.optional(balancePreCheckDecisionValidator),
 		balancePreCheckReasonCode: v.optional(balancePreCheckReasonCodeValidator),
 		balancePreCheckReasonDetail: v.optional(v.string()),
@@ -2313,6 +2329,54 @@ export default defineSchema({
 		.index("by_mortgage_status", ["mortgageId", "status", "initiatedAt"])
 		.index("by_status", ["status"])
 		.index("by_provider_occurrence_key", ["providerOccurrenceKey"]),
+
+	offlinePaymentEvidence: defineTable({
+		planEntryId: v.id("collectionPlanEntries"),
+		collectionAttemptId: v.optional(v.id("collectionAttempts")),
+		transferRequestId: v.optional(v.id("transferRequests")),
+		mortgageId: v.id("mortgages"),
+		obligationIds: v.array(v.id("obligations")),
+		amount: v.number(),
+		instrumentType: manualSettlementInstrumentValidator,
+		attachmentIds: v.array(v.string()),
+		note: v.string(),
+		receivedAt: v.optional(v.number()),
+		referenceNumber: v.optional(v.string()),
+		chequeNumber: v.optional(v.string()),
+		depositReference: v.optional(v.string()),
+		createdByActorId: v.string(),
+		createdAt: v.number(),
+		isImmutable: v.boolean(),
+	})
+		.index("by_plan_entry_created", ["planEntryId", "createdAt"])
+		.index("by_attempt_created", ["collectionAttemptId", "createdAt"])
+		.index("by_transfer_created", ["transferRequestId", "createdAt"])
+		.index("by_mortgage_created", ["mortgageId", "createdAt"])
+		.index("by_actor_created", ["createdByActorId", "createdAt"]),
+
+	offlinePaymentActivities: defineTable({
+		planEntryId: v.id("collectionPlanEntries"),
+		collectionAttemptId: v.optional(v.id("collectionAttempts")),
+		transferRequestId: v.optional(v.id("transferRequests")),
+		replacementPlanEntryId: v.optional(v.id("collectionPlanEntries")),
+		action: v.union(
+			v.literal("assigned"),
+			v.literal("cleared_assignment"),
+			v.literal("confirmed"),
+			v.literal("noted"),
+			v.literal("released"),
+			v.literal("started")
+		),
+		actorId: v.string(),
+		reason: v.optional(v.string()),
+		note: v.optional(v.string()),
+		metadata: v.optional(v.record(v.string(), v.any())),
+		createdAt: v.number(),
+	})
+		.index("by_plan_entry_created", ["planEntryId", "createdAt"])
+		.index("by_attempt_created", ["collectionAttemptId", "createdAt"])
+		.index("by_transfer_created", ["transferRequestId", "createdAt"])
+		.index("by_actor_created", ["actorId", "createdAt"]),
 
 	externalCollectionSchedules: defineTable({
 		status: externalCollectionScheduleStatusValidator,
@@ -2690,8 +2754,6 @@ export default defineSchema({
 		mortgageId: v.id("mortgages"),
 		buyerId: v.string(),
 		sellerId: v.string(),
-		purchasingLenderAuthId: v.optional(v.string()),
-		sellingLenderAuthId: v.optional(v.string()),
 		fractionalShare: v.number(),
 		closingDate: v.optional(v.number()),
 		lockingFeeAmount: v.optional(v.number()),
@@ -2734,8 +2796,6 @@ export default defineSchema({
 		mortgageId: v.id("mortgages"),
 		buyerAuthId: v.string(),
 		sellerAuthId: v.string(),
-		purchasingLenderAuthId: v.optional(v.string()),
-		sellingLenderAuthId: v.optional(v.string()),
 		selectedLawyerAuthId: v.optional(v.string()),
 		selectedLawyerType: v.optional(dealLockSelectedLawyerTypeValidator),
 		fractionalShareUnits: v.number(),
@@ -2797,16 +2857,14 @@ export default defineSchema({
 	dealPaymentProofs: defineTable({
 		dealId: v.id("deals"),
 		submittedBy: v.string(),
+		submittedByPersona: v.optional(v.string()),
 		submittedByRole: v.union(
 			v.literal("lender"),
 			v.literal("platform_lawyer"),
 			v.literal("guest_lawyer"),
-			v.literal("admin"),
-			v.literal("purchasing_lender"),
 			v.literal("primary_lawyer"),
-			v.literal("fairlend_admin")
+			v.literal("admin")
 		),
-		submittedByPersona: v.optional(dealPersonaValidator),
 		status: v.union(
 			v.literal("pending_review"),
 			v.literal("approved"),
@@ -3013,6 +3071,7 @@ export default defineSchema({
 		),
 		deliveryStatus: v.union(
 			v.literal("pending"),
+			v.literal("sending"),
 			v.literal("sent"),
 			v.literal("failed")
 		),
@@ -3300,14 +3359,12 @@ export default defineSchema({
 			v.literal("lender"),
 			v.literal("borrower")
 		),
-		persona: v.optional(dealPersonaValidator),
-		lawyerSource: v.optional(
-			v.union(v.literal("platform_lawyer"), v.literal("guest_lawyer"))
-		),
 		grantedAt: v.number(),
 		grantedBy: v.string(),
 		revokedAt: v.optional(v.number()),
 		status: v.union(v.literal("active"), v.literal("revoked")),
+		persona: v.optional(v.string()),
+		lawyerSource: v.optional(v.string()),
 	})
 		.index("by_user_and_deal", ["userId", "dealId"])
 		.index("by_deal", ["dealId"])
@@ -4018,7 +4075,7 @@ export default defineSchema({
 		machineContext: v.optional(v.record(v.string(), v.any())),
 
 		// ── Provider (ref set later by effect, not at creation) ─────
-		providerRef: v.optional(v.string()),
+		providerRef: v.optional(v.union(v.string(), v.null())),
 		bankAccountRef: v.optional(v.string()),
 
 		// ── Lifecycle timestamps (set during state transitions) ─────

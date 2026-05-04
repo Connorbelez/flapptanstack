@@ -4,6 +4,7 @@ import { adminQuery } from "../fluent";
 import { formatFeeValue } from "./behavior";
 import {
 	listActiveMortgageFeesForSurface,
+	normalizeMortgageFeeForRead,
 	previewBulkApplyFeeSetToMortgages,
 	resolveBorrowerChargeFeeConfig,
 } from "./resolver";
@@ -41,7 +42,8 @@ export const getActiveMortgageFee = internalQuery({
 		if (!resolved) {
 			return null;
 		}
-		return await ctx.db.get(resolved.mortgageFeeId);
+		const row = await ctx.db.get(resolved.mortgageFeeId);
+		return row ? normalizeMortgageFeeForRead(row) : null;
 	},
 });
 
@@ -96,10 +98,11 @@ export const listMortgageFees = adminQuery
 		mortgageId: v.id("mortgages"),
 	})
 	.handler(async (ctx, args) => {
-		return await ctx.db
+		const rows = await ctx.db
 			.query("mortgageFees")
 			.withIndex("by_mortgage", (q) => q.eq("mortgageId", args.mortgageId))
 			.collect();
+		return rows.map(normalizeMortgageFeeForRead);
 	})
 	.public();
 
@@ -217,13 +220,16 @@ export const getMortgageFeeSummary = adminQuery
 
 		const activeFees = fees
 			.filter((fee) => fee.status === "active")
-			.map((fee) => ({
-				...fee,
-				traceCount: assessments.filter(
-					(assessment) => assessment.mortgageFeeId === fee._id
-				).length,
-				valueLabel: valueLabelForFee(fee),
-			}));
+			.map((fee) => {
+				const normalizedFee = normalizeMortgageFeeForRead(fee);
+				return {
+					...normalizedFee,
+					traceCount: assessments.filter(
+						(assessment) => assessment.mortgageFeeId === fee._id
+					).length,
+					valueLabel: valueLabelForFee(normalizedFee),
+				};
+			});
 		const inheritedDefaults = activeFees.filter(
 			(fee) => fee.defaultApplication === "platform_default"
 		);
@@ -301,6 +307,7 @@ export const getAdminFeeManagementSnapshot = adminQuery
 		return {
 			feeSets: feeSetTemplates.map((set) => ({
 				...set,
+				isPlatformDefault: set.isPlatformDefault ?? false,
 				itemCount: itemCountBySet.get(String(set._id)) ?? 0,
 			})),
 			feeTemplates: normalizedFeeTemplates.map((template) => ({

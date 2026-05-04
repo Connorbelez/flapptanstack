@@ -10,6 +10,7 @@ import {
 	attachDefaultFeeSetToMortgage,
 	DEFAULT_FEE_SET_NAME,
 	ensureDefaultFeeTemplatesAndSet,
+	MIN_EFFECTIVE_FROM,
 	resolveServicingFeeConfig,
 	resolveWaterfallFeeConfigs,
 } from "../resolver";
@@ -237,6 +238,18 @@ const runFeeSetTemplatePlatformDefaultBackfillRef = makeFunctionReference<
 	null
 >("fees/migrations:runFeeSetTemplatePlatformDefaultBackfill");
 
+const runFeeTemplateBehaviorFieldBackfillRef = makeFunctionReference<
+	"mutation",
+	Record<string, never>,
+	null
+>("fees/migrations:runFeeTemplateBehaviorFieldBackfill");
+
+const runMortgageFeeBehaviorFieldBackfillRef = makeFunctionReference<
+	"mutation",
+	Record<string, never>,
+	null
+>("fees/migrations:runMortgageFeeBehaviorFieldBackfill");
+
 const getFeeSetTemplatePlatformDefaultBackfillStatusRef = makeFunctionReference<
 	"query",
 	Record<string, never>,
@@ -246,6 +259,26 @@ const getFeeSetTemplatePlatformDefaultBackfillStatusRef = makeFunctionReference<
 		missingPlatformDefaultFlagIds: Id<"feeSetTemplates">[];
 	}
 >("fees/migrations:getFeeSetTemplatePlatformDefaultBackfillStatus");
+
+const getFeeTemplateBehaviorFieldBackfillStatusRef = makeFunctionReference<
+	"query",
+	Record<string, never>,
+	{
+		feeTemplateCount: number;
+		missingBehaviorFieldCount: number;
+		missingBehaviorFieldIds: Id<"feeTemplates">[];
+	}
+>("fees/migrations:getFeeTemplateBehaviorFieldBackfillStatus");
+
+const getMortgageFeeBehaviorFieldBackfillStatusRef = makeFunctionReference<
+	"query",
+	Record<string, never>,
+	{
+		mortgageFeeCount: number;
+		missingBehaviorFieldCount: number;
+		missingBehaviorFieldIds: Id<"mortgageFees">[];
+	}
+>("fees/migrations:getMortgageFeeBehaviorFieldBackfillStatus");
 
 async function seedMortgageDoc(t: ReturnType<typeof createTestConvex>) {
 	return t.run(async (ctx) => {
@@ -511,6 +544,216 @@ describe("mortgage fee configuration", () => {
 			isPlatformDefault: true,
 			name: DEFAULT_FEE_SET_NAME,
 			status: "active",
+		});
+	});
+
+	it("repairs legacy default fee templates missing behavior rollout fields", async () => {
+		const t = createTestConvex();
+		const existingId = await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("feeTemplates", {
+				name: "Standard NSF Fee",
+				description:
+					"Config-ready NSF fee definition; auto-generation is deferred in v1",
+				code: "nsf",
+				surface: "borrower_charge",
+				revenueDestination: "platform_revenue",
+				calculationType: "fixed_amount_cents",
+				parameters: { fixedAmountCents: 5000, dueDays: 30, graceDays: 45 },
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const defaults = await t.run(async (ctx) => {
+			return await ensureDefaultFeeTemplatesAndSet(ctx.db);
+		});
+
+		expect(defaults.nsfTemplateId).toBe(existingId);
+		const repaired = await t.run(async (ctx) => {
+			return await ctx.db.get(existingId);
+		});
+		expect(repaired).toMatchObject({
+			behavior: "borrower_one_time_charge",
+			displayCode: "nsf",
+			paymentRail: "manual",
+			recurrence: "one_time",
+		});
+	});
+
+	it("backfills legacy fee template behavior rollout fields", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+		const [servicingId, nsfId] = await t.run(async (ctx) => {
+			const now = Date.now();
+			const legacyServicingId = await ctx.db.insert("feeTemplates", {
+				name: "Standard Servicing Fee",
+				description:
+					"Standard servicing fee deducted from regular interest settlements",
+				code: "servicing",
+				surface: "waterfall_deduction",
+				revenueDestination: "platform_revenue",
+				calculationType: "annual_rate_principal",
+				parameters: { annualRate: 0.01 },
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			const legacyNsfId = await ctx.db.insert("feeTemplates", {
+				name: "Standard NSF Fee",
+				description:
+					"Config-ready NSF fee definition; auto-generation is deferred in v1",
+				code: "nsf",
+				surface: "borrower_charge",
+				revenueDestination: "platform_revenue",
+				calculationType: "fixed_amount_cents",
+				parameters: { fixedAmountCents: 5000, dueDays: 30, graceDays: 45 },
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			return [legacyServicingId, legacyNsfId] as const;
+		});
+
+		expect(
+			await asAdmin.query(getFeeTemplateBehaviorFieldBackfillStatusRef, {})
+		).toMatchObject({
+			feeTemplateCount: 2,
+			missingBehaviorFieldCount: 2,
+			missingBehaviorFieldIds: expect.arrayContaining([servicingId, nsfId]),
+		});
+
+		await asAdmin.mutation(runFeeTemplateBehaviorFieldBackfillRef, {});
+
+		expect(
+			await asAdmin.query(getFeeTemplateBehaviorFieldBackfillStatusRef, {})
+		).toMatchObject({
+			feeTemplateCount: 2,
+			missingBehaviorFieldCount: 0,
+		});
+		const rows = await t.run(async (ctx) => {
+			return await ctx.db.query("feeTemplates").collect();
+		});
+		expect(rows.find((row) => row._id === servicingId)).toMatchObject({
+			behavior: "payment_waterfall_deduction",
+			displayCode: "servicing",
+		});
+		expect(rows.find((row) => row._id === nsfId)).toMatchObject({
+			behavior: "borrower_one_time_charge",
+			displayCode: "nsf",
+			paymentRail: "manual",
+			recurrence: "one_time",
+		});
+	});
+
+	it("backfills legacy mortgage fee behavior rollout fields", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+		const mortgageId = await seedMortgageDoc(t);
+		const [servicingMortgageFeeId, lateMortgageFeeId] = await t.run(
+			async (ctx) => {
+				const now = Date.now();
+				const feeTemplateId = await ctx.db.insert("feeTemplates", {
+					name: "Standard Servicing Fee",
+					code: "servicing",
+					behavior: "payment_waterfall_deduction",
+					displayCode: "servicing",
+					surface: "waterfall_deduction",
+					revenueDestination: "platform_revenue",
+					calculationType: "annual_rate_principal",
+					parameters: { annualRate: 0.01 },
+					status: "active",
+					createdAt: now,
+					updatedAt: now,
+				});
+				const feeSetTemplateId = await ctx.db.insert("feeSetTemplates", {
+					name: DEFAULT_FEE_SET_NAME,
+					isPlatformDefault: true,
+					status: "active",
+					createdAt: now,
+					updatedAt: now,
+				});
+				const feeSetTemplateItemId = await ctx.db.insert(
+					"feeSetTemplateItems",
+					{
+						feeSetTemplateId,
+						feeTemplateId,
+						sortOrder: 10,
+						createdAt: now,
+					}
+				);
+				const legacyServicingFeeId = await ctx.db.insert("mortgageFees", {
+					mortgageId,
+					code: "servicing",
+					surface: "waterfall_deduction",
+					revenueDestination: "platform_revenue",
+					calculationType: "annual_rate_principal",
+					parameters: { annualRate: 0.01 },
+					effectiveFrom: MIN_EFFECTIVE_FROM,
+					status: "active",
+					feeTemplateId,
+					feeSetTemplateId,
+					feeSetTemplateItemId,
+					createdAt: now,
+				});
+				const legacyLateFeeId = await ctx.db.insert("mortgageFees", {
+					mortgageId,
+					code: "late_fee",
+					surface: "borrower_charge",
+					revenueDestination: "platform_revenue",
+					calculationType: "fixed_amount_cents",
+					parameters: {
+						fixedAmountCents: 5000,
+						dueDays: 30,
+						graceDays: 45,
+					},
+					effectiveFrom: MIN_EFFECTIVE_FROM,
+					status: "active",
+					createdAt: now,
+				});
+				return [legacyServicingFeeId, legacyLateFeeId] as const;
+			}
+		);
+
+		expect(
+			await asAdmin.query(getMortgageFeeBehaviorFieldBackfillStatusRef, {})
+		).toMatchObject({
+			mortgageFeeCount: 2,
+			missingBehaviorFieldCount: 2,
+			missingBehaviorFieldIds: expect.arrayContaining([
+				servicingMortgageFeeId,
+				lateMortgageFeeId,
+			]),
+		});
+
+		await asAdmin.mutation(runMortgageFeeBehaviorFieldBackfillRef, {});
+
+		expect(
+			await asAdmin.query(getMortgageFeeBehaviorFieldBackfillStatusRef, {})
+		).toMatchObject({
+			mortgageFeeCount: 2,
+			missingBehaviorFieldCount: 0,
+		});
+		const rows = await t.run(async (ctx) => {
+			return await ctx.db.query("mortgageFees").collect();
+		});
+		expect(
+			rows.find((row) => row._id === servicingMortgageFeeId)
+		).toMatchObject({
+			behavior: "payment_waterfall_deduction",
+			defaultApplication: "platform_default",
+			displayCode: "servicing",
+			waterfallPriority: 10,
+		});
+		expect(rows.find((row) => row._id === lateMortgageFeeId)).toMatchObject({
+			behavior: "borrower_one_time_charge",
+			defaultApplication: "mortgage_specific",
+			displayCode: "late_fee",
+			paymentRail: "manual",
+			recurrence: "one_time",
 		});
 	});
 

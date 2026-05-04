@@ -12,7 +12,9 @@ import {
 	attachFeeTemplateToMortgageSnapshot,
 	loadFeeSetTemplateItemsForApplication,
 	normalizeEffectiveFrom,
+	normalizeMortgageFeeForRead,
 	previewBulkApplyFeeSetToMortgages,
+	repairFeeTemplateForUse,
 } from "./resolver";
 import {
 	feeBehaviorValidator,
@@ -255,11 +257,15 @@ export const attachFeeTemplateToMortgage = adminMutation
 		if (!feeTemplate) {
 			throw new ConvexError(`Fee template not found: ${args.feeTemplateId}`);
 		}
+		const normalizedFeeTemplate = await repairFeeTemplateForUse(
+			ctx.db,
+			feeTemplate
+		);
 		const effectiveFrom = normalizeEffectiveFrom(args.effectiveFrom);
 		assertDateRange(effectiveFrom, args.effectiveTo);
 		return await attachFeeTemplateToMortgageSnapshot(ctx.db, {
 			mortgageId: args.mortgageId,
-			feeTemplate,
+			feeTemplate: normalizedFeeTemplate,
 			effectiveFrom,
 			effectiveTo: args.effectiveTo,
 		});
@@ -363,10 +369,11 @@ export const applyBorrowerFeeToMortgage = adminMutation
 		gracePeriodEnd: v.number(),
 	})
 	.handler(async (ctx, args) => {
-		const mortgageFee = await ctx.db.get(args.mortgageFeeId);
-		if (!mortgageFee) {
+		const mortgageFeeRow = await ctx.db.get(args.mortgageFeeId);
+		if (!mortgageFeeRow) {
 			throw new ConvexError(`Mortgage fee not found: ${args.mortgageFeeId}`);
 		}
+		const mortgageFee = normalizeMortgageFeeForRead(mortgageFeeRow);
 		if (mortgageFee.mortgageId !== args.mortgageId) {
 			throw new ConvexError(
 				`Mortgage fee ${args.mortgageFeeId} does not belong to mortgage ${args.mortgageId}`

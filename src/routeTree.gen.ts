@@ -3478,8 +3478,8 @@ interface AdminRouteRouteChildren {
   AdminPaymentOperationsRoute: typeof AdminPaymentOperationsRoute
   AdminRotessaReconciliationRoute: typeof AdminRotessaReconciliationRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
-  AdminLegalLsoRoute: typeof AdminLegalLsoRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminLegalLsoRoute: typeof AdminLegalLsoRoute
   AdminVelocityWorkspaceIdReviewRoute: typeof AdminVelocityWorkspaceIdReviewRoute
 }
 
@@ -3500,8 +3500,8 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminPaymentOperationsRoute: AdminPaymentOperationsRoute,
   AdminRotessaReconciliationRoute: AdminRotessaReconciliationRoute,
   AdminSettingsRoute: AdminSettingsRoute,
-  AdminLegalLsoRoute: AdminLegalLsoRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminLegalLsoRoute: AdminLegalLsoRoute,
   AdminVelocityWorkspaceIdReviewRoute: AdminVelocityWorkspaceIdReviewRoute,
 }
 

@@ -5,6 +5,7 @@ import { canAccessCrmOrgScopedRecord } from "../authz/crm";
 import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { listMortgageBlueprintRows } from "../documents/mortgageBlueprints";
 import { formatFeeValue } from "../fees/behavior";
+import { normalizeMortgageFeeForRead } from "../fees/resolver";
 import { crmQuery } from "../fluent";
 import { readListingPublicDocuments } from "../listings/publicDocuments";
 import { buildMortgageMicSaleAvailabilitySummary } from "../mortgages/micSaleAvailability";
@@ -819,25 +820,28 @@ export const getMortgageDetailContext = crmQuery
 			fees: {
 				activeFees: mortgageFees
 					.filter((fee) => fee.status === "active")
-					.map((fee) => ({
-						code: fee.code,
-						behavior: fee.behavior,
-						defaultApplication: fee.defaultApplication,
-						displayCode: fee.displayCode,
-						effectiveFrom: fee.effectiveFrom,
-						effectiveTo: fee.effectiveTo ?? null,
-						feeId: fee._id,
-						recurrence: fee.recurrence ?? null,
-						surface: fee.surface,
-						traceCount: feeAssessments.filter(
-							(assessment) => assessment.mortgageFeeId === fee._id
-						).length,
-						valueLabel: formatFeeValue({
-							calculationType: fee.calculationType,
-							parameters: fee.parameters,
-							recurrence: fee.recurrence,
-						}),
-					})),
+					.map((fee) => {
+						const normalizedFee = normalizeMortgageFeeForRead(fee);
+						return {
+							code: normalizedFee.code,
+							behavior: normalizedFee.behavior,
+							defaultApplication: normalizedFee.defaultApplication,
+							displayCode: normalizedFee.displayCode,
+							effectiveFrom: normalizedFee.effectiveFrom,
+							effectiveTo: normalizedFee.effectiveTo ?? null,
+							feeId: normalizedFee._id,
+							recurrence: normalizedFee.recurrence ?? null,
+							surface: normalizedFee.surface,
+							traceCount: feeAssessments.filter(
+								(assessment) => assessment.mortgageFeeId === fee._id
+							).length,
+							valueLabel: formatFeeValue({
+								calculationType: normalizedFee.calculationType,
+								parameters: normalizedFee.parameters,
+								recurrence: normalizedFee.recurrence,
+							}),
+						};
+					}),
 				openAccountsReceivableCents: feeAssessments.reduce(
 					(total, assessment) =>
 						assessment.status === "reversed"

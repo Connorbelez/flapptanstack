@@ -4,8 +4,12 @@ import type { DataModel, Id } from "../_generated/dataModel";
 import { adminMutation, adminQuery } from "../fluent";
 import {
 	attachDefaultFeeSetToMortgage,
+	buildFeeTemplateBehaviorFieldBackfillPatch,
+	buildMortgageFeeBehaviorFieldBackfillPatch,
 	DEFAULT_FEE_SET_NAME,
 	FEE_POLICY_VERSION,
+	needsFeeTemplateBehaviorFieldBackfill,
+	needsMortgageFeeBehaviorFieldBackfill,
 } from "./resolver";
 
 const migrations = new Migrations<DataModel>(components.migrations);
@@ -13,6 +17,8 @@ const migrations = new Migrations<DataModel>(components.migrations);
 const migrationRefs = internal as unknown as {
 	fees: {
 		migrations: {
+			backfillMortgageFeeBehaviorFields: never;
+			backfillFeeTemplateBehaviorFields: never;
 			backfillFeeSetTemplatePlatformDefault: never;
 			backfillMortgageFees: never;
 			backfillServicingAccountingFields: never;
@@ -120,6 +126,33 @@ export const backfillFeeSetTemplatePlatformDefault = migrations.define({
 	},
 });
 
+export const backfillFeeTemplateBehaviorFields = migrations.define({
+	table: "feeTemplates",
+	migrateOne: async (ctx, feeTemplate) => {
+		const patch = buildFeeTemplateBehaviorFieldBackfillPatch(feeTemplate);
+		if (Object.keys(patch).length === 0) {
+			return;
+		}
+
+		await ctx.db.patch(feeTemplate._id, patch);
+	},
+});
+
+export const backfillMortgageFeeBehaviorFields = migrations.define({
+	table: "mortgageFees",
+	migrateOne: async (ctx, mortgageFee) => {
+		const patch = await buildMortgageFeeBehaviorFieldBackfillPatch(
+			ctx.db,
+			mortgageFee
+		);
+		if (Object.keys(patch).length === 0) {
+			return;
+		}
+
+		await ctx.db.patch(mortgageFee._id, patch);
+	},
+});
+
 export const runMortgageFeeBackfill = adminMutation
 	.input({})
 	.handler(async (ctx) => {
@@ -146,6 +179,26 @@ export const runFeeSetTemplatePlatformDefaultBackfill = adminMutation
 		await migrations.runOne(
 			ctx,
 			migrationRefs.fees.migrations.backfillFeeSetTemplatePlatformDefault
+		);
+	})
+	.public();
+
+export const runFeeTemplateBehaviorFieldBackfill = adminMutation
+	.input({})
+	.handler(async (ctx) => {
+		await migrations.runOne(
+			ctx,
+			migrationRefs.fees.migrations.backfillFeeTemplateBehaviorFields
+		);
+	})
+	.public();
+
+export const runMortgageFeeBehaviorFieldBackfill = adminMutation
+	.input({})
+	.handler(async (ctx) => {
+		await migrations.runOne(
+			ctx,
+			migrationRefs.fees.migrations.backfillMortgageFeeBehaviorFields
 		);
 	})
 	.public();
@@ -210,6 +263,43 @@ export const getFeeSetTemplatePlatformDefaultBackfillStatus = adminQuery
 			missingPlatformDefaultFlagIds: missingPlatformDefaultFlag.map(
 				(template) => template._id
 			),
+		};
+	})
+	.public();
+
+export const getFeeTemplateBehaviorFieldBackfillStatus = adminQuery
+	.input({})
+	.handler(async (ctx) => {
+		const feeTemplates = await ctx.db.query("feeTemplates").collect();
+		const missingBehaviorFields = feeTemplates.filter((template) =>
+			needsFeeTemplateBehaviorFieldBackfill(template)
+		);
+
+		return {
+			feeTemplateCount: feeTemplates.length,
+			missingBehaviorFieldCount: missingBehaviorFields.length,
+			missingBehaviorFieldIds: missingBehaviorFields.map(
+				(template) => template._id
+			),
+		};
+	})
+	.public();
+
+export const getMortgageFeeBehaviorFieldBackfillStatus = adminQuery
+	.input({})
+	.handler(async (ctx) => {
+		const mortgageFees = await ctx.db.query("mortgageFees").collect();
+		const missingBehaviorFieldIds: Id<"mortgageFees">[] = [];
+		for (const mortgageFee of mortgageFees) {
+			if (await needsMortgageFeeBehaviorFieldBackfill(ctx.db, mortgageFee)) {
+				missingBehaviorFieldIds.push(mortgageFee._id);
+			}
+		}
+
+		return {
+			mortgageFeeCount: mortgageFees.length,
+			missingBehaviorFieldCount: missingBehaviorFieldIds.length,
+			missingBehaviorFieldIds,
 		};
 	})
 	.public();

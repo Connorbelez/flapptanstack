@@ -154,7 +154,7 @@ export function SectionedRecordDetails({
 	return (
 		<div className="space-y-6">
 			{highlightedFields.length > 0 ? (
-				<div className="grid gap-x-6 md:grid-cols-3">
+				<div className="grid gap-x-6 md:grid-cols-2">
 					{highlightedFields.map((field) => (
 						<FieldRenderer
 							className="h-full"
