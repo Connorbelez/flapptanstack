@@ -326,7 +326,7 @@ function scenarioExpectations(
 				expectedReadinessBlockers: ["upstream_changed_after_review"],
 				fairlendEnrichmentPatch: completeFairLendEnrichmentPatch(),
 				nextVelocityPatch: {
-					mortgageRequest: { payment: 1300 },
+					mortgageRequest: { rate: 12.25 },
 				},
 			};
 		case "missing_pad":
@@ -383,7 +383,7 @@ function scenarioExpectations(
 				expectedReadinessBlockers: [],
 				fairlendEnrichmentPatch: completeFairLendEnrichmentPatch(),
 				nextVelocityPatch: {
-					mortgageRequest: { payment: 1300 },
+					mortgageRequest: { rate: 12.25 },
 				},
 			};
 		default:

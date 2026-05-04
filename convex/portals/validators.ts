@@ -2,7 +2,8 @@ import { ConvexError, type Infer, v } from "convex/values";
 
 export const portalTypeValidator = v.union(
 	v.literal("fairlend"),
-	v.literal("broker")
+	v.literal("broker"),
+	v.literal("mic")
 );
 
 export const portalStatusValidator = v.union(

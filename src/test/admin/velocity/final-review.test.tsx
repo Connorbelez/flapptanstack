@@ -338,4 +338,69 @@ describe("Velocity final review page", () => {
 			})
 		);
 	});
+
+	it("disables review and activation while backend activation is in flight", () => {
+		renderFinalReview(
+			buildWorkspace({
+				activationAttempt: {
+					activationAttemptId:
+						"attempt_running" as Id<"velocityActivationAttempts">,
+					bankAccountId: null,
+					completedAt: null,
+					externalCollectionScheduleId: null,
+					externalCustomerProfileId: null,
+					failedAt: null,
+					failureCode: null,
+					failureMessage: null,
+					idempotencyKey: "velocity:activation:running",
+					listingId: null,
+					mortgageId: null,
+					reviewedSnapshotHash: "hash-current",
+					reviewedSnapshotId:
+						"snapshot_reviewed" as Id<"velocityPackageSnapshots">,
+					rotessaCustomerRef: "501",
+					rotessaScheduleRef: null,
+					startedAt: 1_775_000_000_000,
+					status: "creating_rotessa_schedule",
+				},
+				fairlendOwned: {
+					enrichment: {},
+					finalReview: {
+						reviewedAt: 1_775_000_000_000,
+						reviewedByUserId: "user_admin" as Id<"users">,
+						reviewedSnapshotHash: "hash-current",
+						reviewedSnapshotId:
+							"snapshot_reviewed" as Id<"velocityPackageSnapshots">,
+					},
+					state: "activating",
+				},
+				readiness: {
+					blockers: [
+						{
+							code: "activation_in_progress",
+							message: "Activation is currently running.",
+							severity: "blocking",
+							source: "system",
+						},
+					],
+					canActivate: true,
+					canFinalReview: true,
+					warnings: [],
+				},
+			})
+		);
+
+		expect(screen.getByText("Creating Rotessa Schedule")).toBeTruthy();
+		expect(screen.getByText("Activation is running in the backend.")).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: /Confirm review/i }).hasAttribute(
+				"disabled"
+			)
+		).toBe(true);
+		expect(
+			screen.getByRole("button", { name: /Activate package/i }).hasAttribute(
+				"disabled"
+			)
+		).toBe(true);
+	});
 });

@@ -188,6 +188,11 @@ const ADMIN_PATH_AUTHORIZATION_RULES: ReadonlyArray<{
 			pathname.startsWith("/admin/rotessa-reconciliation/"),
 		routeKey: "adminRotessaReconciliation",
 	},
+	{
+		matches: (pathname) =>
+			pathname === "/admin/velocity" || pathname.startsWith("/admin/velocity/"),
+		routeKey: "adminVelocityPackages",
+	},
 ];
 
 function resolveAuthorizationRequirement(

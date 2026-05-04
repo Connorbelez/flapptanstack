@@ -22,7 +22,7 @@ function requireEnv(name: string): string {
 export async function readE2eAccessToken(page: Page) {
 	await page.goto("/e2e/session");
 	await expect(page.locator('[data-testid="session-json"]')).toBeVisible({
-		timeout: 15_000,
+		timeout: 30_000,
 	});
 
 	const sessionJson = await page

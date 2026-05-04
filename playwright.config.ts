@@ -32,6 +32,7 @@ export default defineConfig({
 		{
 			name: "setup",
 			testMatch: "auth.setup.ts",
+			testIgnore: ["amps/**"],
 			use: { ...devices["Desktop Chrome"] },
 		},
 		{
@@ -44,6 +45,7 @@ export default defineConfig({
 				"deal-closing/**",
 				"document-engine/**",
 				"origination/**",
+				"velocity/**",
 				"auth.setup.ts",
 				"simulation.spec.ts",
 			],
@@ -112,6 +114,27 @@ export default defineConfig({
 			dependencies: ["setup"],
 			use: {
 				...devices["Desktop Chrome"],
+				storageState: ".auth/admin.json",
+			},
+		},
+		{
+			name: "velocity-setup",
+			testDir: "./e2e/velocity",
+			testMatch: "auth.setup.ts",
+			use: {
+				...devices["Desktop Chrome"],
+				baseURL: `http://admin.localhost:${e2ePort}`,
+			},
+		},
+		{
+			name: "velocity",
+			testDir: "./e2e/velocity",
+			testIgnore: ["auth.setup.ts"],
+			dependencies: ["velocity-setup"],
+			workers: 1,
+			use: {
+				...devices["Desktop Chrome"],
+				baseURL: `http://admin.localhost:${e2ePort}`,
 				storageState: ".auth/admin.json",
 			},
 		},
