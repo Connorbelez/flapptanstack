@@ -22,6 +22,12 @@ const BUYER_AUTH_ID = "handoff-buyer-auth";
 const SELLER_LEDGER_LENDER_ID = seedAuthIdFromEmail(FAIRLEND_MIC_LENDER_EMAIL);
 const STARTED_AT = 1_711_929_000_000;
 const TEST_STRIPE_SECRET = "whsec_handoff_test";
+const STRIPE_WEBHOOK_ENV = {
+	STRIPE_WEBHOOK_SECRET: TEST_STRIPE_SECRET,
+	WORKOS_API_KEY: "sk_handoff_workos_test",
+	WORKOS_CLIENT_ID: "client_handoff_workos_test",
+	WORKOS_WEBHOOK_SECRET: "whsec_handoff_workos_test",
+} as const;
 
 type TestHarness = ReturnType<typeof convexTest>;
 type SelectedLawyerInput = Doc<"checkoutSessions">["selectedLawyer"];
@@ -58,6 +64,14 @@ function createHarness() {
 	const t = convexTest(schema, convexModules);
 	registerAuditLogComponent(t, "auditLog");
 	return t;
+}
+
+function restoreEnv(name: string, value: string | undefined) {
+	if (value === undefined) {
+		delete process.env[name];
+		return;
+	}
+	process.env[name] = value;
 }
 
 function asAdmin(t: TestHarness) {
@@ -482,8 +496,12 @@ async function runStripeWebhook(
 		providerEventId: string;
 	}
 ) {
-	const previousSecret = process.env.STRIPE_WEBHOOK_SECRET;
-	process.env.STRIPE_WEBHOOK_SECRET = TEST_STRIPE_SECRET;
+	const previousEnv = Object.fromEntries(
+		Object.keys(STRIPE_WEBHOOK_ENV).map((name) => [name, process.env[name]])
+	);
+	for (const [name, value] of Object.entries(STRIPE_WEBHOOK_ENV)) {
+		process.env[name] = value;
+	}
 	const event = {
 		id: args.providerEventId,
 		type: "checkout.session.completed",
@@ -513,10 +531,8 @@ async function runStripeWebhook(
 		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 		return response;
 	} finally {
-		if (previousSecret === undefined) {
-			process.env.STRIPE_WEBHOOK_SECRET = undefined;
-		} else {
-			process.env.STRIPE_WEBHOOK_SECRET = previousSecret;
+		for (const name of Object.keys(STRIPE_WEBHOOK_ENV)) {
+			restoreEnv(name, previousEnv[name]);
 		}
 		vi.clearAllTimers();
 		vi.useRealTimers();
@@ -782,7 +798,7 @@ describe("paid checkout to deal handoff", () => {
 		const { prepared, selectedLawyer } = await prepareCompletedCheckout(t, {
 			selectedLawyer: {
 				...selectedGuestLawyer(),
-				email: "Gail.Guest@Example.COM",
+				email: " Gail.Guest@Example.COM ",
 			},
 		});
 
@@ -810,12 +826,13 @@ describe("paid checkout to deal handoff", () => {
 			internal.documents.dealPackages.resolveDealDocumentSignatoriesInternal,
 			{ dealId: result.dealId }
 		);
+		const normalizedGuestEmail = selectedLawyer.email.trim().toLowerCase();
 		const guestLawyerCanAccess = await t.run((ctx) =>
 			canAccessDeal(
 				ctx,
 				{
 					authId: "guest-lawyer-workos-auth",
-					email: selectedLawyer.email.toLowerCase(),
+					email: " GAIL.GUEST@example.com ",
 					firstName: "Gail",
 					isFairLendAdmin: false,
 					lastName: "Guest",
@@ -830,13 +847,13 @@ describe("paid checkout to deal handoff", () => {
 		);
 
 		expect(snapshot.deal).toMatchObject({
-			lawyerId: selectedLawyer.email.toLowerCase(),
+			lawyerId: normalizedGuestEmail,
 			lawyerType: "guest_lawyer",
 		});
 		expect(snapshot.access).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					userId: selectedLawyer.email.toLowerCase(),
+					userId: normalizedGuestEmail,
 					role: "guest_lawyer",
 					status: "active",
 				}),
@@ -846,15 +863,15 @@ describe("paid checkout to deal handoff", () => {
 			expect.objectContaining({
 				deliveryProvider: "workos",
 				deliveryStatus: "sent",
-				normalizedTargetEmail: selectedLawyer.email.toLowerCase(),
+				normalizedTargetEmail: normalizedGuestEmail,
 				status: "pending",
-				targetEmail: selectedLawyer.email,
+				targetEmail: selectedLawyer.email.trim(),
 				workosInvitationId: "workos_invitation_1",
 			}),
 		]);
 		expect(workos.sentInvitations).toEqual([
 			expect.objectContaining({
-				email: selectedLawyer.email,
+				email: selectedLawyer.email.trim(),
 				roleSlug: "lawyer",
 			}),
 		]);
@@ -862,7 +879,7 @@ describe("paid checkout to deal handoff", () => {
 			expect.arrayContaining([
 				expect.objectContaining({
 					platformRole: "lawyer_primary",
-					email: selectedLawyer.email,
+					email: selectedLawyer.email.trim(),
 					name: selectedLawyer.name,
 				}),
 			])
@@ -930,6 +947,31 @@ describe("paid checkout to deal handoff", () => {
 				},
 			})
 		).rejects.toThrow("Platform lawyer profile not found");
+	});
+
+	it("returns a structured handoff failure when a completed checkout lost platform lawyer auth linkage", async () => {
+		const t = createHarness();
+		const { prepared } = await prepareCompletedCheckout(t);
+		await t.run(async (ctx) => {
+			const checkoutSession = await ctx.db.get(prepared.checkoutSessionId);
+			if (!checkoutSession) {
+				throw new Error("Expected checkout session");
+			}
+			await ctx.db.patch(prepared.checkoutSessionId, {
+				selectedLawyer: {
+					type: "platform_lawyer",
+					name: checkoutSession.selectedLawyer.name,
+					email: checkoutSession.selectedLawyer.email,
+				},
+			});
+		});
+
+		const result = await runDealHandoff(t, prepared.checkoutSessionId);
+
+		expect(result).toMatchObject({
+			ok: false,
+			code: "missing_platform_lawyer_auth_id",
+		});
 	});
 
 	it("creates and replays checkout handoff through Stripe webhooks without duplicate deal rows", async () => {

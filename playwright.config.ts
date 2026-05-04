@@ -22,6 +22,7 @@ export default defineConfig({
 	webServer: {
 		command: `bunx vite dev --host localhost --port ${e2ePort}`,
 		env: {
+			VELOCITY_E2E_ENABLED: "true",
 			WORKOS_REDIRECT_URI: `http://localhost:${e2ePort}/callback`,
 			VITE_E2E: "true",
 		},
@@ -33,7 +34,7 @@ export default defineConfig({
 		{
 			name: "setup",
 			testMatch: "auth.setup.ts",
-			testIgnore: ["amps/**"],
+			testIgnore: ["amps/**", "velocity/**"],
 			use: { ...devices["Desktop Chrome"] },
 		},
 		{

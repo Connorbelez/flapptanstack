@@ -141,16 +141,31 @@ export function isCheckoutLockFeeProviderCode(
 	);
 }
 
+function hasNonEmptyMetadataString(
+	metadata: Record<string, unknown>,
+	key: string
+): boolean {
+	return typeof metadata[key] === "string" && metadata[key].trim().length > 0;
+}
+
 export function hasCheckoutLockFeeProviderMetadata(
 	metadata: Record<string, unknown> | undefined
 ): boolean {
+	if (!metadata) {
+		return false;
+	}
+
+	const hasOptionalPaymentIntent =
+		metadata.stripePaymentIntentId === undefined ||
+		hasNonEmptyMetadataString(metadata, "stripePaymentIntentId");
+
 	return (
-		typeof metadata?.checkoutSessionId === "string" &&
-		metadata.checkoutSessionId.trim().length > 0 &&
-		typeof metadata.reservationId === "string" &&
-		metadata.reservationId.trim().length > 0 &&
-		typeof metadata.idempotencyKey === "string" &&
-		metadata.idempotencyKey.trim().length > 0
+		hasNonEmptyMetadataString(metadata, "checkoutSessionId") &&
+		hasNonEmptyMetadataString(metadata, "reservationId") &&
+		hasNonEmptyMetadataString(metadata, "idempotencyKey") &&
+		hasNonEmptyMetadataString(metadata, "providerEventId") &&
+		hasNonEmptyMetadataString(metadata, "stripeCheckoutSessionId") &&
+		hasOptionalPaymentIntent
 	);
 }
 

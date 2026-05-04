@@ -215,6 +215,7 @@ import {
 	manualSettlementValidator,
 	nonCheckoutProviderCodeValidator,
 	providerCodeValidator,
+	transferRequestProviderCodeValidator,
 	transferTypeValidator,
 } from "./payments/transfers/validators";
 import { normalizedEventTypeValidator } from "./payments/webhooks/types";
@@ -3697,7 +3698,7 @@ export default defineSchema({
 		counterpartyType: counterpartyTypeValidator,
 		/** Domain counterparty identifier, never a WorkOS auth ID. */
 		counterpartyId: v.string(),
-		providerCode: providerCodeValidator,
+		providerCode: transferRequestProviderCodeValidator,
 		idempotencyKey: v.string(),
 		source: sourceValidator,
 		createdAt: v.number(),

@@ -50,20 +50,18 @@ export const CHECKOUT_ALLOWED_TRANSITIONS = {
 		"completed",
 		"expired",
 		"abandoned",
-		"refunded_late_success",
 	],
 	payment_failed_retryable: [
 		"hosted_checkout_open",
 		"completed",
 		"expired",
 		"abandoned",
-		"refunded_late_success",
 	],
 	completed: [],
-	expired: ["completed", "refunded_late_success"],
+	expired: ["refunded_late_success"],
 	abandoned: ["refunded_late_success"],
 	provider_start_failed: ["refunded_late_success"],
-	refunded_late_success: ["completed"],
+	refunded_late_success: [],
 } as const satisfies Record<CheckoutStatus, readonly CheckoutStatus[]>;
 
 export function isCheckoutStatus(value: string): value is CheckoutStatus {

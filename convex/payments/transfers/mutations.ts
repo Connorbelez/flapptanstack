@@ -11,6 +11,10 @@ import type { Doc, Id } from "../../_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "../../_generated/server";
 import { internalAction, internalMutation } from "../../_generated/server";
 import {
+	CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+	CHECKOUT_LOCK_FEE_CURRENCY,
+} from "../../checkout/validators";
+import {
 	fundsReceiptSourceValidator,
 	recordFundsReceiptRow,
 } from "../../deals/closeEvidence";
@@ -53,7 +57,7 @@ import {
 	legNumberValidator,
 	manualSettlementValidator,
 	nonCheckoutProviderCodeValidator,
-	providerCodeValidator,
+	transferRequestProviderCodeValidator,
 	transferTypeValidator,
 } from "./validators";
 
@@ -68,8 +72,10 @@ export function buildRetryIdempotencyKey(transferId: string) {
  */
 function validateTransferCreationInput(args: {
 	amount: number;
+	currency?: "CAD";
 	direction: TransferDirection;
 	counterpartyId: string;
+	idempotencyKey: string;
 	legNumber?: number;
 	metadata?: Record<string, unknown>;
 	pipelineId?: string;
@@ -97,6 +103,29 @@ function validateTransferCreationInput(args: {
 		throw new ConvexError(
 			'Provider "stripe" is only supported for checkout locking_fee_collection transfers with checkout metadata'
 		);
+	}
+
+	if (args.providerCode === "stripe") {
+		if (args.amount !== CHECKOUT_LOCK_FEE_AMOUNT_CENTS) {
+			throw new ConvexError(
+				`Provider "stripe" checkout lock-fee transfers must be exactly ${CHECKOUT_LOCK_FEE_AMOUNT_CENTS} cents`
+			);
+		}
+
+		if (
+			args.currency !== undefined &&
+			args.currency !== CHECKOUT_LOCK_FEE_CURRENCY
+		) {
+			throw new ConvexError(
+				`Provider "stripe" checkout lock-fee transfers must use ${CHECKOUT_LOCK_FEE_CURRENCY}`
+			);
+		}
+
+		if (args.metadata?.idempotencyKey !== args.idempotencyKey) {
+			throw new ConvexError(
+				'Provider "stripe" checkout lock-fee metadata idempotencyKey must match the transfer idempotency key'
+			);
+		}
 	}
 
 	try {
@@ -392,7 +421,7 @@ const createTransferRequestInput = {
 	collectionAttemptId: v.optional(v.id("collectionAttempts")),
 	lenderId: v.optional(v.id("lenders")),
 	borrowerId: v.optional(v.id("borrowers")),
-	providerCode: providerCodeValidator,
+	providerCode: transferRequestProviderCodeValidator,
 	manualSettlement: v.optional(manualSettlementValidator),
 	idempotencyKey: v.string(),
 	metadata: v.optional(v.record(v.string(), v.any())),
@@ -921,6 +950,12 @@ export const retryTransfer = paymentRetryMutation
 		const transfer = await ctx.db.get(args.transferId);
 		if (!transfer) {
 			throw new ConvexError("Transfer request not found");
+		}
+
+		if (isCheckoutLockFeeProviderCode(transfer.providerCode)) {
+			throw new ConvexError(
+				"Checkout lock-fee transfers must be retried via the hosted checkout flow"
+			);
 		}
 
 		if (!canRetryTransferStatus(transfer.status)) {

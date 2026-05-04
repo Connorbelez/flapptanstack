@@ -1,9 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../../../convex/_generated/api";
 import { createTestConvex } from "../../auth/helpers";
 import { FAIRLEND_ADMIN } from "../../auth/identities";
 
 type ConvexTest = ReturnType<typeof createTestConvex>;
+const nodeProcess = process;
+
+function createVelocityWorkflowHarness() {
+	return createTestConvex();
+}
 
 async function fetchJson<T>(response: Response): Promise<T> {
 	expect(response.ok).toBe(true);
@@ -43,15 +48,29 @@ function configureMockVelocityFetch(t: ConvexTest) {
 	});
 }
 
+function configureWorkosAuthEnv() {
+	vi.stubEnv("DISABLE_CASH_LEDGER_HASHCHAIN", "true");
+	vi.stubEnv("DISABLE_GT_HASHCHAIN", "true");
+	vi.stubEnv("WORKOS_CLIENT_ID", "client_velocity_workflow_test");
+	vi.stubEnv("WORKOS_API_KEY", "sk_velocity_workflow_test");
+	vi.stubEnv("WORKOS_WEBHOOK_SECRET", "whsec_velocity_workflow_test");
+}
+
 describe("Velocity mock workflow ingress", () => {
+	beforeEach(() => {
+		configureWorkosAuthEnv();
+	});
+
 	afterEach(() => {
 		vi.restoreAllMocks();
+		vi.stubGlobal("process", nodeProcess);
 		vi.unstubAllEnvs();
 		vi.unstubAllGlobals();
+		vi.stubGlobal("process", nodeProcess);
 	});
 
 	it("creates a mock scenario through the dev endpoint and drives real package sync", async () => {
-		const t = createTestConvex();
+		const t = createVelocityWorkflowHarness();
 		configureMockVelocityFetch(t);
 		const response = await t.fetch("/api/dev/velocity/scenarios", {
 			body: JSON.stringify({
@@ -121,7 +140,7 @@ describe("Velocity mock workflow ingress", () => {
 	});
 
 	it("serves and patches stored mock deals without mutating workspace state directly", async () => {
-		const t = createTestConvex();
+		const t = createVelocityWorkflowHarness();
 		configureMockVelocityFetch(t);
 		const created = await fetchJson<{ loanCode: string }>(
 			await t.fetch("/api/dev/velocity/scenarios", {
@@ -139,13 +158,26 @@ describe("Velocity mock workflow ingress", () => {
 				{
 					body: JSON.stringify({
 						mortgageRequest: { payment: 1400 },
+						status: 5,
+					}),
+					method: "PATCH",
+				}
+			)
+		);
+		expect(patch.mockDeal.status).toBe(5);
+
+		const pathStylePatch = await fetchJson<{ mockDeal: { status: number } }>(
+			await t.fetch(
+				`/api/dev/mock-velocity/deals/${encodeURIComponent(created.loanCode)}`,
+				{
+					body: JSON.stringify({
 						status: 6,
 					}),
 					method: "PATCH",
 				}
 			)
 		);
-		expect(patch.mockDeal.status).toBe(6);
+		expect(pathStylePatch.mockDeal.status).toBe(6);
 
 		const fetched = await fetchJson<{ deals: Array<{ loanCode: string }> }>(
 			await t.fetch(
@@ -185,7 +217,7 @@ describe("Velocity mock workflow ingress", () => {
 	});
 
 	it("keeps package query payloads compatible with downstream operator workflow consumers", async () => {
-		const t = createTestConvex();
+		const t = createVelocityWorkflowHarness();
 		configureMockVelocityFetch(t);
 		await t.fetch("/api/dev/velocity/scenarios", {
 			body: JSON.stringify({

@@ -1,7 +1,10 @@
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import type { ActionCtx } from "../../_generated/server";
-import type { PersistedTransferStatus, ProviderCode } from "../transfers/types";
+import type {
+	NonCheckoutTransferProviderCode,
+	PersistedTransferStatus,
+} from "../transfers/types";
 import type { ReversalResult, ReversalWebhookPayload } from "./types";
 
 type ReversalTransferStatus = PersistedTransferStatus;
@@ -14,7 +17,7 @@ interface ReversalTransferRecord {
 
 const REVERSAL_PROVIDER_CODE_MAP: Record<
 	ReversalWebhookPayload["provider"],
-	ProviderCode[]
+	NonCheckoutTransferProviderCode[]
 > = {
 	rotessa: ["pad_rotessa"],
 	pad_vopay: ["pad_vopay"],

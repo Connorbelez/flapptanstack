@@ -462,10 +462,12 @@ export async function buildDealParticipantProjection(
 		},
 		lawyer: {
 			authId: lawyerAuthId,
-			displayName: lawyerAuthId
-				? displayNameForAuthParticipant(lawyerAuthId, lawyerUser)
-				: null,
-			email: normalizeText(lawyerUser?.email),
+			displayName:
+				selectedLawyerName ??
+				(lawyerAuthId
+					? displayNameForAuthParticipant(lawyerAuthId, lawyerUser)
+					: null),
+			email: selectedLawyerEmail,
 			hasActiveDealAccess: Boolean(
 				lawyerAuthId && activeLawyerAccess?.userId === lawyerAuthId
 			),

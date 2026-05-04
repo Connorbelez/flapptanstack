@@ -450,6 +450,7 @@ export const startMarketplaceCheckout = authedAction
 			});
 			hostedSession = await provider.createHostedCheckoutSession({
 				...redirectUrls,
+				expiresAt: prepared.expiresAt,
 				idempotencyKey: prepared.idempotencyKey,
 				metadata,
 			});
@@ -712,6 +713,8 @@ export const sweepExpiredCheckoutSessions = internalAction({
 			providerExpiryStatus: ProviderExpiryStatus;
 			status: string;
 		}> = [];
+		let provider: CheckoutProvider | null | undefined;
+		let providerConfigError: unknown;
 
 		for (const checkoutSessionId of listed.checkoutSessionIds) {
 			const released = (await ctx.runMutation(
@@ -722,14 +725,6 @@ export const sweepExpiredCheckoutSessions = internalAction({
 					reason: "checkout_expired",
 				}
 			)) as ReleasedCheckoutSession;
-			if (released.status !== "expired") {
-				results.push({
-					checkoutSessionId: released.checkoutSessionId,
-					providerExpiryStatus: released.providerExpiryStatus ?? "not_required",
-					status: released.status,
-				});
-				continue;
-			}
 			if (!shouldExpireProviderForReleasedCheckout(released)) {
 				results.push({
 					checkoutSessionId: released.checkoutSessionId,
@@ -738,23 +733,26 @@ export const sweepExpiredCheckoutSessions = internalAction({
 				});
 				continue;
 			}
-			let provider: CheckoutProvider | null = null;
-			let providerConfigFailureStatus: ProviderExpiryStatus | undefined;
-			try {
-				provider = createStripeCheckoutProviderFromEnv();
-			} catch (error) {
+			if (provider === undefined) {
+				try {
+					provider = createStripeCheckoutProviderFromEnv();
+				} catch (error) {
+					provider = null;
+					providerConfigError = error;
+				}
+			}
+			if (!provider) {
+				let providerConfigFailureStatus: ProviderExpiryStatus | undefined;
 				if (released.stripeCheckoutSessionId) {
 					const recorded = await recordProviderExpiryAttempt(ctx, {
 						checkoutSessionId: released.checkoutSessionId,
-						error: providerFailureMessage(error),
+						error: providerFailureMessage(providerConfigError),
 						now: listed.now,
 						ok: false,
 					});
 					providerConfigFailureStatus =
 						recorded.providerExpiryStatus ?? "failed";
 				}
-			}
-			if (!provider) {
 				results.push({
 					checkoutSessionId: released.checkoutSessionId,
 					providerExpiryStatus:

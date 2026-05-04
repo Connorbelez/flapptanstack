@@ -21,6 +21,7 @@ export interface HostedCheckoutMetadata {
 
 export interface CreateHostedCheckoutSessionRequest {
 	readonly cancelUrl: string;
+	readonly expiresAt: number;
 	readonly idempotencyKey: string;
 	readonly metadata: HostedCheckoutMetadata;
 	readonly successUrl: string;
@@ -77,6 +78,7 @@ export interface CheckoutProvider {
 export interface StripeCheckoutProviderConfig {
 	readonly apiBaseUrl?: string;
 	readonly fetch?: typeof fetch;
+	readonly requestTimeoutMs?: number;
 	readonly secretKey: string;
 }
 
@@ -97,6 +99,7 @@ interface StripeRefundResponse {
 
 const STRIPE_API_VERSION = "2025-10-29.clover";
 const DEFAULT_STRIPE_API_BASE_URL = "https://api.stripe.com";
+const DEFAULT_STRIPE_REQUEST_TIMEOUT_MS = 15_000;
 const LOCK_FEE_PRODUCT_NAME = "FairLend marketplace lock fee";
 const STRIPE_CHECKOUT_SESSION_ID_TEMPLATE = "{CHECKOUT_SESSION_ID}";
 const TRAILING_SLASH_PATTERN = /\/$/;
@@ -119,6 +122,13 @@ function appendMetadata(
 	}
 }
 
+function stripeExpiresAtSeconds(expiresAt: number): string {
+	if (!Number.isInteger(expiresAt) || expiresAt <= 0) {
+		throw new Error("expiresAt must be a positive integer timestamp");
+	}
+	return String(Math.ceil(expiresAt / 1000));
+}
+
 export function buildStripeCheckoutSessionParams(
 	request: CreateHostedCheckoutSessionRequest
 ): URLSearchParams {
@@ -130,6 +140,8 @@ export function buildStripeCheckoutSessionParams(
 	params.append("mode", "payment");
 	params.append("success_url", request.successUrl);
 	params.append("cancel_url", request.cancelUrl);
+	params.append("expires_at", stripeExpiresAtSeconds(request.expiresAt));
+	params.append("automatic_payment_methods[enabled]", "true");
 	params.append("line_items[0][quantity]", "1");
 	params.append(
 		"line_items[0][price_data][currency]",
@@ -244,7 +256,7 @@ async function parseStripeResponse(response: Response): Promise<unknown> {
 	const body = await response.text();
 	if (!response.ok) {
 		throw new Error(
-			`Stripe Checkout request failed with ${response.status}: ${body}`
+			`Stripe API request failed with ${response.status}: ${body}`
 		);
 	}
 	return body.length > 0 ? JSON.parse(body) : {};
@@ -254,25 +266,53 @@ function checkoutSessionAlreadyExpired(body: string): boolean {
 	return body.toLowerCase().includes("already expired");
 }
 
+async function fetchStripeWithTimeout(
+	fetchImpl: typeof fetch,
+	url: string,
+	init: RequestInit,
+	timeoutMs: number
+): Promise<Response> {
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), timeoutMs);
+	try {
+		return await fetchImpl(url, {
+			...init,
+			signal: controller.signal,
+		});
+	} finally {
+		clearTimeout(timeout);
+	}
+}
+
 export function createStripeCheckoutProvider(
 	config: StripeCheckoutProviderConfig
 ): CheckoutProvider {
 	const fetchImpl = config.fetch ?? fetch;
 	const apiBaseUrl = config.apiBaseUrl ?? DEFAULT_STRIPE_API_BASE_URL;
+	const requestTimeoutMs =
+		config.requestTimeoutMs ?? DEFAULT_STRIPE_REQUEST_TIMEOUT_MS;
 	assertNonEmptyString(config.secretKey, "secretKey");
+	if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs <= 0) {
+		throw new Error("requestTimeoutMs must be a positive integer");
+	}
 
 	return {
 		async createHostedCheckoutSession(request) {
-			const response = await fetchImpl(`${apiBaseUrl}/v1/checkout/sessions`, {
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${config.secretKey}`,
-					"Content-Type": "application/x-www-form-urlencoded",
-					"Idempotency-Key": request.idempotencyKey,
-					"Stripe-Version": STRIPE_API_VERSION,
+			const response = await fetchStripeWithTimeout(
+				fetchImpl,
+				`${apiBaseUrl}/v1/checkout/sessions`,
+				{
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${config.secretKey}`,
+						"Content-Type": "application/x-www-form-urlencoded",
+						"Idempotency-Key": request.idempotencyKey,
+						"Stripe-Version": STRIPE_API_VERSION,
+					},
+					body: buildStripeCheckoutSessionParams(request),
 				},
-				body: buildStripeCheckoutSessionParams(request),
-			});
+				requestTimeoutMs
+			);
 			const parsed = (await parseStripeResponse(
 				response
 			)) as StripeCheckoutSessionResponse;
@@ -284,7 +324,8 @@ export function createStripeCheckoutProvider(
 				"stripeCheckoutSessionId"
 			);
 			const encoded = encodeURIComponent(request.stripeCheckoutSessionId);
-			const response = await fetchImpl(
+			const response = await fetchStripeWithTimeout(
+				fetchImpl,
 				`${apiBaseUrl}/v1/checkout/sessions/${encoded}`,
 				{
 					headers: {
@@ -292,7 +333,8 @@ export function createStripeCheckoutProvider(
 						"Stripe-Version": STRIPE_API_VERSION,
 					},
 					method: "GET",
-				}
+				},
+				requestTimeoutMs
 			);
 			const parsed = (await parseStripeResponse(
 				response
@@ -306,7 +348,8 @@ export function createStripeCheckoutProvider(
 			);
 			assertNonEmptyString(request.idempotencyKey, "idempotencyKey");
 			const encoded = encodeURIComponent(request.stripeCheckoutSessionId);
-			const response = await fetchImpl(
+			const response = await fetchStripeWithTimeout(
+				fetchImpl,
 				`${apiBaseUrl}/v1/checkout/sessions/${encoded}/expire`,
 				{
 					method: "POST",
@@ -315,7 +358,8 @@ export function createStripeCheckoutProvider(
 						"Idempotency-Key": request.idempotencyKey,
 						"Stripe-Version": STRIPE_API_VERSION,
 					},
-				}
+				},
+				requestTimeoutMs
 			);
 			if (response.ok) {
 				return { ok: true };
@@ -338,16 +382,21 @@ export function createStripeCheckoutProvider(
 			const params = new URLSearchParams();
 			params.append("payment_intent", request.paymentIntentId);
 			params.append("amount", String(request.amount));
-			const response = await fetchImpl(`${apiBaseUrl}/v1/refunds`, {
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${config.secretKey}`,
-					"Content-Type": "application/x-www-form-urlencoded",
-					"Idempotency-Key": request.idempotencyKey,
-					"Stripe-Version": STRIPE_API_VERSION,
+			const response = await fetchStripeWithTimeout(
+				fetchImpl,
+				`${apiBaseUrl}/v1/refunds`,
+				{
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${config.secretKey}`,
+						"Content-Type": "application/x-www-form-urlencoded",
+						"Idempotency-Key": request.idempotencyKey,
+						"Stripe-Version": STRIPE_API_VERSION,
+					},
+					body: params,
 				},
-				body: params,
-			});
+				requestTimeoutMs
+			);
 			const parsed = (await parseStripeResponse(
 				response
 			)) as StripeRefundResponse;

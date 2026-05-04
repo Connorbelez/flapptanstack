@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "../_generated/server";
+import { normalizeGuestLawyerEmail } from "../auth/guestLawyerIdentity";
 import { grantDealAccess } from "../deals/mutations";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
 import { executeTransition } from "../engine/transition";
@@ -45,24 +46,27 @@ const checkoutHandoffSource: CommandSource = {
 	channel: "api_webhook",
 };
 
+function isFinalPackageStatus(status: DealPackageStatus): boolean {
+	return status === "ready" || status === "archived";
+}
+
 function fail(code: string, message: string): DealHandoffFailure {
 	return { ok: false, code, message };
 }
 
 function selectedLawyerId(
 	selectedLawyer: CheckoutSessionDoc["selectedLawyer"]
-): string {
+): DealHandoffFailure | string {
 	if (selectedLawyer.type === "platform_lawyer") {
 		if (!selectedLawyer.lawyerId) {
-			throw new ConvexError("Platform lawyer is missing an auth principal");
+			return fail(
+				"missing_platform_lawyer_auth_id",
+				"Platform lawyer checkout selection is missing an auth principal"
+			);
 		}
 		return selectedLawyer.lawyerId;
 	}
 	return normalizeGuestLawyerEmail(selectedLawyer.email);
-}
-
-function normalizeGuestLawyerEmail(email: string): string {
-	return email.trim().toLowerCase();
 }
 
 function hasCanonicalLawyerRole(
@@ -259,6 +263,12 @@ async function patchExistingDealLinks(
 		deal: DealDoc;
 	}
 ): Promise<DealHandoffFailure | null> {
+	const expectedLawyerId = selectedLawyerId(
+		args.checkoutSession.selectedLawyer
+	);
+	if (typeof expectedLawyerId !== "string") {
+		return expectedLawyerId;
+	}
 	const conflicts = [
 		[
 			"checkoutSessionId",
@@ -298,11 +308,7 @@ async function patchExistingDealLinks(
 			args.deal.lawyerType,
 			args.checkoutSession.selectedLawyer.type,
 		],
-		[
-			"lawyerId",
-			args.deal.lawyerId,
-			selectedLawyerId(args.checkoutSession.selectedLawyer),
-		],
+		["lawyerId", args.deal.lawyerId, expectedLawyerId],
 	] as const;
 	for (const [field, current, expected] of conflicts) {
 		if (current !== undefined && current !== expected) {
@@ -338,7 +344,7 @@ async function patchExistingDealLinks(
 		patch.lawyerType = args.checkoutSession.selectedLawyer.type;
 	}
 	if (!args.deal.lawyerId) {
-		patch.lawyerId = selectedLawyerId(args.checkoutSession.selectedLawyer);
+		patch.lawyerId = expectedLawyerId;
 	}
 	if (!args.deal.lenderId) {
 		patch.lenderId = args.checkoutSession.lenderId;
@@ -389,7 +395,11 @@ interface DealAccessGrant {
 function buildDealAccessGrants(
 	checkoutSession: CheckoutSessionDoc,
 	sellerAuthId?: string
-): DealAccessGrant[] {
+): DealAccessGrant[] | DealHandoffFailure {
+	const lawyerId = selectedLawyerId(checkoutSession.selectedLawyer);
+	if (typeof lawyerId !== "string") {
+		return lawyerId;
+	}
 	return [
 		{ role: "lender", userId: checkoutSession.lenderAuthId },
 		...(sellerAuthId
@@ -397,7 +407,7 @@ function buildDealAccessGrants(
 			: []),
 		{
 			role: checkoutSession.selectedLawyer.type,
-			userId: selectedLawyerId(checkoutSession.selectedLawyer),
+			userId: lawyerId,
 		},
 	];
 }
@@ -412,10 +422,18 @@ async function ensureDealAccessForCheckout(
 ): Promise<
 	{ ok: true } | { error: string; grant: DealAccessGrant; ok: false }
 > {
-	for (const grant of buildDealAccessGrants(
-		args.checkoutSession,
-		args.sellerAuthId
-	)) {
+	const grants = buildDealAccessGrants(args.checkoutSession, args.sellerAuthId);
+	if ("ok" in grants) {
+		return {
+			error: grants.message,
+			grant: {
+				role: args.checkoutSession.selectedLawyer.type,
+				userId: grants.code,
+			},
+			ok: false,
+		};
+	}
+	for (const grant of grants) {
 		try {
 			await grantDealAccess(ctx.db, {
 				userId: grant.userId,
@@ -624,6 +642,10 @@ async function createDealForCheckout(
 	}
 
 	const now = Date.now();
+	const lawyerId = selectedLawyerId(checkoutSession.selectedLawyer);
+	if (typeof lawyerId !== "string") {
+		return lawyerId;
+	}
 	const dealId = await ctx.db.insert("deals", {
 		orgId: mortgage.orgId,
 		status: "initiated",
@@ -638,7 +660,7 @@ async function createDealForCheckout(
 		fractionalShare: checkoutSession.requestedFractions,
 		closingDate: undefined,
 		lockingFeeAmount: checkoutSession.lockFeeAmount,
-		lawyerId: selectedLawyerId(checkoutSession.selectedLawyer),
+		lawyerId,
 		reservationId: checkoutSession.reservationId,
 		checkoutSessionId: checkoutSession._id,
 		lockFeeTransferRequestId: checkoutSession.lockFeeTransferRequestId,
@@ -810,7 +832,8 @@ export const createOrReuseDealForPaidCheckout = convex
 					payload: { closingDate: Date.now() },
 					source: checkoutHandoffSource,
 				});
-				currentStatus = "lawyerOnboarding.pending";
+				currentStatus =
+					(await ctx.db.get(existingDeal._id))?.status ?? currentStatus;
 			}
 			await appendHandoffAudit(ctx, {
 				checkoutSession,
@@ -852,6 +875,12 @@ async function ensurePackageForHandoff(
 		internal.documents.dealPackages.getPackageByDealInternal,
 		{ dealId: args.dealId }
 	);
+	if (existingPackage && isFinalPackageStatus(existingPackage.status)) {
+		return {
+			packageId: existingPackage._id,
+			packageStatus: existingPackage.status,
+		};
+	}
 	const retry =
 		existingPackage?.status === "failed" ||
 		existingPackage?.status === "partial_failure";

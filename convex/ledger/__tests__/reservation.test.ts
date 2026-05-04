@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { internal } from "../../_generated/api";
 import { getAvailableBalance, getPostedBalance } from "../accounts";
 import {
 	SYS_SOURCE,
@@ -104,6 +105,39 @@ describe("reserveShares", () => {
 		expect(sellerAfter.pendingCredits).toBe(3_000n);
 		expect(buyerAfter.pendingDebits).toBe(3_000n);
 		expect(reservations).toHaveLength(1);
+	});
+
+	it("rejects idempotency collisions with non-reservation ledger entries", async () => {
+		const t = createTestHarness();
+		const auth = asLedgerUser(t);
+		await initCounter(auth);
+		await mintAndIssue(auth, "m-reserve-entry-type-guard", "seller", 5_000);
+
+		try {
+			await executeReserveShares(t, {
+				mortgageId: "m-reserve-entry-type-guard",
+				sellerLenderId: "seller",
+				buyerLenderId: "buyer",
+				amount: 3_000,
+				effectiveDate: "2026-01-02",
+				idempotencyKey: "issue-m-reserve-entry-type-guard-seller",
+				source: SYS_SOURCE,
+			});
+			expect.fail("Expected reserveShares idempotency collision rejection");
+		} catch (error) {
+			expect(getConvexErrorCode(error)).toBe("IDEMPOTENT_REPLAY_FAILED");
+			await expect(
+				t.mutation(internal.ledger.mutations.reserveShares, {
+					mortgageId: "m-reserve-entry-type-guard",
+					sellerLenderId: "seller",
+					buyerLenderId: "buyer",
+					amount: 3_000,
+					effectiveDate: "2026-01-02",
+					idempotencyKey: "issue-m-reserve-entry-type-guard-seller",
+					source: SYS_SOURCE,
+				})
+			).rejects.toThrow("expected SHARES_RESERVED");
+		}
 	});
 
 	it("treats existing reservations as a mutex over available balance across multiple deals", async () => {

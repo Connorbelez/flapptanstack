@@ -5,7 +5,7 @@ import { executeTransition } from "../engine/transition";
 import type { CommandSource } from "../engine/types";
 import { convex } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
-import { reserveSharesHandler } from "../ledger/mutations";
+import { reserveSharesHandler } from "../ledger/reservations";
 import { createTransferRequestRecord } from "../payments/transfers/mutations";
 import { parseCheckoutStripeMetadata } from "./metadata";
 import {
@@ -124,6 +124,19 @@ function checkoutTransferMetadata(args: {
 			? { stripePaymentIntentId: args.stripePaymentIntentId }
 			: {}),
 	};
+}
+
+function shallowMetadataEqual(
+	left: Record<string, unknown> | undefined,
+	right: Record<string, unknown>
+): boolean {
+	const leftRecord = left ?? {};
+	const leftKeys = Object.keys(leftRecord);
+	const rightKeys = Object.keys(right);
+	return (
+		leftKeys.length === rightKeys.length &&
+		rightKeys.every((key) => leftRecord[key] === right[key])
+	);
 }
 
 async function patchWebhookStatus(
@@ -305,11 +318,21 @@ async function createOrConfirmLockFeeTransfer(
 	if (transfer.providerRef !== providerRef) {
 		transferPatch.providerRef = providerRef;
 	}
-	transferPatch.metadata = {
+	const mergedMetadata = {
 		...(transfer.metadata as Record<string, unknown> | undefined),
 		...metadata,
 	};
-	await ctx.db.patch(transferId, transferPatch);
+	if (
+		!shallowMetadataEqual(
+			transfer.metadata as Record<string, unknown> | undefined,
+			mergedMetadata
+		)
+	) {
+		transferPatch.metadata = mergedMetadata;
+	}
+	if (Object.keys(transferPatch).length > 0) {
+		await ctx.db.patch(transferId, transferPatch);
+	}
 
 	if (transfer.status !== "confirmed") {
 		await executeTransition(ctx, {
@@ -421,7 +444,7 @@ async function completeCheckoutFromStripeSuccess(
 		readonly webhookEventId: Id<"webhookEvents">;
 	}
 ) {
-	assertCheckoutTransitionAllowed(args.checkoutSession.status, "completed");
+	assertStripeSuccessCompletionAllowed(args.checkoutSession);
 	const transferId = await createOrConfirmLockFeeTransfer(ctx, {
 		checkoutSession: args.checkoutSession,
 		providerEventId: args.providerEventId,
@@ -448,6 +471,19 @@ async function completeCheckoutFromStripeSuccess(
 		status: "completed" as const,
 		transferRequestId: transferId,
 	};
+}
+
+function assertStripeSuccessCompletionAllowed(
+	checkoutSession: CheckoutSessionDoc
+) {
+	if (
+		checkoutSession.status === "expired" ||
+		(checkoutSession.status === "refunded_late_success" &&
+			checkoutSession.lateSuccessRefund?.status !== "completed")
+	) {
+		return;
+	}
+	assertCheckoutTransitionAllowed(checkoutSession.status, "completed");
 }
 
 async function reconcileLateSuccess(
@@ -492,6 +528,22 @@ async function reconcileLateSuccess(
 				providerEventId: args.providerEventId,
 				webhookEventId: args.webhookEventId,
 			});
+		}
+		if (args.checkoutSession.lateSuccessRefund.status === "failed") {
+			return {
+				ok: true as const,
+				status: "refund_required" as const,
+				refundRequest: {
+					amount: args.checkoutSession.lateSuccessRefund.amount,
+					checkoutSessionId: args.checkoutSession._id,
+					idempotencyKey: args.checkoutSession.lateSuccessRefund.idempotencyKey,
+					paymentIntentId:
+						args.checkoutSession.lateSuccessRefund.paymentIntentId,
+					providerEventId:
+						args.checkoutSession.lateSuccessRefund.providerEventId,
+					webhookEventId: args.webhookEventId,
+				},
+			};
 		}
 		await patchWebhookStatus(ctx, {
 			status: "processed",
@@ -623,10 +675,10 @@ async function reconcileFailure(
 	}
 ) {
 	const now = Date.now();
-	if (
+	const transitioned =
 		isActiveCheckoutStatus(args.checkoutSession.status) &&
-		args.checkoutSession.expiresAt > now
-	) {
+		args.checkoutSession.expiresAt > now;
+	if (transitioned) {
 		if (args.checkoutSession.status !== "payment_failed_retryable") {
 			assertCheckoutTransitionAllowed(
 				args.checkoutSession.status,
@@ -650,7 +702,13 @@ async function reconcileFailure(
 		status: "processed",
 		webhookEventId: args.webhookEventId,
 	});
-	return { ok: true as const, status: "payment_failed_retryable" as const };
+	return {
+		ok: true as const,
+		status: transitioned
+			? ("payment_failed_retryable" as const)
+			: args.checkoutSession.status,
+		...(transitioned ? {} : { result: "failure_ignored" as const }),
+	};
 }
 
 export const reconcileStripeCheckoutWebhook = convex

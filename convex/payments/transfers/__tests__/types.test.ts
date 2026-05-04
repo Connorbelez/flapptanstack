@@ -164,11 +164,45 @@ describe("locking fee Stripe provider contract", () => {
 				providerCode: "stripe",
 				metadata: {
 					checkoutSessionId: "checkout_123",
-					reservationId: "reservation_123",
 					idempotencyKey: "checkout:idempotency",
+					providerEventId: "evt_checkout_123",
+					reservationId: "reservation_123",
+					stripeCheckoutSessionId: "cs_test_123",
 				},
 			})
 		).toBe(true);
+	});
+
+	it("requires full checkout linkage metadata for stripe provider use", () => {
+		expect(
+			isCheckoutLockFeeProviderUse({
+				direction: "inbound",
+				transferType: "locking_fee_collection",
+				providerCode: "stripe",
+				metadata: {
+					checkoutSessionId: "checkout_123",
+					idempotencyKey: "checkout:idempotency",
+					providerEventId: "evt_checkout_123",
+					reservationId: "reservation_123",
+				},
+			})
+		).toBe(false);
+
+		expect(
+			isCheckoutLockFeeProviderUse({
+				direction: "inbound",
+				transferType: "locking_fee_collection",
+				providerCode: "stripe",
+				metadata: {
+					checkoutSessionId: "checkout_123",
+					idempotencyKey: "checkout:idempotency",
+					providerEventId: "evt_checkout_123",
+					reservationId: "reservation_123",
+					stripeCheckoutSessionId: "cs_test_123",
+					stripePaymentIntentId: "",
+				},
+			})
+		).toBe(false);
 	});
 
 	it("rejects stripe for non-checkout transfer capabilities", () => {
@@ -189,8 +223,10 @@ describe("locking fee Stripe provider contract", () => {
 					providerCode: "stripe",
 					metadata: {
 						checkoutSessionId: "checkout_123",
-						reservationId: "reservation_123",
 						idempotencyKey: "checkout:idempotency",
+						providerEventId: "evt_checkout_123",
+						reservationId: "reservation_123",
+						stripeCheckoutSessionId: "cs_test_123",
 					},
 				})
 			).toBe(false);

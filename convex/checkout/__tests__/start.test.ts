@@ -81,11 +81,27 @@ const originalStripeCancelUrl = process.env.STRIPE_CHECKOUT_CANCEL_URL;
 
 function restoreEnv(name: string, value: string | undefined) {
 	if (value === undefined) {
-		process.env[name] = "";
+		delete process.env[name];
 		return;
 	}
 	process.env[name] = value;
 }
+
+describe("checkout test environment helpers", () => {
+	it("deletes variables that were unset before a test", () => {
+		const key = "FAIRLEND_CHECKOUT_TEST_RESTORE_UNSET";
+		const previous = process.env[key];
+		delete process.env[key];
+		process.env[key] = "temporary";
+
+		try {
+			restoreEnv(key, undefined);
+			expect(process.env).not.toHaveProperty(key);
+		} finally {
+			restoreEnv(key, previous);
+		}
+	});
+});
 
 afterEach(() => {
 	Object.defineProperty(globalThis, "fetch", {
@@ -850,6 +866,56 @@ describe("checkout start internal mutations", () => {
 		expect(counts).toEqual({ reservations: 1, checkouts: 1 });
 	});
 
+	it("replays guest lawyer starts with canonical identity and keeps PII out of reservation keys", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const firstLawyer: SelectedLawyerSnapshot = {
+			type: "guest_lawyer",
+			name: "  Casey Guest  ",
+			email: "  Casey.Guest@Example.COM  ",
+			firm: "  Guest LLP  ",
+			source: "manual",
+		};
+		const secondLawyer: SelectedLawyerSnapshot = {
+			...firstLawyer,
+			name: "Casey Guest",
+			email: "casey.guest@example.com",
+			firm: "Guest LLP",
+		};
+
+		const first = await prepare(t, { ...fixture, selectedLawyer: firstLawyer });
+		const second = await prepare(t, {
+			...fixture,
+			selectedLawyer: secondLawyer,
+		});
+
+		expect(first.ok).toBe(true);
+		expect(second.ok).toBe(true);
+		if (!(first.ok && second.ok)) {
+			throw new Error("expected successful guest lawyer prepares");
+		}
+		expect(second.checkoutSessionId).toBe(first.checkoutSessionId);
+		const idempotencyKeys = await t.run(async (ctx) =>
+			(await ctx.db.query("ledger_journal_entries").collect()).map(
+				(entry) => entry.idempotencyKey
+			)
+		);
+		expect(idempotencyKeys).toEqual(
+			expect.arrayContaining([expect.stringContaining("guest_lawyer:sha256:")])
+		);
+		for (const key of idempotencyKeys) {
+			expect(key).not.toContain("Casey");
+			expect(key).not.toContain("casey.guest@example.com");
+			expect(key).not.toContain("Guest LLP");
+		}
+		const counts = await t.run(async (ctx) => ({
+			reservations: (await ctx.db.query("ledger_reservations").collect())
+				.length,
+			checkouts: (await ctx.db.query("checkoutSessions").collect()).length,
+		}));
+		expect(counts).toEqual({ reservations: 1, checkouts: 1 });
+	});
+
 	it("prevents oversell when two lenders request the last available fractions", async () => {
 		const t = createHarness();
 		const fixture = await setupCheckoutFixture(t);
@@ -960,6 +1026,28 @@ describe("checkout start internal mutations", () => {
 			status: "hosted_checkout_open",
 			stripePaymentIntentId: `pi_test_${String(prepared.checkoutSessionId)}`,
 		});
+	});
+
+	it("rejects provider attach replay with a different payment intent", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await t.mutation(internal.checkout.mutations.attachProviderSession, {
+			checkoutSessionId: prepared.checkoutSessionId,
+			stripeCheckoutSessionId: "cs_test_replay_conflict",
+			stripePaymentIntentId: "pi_test_original",
+		});
+
+		await expect(
+			t.mutation(internal.checkout.mutations.attachProviderSession, {
+				checkoutSessionId: prepared.checkoutSessionId,
+				stripeCheckoutSessionId: "cs_test_replay_conflict",
+				stripePaymentIntentId: "pi_test_changed",
+			})
+		).rejects.toThrow("payment intent mismatch");
 	});
 
 	it("syncs a paid Stripe Checkout session from the return page when webhook delivery is delayed", async () => {
@@ -1706,6 +1794,59 @@ describe("checkout start internal mutations", () => {
 		expect(checkoutSession?.providerExpiryFailureReason).toBeUndefined();
 	});
 
+	it("retries failed provider cleanup for abandoned sessions during later sweeps", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		process.env.STRIPE_SECRET_KEY = "sk_test_checkout";
+		const prepared = await prepare(t, fixture);
+		if (!prepared.ok) {
+			throw new Error(prepared.message);
+		}
+		await attachProviderSession(t, prepared.checkoutSessionId);
+		let providerCalls = 0;
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			writable: true,
+			value: async () => {
+				providerCalls += 1;
+				return providerCalls === 1
+					? new Response("provider unavailable", { status: 500 })
+					: new Response("{}", { status: 200 });
+			},
+		});
+
+		const abandoned = await asCheckoutBuyer(t).action(
+			api.checkout.actions.abandonMarketplaceCheckout,
+			{ checkoutSessionId: prepared.checkoutSessionId }
+		);
+		const swept = await t.action(
+			internal.checkout.actions.sweepExpiredCheckoutSessions,
+			{ limit: 10, now: Date.now() }
+		);
+
+		expect(abandoned).toMatchObject({
+			providerExpiryStatus: "failed",
+			status: "abandoned",
+		});
+		expect(swept).toMatchObject({
+			processed: 1,
+			results: [
+				{
+					providerExpiryStatus: "succeeded",
+					status: "abandoned",
+				},
+			],
+		});
+		expect(providerCalls).toBe(2);
+		const checkoutSession = await t.run(async (ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			providerExpiryStatus: "succeeded",
+			status: "abandoned",
+		});
+	});
+
 	it("does not run provider cleanup when abandon loses to completed checkout", async () => {
 		const t = createHarness();
 		const fixture = await setupCheckoutFixture(t);
@@ -2131,6 +2272,48 @@ describe("checkout Stripe reconciliation", () => {
 		});
 	});
 
+	it("reports ignored failure webhooks with the persisted terminal status", async () => {
+		const t = createHarness();
+		const { metadata, prepared } = await prepareHostedCheckout(t);
+		await t.mutation(internal.checkout.mutations.expireCheckoutSession, {
+			checkoutSessionId: prepared.checkoutSessionId,
+			now: prepared.expiresAt + 1,
+		});
+		const webhookEventId = await insertStripeWebhookEvent(
+			t,
+			"evt_failure_ignored_001"
+		);
+
+		const result = await t.mutation(
+			internal.checkout.reconciliation.reconcileStripeCheckoutWebhook,
+			{
+				failureReason: "card_declined",
+				kind: "failure",
+				metadata,
+				occurredAt: 1_711_929_600_000,
+				providerEventId: "evt_failure_ignored_001",
+				stripeCheckoutSessionId: "cs_test_reconcile",
+				stripePaymentIntentId: "pi_test_reconcile_failed",
+				webhookEventId,
+			}
+		);
+
+		expect(result).toMatchObject({
+			ok: true,
+			result: "failure_ignored",
+			status: "expired",
+		});
+		const checkoutSession = await t.run((ctx) =>
+			ctx.db.get(prepared.checkoutSessionId)
+		);
+		expect(checkoutSession).toMatchObject({
+			status: "expired",
+		});
+		expect(checkoutSession?.stripePaymentIntentId).not.toBe(
+			"pi_test_reconcile_failed"
+		);
+	});
+
 	it("relocks available shares for an expired paid checkout before creating the transfer", async () => {
 		const t = createHarness();
 		const { metadata, prepared } = await prepareHostedCheckout(t);
@@ -2502,6 +2685,75 @@ describe("checkout Stripe reconciliation", () => {
 			status: "processed",
 		});
 		expect(snapshot.webhookEvent).not.toHaveProperty("error");
+	});
+
+	it("returns refund_required when a failed late-success refund is replayed by webhook", async () => {
+		const t = createHarness();
+		const { metadata, prepared } = await prepareHostedCheckout(t);
+		const firstWebhookEventId = await insertStripeWebhookEvent(
+			t,
+			"evt_late_failed_replay_first"
+		);
+		const replayWebhookEventId = await insertStripeWebhookEvent(
+			t,
+			"evt_late_failed_replay_second"
+		);
+		await expireCheckoutAndDepleteSeller(
+			t,
+			prepared.checkoutSessionId,
+			prepared.expiresAt + 1
+		);
+		const first = await t.mutation(
+			internal.checkout.reconciliation.reconcileStripeCheckoutWebhook,
+			{
+				amount: 25_000,
+				currency: "cad",
+				kind: "success",
+				metadata,
+				occurredAt: 1_711_929_600_000,
+				providerEventId: "evt_late_failed_replay_first",
+				stripeCheckoutSessionId: "cs_test_reconcile",
+				stripePaymentIntentId: "pi_test_failed_replay",
+				webhookEventId: firstWebhookEventId,
+			}
+		);
+		if (!(first.ok && first.status === "refund_required")) {
+			throw new Error("expected initial refund-required reconciliation result");
+		}
+		await t.mutation(internal.checkout.refunds.failLateSuccessRefund, {
+			checkoutSessionId: prepared.checkoutSessionId,
+			error: "temporary_stripe_outage",
+			providerEventId: "evt_late_failed_replay_first",
+			webhookEventId: firstWebhookEventId,
+		});
+
+		const replay = await t.mutation(
+			internal.checkout.reconciliation.reconcileStripeCheckoutWebhook,
+			{
+				amount: 25_000,
+				currency: "cad",
+				kind: "success",
+				metadata,
+				occurredAt: 1_711_929_600_000,
+				providerEventId: "evt_late_failed_replay_second",
+				stripeCheckoutSessionId: "cs_test_reconcile",
+				stripePaymentIntentId: "pi_test_failed_replay",
+				webhookEventId: replayWebhookEventId,
+			}
+		);
+
+		expect(replay).toMatchObject({
+			ok: true,
+			status: "refund_required",
+			refundRequest: {
+				idempotencyKey:
+					"checkout-late-success-refund:" +
+					String(prepared.checkoutSessionId) +
+					":pi_test_failed_replay",
+				paymentIntentId: "pi_test_failed_replay",
+				webhookEventId: replayWebhookEventId,
+			},
+		});
 	});
 
 	it("exposes a safe owned checkout status polling path", async () => {

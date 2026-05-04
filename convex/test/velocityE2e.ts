@@ -9,6 +9,16 @@ type AdminMutationCtx = MutationCtx & {
 	};
 };
 
+const VELOCITY_E2E_ENABLED_ENV = "VELOCITY_E2E_ENABLED";
+
+function assertVelocityE2eEnabled() {
+	if (process.env.VELOCITY_E2E_ENABLED !== "true") {
+		throw new ConvexError(
+			`Velocity E2E helpers are disabled. Set ${VELOCITY_E2E_ENABLED_ENV}=true to enable them.`
+		);
+	}
+}
+
 async function resolveViewerUserId(ctx: AdminMutationCtx) {
 	const user = await ctx.db
 		.query("users")
@@ -27,6 +37,7 @@ export const recordFailedActivationAttempt = adminMutation
 		workspaceId: v.id("velocityPackageWorkspaces"),
 	})
 	.handler(async (ctx, args) => {
+		assertVelocityE2eEnabled();
 		const workspace = await ctx.db.get(args.workspaceId);
 		if (!workspace) {
 			throw new ConvexError("Velocity package workspace not found.");

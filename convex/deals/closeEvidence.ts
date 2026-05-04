@@ -2,7 +2,10 @@ import { ConvexError, type Infer, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { convex } from "../fluent";
-import { PROVIDER_CODES, type ProviderCode } from "../payments/transfers/types";
+import {
+	NON_CHECKOUT_TRANSFER_PROVIDER_CODES,
+	type NonCheckoutTransferProviderCode,
+} from "../payments/transfers/types";
 import { providerCodeValidator } from "../payments/transfers/validators";
 
 export const fundsReceiptSourceValidator = v.union(
@@ -105,8 +108,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isProviderCode(value: string): value is ProviderCode {
-	return (PROVIDER_CODES as readonly string[]).includes(value);
+function isNonCheckoutProviderCode(
+	value: string
+): value is NonCheckoutTransferProviderCode {
+	return (NON_CHECKOUT_TRANSFER_PROVIDER_CODES as readonly string[]).includes(
+		value
+	);
 }
 
 /**
@@ -126,7 +133,7 @@ export function parseFundsReceiptSource(
 			typeof pipelineId !== "string" ||
 			typeof leg2TransferId !== "string" ||
 			typeof providerCode !== "string" ||
-			!isProviderCode(providerCode)
+			!isNonCheckoutProviderCode(providerCode)
 		) {
 			return null;
 		}
@@ -422,6 +429,10 @@ export const resolveProviderFundsSourceForDealInternal = convex
 			leg2.status !== "confirmed" ||
 			leg2.transferType !== "deal_seller_payout"
 		) {
+			return null;
+		}
+
+		if (!isNonCheckoutProviderCode(leg2.providerCode)) {
 			return null;
 		}
 

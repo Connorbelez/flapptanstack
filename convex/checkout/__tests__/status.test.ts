@@ -82,20 +82,25 @@ describe("checkout transition contract", () => {
 			"completed",
 			"expired",
 			"abandoned",
-			"refunded_late_success",
 		] as const satisfies readonly CheckoutStatus[]) {
 			expect(canTransitionCheckoutStatus("hosted_checkout_open", target)).toBe(
 				true
 			);
 		}
+		expect(
+			canTransitionCheckoutStatus(
+				"hosted_checkout_open",
+				"refunded_late_success"
+			)
+		).toBe(false);
 	});
 
 	it("allows retryable checkout to reopen provider checkout or resolve inactive", () => {
 		expect(CHECKOUT_ALLOWED_TRANSITIONS.payment_failed_retryable).toEqual([
 			"hosted_checkout_open",
+			"completed",
 			"expired",
 			"abandoned",
-			"refunded_late_success",
 		]);
 		expect(
 			canTransitionCheckoutStatus(
@@ -105,6 +110,12 @@ describe("checkout transition contract", () => {
 		).toBe(true);
 		expect(
 			canTransitionCheckoutStatus("payment_failed_retryable", "completed")
+		).toBe(true);
+		expect(
+			canTransitionCheckoutStatus(
+				"payment_failed_retryable",
+				"refunded_late_success"
+			)
 		).toBe(false);
 	});
 
@@ -122,6 +133,9 @@ describe("checkout transition contract", () => {
 			)
 		).toBe(true);
 		expect(canTransitionCheckoutStatus("expired", "completed")).toBe(false);
+		expect(
+			canTransitionCheckoutStatus("refunded_late_success", "completed")
+		).toBe(false);
 		expect(canTransitionCheckoutStatus("expired", "hosted_checkout_open")).toBe(
 			false
 		);
