@@ -179,6 +179,7 @@ import type * as engine_effects_dealClosingEffects from "../engine/effects/dealC
 import type * as engine_effects_dealClosingPayments from "../engine/effects/dealClosingPayments.js";
 import type * as engine_effects_dealClosingPlaceholder from "../engine/effects/dealClosingPlaceholder.js";
 import type * as engine_effects_dealClosingProrate from "../engine/effects/dealClosingProrate.js";
+import type * as engine_effects_micInvestorAccessRequests from "../engine/effects/micInvestorAccessRequests.js";
 import type * as engine_effects_obligation from "../engine/effects/obligation.js";
 import type * as engine_effects_obligationAccrual from "../engine/effects/obligationAccrual.js";
 import type * as engine_effects_obligationLateFee from "../engine/effects/obligationLateFee.js";
@@ -234,7 +235,9 @@ import type * as listings_projection from "../listings/projection.js";
 import type * as listings_publicDocuments from "../listings/publicDocuments.js";
 import type * as listings_queries from "../listings/queries.js";
 import type * as listings_validators from "../listings/validators.js";
+import type * as micInvestorAccessRequests_internal from "../micInvestorAccessRequests/internal.js";
 import type * as micInvestorAccessRequests_mutations from "../micInvestorAccessRequests/mutations.js";
+import type * as micInvestorAccessRequests_queries from "../micInvestorAccessRequests/queries.js";
 import type * as micInvestorAccessRequests_validators from "../micInvestorAccessRequests/validators.js";
 import type * as mortgages_activateMortgageAggregate from "../mortgages/activateMortgageAggregate.js";
 import type * as mortgages_nominalAnnualRate from "../mortgages/nominalAnnualRate.js";
@@ -623,6 +626,7 @@ declare const fullApi: ApiFromModules<{
   "engine/effects/dealClosingPayments": typeof engine_effects_dealClosingPayments;
   "engine/effects/dealClosingPlaceholder": typeof engine_effects_dealClosingPlaceholder;
   "engine/effects/dealClosingProrate": typeof engine_effects_dealClosingProrate;
+  "engine/effects/micInvestorAccessRequests": typeof engine_effects_micInvestorAccessRequests;
   "engine/effects/obligation": typeof engine_effects_obligation;
   "engine/effects/obligationAccrual": typeof engine_effects_obligationAccrual;
   "engine/effects/obligationLateFee": typeof engine_effects_obligationLateFee;
@@ -678,7 +682,9 @@ declare const fullApi: ApiFromModules<{
   "listings/publicDocuments": typeof listings_publicDocuments;
   "listings/queries": typeof listings_queries;
   "listings/validators": typeof listings_validators;
+  "micInvestorAccessRequests/internal": typeof micInvestorAccessRequests_internal;
   "micInvestorAccessRequests/mutations": typeof micInvestorAccessRequests_mutations;
+  "micInvestorAccessRequests/queries": typeof micInvestorAccessRequests_queries;
   "micInvestorAccessRequests/validators": typeof micInvestorAccessRequests_validators;
   "mortgages/activateMortgageAggregate": typeof mortgages_activateMortgageAggregate;
   "mortgages/nominalAnnualRate": typeof mortgages_nominalAnnualRate;

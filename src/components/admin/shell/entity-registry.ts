@@ -69,6 +69,18 @@ export const ADMIN_ENTITIES = [
 		supportsDetailPage: true,
 	},
 	{
+		entityType: "micInvestorAccessRequests",
+		singularLabel: "MIC Access Request",
+		pluralLabel: "MIC Access Requests",
+		route: "/admin/micInvestorAccessRequests",
+		iconName: "users",
+		domain: "marketplace",
+		tableName: "micInvestorAccessRequests",
+		labelColor: "emerald",
+		supportsTableView: true,
+		supportsDetailPage: true,
+	},
+	{
 		entityType: "mortgages",
 		singularLabel: "Mortgage",
 		pluralLabel: "Mortgages",

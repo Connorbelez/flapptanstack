@@ -6,7 +6,7 @@ export interface WorkosProvisioning {
 		organizationId: string;
 		roleSlug: string;
 		userId: string;
-	}): Promise<unknown>;
+	}): Promise<{ id?: string }>;
 	createUser(args: {
 		email: string;
 		firstName?: string;
@@ -20,8 +20,11 @@ export interface WorkosProvisioning {
 const defaultProvisioning: WorkosProvisioning = {
 	createOrganization: (args) =>
 		authKit.workos.organizations.createOrganization(args),
-	createOrganizationMembership: (args) =>
-		authKit.workos.userManagement.createOrganizationMembership(args),
+	createOrganizationMembership: async (args) => {
+		const membership =
+			await authKit.workos.userManagement.createOrganizationMembership(args);
+		return { id: membership.id };
+	},
 	createUser: async (args) => {
 		const user = await authKit.workos.userManagement.createUser({
 			email: args.email,

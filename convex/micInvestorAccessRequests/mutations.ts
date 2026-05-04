@@ -1,7 +1,9 @@
 import { ConvexError, v } from "convex/values";
 import { auditLog } from "../auditLog";
 import { appendAuditJournalEntry } from "../engine/auditJournal";
-import { convex } from "../fluent";
+import { buildSource } from "../engine/commands";
+import { executeTransition } from "../engine/transition";
+import { adminMutation, convex, requirePermission } from "../fluent";
 import { resolveMicPortalConfig } from "../portals/micConfig";
 import {
 	MIC_INVESTOR_ACCESS_REQUEST_RECEIVED,
@@ -106,5 +108,98 @@ export const submitPublicRequest = convex
 		});
 
 		return MIC_INVESTOR_ACCESS_REQUEST_RECEIVED;
+	})
+	.public();
+
+const micInvestorAccessRequestAdminMutation = adminMutation.use(
+	requirePermission("onboarding:review")
+);
+
+export const approveRequest = micInvestorAccessRequestAdminMutation
+	.input({ requestId: v.id("micInvestorAccessRequests") })
+	.handler(async (ctx, args) => {
+		const result = await executeTransition(ctx, {
+			entityType: "micInvestorAccessRequest",
+			entityId: args.requestId,
+			eventType: "APPROVE",
+			payload: {},
+			source: buildSource(ctx.viewer, "admin_dashboard"),
+		});
+
+		if (!result.success) {
+			throw new ConvexError(result.reason ?? "Transition failed");
+		}
+
+		const reviewedAt = Date.now();
+		await ctx.db.patch(args.requestId, {
+			reviewedAt,
+			reviewedBy: ctx.viewer.authId,
+		});
+
+		await auditLog.log(ctx, {
+			action: "micInvestorAccessRequest.approved",
+			actorId: ctx.viewer.authId,
+			resourceType: "micInvestorAccessRequests",
+			resourceId: args.requestId,
+			severity: "info",
+			metadata: {
+				effectsScheduled: result.effectsScheduled ?? [],
+				journalEntryId: result.journalEntryId,
+				newState: result.newState,
+				previousState: result.previousState,
+				reviewedAt,
+			},
+		});
+
+		return result;
+	})
+	.public();
+
+export const rejectRequest = micInvestorAccessRequestAdminMutation
+	.input({
+		rejectionReason: v.string(),
+		requestId: v.id("micInvestorAccessRequests"),
+	})
+	.handler(async (ctx, args) => {
+		const rejectionReason = args.rejectionReason.trim();
+		if (!rejectionReason) {
+			throw new ConvexError("Rejection reason is required");
+		}
+
+		const result = await executeTransition(ctx, {
+			entityType: "micInvestorAccessRequest",
+			entityId: args.requestId,
+			eventType: "REJECT",
+			payload: { reason: rejectionReason },
+			source: buildSource(ctx.viewer, "admin_dashboard"),
+		});
+
+		if (!result.success) {
+			throw new ConvexError(result.reason ?? "Transition failed");
+		}
+
+		const reviewedAt = Date.now();
+		await ctx.db.patch(args.requestId, {
+			rejectionReason,
+			reviewedAt,
+			reviewedBy: ctx.viewer.authId,
+		});
+
+		await auditLog.log(ctx, {
+			action: "micInvestorAccessRequest.rejected",
+			actorId: ctx.viewer.authId,
+			resourceType: "micInvestorAccessRequests",
+			resourceId: args.requestId,
+			severity: "info",
+			metadata: {
+				journalEntryId: result.journalEntryId,
+				newState: result.newState,
+				previousState: result.previousState,
+				rejectionReason,
+				reviewedAt,
+			},
+		});
+
+		return result;
 	})
 	.public();
