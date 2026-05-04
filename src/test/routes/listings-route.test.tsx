@@ -13,6 +13,7 @@ import {
 	ListingsIndexRoutePage,
 	Route,
 } from "#/routes/listings/index";
+import { parseListingCheckoutReturnState } from "#/routes/listings/$listingId";
 import { ListingsLayout } from "#/routes/listings/route";
 import { Route as RootRoute } from "#/routes/__root";
 
@@ -58,6 +59,21 @@ const LIST_QUERY_OPTIONS = { queryKey: ["marketplace-listings"] };
 const PORTAL_ID = "portal_meridian" as never;
 
 describe("public listings route", () => {
+	it("normalizes listing checkout return search state", () => {
+		expect(
+			parseListingCheckoutReturnState({ checkout: "success_pending" })
+		).toBe("success_pending");
+		expect(parseListingCheckoutReturnState({ checkout: "expired" })).toBe(
+			"expired"
+		);
+		expect(parseListingCheckoutReturnState({ checkout: "invalid" })).toBe(
+			undefined
+		);
+		expect(parseListingCheckoutReturnState({ checkout: ["expired"] })).toBe(
+			undefined
+		);
+	});
+
 	it("renders the marketplace listings surface from the index route", () => {
 		const search = { q: "toronto", sort: "featured" } as const;
 		const navigate = vi.fn();

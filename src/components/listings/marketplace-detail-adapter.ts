@@ -400,6 +400,40 @@ function buildSimilarListings(
 	}));
 }
 
+function buildCheckoutContract(
+	detail: NonNullable<MarketplaceListingDetailSnapshot>,
+	perFractionAmount: number
+): ListingDetailData["checkout"] {
+	const checkout = detail.checkout;
+	if (!checkout) {
+		return undefined;
+	}
+
+	return {
+		defaultFractions: checkout.defaultFractions,
+		disabledReason: checkout.disabledReason,
+		isEligible: checkout.isEligible,
+		lawyers: checkout.lawyers.map((lawyer) => ({
+			detail: lawyer.detail,
+			email: lawyer.email,
+			firm: lawyer.firm,
+			id: lawyer.id,
+			label: lawyer.label,
+			type: lawyer.type,
+		})),
+		lockFee: {
+			amountCents: checkout.lockFee.amountCents,
+			currency: "CAD",
+			display: checkout.lockFee.display,
+		},
+		maximumFractions: checkout.maximumFractions,
+		minimumFractions: checkout.minimumFractions,
+		perFractionAmount: Math.round(
+			checkout.perFractionAmount ?? perFractionAmount
+		),
+	};
+}
+
 export function buildMarketplaceListingDetailModel(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>
 ): ListingDetailData {
@@ -473,6 +507,7 @@ export function buildMarketplaceListingDetailModel(
 		],
 		badges: buildBadges(detail),
 		borrowerSignals: buildBorrowerSignals(detail),
+		checkout: buildCheckoutContract(detail, perFractionAmount),
 		comparables: buildComparables(detail),
 		documents: buildDocuments(detail),
 		heroImages: buildHeroImages(detail),
