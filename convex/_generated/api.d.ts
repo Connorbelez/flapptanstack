@@ -234,6 +234,8 @@ import type * as listings_projection from "../listings/projection.js";
 import type * as listings_publicDocuments from "../listings/publicDocuments.js";
 import type * as listings_queries from "../listings/queries.js";
 import type * as listings_validators from "../listings/validators.js";
+import type * as micInvestorAccessRequests_mutations from "../micInvestorAccessRequests/mutations.js";
+import type * as micInvestorAccessRequests_validators from "../micInvestorAccessRequests/validators.js";
 import type * as mortgages_activateMortgageAggregate from "../mortgages/activateMortgageAggregate.js";
 import type * as mortgages_nominalAnnualRate from "../mortgages/nominalAnnualRate.js";
 import type * as mortgages_paymentFrequency from "../mortgages/paymentFrequency.js";
@@ -676,6 +678,8 @@ declare const fullApi: ApiFromModules<{
   "listings/publicDocuments": typeof listings_publicDocuments;
   "listings/queries": typeof listings_queries;
   "listings/validators": typeof listings_validators;
+  "micInvestorAccessRequests/mutations": typeof micInvestorAccessRequests_mutations;
+  "micInvestorAccessRequests/validators": typeof micInvestorAccessRequests_validators;
   "mortgages/activateMortgageAggregate": typeof mortgages_activateMortgageAggregate;
   "mortgages/nominalAnnualRate": typeof mortgages_nominalAnnualRate;
   "mortgages/paymentFrequency": typeof mortgages_paymentFrequency;

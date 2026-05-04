@@ -2,6 +2,7 @@
 // Kept in sync with entityTypeValidator in validators.ts
 export type EntityType =
 	| "brokerOnboardingApplication"
+	| "micInvestorAccessRequest"
 	| "onboardingRequest"
 	| "mortgage"
 	| "obligation"
@@ -31,6 +32,7 @@ export type EntityType =
 // TypeScript enforces completeness — machineRegistry must map every GovernedEntityType.
 export type GovernedEntityType =
 	| "brokerOnboardingApplication"
+	| "micInvestorAccessRequest"
 	| "onboardingRequest"
 	| "mortgage"
 	| "obligation"
@@ -201,6 +203,7 @@ export interface AuditJournalEntry {
 // ── Entity Type → Table Name Mapping ────────────────────────────────
 export const ENTITY_TABLE_MAP = {
 	brokerOnboardingApplication: "brokerOnboardingApplications",
+	micInvestorAccessRequest: "micInvestorAccessRequests",
 	onboardingRequest: "onboardingRequests",
 	mortgage: "mortgages",
 	obligation: "obligations",

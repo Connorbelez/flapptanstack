@@ -4,6 +4,7 @@ import { brokerOnboardingApplicationMachine } from "./brokerOnboardingApplicatio
 import { collectionAttemptMachine } from "./collectionAttempt.machine";
 import { dealMachine } from "./deal.machine";
 import { lenderRenewalIntentMachine } from "./lenderRenewalIntent.machine";
+import { micInvestorAccessRequestMachine } from "./micInvestorAccessRequest.machine";
 import { mortgageMachine } from "./mortgage.machine";
 import { obligationMachine } from "./obligation.machine";
 import { onboardingRequestMachine } from "./onboardingRequest.machine";
@@ -19,6 +20,7 @@ export const machineRegistry: Record<GovernedEntityType, AnyStateMachine> = {
 	collectionAttempt: collectionAttemptMachine,
 	deal: dealMachine,
 	lenderRenewalIntent: lenderRenewalIntentMachine,
+	micInvestorAccessRequest: micInvestorAccessRequestMachine,
 	mortgage: mortgageMachine,
 	obligation: obligationMachine,
 	onboardingRequest: onboardingRequestMachine,
