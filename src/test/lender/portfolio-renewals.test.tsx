@@ -3,7 +3,7 @@
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	expiredPortfolioRenewalIntentFixture,
 	partialExitPortfolioRenewalIntentFixture,
@@ -22,9 +22,14 @@ import {
 import type { UsePortfolioRenewalActionsResult } from "#/components/lender/portfolio/renewals/use-renewal-actions";
 
 const usePortfolioRenewalActionsMock = vi.fn();
+const useAuthorizationMock = vi.fn();
 
 vi.mock("#/components/lender/portfolio/renewals/use-renewal-actions", () => ({
 	usePortfolioRenewalActions: () => usePortfolioRenewalActionsMock(),
+}));
+
+vi.mock("#/lib/auth", () => ({
+	useAuthorization: () => useAuthorizationMock(),
 }));
 
 type RenewalActionSurfaceComponent = typeof import("#/components/lender/portfolio/renewals/renewal-actions").RenewalActionSurface;
@@ -37,9 +42,14 @@ beforeAll(async () => {
 	));
 });
 
+beforeEach(() => {
+	useAuthorizationMock.mockReturnValue({ allowed: true, loading: false });
+});
+
 afterEach(() => {
 	cleanup();
 	usePortfolioRenewalActionsMock.mockReset();
+	useAuthorizationMock.mockReset();
 	vi.clearAllMocks();
 });
 
@@ -135,6 +145,54 @@ describe("renewal ui helpers", () => {
 });
 
 describe("renewal ui components", () => {
+	it("renders a neutral read-only state when renewal signaling is not allowed", () => {
+		useAuthorizationMock.mockReturnValue({ allowed: false, loading: false });
+
+		render(
+			<RenewalActionSurface
+				mortgageId={MORTGAGE_ID}
+				mode={{ kind: "portal", portalId: PORTAL_ID }}
+				variant="compact"
+			/>
+		);
+
+		expect(screen.getByTestId(`renewal-read-only-${MORTGAGE_ID}`)).toBeTruthy();
+		expect(screen.getByText("Renewal actions unavailable")).toBeTruthy();
+		expect(usePortfolioRenewalActionsMock).not.toHaveBeenCalled();
+	});
+
+	it("keeps local renewal choice state when submit fails", async () => {
+		const submitIntent = vi.fn().mockRejectedValue(new Error("Permission denied"));
+		usePortfolioRenewalActionsMock.mockReturnValue(
+			buildRenewalActionsResult({
+				submitIntent,
+			})
+		);
+
+		render(
+			<RenewalActionSurface
+				mortgageId={MORTGAGE_ID}
+				mode={{ kind: "portal", portalId: PORTAL_ID }}
+				variant="full"
+			/>
+		);
+
+		fireEvent.click(
+			screen.getByTestId(`renewal-choice-partial_exit-${MORTGAGE_ID}`)
+		);
+		fireEvent.change(screen.getByLabelText("Partial exit amount"), {
+			target: { value: "175" },
+		});
+		fireEvent.click(screen.getByTestId(`renewal-choice-renew-${MORTGAGE_ID}`));
+
+		await waitFor(() => {
+			expect(submitIntent).toHaveBeenCalledWith({ intent: "renew" });
+			expect(
+				screen.getByTestId(`renewal-partial-exit-form-${MORTGAGE_ID}`)
+			).toBeTruthy();
+		});
+	});
+
 	it("clears stale partial-exit UI when the governed intent changes elsewhere", async () => {
 		usePortfolioRenewalActionsMock.mockReturnValue(
 			buildRenewalActionsResult({

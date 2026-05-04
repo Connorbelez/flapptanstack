@@ -1464,7 +1464,7 @@ export default defineSchema({
 		trigger: velocitySyncTriggerValidator,
 		loanCode: v.optional(v.string()),
 		dealHref: v.optional(v.string()),
-		idempotencyKey: v.optional(v.string()),
+		idempotencyKey: v.string(),
 		connectorCredentialContext: v.optional(
 			velocityConnectorCredentialContextValidator
 		),

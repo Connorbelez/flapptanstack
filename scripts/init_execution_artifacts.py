@@ -6,11 +6,45 @@ Scaffold execution artifacts for linear-implement-v2.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 from textwrap import dedent
 
 
-def write_if_missing(path: Path, content: str) -> tuple[str, Path]:
+ISSUE_KEY_PATTERN = re.compile(r"[A-Z][A-Z0-9]*-\d+")
+CHUNK_NAME_PATTERN = re.compile(r"chunk-\d{2,3}(?:-[a-z0-9]+)*")
+
+
+def validate_name(
+    value: str,
+    *,
+    label: str,
+    pattern: re.Pattern[str],
+    example: str,
+) -> str:
+    if not pattern.fullmatch(value):
+        raise ValueError(f"Invalid {label} '{value}'. Expected format like {example}.")
+    return value
+
+
+def ensure_within_boundary(boundary: Path, path: Path) -> Path:
+    resolved_boundary = boundary.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(resolved_boundary)
+    except ValueError as exc:
+        raise ValueError(f"Resolved output path escapes repository root: {resolved_path}") from exc
+    return resolved_path
+
+
+def write_if_missing(
+    path: Path,
+    content: str,
+    *,
+    boundary: Path | None = None,
+) -> tuple[str, Path]:
+    if boundary is not None:
+        path = ensure_within_boundary(boundary, path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         return "preserved", path
@@ -224,27 +258,102 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    spec_dir = Path(args.repo_root).resolve() / "specs" / args.issue_key
+    try:
+        issue_key = validate_name(
+            args.issue_key,
+            label="issue key",
+            pattern=ISSUE_KEY_PATTERN,
+            example="FAI-123",
+        )
+        chunk_names = [
+            validate_name(
+                chunk_name,
+                label="chunk name",
+                pattern=CHUNK_NAME_PATTERN,
+                example="chunk-01-schema",
+            )
+            for chunk_name in args.chunk
+        ]
+        repo_root = Path(args.repo_root).resolve()
+        spec_dir = ensure_within_boundary(repo_root, repo_root / "specs" / issue_key)
+    except ValueError as error:
+        parser.error(str(error))
+
     chunks_dir = spec_dir / "chunks"
 
     operations: list[tuple[str, Path]] = []
     operations.append(
         write_if_missing(
             spec_dir / "summary.md",
-            summary_template(args.issue_key, args.title, args.issue_url, args.plan_url, args.supporting_doc),
+            summary_template(
+                issue_key,
+                args.title,
+                args.issue_url,
+                args.plan_url,
+                args.supporting_doc,
+            ),
+            boundary=repo_root,
         )
     )
-    operations.append(write_if_missing(spec_dir / "execution-checklist.md", checklist_template(args.issue_key, args.title)))
-    operations.append(write_if_missing(spec_dir / "tasks.md", tasks_template(args.issue_key, args.title)))
-    operations.append(write_if_missing(spec_dir / "status.md", status_template(args.issue_key, args.title)))
-    operations.append(write_if_missing(spec_dir / "audit.md", audit_template(args.issue_key, args.title)))
-    operations.append(write_if_missing(chunks_dir / "manifest.md", manifest_template(args.issue_key, args.title)))
+    operations.append(
+        write_if_missing(
+            spec_dir / "execution-checklist.md",
+            checklist_template(issue_key, args.title),
+            boundary=repo_root,
+        )
+    )
+    operations.append(
+        write_if_missing(
+            spec_dir / "tasks.md",
+            tasks_template(issue_key, args.title),
+            boundary=repo_root,
+        )
+    )
+    operations.append(
+        write_if_missing(
+            spec_dir / "status.md",
+            status_template(issue_key, args.title),
+            boundary=repo_root,
+        )
+    )
+    operations.append(
+        write_if_missing(
+            spec_dir / "audit.md",
+            audit_template(issue_key, args.title),
+            boundary=repo_root,
+        )
+    )
+    operations.append(
+        write_if_missing(
+            chunks_dir / "manifest.md",
+            manifest_template(issue_key, args.title),
+            boundary=repo_root,
+        )
+    )
 
-    for chunk_name in args.chunk:
+    for chunk_name in chunk_names:
         chunk_dir = chunks_dir / chunk_name
-        operations.append(write_if_missing(chunk_dir / "context.md", chunk_context_template(chunk_name)))
-        operations.append(write_if_missing(chunk_dir / "tasks.md", chunk_tasks_template(chunk_name)))
-        operations.append(write_if_missing(chunk_dir / "status.md", chunk_status_template(chunk_name)))
+        operations.append(
+            write_if_missing(
+                chunk_dir / "context.md",
+                chunk_context_template(chunk_name),
+                boundary=repo_root,
+            )
+        )
+        operations.append(
+            write_if_missing(
+                chunk_dir / "tasks.md",
+                chunk_tasks_template(chunk_name),
+                boundary=repo_root,
+            )
+        )
+        operations.append(
+            write_if_missing(
+                chunk_dir / "status.md",
+                chunk_status_template(chunk_name),
+                boundary=repo_root,
+            )
+        )
 
     print(f"Scaffolded execution artifacts at {spec_dir}")
     for action, path in operations:

@@ -27,11 +27,11 @@ export interface AppendVelocityPackageAuditEntryArgs {
 	idempotencyKey?: string;
 	ip?: string;
 	linkedRecordIds?: Record<string, unknown>;
-	newState?: string;
+	newState: string;
 	organizationId?: string;
-	outcome?: AuditJournalEntryInput["outcome"];
+	outcome: AuditJournalEntryInput["outcome"];
 	payload?: VelocityPackageAuditPayload;
-	previousState?: string;
+	previousState: string;
 	readiness?: VelocityReadinessV1;
 	reason?: string;
 	requestId?: string;
@@ -80,7 +80,7 @@ function buildVelocityAuditPayload(
 export async function appendVelocityPackageAuditEntry(
 	ctx: MutationCtx,
 	args: AppendVelocityPackageAuditEntryArgs
-) {
+): Promise<Id<"auditJournal">> {
 	const timestamp = args.timestamp ?? Date.now();
 	const workspaceId = String(args.workspaceId);
 
@@ -101,12 +101,12 @@ export async function appendVelocityPackageAuditEntry(
 			entityId: workspaceId,
 			velocityPackageWorkspaceId: workspaceId,
 		},
-		newState: args.newState ?? "none",
+		newState: args.newState,
 		organizationId: args.organizationId,
 		originSystem: VELOCITY_PACKAGE_AUDIT_ORIGIN_SYSTEM,
-		outcome: args.outcome ?? "transitioned",
+		outcome: args.outcome,
 		payload: buildVelocityAuditPayload(args),
-		previousState: args.previousState ?? "none",
+		previousState: args.previousState,
 		reason: args.reason,
 		requestId: args.requestId,
 		sessionId: args.sessionId,

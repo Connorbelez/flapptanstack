@@ -87,7 +87,7 @@ describe("Velocity mock scenario harness", () => {
 		);
 		expect(drift).toMatchObject({
 			expectedActivationBehavior: "post_live_velocity_drift",
-			nextVelocityPatch: { mortgageRequest: { payment: 1300 } },
+			nextVelocityPatch: { mortgageRequest: { rate: 12.25 } },
 		});
 		expect(drift.mockDeal.mockScenario).toMatchObject({
 			expectedActivationBehavior: "post_live_velocity_drift",

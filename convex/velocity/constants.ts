@@ -465,11 +465,23 @@ export function normalizeVelocityKeyPart(
 	return encodeURIComponent(String(value));
 }
 
+export function normalizeRequiredVelocityKeyPart(
+	value: number | string | null | undefined,
+	fieldName: string
+) {
+	if (value == null || String(value).trim() === "") {
+		throw new Error(`Velocity ${fieldName} is required for key generation`);
+	}
+
+	return encodeURIComponent(String(value));
+}
+
 export function buildVelocityMortgageWorkflowSourceKey(
 	linkApplicationId: string
 ) {
-	return `${VELOCITY_WORKFLOW_SOURCE_TYPE}:mortgage:${normalizeVelocityKeyPart(
-		linkApplicationId
+	return `${VELOCITY_WORKFLOW_SOURCE_TYPE}:mortgage:${normalizeRequiredVelocityKeyPart(
+		linkApplicationId,
+		"linkApplicationId"
 	)}` as const;
 }
 
@@ -490,9 +502,10 @@ export function buildVelocitySyncIdempotencyKey(args: {
 	linkApplicationId: string;
 	rawDealHash: string;
 }) {
-	return `velocity:sync:${normalizeVelocityKeyPart(
-		args.linkApplicationId
-	)}:${normalizeVelocityKeyPart(args.rawDealHash)}` as const;
+	return `velocity:sync:${normalizeRequiredVelocityKeyPart(
+		args.linkApplicationId,
+		"linkApplicationId"
+	)}:${normalizeRequiredVelocityKeyPart(args.rawDealHash, "rawDealHash")}` as const;
 }
 
 export function buildVelocityActivationIdempotencyKey(args: {

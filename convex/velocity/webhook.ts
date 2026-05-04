@@ -240,6 +240,7 @@ async function appendWebhookIngressAuditEntries(
 			linkedRecordIds: {
 				webhookEventId: String(args.webhookEventId),
 			},
+			newState: "none",
 			outcome: args.status === "failed" ? "rejected" : "transitioned",
 			payload: {
 				error: args.error,
@@ -248,6 +249,7 @@ async function appendWebhookIngressAuditEntries(
 				status: args.status,
 				webhookEventId: String(args.webhookEventId),
 			},
+			previousState: "none",
 			reason: args.error,
 			webhookAgent: args.payload.agent ?? undefined,
 			workspaceId,
@@ -343,7 +345,7 @@ export const persistVelocityWebhookEvents = convex
 				acceptedEvents.push({
 					dealHref: existing.dealHref,
 					eventType: existing.eventType,
-					isDuplicate: true,
+					isDuplicate: existing.status === "processed",
 					loanCode: existing.loanCode ?? loanCode,
 					statusCode: existing.statusCode,
 					webhookEventId: existing._id,

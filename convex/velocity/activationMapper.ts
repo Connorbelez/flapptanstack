@@ -35,6 +35,9 @@ function mapPropertyType(
 	raw: string | null | undefined
 ): VelocityMortgagePropertyType {
 	const normalized = raw?.trim().toLowerCase();
+	if (normalized === "residential") {
+		return "residential";
+	}
 	if (normalized === "commercial") {
 		return "commercial";
 	}
@@ -47,6 +50,9 @@ function mapPropertyType(
 		normalized === "multi unit"
 	) {
 		return "multi_unit";
+	}
+	if (normalized) {
+		throw new ConvexError(`Unsupported Velocity property type: ${raw}`);
 	}
 	return "residential";
 }

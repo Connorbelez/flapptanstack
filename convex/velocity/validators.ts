@@ -1,8 +1,27 @@
-import { type Infer, v } from "convex/values";
+import { type Infer, type Validator, v } from "convex/values";
+import { VELOCITY_PACKAGE_AUDIT_EVENT_TYPES } from "./contracts";
 
 const optionalNullableString = v.optional(v.union(v.string(), v.null()));
 const optionalNullableNumber = v.optional(v.union(v.number(), v.null()));
 const optionalNullableBoolean = v.optional(v.union(v.boolean(), v.null()));
+
+function literalUnion<T extends readonly string[]>(
+	values: T
+): Validator<T[number], "required", never> {
+	if (values.length < 2) {
+		throw new Error(
+			`literalUnion requires at least 2 values, got ${values.length}`
+		);
+	}
+	const literals = values.map((value) => v.literal(value));
+	return v.union(
+		...(literals as [
+			ReturnType<typeof v.literal>,
+			ReturnType<typeof v.literal>,
+			...ReturnType<typeof v.literal>[],
+		])
+	) as unknown as Validator<T[number], "required", never>;
+}
 
 export const velocityProviderValidator = v.literal("velocity");
 export const velocityCoreSourceVersionValidator = v.literal("velocity_core_v1");
@@ -470,26 +489,8 @@ export const velocityWorkspaceActivationSummaryValidator = v.object({
 	mortgageId: v.optional(v.id("mortgages")),
 });
 
-export const velocityPackageAuditEventTypeValidator = v.union(
-	v.literal("velocity_webhook_received"),
-	v.literal("velocity_webhook_provenance_recorded"),
-	v.literal("velocity_full_deal_fetch_attempted"),
-	v.literal("velocity_full_deal_fetch_failed"),
-	v.literal("velocity_normalized"),
-	v.literal("velocity_identity_validated"),
-	v.literal("velocity_identity_exception_opened"),
-	v.literal("velocity_fairlend_enrichment_updated"),
-	v.literal("velocity_document_linked"),
-	v.literal("velocity_readiness_recomputed"),
-	v.literal("velocity_final_review_confirmed"),
-	v.literal("velocity_exception_resolved"),
-	v.literal("velocity_activation_attempt_started"),
-	v.literal("velocity_activation_provider_artifact_recorded"),
-	v.literal("velocity_activation_provider_artifact_reused"),
-	v.literal("velocity_activation_stage_changed"),
-	v.literal("velocity_activation_failed"),
-	v.literal("velocity_activation_succeeded"),
-	v.literal("velocity_post_live_drift_detected")
+export const velocityPackageAuditEventTypeValidator = literalUnion(
+	VELOCITY_PACKAGE_AUDIT_EVENT_TYPES
 );
 
 export type VelocityNormalizedCoreValue = Infer<

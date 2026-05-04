@@ -1,7 +1,7 @@
 import type { Id } from "../_generated/dataModel";
 import {
 	buildVelocityMortgageWorkflowSourceKey,
-	normalizeVelocityKeyPart,
+	normalizeRequiredVelocityKeyPart,
 	VELOCITY_CREATION_SOURCE,
 	VELOCITY_ORIGINATION_PATH,
 	VELOCITY_WORKFLOW_SOURCE_TYPE,
@@ -38,14 +38,19 @@ export function buildVelocityMortgageActivationSource(args: {
 }
 
 export function buildVelocityBorrowerWorkflowSourceKey(args: {
+	borrowerDiscriminator?: string;
 	borrowerExternalKey?: string;
 	linkApplicationId: string;
 	role: "co_borrower" | "guarantor" | "primary";
 	workspaceId: Id<"velocityPackageWorkspaces">;
 }) {
-	return `${VELOCITY_WORKFLOW_SOURCE_TYPE}:borrower:${normalizeVelocityKeyPart(
-		args.linkApplicationId
-	)}:${normalizeVelocityKeyPart(
-		String(args.workspaceId)
-	)}:${normalizeVelocityKeyPart(args.borrowerExternalKey ?? args.role)}` as const;
+	const borrowerKey =
+		args.borrowerExternalKey ?? args.borrowerDiscriminator ?? args.role;
+	return `${VELOCITY_WORKFLOW_SOURCE_TYPE}:borrower:${normalizeRequiredVelocityKeyPart(
+		args.linkApplicationId,
+		"linkApplicationId"
+	)}:${normalizeRequiredVelocityKeyPart(
+		String(args.workspaceId),
+		"workspaceId"
+	)}:${normalizeRequiredVelocityKeyPart(borrowerKey, "borrowerDiscriminator")}` as const;
 }

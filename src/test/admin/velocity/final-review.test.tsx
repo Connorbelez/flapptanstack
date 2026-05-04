@@ -2,7 +2,13 @@
  * @vitest-environment jsdom
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -206,9 +212,41 @@ function buildWorkspace(
 	};
 }
 
-function renderFinalReview(workspace: VelocityWorkspaceDetail) {
-	const confirmFinalReview = vi.fn().mockResolvedValue({});
-	const activate = vi.fn().mockResolvedValue({ status: "succeeded" });
+function reviewedWorkspace(
+	overrides: Partial<VelocityWorkspaceDetail> = {}
+): VelocityWorkspaceDetail {
+	return buildWorkspace({
+		fairlendOwned: {
+			enrichment: {},
+			finalReview: {
+				reviewedAt: 1_775_000_000_000,
+				reviewedByUserId: "user_admin" as Id<"users">,
+				reviewedSnapshotHash: "hash-current",
+				reviewedSnapshotId: "snapshot_reviewed" as Id<"velocityPackageSnapshots">,
+			},
+			state: "ready_to_activate",
+		},
+		readiness: {
+			blockers: [],
+			canActivate: true,
+			canFinalReview: true,
+			warnings: [],
+		},
+		...overrides,
+	});
+}
+
+function renderFinalReview(
+	workspace: VelocityWorkspaceDetail,
+	overrides: {
+		readonly activate?: ReturnType<typeof vi.fn>;
+		readonly confirmFinalReview?: ReturnType<typeof vi.fn>;
+	} = {}
+) {
+	const confirmFinalReview =
+		overrides.confirmFinalReview ?? vi.fn().mockResolvedValue({});
+	const activate =
+		overrides.activate ?? vi.fn().mockResolvedValue({ status: "succeeded" });
 	vi.mocked(useQuery).mockReturnValue(workspace);
 	vi.mocked(useMutation).mockReturnValue(confirmFinalReview);
 	vi.mocked(useAction).mockReturnValue(activate);
@@ -337,6 +375,32 @@ describe("Velocity final review page", () => {
 				workspaceId: "workspace_123",
 			})
 		);
+	});
+
+	it("only starts one activation when the activate button is clicked rapidly while pending", async () => {
+		let resolveActivation: (value: { status: string }) => void = () => {};
+		const activationPromise = new Promise<{ status: string }>((resolve) => {
+			resolveActivation = resolve;
+		});
+		const activate = vi.fn(() => activationPromise);
+		renderFinalReview(reviewedWorkspace(), { activate });
+
+		const activateButton = screen.getByRole("button", {
+			name: /Activate package/i,
+		});
+		fireEvent.click(activateButton);
+		fireEvent.click(activateButton);
+
+		expect(activate).toHaveBeenCalledTimes(1);
+		await waitFor(() =>
+			expect(activateButton.hasAttribute("disabled")).toBe(true)
+		);
+
+		resolveActivation({ status: "succeeded" });
+		await waitFor(() =>
+			expect(activateButton.hasAttribute("disabled")).toBe(false)
+		);
+		expect(activate).toHaveBeenCalledTimes(1);
 	});
 
 	it("disables review and activation while backend activation is in flight", () => {

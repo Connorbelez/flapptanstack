@@ -31,6 +31,7 @@ import type {
 	VelocityActivationHandoffV1,
 	VelocityPackageAuditPayload,
 } from "./contracts";
+import { buildVelocityBorrowerWorkflowSourceKey } from "./provenance";
 import { computeVelocityReadiness } from "./sync";
 
 type VelocityWorkspace = Doc<"velocityPackageWorkspaces">;
@@ -514,6 +515,7 @@ async function findOrCreateVelocityBorrower(
 		index: number;
 		now: number;
 		phone?: string;
+		role: "co_borrower" | "guarantor" | "primary";
 		workspace: VelocityWorkspace;
 	}
 ) {
@@ -562,7 +564,12 @@ async function findOrCreateVelocityBorrower(
 		status: "active",
 		userId,
 		workflowSourceId: String(args.workspace._id),
-		workflowSourceKey: `${VELOCITY_WORKFLOW_SOURCE_TYPE}:borrower:${args.workspace.linkApplicationId}:${email}`,
+		workflowSourceKey: buildVelocityBorrowerWorkflowSourceKey({
+			borrowerDiscriminator: email,
+			linkApplicationId: args.workspace.linkApplicationId,
+			role: args.role,
+			workspaceId: args.workspace._id,
+		}),
 		workflowSourceType: VELOCITY_WORKFLOW_SOURCE_TYPE,
 	});
 }
@@ -668,17 +675,18 @@ async function ensureVelocityCanonicalInputs(
 				[borrower.firstName, borrower.lastName].filter(Boolean).join(" "),
 			"Velocity activation requires borrower name."
 		);
+		const role = resolveVelocityBorrowerRole({
+			borrower,
+			index,
+			workspace: args.workspace,
+		});
 		const borrowerId = await findOrCreateVelocityBorrower(ctx, {
 			email,
 			fullName,
 			index,
 			now: args.now,
 			phone: borrower.cellPhone ?? borrower.homePhone ?? undefined,
-			workspace: args.workspace,
-		});
-		const role = resolveVelocityBorrowerRole({
-			borrower,
-			index,
+			role,
 			workspace: args.workspace,
 		});
 		borrowerLinks.push({ borrowerId, role });
@@ -1553,12 +1561,12 @@ export const activateVelocityPackage = adminAction
 			return started;
 		}
 
-		let prepared = await ctx.runMutation(prepareVelocityPackageActivationRef, {
-			activationAttemptId: started.activationAttemptId,
-			actorAuthId: ctx.viewer.authId,
-		});
-
+		let prepared: PreparedVelocityActivation | null = null;
 		try {
+			prepared = await ctx.runMutation(prepareVelocityPackageActivationRef, {
+				activationAttemptId: started.activationAttemptId,
+				actorAuthId: ctx.viewer.authId,
+			});
 			const client = createRotessaClient({ timeoutMs: 30_000 });
 			if (!prepared.rotessaCustomerRef) {
 				const createdCustomer = await resolveOrCreateRotessaCustomer(
@@ -1639,14 +1647,15 @@ export const activateVelocityPackage = adminAction
 			});
 		} catch (error) {
 			const client = createRotessaClient({ timeoutMs: 30_000 });
-			const compensation = prepared.rotessaScheduleRef
+			const compensation = prepared?.rotessaScheduleRef
 				? await compensateRotessaSchedule(client, prepared.rotessaScheduleRef)
 				: {};
 			const compensationMessage = compensation.compensatedRotessaScheduleRef
 				? ` Provider schedule ${compensation.compensatedRotessaScheduleRef} was compensated.`
 				: "";
 			await ctx.runMutation(failVelocityPackageActivationRef, {
-				activationAttemptId: prepared.activationAttemptId,
+				activationAttemptId:
+					prepared?.activationAttemptId ?? started.activationAttemptId,
 				compensatedRotessaScheduleRef:
 					compensation.compensatedRotessaScheduleRef,
 				failureDetails: {
