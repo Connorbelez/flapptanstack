@@ -72,6 +72,7 @@ describe("checkout Stripe metadata contract", () => {
 			...baseInput,
 			selectedLawyer: {
 				type: "guest_lawyer",
+				source: "manual",
 				name: "Guest Counsel",
 				email: "guest@example.com",
 			},
@@ -159,6 +160,7 @@ describe("checkout Stripe metadata contract", () => {
 			...baseInput,
 			selectedLawyer: {
 				type: "guest_lawyer",
+				source: "manual",
 				name: "Guest Counsel",
 				email: "guest@example.com",
 			},

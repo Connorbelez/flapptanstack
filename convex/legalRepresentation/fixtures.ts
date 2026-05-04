@@ -136,6 +136,7 @@ export function buildGuestSelectedLawyerSnapshotFixture(
 ): SelectedLawyerSnapshot {
 	return {
 		type: "guest_lawyer",
+		source: "lso_search",
 		name: "Riley Guest",
 		email: "returning.guest@example.test",
 		firm: "Guest Legal",
@@ -160,6 +161,7 @@ export function buildNewGuestLawyerInvitationFixture(
 		dealId: options?.dealId ?? DEFAULT_DEAL_ID,
 		selectedLawyerSnapshot: {
 			type: "guest_lawyer",
+			source: "manual",
 			name: "New Guest",
 			email: targetEmail,
 			firm: "New Guest Law",

@@ -1247,6 +1247,7 @@ function HostedCheckoutLauncher({
 	const guestNameId = `${idBase}-guest-name`;
 	const guestEmailId = `${idBase}-guest-email`;
 	const guestFirmId = `${idBase}-guest-firm`;
+	const canUseManualGuestFallback = checkout.lawyers.length === 0;
 	let lawyerSelection: ReactNode;
 	if (lawyerMode === "platform") {
 		lawyerSelection =
@@ -1263,7 +1264,7 @@ function HostedCheckoutLauncher({
 			) : (
 				<EmptySelectionState message="No platform lawyers are currently configured." />
 			);
-	} else {
+	} else if (canUseManualGuestFallback) {
 		lawyerSelection = (
 			<div className="grid gap-3 sm:grid-cols-2">
 				<FieldInput
@@ -1287,6 +1288,10 @@ function HostedCheckoutLauncher({
 					value={guestLawyerFirm}
 				/>
 			</div>
+		);
+	} else {
+		lawyerSelection = (
+			<EmptySelectionState message="Manual guest entry is available only as a fallback when no platform lawyer is configured." />
 		);
 	}
 
@@ -1367,19 +1372,21 @@ function HostedCheckoutLauncher({
 						>
 							Platform lawyer
 						</button>
-						<button
-							aria-pressed={lawyerMode === "guest"}
-							className={cn(
-								"rounded-xl border px-4 py-3 text-left font-medium text-sm",
-								lawyerMode === "guest"
-									? "border-[#204636] bg-[#F1FAF3] text-[#204636]"
-									: "border-[#E7E5E4] bg-white text-[#4A4A48]"
-							)}
-							onClick={() => onLawyerModeChange("guest")}
-							type="button"
-						>
-							Guest lawyer
-						</button>
+						{canUseManualGuestFallback ? (
+							<button
+								aria-pressed={lawyerMode === "guest"}
+								className={cn(
+									"rounded-xl border px-4 py-3 text-left font-medium text-sm",
+									lawyerMode === "guest"
+										? "border-[#204636] bg-[#F1FAF3] text-[#204636]"
+										: "border-[#E7E5E4] bg-white text-[#4A4A48]"
+								)}
+								onClick={() => onLawyerModeChange("guest")}
+								type="button"
+							>
+								Guest lawyer fallback
+							</button>
+						) : null}
 					</div>
 
 					{lawyerSelection}
@@ -1776,6 +1783,7 @@ function buildSelectedLawyerSnapshot({
 		}
 		return {
 			type: "guest_lawyer",
+			source: "manual",
 			name,
 			email,
 			...(firm.length > 0 ? { firm } : {}),

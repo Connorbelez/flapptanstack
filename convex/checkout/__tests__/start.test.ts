@@ -549,6 +549,28 @@ describe("checkout start internal mutations", () => {
 		expect(counts).toEqual({ reservations: 0, checkouts: 0 });
 	});
 
+	it("rejects guest lawyer snapshots without an explicit source before creating locks", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+
+		await expect(
+			prepare(t, {
+				...fixture,
+				selectedLawyer: {
+					type: "guest_lawyer",
+					name: "Manual Counsel",
+					email: "manual@example.test",
+				} as unknown as SelectedLawyerSnapshot,
+			})
+		).rejects.toThrow("Validator error");
+		const counts = await t.run(async (ctx) => ({
+			reservations: (await ctx.db.query("ledger_reservations").collect())
+				.length,
+			checkouts: (await ctx.db.query("checkoutSessions").collect()).length,
+		}));
+		expect(counts).toEqual({ reservations: 0, checkouts: 0 });
+	});
+
 	it("replays duplicate active starts without creating a second reservation", async () => {
 		const t = createHarness();
 		const fixture = await setupCheckoutFixture(t);
