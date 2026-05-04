@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { transition as computeTransition } from "xstate";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
 	internalMutation,
@@ -7,6 +8,8 @@ import {
 } from "../_generated/server";
 import { assertDealAccess } from "../authz/resourceAccess";
 import { readDealDocumentPackageSurface } from "../documents/dealPackages";
+import { dealMachine } from "../engine/machines/deal.machine";
+import { deserializeState, serializeState } from "../engine/serialization";
 import { adminQuery, authedQuery, dealQuery } from "../fluent";
 import {
 	projectFundsSourceForAdmin,
@@ -32,9 +35,27 @@ type DealPhase =
 	| "documentReview"
 	| "fundsTransfer"
 	| "confirmed"
-	| "failed";
+	| "failed"
+	| "unknown";
+
+const KNOWN_DEAL_STATUSES = new Set([
+	"initiated",
+	"lawyerOnboarding.pending",
+	"lawyerOnboarding.verified",
+	"lawyerOnboarding.complete",
+	"documentReview.pending",
+	"documentReview.signed",
+	"documentReview.complete",
+	"fundsTransfer.pending",
+	"fundsTransfer.complete",
+	"confirmed",
+	"failed",
+]);
 
 function getDealPhase(status: string): DealPhase {
+	if (!KNOWN_DEAL_STATUSES.has(status)) {
+		return "unknown";
+	}
 	if (status === "initiated") {
 		return "initiated";
 	}
@@ -53,12 +74,7 @@ function getDealPhase(status: string): DealPhase {
 	if (status === "failed") {
 		return "failed";
 	}
-	// Default to initiated for unknown statuses
-	// Log unknown statuses for observability (shouldn't happen in production)
-	console.warn(
-		`Unknown deal status encountered: ${status}, defaulting to initiated`
-	);
-	return "initiated";
+	return "unknown";
 }
 
 export interface DealWithPhase {
@@ -84,6 +100,200 @@ export interface DealsByPhase {
 	fundsTransfer: DealWithPhase[];
 	initiated: DealWithPhase[];
 	lawyerOnboarding: DealWithPhase[];
+	unknown: DealWithPhase[];
+}
+
+export type AdminDealOperationsFilter =
+	| "all"
+	| "needs_action"
+	| "blocked"
+	| "awaiting_signatures"
+	| "awaiting_funds"
+	| "completed"
+	| "failed";
+
+export type AdminDealOperationBlockerKind =
+	| "missing_contract"
+	| "missing_participant"
+	| "missing_lawyer_access"
+	| "invalid_fraction"
+	| "package_pending"
+	| "package_failed"
+	| "signing_exception"
+	| "funds_pending"
+	| "archive_blocked"
+	| "close_effect_attention";
+
+interface AdminDealOperationActionBase {
+	disabledReason: string | null;
+	label: string;
+}
+
+export type AdminDealOperationAction =
+	| (AdminDealOperationActionBase & {
+			event: "DEAL_LOCKED";
+			payloadKind: "closing_date";
+			requiresPayload: true;
+			source: "governed_transition";
+	  })
+	| (AdminDealOperationActionBase & {
+			event: "LAWYER_VERIFIED";
+			payloadKind: "verification_id";
+			requiresPayload: true;
+			source: "governed_transition";
+	  })
+	| (AdminDealOperationActionBase & {
+			event:
+				| "REPRESENTATION_CONFIRMED"
+				| "LAWYER_APPROVED_DOCUMENTS"
+				| "ALL_PARTIES_SIGNED";
+			payloadKind: "none";
+			requiresPayload: false;
+			source: "governed_transition";
+	  })
+	| (AdminDealOperationActionBase & {
+			event: "FUNDS_RECEIVED";
+			payloadKind: "manual_funds";
+			requiresPayload: true;
+			source: "manual_funds_confirmation";
+	  })
+	| (AdminDealOperationActionBase & {
+			event: "DEAL_CANCELLED";
+			payloadKind: "cancel_reason";
+			requiresPayload: true;
+			source: "governed_transition";
+	  });
+
+export interface AdminDealOperationBlocker {
+	kind: AdminDealOperationBlockerKind;
+	message: string;
+	severity: "info" | "warning" | "critical";
+}
+
+export interface AdminDealOperationsCard {
+	_id: Id<"deals">;
+	actions: AdminDealOperationAction[];
+	blockers: AdminDealOperationBlocker[];
+	closingDate: number | null;
+	closingTeam: Array<{
+		assignedAt: number;
+		role: Doc<"closingTeamAssignments">["role"];
+		userId: string;
+	}>;
+	createdAt: number;
+	createdBy: string;
+	filters: AdminDealOperationsFilter[];
+	fractionalShareDisplayPercent: number | null;
+	fractionalShareUnits: number;
+	lifecycle: {
+		phase: DealPhase;
+		status: string;
+		subState: string | null;
+	};
+	mortgageId: Id<"mortgages">;
+	nextAction: AdminDealOperationAction | null;
+	participants: Pick<
+		DealParticipantProjection,
+		"buyer" | "seller" | "lawyer" | "fractionalShareStatus"
+	>;
+	signing: {
+		activeAttemptId: Id<"dealEnvelopeAttempts"> | null;
+		completedRequiredCount: number;
+		exceptionCount: number;
+		requiredCount: number;
+		status: string;
+	};
+}
+
+export interface AdminDealOperationsProjection {
+	cards: AdminDealOperationsCard[];
+	columns: DealsByPhase;
+	filters: Record<AdminDealOperationsFilter, number>;
+}
+
+export interface AdminDealOperationsDetail {
+	access: {
+		active: Array<{
+			grantedAt: number;
+			role: Doc<"dealAccess">["role"];
+			userId: string;
+		}>;
+		revoked: Array<{
+			grantedAt: number;
+			revokedAt: number | null;
+			role: Doc<"dealAccess">["role"];
+			userId: string;
+		}>;
+	};
+	auditTimeline: Array<{
+		eventId: string;
+		eventType: string;
+		newState: string | null;
+		outcome: string;
+		previousState: string | null;
+		reason: string | null;
+		timestamp: number;
+	}>;
+	blockers: AdminDealOperationBlocker[];
+	closeEvidence: AdminCloseEvidenceProjection;
+	deal: {
+		closingDate: number | null;
+		createdAt: number;
+		dealId: Id<"deals">;
+		fractionalShareDisplayPercent: number | null;
+		fractionalShareUnits: number;
+		lockingFeeAmount: number | null;
+		reservationId: Id<"ledger_reservations"> | null;
+		status: string;
+	};
+	documentInstances: PortalDealDocumentInstance[];
+	documentPackage: PortalDealDocumentPackage | null;
+	lifecycle: {
+		phase: DealPhase;
+		status: string;
+		subState: string | null;
+	};
+	mortgage: {
+		maturityDate: string;
+		mortgageId: Id<"mortgages">;
+		paymentAmount: number;
+		paymentFrequency: string;
+		principal: number;
+		status: string;
+	} | null;
+	nextActions: AdminDealOperationAction[];
+	participants: DealParticipantProjection;
+	property: PortalDealDetail["property"];
+	signing: {
+		activeAttemptId: Id<"dealEnvelopeAttempts"> | null;
+		attempts: Array<{
+			active: boolean;
+			attemptId: Id<"dealEnvelopeAttempts">;
+			attemptNumber: number;
+			providerDocumentId: string | null;
+			providerEnvelopeId: string | null;
+			status: string;
+			terminalReason: string | null;
+			updatedAt: number;
+		}>;
+		exceptions: Array<{
+			kind: string;
+			message: string;
+			severity: string;
+			status: string;
+			updatedAt: number;
+		}>;
+		recipients: Array<{
+			completedAt: number | null;
+			documensoRole: string;
+			name: string;
+			platformRole: string;
+			required: boolean;
+			signingOrder: number;
+			signingStatus: string;
+		}>;
+		status: string;
+	};
 }
 
 type DealDocumentPackageSurface = Awaited<
@@ -395,6 +605,629 @@ function toParticipantCloseReceipt(
 				}
 			: null,
 		signedArchiveStatus: latestSuccessfulArchive?.status ?? null,
+	};
+}
+
+function subStateForStatus(status: string): string | null {
+	if (!KNOWN_DEAL_STATUSES.has(status)) {
+		return "missing_contract";
+	}
+	if (status === "initiated") {
+		return "pending";
+	}
+	if (status === "confirmed") {
+		return "complete";
+	}
+	if (status === "failed") {
+		return "terminated";
+	}
+	const [, subState] = status.split(".");
+	return subState ?? null;
+}
+
+function actionEventForTransitionCheck(action: AdminDealOperationAction) {
+	if (action.event === "DEAL_LOCKED") {
+		return { type: action.event, closingDate: 1 };
+	}
+	if (action.event === "LAWYER_VERIFIED") {
+		return { type: action.event, verificationId: "admin-projection" };
+	}
+	if (action.event === "FUNDS_RECEIVED") {
+		return { type: action.event, method: "manual" as const };
+	}
+	if (action.event === "DEAL_CANCELLED") {
+		return { type: action.event, reason: "admin projection" };
+	}
+	return { type: action.event };
+}
+
+function canTransitionFromStatus(
+	status: string,
+	action: AdminDealOperationAction
+) {
+	if (!KNOWN_DEAL_STATUSES.has(status)) {
+		return false;
+	}
+	try {
+		const currentSnapshot = dealMachine.resolveState({
+			value: deserializeState(status) as Parameters<
+				typeof dealMachine.resolveState
+			>[0]["value"],
+			context: { dealId: "admin-operations-projection" },
+		});
+		const [nextSnapshot, transitionActions] = computeTransition(
+			dealMachine,
+			currentSnapshot,
+			actionEventForTransitionCheck(action)
+		);
+		return (
+			serializeState(nextSnapshot.value) !==
+				serializeState(currentSnapshot.value) || transitionActions.length > 0
+		);
+	} catch {
+		return false;
+	}
+}
+
+const ADMIN_DEAL_ACTION_DEFINITIONS: readonly AdminDealOperationAction[] = [
+	{
+		disabledReason: null,
+		event: "DEAL_LOCKED",
+		label: "Lock Deal",
+		payloadKind: "closing_date",
+		requiresPayload: true,
+		source: "governed_transition",
+	},
+	{
+		disabledReason: null,
+		event: "LAWYER_VERIFIED",
+		label: "Verify Lawyer",
+		payloadKind: "verification_id",
+		requiresPayload: true,
+		source: "governed_transition",
+	},
+	{
+		disabledReason: null,
+		event: "REPRESENTATION_CONFIRMED",
+		label: "Confirm Representation",
+		payloadKind: "none",
+		requiresPayload: false,
+		source: "governed_transition",
+	},
+	{
+		disabledReason: null,
+		event: "LAWYER_APPROVED_DOCUMENTS",
+		label: "Approve Documents",
+		payloadKind: "none",
+		requiresPayload: false,
+		source: "governed_transition",
+	},
+	{
+		disabledReason: null,
+		event: "ALL_PARTIES_SIGNED",
+		label: "Confirm All Signed",
+		payloadKind: "none",
+		requiresPayload: false,
+		source: "governed_transition",
+	},
+	{
+		disabledReason: null,
+		event: "FUNDS_RECEIVED",
+		label: "Confirm Funds Received",
+		payloadKind: "manual_funds",
+		requiresPayload: true,
+		source: "manual_funds_confirmation",
+	},
+	{
+		disabledReason: null,
+		event: "DEAL_CANCELLED",
+		label: "Cancel Deal",
+		payloadKind: "cancel_reason",
+		requiresPayload: true,
+		source: "governed_transition",
+	},
+] as const;
+
+function dealActionsForStatus(status: string): AdminDealOperationAction[] {
+	return ADMIN_DEAL_ACTION_DEFINITIONS.filter((action) =>
+		canTransitionFromStatus(status, action)
+	);
+}
+
+function nonCancelActions(actions: AdminDealOperationAction[]) {
+	return actions.filter((action) => action.event !== "DEAL_CANCELLED");
+}
+
+async function readDealAccessProjection(
+	ctx: Pick<QueryCtx, "db">,
+	dealId: Id<"deals">
+) {
+	const rows = await ctx.db
+		.query("dealAccess")
+		.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+		.collect();
+	return {
+		active: rows
+			.filter((row) => row.status === "active")
+			.sort((left, right) => right.grantedAt - left.grantedAt)
+			.map((row) => ({
+				grantedAt: row.grantedAt,
+				role: row.role,
+				userId: row.userId,
+			})),
+		revoked: rows
+			.filter((row) => row.status === "revoked")
+			.sort((left, right) => (right.revokedAt ?? 0) - (left.revokedAt ?? 0))
+			.map((row) => ({
+				grantedAt: row.grantedAt,
+				revokedAt: row.revokedAt ?? null,
+				role: row.role,
+				userId: row.userId,
+			})),
+	};
+}
+
+async function readClosingTeamProjection(
+	ctx: Pick<QueryCtx, "db">,
+	mortgageId: Id<"mortgages">
+): Promise<AdminDealOperationsCard["closingTeam"]> {
+	const assignments = await ctx.db
+		.query("closingTeamAssignments")
+		.withIndex("by_mortgage", (query) => query.eq("mortgageId", mortgageId))
+		.collect();
+	return assignments
+		.sort((left, right) => right.assignedAt - left.assignedAt)
+		.map((assignment) => ({
+			assignedAt: assignment.assignedAt,
+			role: assignment.role,
+			userId: assignment.userId,
+		}));
+}
+
+async function readAuditTimeline(
+	ctx: Pick<QueryCtx, "db">,
+	dealId: Id<"deals">
+) {
+	const events = await ctx.db
+		.query("auditJournal")
+		.withIndex("by_entity", (query) =>
+			query.eq("entityType", "deal").eq("entityId", String(dealId))
+		)
+		.collect();
+	return events
+		.sort((left, right) => right.timestamp - left.timestamp)
+		.slice(0, 20)
+		.map((event) => ({
+			eventId: event.eventId,
+			eventType: event.eventType,
+			newState: event.newState ?? null,
+			outcome: event.outcome,
+			previousState: event.previousState ?? null,
+			reason: event.reason ?? null,
+			timestamp: event.timestamp,
+		}));
+}
+
+async function readAdminSigningProjection(
+	ctx: Pick<QueryCtx, "db">,
+	dealId: Id<"deals">
+): Promise<AdminDealOperationsDetail["signing"]> {
+	const [attempts, recipients, exceptions] = await Promise.all([
+		ctx.db
+			.query("dealEnvelopeAttempts")
+			.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+			.collect(),
+		ctx.db
+			.query("dealEnvelopeRecipients")
+			.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+			.collect(),
+		ctx.db
+			.query("dealSigningExceptions")
+			.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+			.collect(),
+	]);
+	const sortedAttempts = attempts.sort(
+		(left, right) => right.attemptNumber - left.attemptNumber
+	);
+	const activeAttempt =
+		sortedAttempts.find((attempt) => attempt.active) ??
+		sortedAttempts[0] ??
+		null;
+	const activeRecipients = activeAttempt
+		? recipients
+				.filter((recipient) => recipient.attemptId === activeAttempt._id)
+				.sort((left, right) => {
+					if (left.signingOrder !== right.signingOrder) {
+						return left.signingOrder - right.signingOrder;
+					}
+					return left.createdAt - right.createdAt;
+				})
+		: [];
+	const openExceptions = exceptions.filter(
+		(exception) => exception.status === "open"
+	);
+	const status =
+		openExceptions.length > 0
+			? "envelope_exception"
+			: (activeAttempt?.status ?? "not_started");
+
+	return {
+		activeAttemptId: activeAttempt?._id ?? null,
+		attempts: sortedAttempts.map((attempt) => ({
+			active: attempt.active,
+			attemptId: attempt._id,
+			attemptNumber: attempt.attemptNumber,
+			providerDocumentId: attempt.providerDocumentId ?? null,
+			providerEnvelopeId: attempt.providerEnvelopeId ?? null,
+			status: attempt.status,
+			terminalReason: attempt.terminalReason ?? null,
+			updatedAt: attempt.updatedAt,
+		})),
+		exceptions: exceptions
+			.sort((left, right) => right.updatedAt - left.updatedAt)
+			.map((exception) => ({
+				kind: exception.kind,
+				message: exception.message,
+				severity: exception.severity,
+				status: exception.status,
+				updatedAt: exception.updatedAt,
+			})),
+		recipients: activeRecipients.map((recipient) => ({
+			completedAt: recipient.completedAt ?? null,
+			documensoRole: recipient.documensoRole,
+			name: recipient.name,
+			platformRole: recipient.platformRole,
+			required: recipient.required,
+			signingOrder: recipient.signingOrder,
+			signingStatus: recipient.signingStatus,
+		})),
+		status,
+	};
+}
+
+function signingSummary(
+	signing: AdminDealOperationsDetail["signing"]
+): AdminDealOperationsCard["signing"] {
+	const requiredRecipients = signing.recipients.filter(
+		(recipient) => recipient.required
+	);
+	return {
+		activeAttemptId: signing.activeAttemptId,
+		completedRequiredCount: requiredRecipients.filter(
+			(recipient) => recipient.signingStatus === "completed"
+		).length,
+		exceptionCount: signing.exceptions.filter(
+			(exception) => exception.status === "open"
+		).length,
+		requiredCount: requiredRecipients.length,
+		status: signing.status,
+	};
+}
+
+function packageBlockers(
+	packageSurface: DealDocumentPackageSurface
+): AdminDealOperationBlocker[] {
+	const packageStatusValue = packageSurface.package?.status ?? null;
+	if (packageStatusValue === null || packageStatusValue === "pending") {
+		return [
+			{
+				kind: "package_pending",
+				message: "Closing package has not been generated yet.",
+				severity: "info",
+			},
+		];
+	}
+	if (
+		packageStatusValue === "failed" ||
+		packageStatusValue === "partial_failure"
+	) {
+		return [
+			{
+				kind: "package_failed",
+				message:
+					packageSurface.package?.lastError ??
+					"Closing package generation needs attention.",
+				severity: "critical",
+			},
+		];
+	}
+	return [];
+}
+
+function participantBlockers(
+	participants: DealParticipantProjection
+): AdminDealOperationBlocker[] {
+	const blockers: AdminDealOperationBlocker[] = [];
+	if (!participants.fractionalShareStatus.isValid) {
+		blockers.push({
+			kind: "invalid_fraction",
+			message:
+				participants.fractionalShareStatus.validationError ??
+				"Fractional share units are invalid.",
+			severity: "critical",
+		});
+	}
+	if (!participants.buyer.userId) {
+		blockers.push({
+			kind: "missing_participant",
+			message: "Buyer identity is unresolved.",
+			severity: "warning",
+		});
+	}
+	if (!participants.seller.userId) {
+		blockers.push({
+			kind: "missing_participant",
+			message: "Seller identity is unresolved.",
+			severity: "warning",
+		});
+	}
+	if (participants.lawyer.authId && !participants.lawyer.hasActiveDealAccess) {
+		blockers.push({
+			kind: "missing_lawyer_access",
+			message: "Assigned lawyer does not have active deal access.",
+			severity: "warning",
+		});
+	}
+	return blockers;
+}
+
+function signingBlockers(
+	signing: AdminDealOperationsDetail["signing"]
+): AdminDealOperationBlocker[] {
+	const openSigningException = signing.exceptions.find(
+		(exception) => exception.status === "open"
+	);
+	if (!openSigningException) {
+		return [];
+	}
+	return [
+		{
+			kind: "signing_exception",
+			message: openSigningException.message,
+			severity:
+				openSigningException.severity === "critical" ? "critical" : "warning",
+		},
+	];
+}
+
+function closeEvidenceBlockers(args: {
+	closeEvidence: AdminCloseEvidenceProjection;
+	deal: Doc<"deals">;
+}): AdminDealOperationBlocker[] {
+	const blockers: AdminDealOperationBlocker[] = [];
+	if (
+		args.deal.status === "fundsTransfer.pending" &&
+		!args.closeEvidence.funds
+	) {
+		blockers.push({
+			kind: "funds_pending",
+			message: "Funds receipt evidence has not been recorded.",
+			severity: "warning",
+		});
+	}
+	for (const archive of args.closeEvidence.archives) {
+		if (archive.status !== "archived") {
+			blockers.push({
+				kind: "archive_blocked",
+				message:
+					archive.blockerMessage ?? "Signed archive is not available yet.",
+				severity: archive.status === "failed" ? "critical" : "warning",
+			});
+		}
+	}
+	for (const outcome of args.closeEvidence.effectOutcomes) {
+		if (outcome.status === "blocked" || outcome.status === "failed") {
+			blockers.push({
+				kind: "close_effect_attention",
+				message:
+					outcome.message ??
+					`${outcome.effectName} close effect requires attention.`,
+				severity: outcome.status === "failed" ? "critical" : "warning",
+			});
+		}
+	}
+	return blockers;
+}
+
+function contractBlockers(args: {
+	deal: Doc<"deals">;
+	mortgage: Doc<"mortgages"> | null;
+}): AdminDealOperationBlocker[] {
+	const blockers: AdminDealOperationBlocker[] = [];
+	if (!KNOWN_DEAL_STATUSES.has(args.deal.status)) {
+		blockers.push({
+			kind: "missing_contract",
+			message: `Deal status "${args.deal.status}" is not recognized by the governed deal machine.`,
+			severity: "critical",
+		});
+	}
+	if (!args.mortgage) {
+		blockers.push({
+			kind: "missing_contract",
+			message: "Deal references a mortgage row that no longer exists.",
+			severity: "critical",
+		});
+	}
+	return blockers;
+}
+
+function buildAdminDealBlockers(args: {
+	closeEvidence: AdminCloseEvidenceProjection;
+	deal: Doc<"deals">;
+	mortgage: Doc<"mortgages"> | null;
+	packageSurface: DealDocumentPackageSurface;
+	participants: DealParticipantProjection;
+	signing: AdminDealOperationsDetail["signing"];
+}): AdminDealOperationBlocker[] {
+	return [
+		...contractBlockers(args),
+		...participantBlockers(args.participants),
+		...packageBlockers(args.packageSurface),
+		...signingBlockers(args.signing),
+		...closeEvidenceBlockers(args),
+	];
+}
+
+function filtersForCard(args: {
+	blockers: AdminDealOperationBlocker[];
+	deal: Doc<"deals">;
+	nonCancelActionCount: number;
+	signing: AdminDealOperationsCard["signing"];
+}): AdminDealOperationsFilter[] {
+	const filters: AdminDealOperationsFilter[] = ["all"];
+	if (args.nonCancelActionCount > 0) {
+		filters.push("needs_action");
+	}
+	if (args.blockers.length > 0) {
+		filters.push("blocked");
+	}
+	if (
+		args.signing.status === "sent" ||
+		args.signing.status === "partially_signed" ||
+		args.signing.status === "envelope_exception"
+	) {
+		filters.push("awaiting_signatures");
+	}
+	if (args.deal.status === "fundsTransfer.pending") {
+		filters.push("awaiting_funds");
+	}
+	if (args.deal.status === "confirmed") {
+		filters.push("completed");
+	}
+	if (args.deal.status === "failed") {
+		filters.push("failed");
+	}
+	return filters;
+}
+
+async function buildAdminDealOperationsDetail(
+	ctx: QueryCtx,
+	deal: Doc<"deals">,
+	viewerUserId?: Id<"users">
+): Promise<AdminDealOperationsDetail | null> {
+	const mortgage = await ctx.db.get(deal.mortgageId);
+	const [
+		property,
+		participants,
+		packageSurface,
+		closeEvidence,
+		access,
+		auditTimeline,
+	] = await Promise.all([
+		mortgage ? ctx.db.get(mortgage.propertyId) : Promise.resolve(null),
+		buildDealParticipantProjection(ctx, deal),
+		readDealDocumentPackageSurface(ctx, deal._id, {
+			isFairLendAdmin: true,
+			userId: viewerUserId,
+		}),
+		readCloseEvidenceProjection(ctx, deal._id),
+		readDealAccessProjection(ctx, deal._id),
+		readAuditTimeline(ctx, deal._id),
+	]);
+	const signing = await readAdminSigningProjection(ctx, deal._id);
+	const blockers = buildAdminDealBlockers({
+		closeEvidence,
+		deal,
+		mortgage,
+		packageSurface,
+		participants,
+		signing,
+	});
+	return {
+		access,
+		auditTimeline,
+		blockers,
+		closeEvidence,
+		deal: {
+			closingDate: deal.closingDate ?? null,
+			createdAt: deal.createdAt,
+			dealId: deal._id,
+			fractionalShareDisplayPercent: participants.fractionalShareDisplayPercent,
+			fractionalShareUnits: participants.fractionalShareUnits,
+			lockingFeeAmount: deal.lockingFeeAmount ?? null,
+			reservationId: deal.reservationId ?? null,
+			status: deal.status,
+		},
+		documentInstances: packageSurface.instances.map(
+			projectPortalDealDocumentInstance
+		),
+		documentPackage: packageSurface.package
+			? {
+					archivedAt: packageSurface.package.archivedAt,
+					lastError: packageSurface.package.lastError,
+					readyAt: packageSurface.package.readyAt,
+					retryCount: packageSurface.package.retryCount,
+					status: packageSurface.package.status,
+				}
+			: null,
+		lifecycle: {
+			phase: getDealPhase(deal.status),
+			status: deal.status,
+			subState: subStateForStatus(deal.status),
+		},
+		mortgage: mortgage
+			? {
+					maturityDate: mortgage.maturityDate,
+					mortgageId: mortgage._id,
+					paymentAmount: mortgage.paymentAmount,
+					paymentFrequency: mortgage.paymentFrequency,
+					principal: mortgage.principal,
+					status: mortgage.status,
+				}
+			: null,
+		nextActions: dealActionsForStatus(deal.status),
+		participants,
+		property: property
+			? {
+					city: property.city,
+					propertyType: property.propertyType,
+					province: property.province,
+					streetAddress: property.streetAddress,
+					unit: property.unit ?? null,
+				}
+			: null,
+		signing,
+	};
+}
+
+async function buildAdminDealOperationsCard(
+	ctx: QueryCtx,
+	deal: Doc<"deals">,
+	viewerUserId?: Id<"users">
+): Promise<AdminDealOperationsCard | null> {
+	const detail = await buildAdminDealOperationsDetail(ctx, deal, viewerUserId);
+	if (!detail) {
+		return null;
+	}
+	const primaryActions = nonCancelActions(detail.nextActions);
+	const signing = signingSummary(detail.signing);
+	return {
+		_id: deal._id,
+		actions: detail.nextActions,
+		blockers: detail.blockers,
+		closingDate: deal.closingDate ?? null,
+		closingTeam: await readClosingTeamProjection(ctx, deal.mortgageId),
+		createdAt: deal.createdAt,
+		createdBy: deal.createdBy,
+		filters: filtersForCard({
+			blockers: detail.blockers,
+			deal,
+			nonCancelActionCount: primaryActions.length,
+			signing,
+		}),
+		fractionalShareDisplayPercent:
+			detail.participants.fractionalShareDisplayPercent,
+		fractionalShareUnits: detail.participants.fractionalShareUnits,
+		lifecycle: detail.lifecycle,
+		mortgageId: deal.mortgageId,
+		nextAction: primaryActions[0] ?? null,
+		participants: {
+			buyer: detail.participants.buyer,
+			fractionalShareStatus: detail.participants.fractionalShareStatus,
+			lawyer: detail.participants.lawyer,
+			seller: detail.participants.seller,
+		},
+		signing,
 	};
 }
 
@@ -928,6 +1761,7 @@ export const getDealsByPhase = adminQuery
 			fundsTransfer: [],
 			confirmed: [],
 			failed: [],
+			unknown: [],
 		};
 
 		for (const deal of allDeals) {
@@ -965,6 +1799,89 @@ export const getDealsByPhase = adminQuery
 export const closingTeamAssignments = adminQuery
 	.handler(async (ctx) => {
 		return await ctx.db.query("closingTeamAssignments").collect();
+	})
+	.public();
+
+export const getAdminDealOperations = adminQuery
+	.handler(async (ctx): Promise<AdminDealOperationsProjection> => {
+		const viewerUser = await ctx.db
+			.query("users")
+			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+			.unique();
+		const deals = await ctx.db.query("deals").collect();
+		const cards = (
+			await Promise.all(
+				deals.map((deal) =>
+					buildAdminDealOperationsCard(ctx, deal, viewerUser?._id)
+				)
+			)
+		)
+			.filter((card): card is AdminDealOperationsCard => card !== null)
+			.sort((left, right) => {
+				const leftDate = left.closingDate ?? Number.MAX_SAFE_INTEGER;
+				const rightDate = right.closingDate ?? Number.MAX_SAFE_INTEGER;
+				if (leftDate !== rightDate) {
+					return leftDate - rightDate;
+				}
+				return right.createdAt - left.createdAt;
+			});
+
+		const columns: DealsByPhase = {
+			initiated: [],
+			lawyerOnboarding: [],
+			documentReview: [],
+			fundsTransfer: [],
+			confirmed: [],
+			failed: [],
+			unknown: [],
+		};
+		const filters: Record<AdminDealOperationsFilter, number> = {
+			all: 0,
+			needs_action: 0,
+			blocked: 0,
+			awaiting_signatures: 0,
+			awaiting_funds: 0,
+			completed: 0,
+			failed: 0,
+		};
+
+		for (const card of cards) {
+			columns[card.lifecycle.phase].push({
+				_id: card._id,
+				status: card.lifecycle.status,
+				mortgageId: card.mortgageId,
+				buyerId: card.participants.buyer.authId,
+				sellerId: card.participants.seller.authId,
+				fractionalShare: card.fractionalShareUnits,
+				fractionalShareDisplayPercent: card.fractionalShareDisplayPercent,
+				fractionalShareUnits: card.fractionalShareUnits,
+				closingDate: card.closingDate ?? undefined,
+				lawyerId: card.participants.lawyer.authId ?? undefined,
+				lawyerType: card.participants.lawyer.lawyerType ?? undefined,
+				createdAt: card.createdAt,
+				createdBy: card.createdBy,
+			});
+			for (const filter of card.filters) {
+				filters[filter] += 1;
+			}
+		}
+
+		return { cards, columns, filters };
+	})
+	.public();
+
+export const getAdminDealOperationsDetail = adminQuery
+	.input({ dealId: v.id("deals") })
+	.handler(async (ctx, args): Promise<AdminDealOperationsDetail | null> => {
+		const viewerUser = await ctx.db
+			.query("users")
+			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+			.unique();
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal) {
+			return null;
+		}
+		return buildAdminDealOperationsDetail(ctx, deal, viewerUser?._id);
 	})
 	.public();
 

@@ -23,9 +23,9 @@ export type CanonicalDocumentVariable = Infer<
 	typeof canonicalDocumentVariableValidator
 >;
 
-function canonicalVariable(
-	variable: CanonicalDocumentVariable
-): CanonicalDocumentVariable {
+function canonicalVariable<const T extends CanonicalDocumentVariable>(
+	variable: T
+): T {
 	return variable;
 }
 
