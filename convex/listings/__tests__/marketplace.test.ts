@@ -14,6 +14,7 @@ import { deriveMarketplacePropertyType } from "../marketplaceShared";
 const modules = convexModules;
 const listingApi = anyApi.listings.marketplace;
 const mortgageOwnershipApi = anyApi.admin.mortgages.ownership;
+const platformLawyersApi = anyApi.legalRepresentation.platformLawyers;
 const publicDocumentsApi = anyApi.listings.publicDocuments;
 const CANONICAL_MIC_LENDER_AUTH_ID = seedAuthIdFromEmail(
 	FAIRLEND_MIC_LENDER_EMAIL
@@ -534,6 +535,47 @@ describe("marketplace listings", () => {
 		expect(result?.listing.interestRate).toBe(7.65);
 		expect(result?.listing.monthlyPayment).toBe(1125);
 		expect(result?.similarListings[0]?.interestRate).toBe(9);
+	});
+
+	it("uses active eligible platform lawyer profiles for marketplace checkout options", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+		const { mortgageId, propertyId } = await insertMortgageFixture(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					mortgageId,
+					propertyId,
+					title: "Platform Lawyer Source Listing",
+				})
+			);
+		});
+		await fairlendAdmin(t).mutation(
+			platformLawyersApi.seedPlatformLawyerRoster,
+			{}
+		);
+
+		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(result?.lawyers.map((lawyer) => lawyer.displayName)).toEqual([
+			"Avery Chen",
+			"Morgan Patel",
+		]);
+		expect(result?.lawyers.map((lawyer) => lawyer.platformStatus)).toEqual([
+			"active",
+			"active",
+		]);
+		expect(result?.lawyers.map((lawyer) => lawyer.eligibilityStatus)).toEqual([
+			"eligible",
+			"eligible",
+		]);
 	});
 
 	it("defaults canonical MIC-owned mortgages to fully available for sale", async () => {

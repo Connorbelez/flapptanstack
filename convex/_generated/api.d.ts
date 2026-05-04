@@ -224,6 +224,8 @@ import type * as ledger_validation from "../ledger/validation.js";
 import type * as ledger_validators from "../ledger/validators.js";
 import type * as legalRepresentation_fixtures from "../legalRepresentation/fixtures.js";
 import type * as legalRepresentation_normalization from "../legalRepresentation/normalization.js";
+import type * as legalRepresentation_platformLawyers from "../legalRepresentation/platformLawyers.js";
+import type * as legalRepresentation_profiles from "../legalRepresentation/profiles.js";
 import type * as legalRepresentation_providers from "../legalRepresentation/providers.js";
 import type * as legalRepresentation_validators from "../legalRepresentation/validators.js";
 import type * as legalRepresentation_verifications from "../legalRepresentation/verifications.js";
@@ -684,6 +686,8 @@ declare const fullApi: ApiFromModules<{
   "ledger/validators": typeof ledger_validators;
   "legalRepresentation/fixtures": typeof legalRepresentation_fixtures;
   "legalRepresentation/normalization": typeof legalRepresentation_normalization;
+  "legalRepresentation/platformLawyers": typeof legalRepresentation_platformLawyers;
+  "legalRepresentation/profiles": typeof legalRepresentation_profiles;
   "legalRepresentation/providers": typeof legalRepresentation_providers;
   "legalRepresentation/validators": typeof legalRepresentation_validators;
   "legalRepresentation/verifications": typeof legalRepresentation_verifications;

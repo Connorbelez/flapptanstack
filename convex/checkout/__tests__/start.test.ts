@@ -14,11 +14,14 @@ import { buildCheckoutStripeMetadata } from "../metadata";
 import type { SelectedLawyerSnapshot } from "../validators";
 
 const BUYER_AUTH_ID = "checkout-buyer-auth";
+const PLATFORM_LAWYER_AUTH_ID = "lawyer_123";
+const SECOND_PLATFORM_LAWYER_AUTH_ID = "lawyer_456";
 const CANONICAL_MIC_LENDER_AUTH_ID = seedAuthIdFromEmail(
 	FAIRLEND_MIC_LENDER_EMAIL
 );
 const SELLER_LEDGER_LENDER_ID = CANONICAL_MIC_LENDER_AUTH_ID;
 const NON_CANONICAL_MIC_PATTERN_LENDER_ID = "checkout-mic-lender";
+const platformLawyersApi = anyApi.legalRepresentation.platformLawyers;
 
 function createHarness() {
 	const t = convexTest(schema, convexModules);
@@ -216,6 +219,56 @@ async function setupCheckoutFixture(t: ReturnType<typeof createHarness>) {
 		idempotencyKey: `issue-${String(mortgageId)}`,
 		source: { type: "system", channel: "checkout-test" },
 	});
+	await t.run(async (ctx) => {
+		for (const lawyer of [
+			{
+				authId: PLATFORM_LAWYER_AUTH_ID,
+				email: "pat@example.com",
+				name: "Pat Lawyer",
+			},
+			{
+				authId: SECOND_PLATFORM_LAWYER_AUTH_ID,
+				email: "casey@example.com",
+				name: "Casey Lawyer",
+			},
+		]) {
+			const [firstName, lastName] = lawyer.name.split(" ");
+			await ctx.db.insert("users", {
+				authId: lawyer.authId,
+				email: lawyer.email,
+				firstName: firstName ?? lawyer.name,
+				lastName: lastName ?? "Lawyer",
+			});
+			await ctx.db.insert("organizationMemberships", {
+				organizationName: "Checkout Law Firm",
+				organizationWorkosId: "org_checkout_lawfirm",
+				roleSlug: "platform_lawyer",
+				roleSlugs: ["platform_lawyer"],
+				status: "active",
+				userWorkosId: lawyer.authId,
+				workosId: `om_${lawyer.authId}`,
+			});
+		}
+	});
+	const platformLawyerProfileId = await admin.mutation(
+		platformLawyersApi.createOrDesignatePlatformLawyer,
+		{
+			authId: PLATFORM_LAWYER_AUTH_ID,
+			barNumber: "LSO123",
+			displayName: "Pat Lawyer",
+			email: "pat@example.com",
+			jurisdiction: "ON",
+			platformStatus: "active",
+		}
+	);
+	await admin.mutation(platformLawyersApi.createOrDesignatePlatformLawyer, {
+		authId: SECOND_PLATFORM_LAWYER_AUTH_ID,
+		barNumber: "LSO456",
+		displayName: "Casey Lawyer",
+		email: "casey@example.com",
+		jurisdiction: "ON",
+		platformStatus: "active",
+	});
 
 	return await t.run(async (ctx) => {
 		const buyerUserId = await ctx.db.insert("users", {
@@ -261,14 +314,20 @@ async function setupCheckoutFixture(t: ReturnType<typeof createHarness>) {
 			"listings",
 			listingFixture({ mortgageId })
 		);
-		return { lenderId, listingId, mortgageId, portalId };
+		return {
+			lenderId,
+			listingId,
+			mortgageId,
+			platformLawyerProfileId,
+			portalId,
+		};
 	});
 }
 
 function selectedLawyer() {
 	return {
 		type: "platform_lawyer" as const,
-		lawyerId: "lawyer_123",
+		lawyerId: PLATFORM_LAWYER_AUTH_ID,
 		name: "Pat Lawyer",
 		email: "pat@example.com",
 	};
@@ -549,6 +608,58 @@ describe("checkout start internal mutations", () => {
 		expect(counts).toEqual({ reservations: 0, checkouts: 0 });
 	});
 
+	it("rejects stale platform lawyer snapshots after eligibility changes", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		await asAdmin(t).mutation(platformLawyersApi.suspendPlatformLawyer, {
+			profileId: fixture.platformLawyerProfileId,
+		});
+
+		const result = await prepare(t, fixture);
+
+		expect(result).toMatchObject({
+			ok: false,
+			code: "invalid_lawyer",
+		});
+		const counts = await t.run(async (ctx) => ({
+			reservations: (await ctx.db.query("ledger_reservations").collect())
+				.length,
+			checkouts: (await ctx.db.query("checkoutSessions").collect()).length,
+		}));
+		expect(counts).toEqual({ reservations: 0, checkouts: 0 });
+	});
+
+	it("rejects platform lawyer snapshots after WorkOS role sync drifts", async () => {
+		const t = createHarness();
+		const fixture = await setupCheckoutFixture(t);
+		await t.run(async (ctx) => {
+			const memberships = await ctx.db
+				.query("organizationMemberships")
+				.withIndex("byUser", (query) =>
+					query.eq("userWorkosId", PLATFORM_LAWYER_AUTH_ID)
+				)
+				.collect();
+			for (const membership of memberships) {
+				await ctx.db.patch(membership._id, {
+					status: "inactive",
+				});
+			}
+		});
+
+		const result = await prepare(t, fixture);
+
+		expect(result).toMatchObject({
+			ok: false,
+			code: "invalid_lawyer",
+		});
+		const counts = await t.run(async (ctx) => ({
+			reservations: (await ctx.db.query("ledger_reservations").collect())
+				.length,
+			checkouts: (await ctx.db.query("checkoutSessions").collect()).length,
+		}));
+		expect(counts).toEqual({ reservations: 0, checkouts: 0 });
+	});
+
 	it("rejects guest lawyer snapshots without an explicit source before creating locks", async () => {
 		const t = createHarness();
 		const fixture = await setupCheckoutFixture(t);
@@ -621,7 +732,7 @@ describe("checkout start internal mutations", () => {
 		expect(counts).toEqual({ reservations: 2, checkouts: 2 });
 	});
 
-	it("does not replay a duplicate start with different LSO metadata", async () => {
+	it("replays platform lawyer starts with stale client-side LSO metadata", async () => {
 		const t = createHarness();
 		const fixture = await setupCheckoutFixture(t);
 		const firstLawyer: SelectedLawyerSnapshot = {
@@ -652,15 +763,15 @@ describe("checkout start internal mutations", () => {
 		expect(first.ok).toBe(true);
 		expect(second.ok).toBe(true);
 		if (!(first.ok && second.ok)) {
-			throw new Error("expected successful LSO-different prepares");
+			throw new Error("expected successful platform lawyer prepares");
 		}
-		expect(second.checkoutSessionId).not.toBe(first.checkoutSessionId);
+		expect(second.checkoutSessionId).toBe(first.checkoutSessionId);
 		const counts = await t.run(async (ctx) => ({
 			reservations: (await ctx.db.query("ledger_reservations").collect())
 				.length,
 			checkouts: (await ctx.db.query("checkoutSessions").collect()).length,
 		}));
-		expect(counts).toEqual({ reservations: 2, checkouts: 2 });
+		expect(counts).toEqual({ reservations: 1, checkouts: 1 });
 	});
 
 	it("prevents oversell when two lenders request the last available fractions", async () => {

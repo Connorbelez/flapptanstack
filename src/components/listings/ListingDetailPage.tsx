@@ -1793,13 +1793,28 @@ function buildSelectedLawyerSnapshot({
 	if (!selectedLawyer) {
 		return null;
 	}
+	if (!(selectedLawyer.id && selectedLawyer.email)) {
+		return null;
+	}
 
 	return {
 		type: "platform_lawyer",
-		...(selectedLawyer.id ? { lawyerId: selectedLawyer.id } : {}),
+		lawyerId: selectedLawyer.id,
 		name: selectedLawyer.label,
-		email: selectedLawyer.email ?? "closing@fairlend.local",
+		email: selectedLawyer.email,
 		...(selectedLawyer.firm ? { firm: selectedLawyer.firm } : {}),
+		...(selectedLawyer.barNumber || selectedLawyer.jurisdiction
+			? {
+					lso: {
+						...(selectedLawyer.barNumber
+							? { barNumber: selectedLawyer.barNumber }
+							: {}),
+						...(selectedLawyer.jurisdiction
+							? { jurisdiction: selectedLawyer.jurisdiction }
+							: {}),
+					},
+				}
+			: {}),
 	};
 }
 
