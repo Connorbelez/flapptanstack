@@ -110,8 +110,11 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				assetId: "asset-1",
 				blueprintId: "blueprint-1",
 				class: "appraisal_report",
+				contentType: "application/pdf",
 				description: "Certified third-party appraisal package.",
 				displayName: "Appraisal Report",
+				fileName: "appraisal-report.pdf",
+				kind: "pdf",
 				url: "https://example.com/appraisal-report.pdf",
 			},
 		],
@@ -238,6 +241,8 @@ describe("marketplace listing detail adapter", () => {
 		expect(model.documents[0]?.url).toBe(
 			"https://example.com/appraisal-report.pdf"
 		);
+		expect(model.documents[0]?.assetId).toBe("asset-1");
+		expect(model.documents[0]?.kind).toBe("pdf");
 		expect(model.badges[0]?.label).toBe("1ST MORTGAGE");
 		expect(model.paymentHistory).toMatchObject({
 			lateCount: 1,
