@@ -1220,16 +1220,29 @@ describe("checkout Stripe reconciliation", () => {
 		expect(counts).toEqual({ transfers: 1, webhookEvents: 1 });
 	});
 
-	it("records active-but-expired success as late-success refund intent", async () => {
+	it.each([
+		{
+			providerEventId: "evt_active_expired_open_001",
+			status: "hosted_checkout_open" as const,
+			stripePaymentIntentId: "pi_test_reconcile_open_expired",
+		},
+		{
+			providerEventId: "evt_active_expired_retryable_001",
+			status: "payment_failed_retryable" as const,
+			stripePaymentIntentId: "pi_test_reconcile_retryable_expired",
+		},
+	])("records active-but-expired $status success as late-success refund intent", async ({
+		providerEventId,
+		status,
+		stripePaymentIntentId,
+	}) => {
 		const t = createHarness();
 		const { metadata, prepared } = await prepareHostedCheckout(t);
-		const webhookEventId = await insertStripeWebhookEvent(
-			t,
-			"evt_active_expired_001"
-		);
+		const webhookEventId = await insertStripeWebhookEvent(t, providerEventId);
 		await t.run(async (ctx) => {
 			await ctx.db.patch(prepared.checkoutSessionId, {
 				expiresAt: Date.now() - 1,
+				status,
 			});
 		});
 
@@ -1241,9 +1254,9 @@ describe("checkout Stripe reconciliation", () => {
 				kind: "success",
 				metadata,
 				occurredAt: 1_711_929_600_000,
-				providerEventId: "evt_active_expired_001",
+				providerEventId,
 				stripeCheckoutSessionId: "cs_test_reconcile",
-				stripePaymentIntentId: "pi_test_reconcile",
+				stripePaymentIntentId,
 				webhookEventId,
 			}
 		);
@@ -1259,8 +1272,8 @@ describe("checkout Stripe reconciliation", () => {
 			lateSuccessRefund: {
 				status: "intent_recorded",
 				amount: 25_000,
-				paymentIntentId: "pi_test_reconcile",
-				providerEventId: "evt_active_expired_001",
+				paymentIntentId: stripePaymentIntentId,
+				providerEventId,
 			},
 		});
 	});
