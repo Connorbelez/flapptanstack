@@ -16,11 +16,14 @@ import {
 } from "../listings/portalVisibility";
 import {
 	assertCheckoutTransitionAllowed,
+	CHECKOUT_ACTIVE_STATUSES,
 	isActiveCheckoutStatus,
+	isTerminalCheckoutStatus,
 } from "./status";
 import {
 	assertPositiveWholeFractions,
 	buildCheckoutIdempotencyKey,
+	buildCheckoutReleaseIdempotencyKey,
 	CHECKOUT_SESSION_TTL_MS,
 	checkoutFailure,
 	type StartMarketplaceCheckoutResult,
@@ -47,11 +50,7 @@ const checkoutSource = (actor: string) =>
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-const activeCheckoutStatuses = [
-	"preparing_provider_session",
-	"hosted_checkout_open",
-	"payment_failed_retryable",
-] as const;
+type CheckoutReleaseStatus = "abandoned" | "expired";
 
 const prepareMarketplaceCheckoutArgsValidator = {
 	listingId: v.id("listings"),
@@ -74,6 +73,48 @@ const markProviderStartFailedArgsValidator = {
 	failureReason: v.string(),
 	now: v.optional(v.number()),
 };
+
+const expireCheckoutSessionArgsValidator = {
+	checkoutSessionId: v.id("checkoutSessions"),
+	now: v.optional(v.number()),
+	reason: v.optional(v.string()),
+};
+
+const abandonCheckoutSessionArgsValidator = {
+	checkoutSessionId: v.id("checkoutSessions"),
+	now: v.optional(v.number()),
+	viewerAuthId: v.string(),
+	viewerIsFairLendAdmin: v.boolean(),
+};
+
+const listExpiredCheckoutSessionsArgsValidator = {
+	limit: v.optional(v.number()),
+	now: v.optional(v.number()),
+};
+
+const recordProviderExpiryAttemptArgsValidator = {
+	checkoutSessionId: v.id("checkoutSessions"),
+	error: v.optional(v.string()),
+	ok: v.boolean(),
+	now: v.optional(v.number()),
+};
+
+function checkoutSystemSource(reason: string) {
+	return {
+		type: "system" as const,
+		actor: reason,
+		channel: "marketplace_checkout",
+	};
+}
+
+function isProviderCleanupUnfinished(session: CheckoutSessionDoc): boolean {
+	return (
+		session.stripeCheckoutSessionId !== undefined &&
+		(session.status === "expired" || session.status === "abandoned") &&
+		session.providerExpiryStatus !== "succeeded" &&
+		session.providerExpiryStatus !== "not_required"
+	);
+}
 
 function isSameActiveCheckout(
 	session: CheckoutSessionDoc,
@@ -109,25 +150,15 @@ function sameSelectedLawyer(
 	);
 }
 
-function buildReservationIdempotencyKey(args: {
-	readonly lenderId: Id<"lenders">;
-	readonly listingId: Id<"listings">;
-	readonly now: number;
-	readonly requestedFractions: number;
-	readonly selectedLawyer: CheckoutSessionDoc["selectedLawyer"];
-}): string {
-	const lawyerDiscriminator =
-		args.selectedLawyer.type === "platform_lawyer"
-			? (args.selectedLawyer.lawyerId ?? args.selectedLawyer.email)
-			: args.selectedLawyer.email;
+function selectedLawyerIdempotencyPart(
+	selectedLawyer: CheckoutSessionDoc["selectedLawyer"]
+): string {
 	return [
-		"marketplace-checkout-reservation",
-		String(args.listingId),
-		String(args.lenderId),
-		String(args.requestedFractions),
-		args.selectedLawyer.type,
-		lawyerDiscriminator,
-		String(args.now),
+		selectedLawyer.type,
+		selectedLawyer.type === "platform_lawyer" ? selectedLawyer.lawyerId : "",
+		selectedLawyer.email,
+		selectedLawyer.name,
+		selectedLawyer.firm ?? "",
 	].join(":");
 }
 
@@ -142,7 +173,7 @@ async function findActiveCheckoutSession(
 		selectedLawyer: CheckoutSessionDoc["selectedLawyer"];
 	}
 ): Promise<CheckoutSessionDoc | null> {
-	for (const status of activeCheckoutStatuses) {
+	for (const status of CHECKOUT_ACTIVE_STATUSES) {
 		const sessions = await ctx.db
 			.query("checkoutSessions")
 			.withIndex("by_listing_status", (q) =>
@@ -157,6 +188,85 @@ async function findActiveCheckoutSession(
 		}
 	}
 	return null;
+}
+
+function releasePrepared(session: CheckoutSessionDoc) {
+	return {
+		checkoutSessionId: session._id,
+		expiresAt: session.expiresAt,
+		providerExpiryAttemptedAt: session.providerExpiryAttemptedAt,
+		providerExpiryStatus: session.providerExpiryStatus,
+		status: session.status,
+		stripeCheckoutSessionId: session.stripeCheckoutSessionId,
+	};
+}
+
+async function releaseCheckoutSession(
+	ctx: MutationCtx,
+	args: {
+		actorAuthId: string;
+		checkoutSession: CheckoutSessionDoc;
+		now: number;
+		reason: string;
+		sourceType: "system" | "user";
+		status: CheckoutReleaseStatus;
+	}
+) {
+	if (
+		isTerminalCheckoutStatus(args.checkoutSession.status) &&
+		args.checkoutSession.status !== args.status
+	) {
+		return releasePrepared(args.checkoutSession);
+	}
+	if (args.checkoutSession.status !== args.status) {
+		assertCheckoutTransitionAllowed(args.checkoutSession.status, args.status);
+	}
+
+	const reservation = await ctx.db.get(args.checkoutSession.reservationId);
+	if (!reservation) {
+		throw new ConvexError({
+			code: "CHECKOUT_RESERVATION_NOT_FOUND" as const,
+			message: `Checkout ${args.checkoutSession._id} references missing reservation ${args.checkoutSession.reservationId}`,
+		});
+	}
+	if (reservation.status === "pending") {
+		await voidReservationHandler(ctx, {
+			reservationId: args.checkoutSession.reservationId,
+			effectiveDate: today(),
+			idempotencyKey: buildCheckoutReleaseIdempotencyKey(
+				args.checkoutSession._id,
+				args.status
+			),
+			reason: args.reason,
+			source:
+				args.sourceType === "system"
+					? checkoutSystemSource(args.reason)
+					: checkoutSource(args.actorAuthId),
+		});
+	} else if (reservation.status !== "voided") {
+		throw new ConvexError({
+			code: "CHECKOUT_RESERVATION_NOT_RELEASABLE" as const,
+			message: `Checkout ${args.checkoutSession._id} reservation ${reservation._id} is ${reservation.status}, expected pending or voided`,
+		});
+	}
+
+	if (args.checkoutSession.status !== args.status) {
+		await ctx.db.patch(args.checkoutSession._id, {
+			status: args.status,
+			failureReason: args.reason,
+			resolvedAt: args.now,
+			updatedAt: args.now,
+			...(args.checkoutSession.stripeCheckoutSessionId
+				? {}
+				: { providerExpiryStatus: "not_required" as const }),
+		});
+	}
+
+	const updated = await ctx.db.get(args.checkoutSession._id);
+	if (!updated) {
+		throw new ConvexError("Checkout session missing after release");
+	}
+	return releasePrepared(updated);
 }
 
 function checkoutPrepared(session: CheckoutSessionDoc) {
@@ -345,13 +455,11 @@ export const prepareMarketplaceCheckout = convex
 				buyerLenderId: buyerLedgerLenderId,
 				amount: requestedFractions,
 				effectiveDate: today(),
-				idempotencyKey: buildReservationIdempotencyKey({
-					lenderId: lender._id,
-					listingId: listingCheck._id,
-					now,
-					requestedFractions,
-					selectedLawyer,
-				}),
+				idempotencyKey: `marketplace-checkout-reservation:${String(
+					listingCheck._id
+				)}:${String(lender._id)}:${requestedFractions}:${selectedLawyerIdempotencyPart(
+					selectedLawyer
+				)}:${String(now)}`,
 				source: checkoutSource(args.viewerAuthId),
 				metadata: {
 					listingId: String(listingCheck._id),
@@ -495,5 +603,128 @@ export const markProviderStartFailed = convex
 			throw new ConvexError("Checkout session missing after compensation");
 		}
 		return checkoutPrepared(updated);
+	})
+	.internal();
+
+export const expireCheckoutSession = convex
+	.mutation()
+	.input(expireCheckoutSessionArgsValidator)
+	.handler(async (ctx, args) => {
+		const now = args.now ?? Date.now();
+		const checkoutSession = await ctx.db.get(args.checkoutSessionId);
+		if (!checkoutSession) {
+			throw new ConvexError("Checkout session not found");
+		}
+		if (
+			isActiveCheckoutStatus(checkoutSession.status) &&
+			checkoutSession.expiresAt > now
+		) {
+			return releasePrepared(checkoutSession);
+		}
+		return releaseCheckoutSession(ctx, {
+			actorAuthId: "checkout-expiry",
+			checkoutSession,
+			now,
+			reason: args.reason ?? "checkout_expired",
+			sourceType: "system",
+			status: "expired",
+		});
+	})
+	.internal();
+
+export const abandonCheckoutSession = convex
+	.mutation()
+	.input(abandonCheckoutSessionArgsValidator)
+	.handler(async (ctx, args) => {
+		const now = args.now ?? Date.now();
+		const checkoutSession = await ctx.db.get(args.checkoutSessionId);
+		if (!checkoutSession) {
+			throw new ConvexError("Checkout session not found");
+		}
+		if (
+			checkoutSession.lenderAuthId !== args.viewerAuthId &&
+			!args.viewerIsFairLendAdmin
+		) {
+			throw new ConvexError("Forbidden: checkout session owner required");
+		}
+		return releaseCheckoutSession(ctx, {
+			actorAuthId: args.viewerAuthId,
+			checkoutSession,
+			now,
+			reason: "checkout_abandoned",
+			sourceType: "user",
+			status: "abandoned",
+		});
+	})
+	.internal();
+
+export const listExpiredCheckoutSessions = convex
+	.query()
+	.input(listExpiredCheckoutSessionsArgsValidator)
+	.handler(async (ctx, args) => {
+		const now = args.now ?? Date.now();
+		const limit = Math.max(1, Math.min(args.limit ?? 25, 100));
+		const checkoutSessionIds: Id<"checkoutSessions">[] = [];
+		for (const status of CHECKOUT_ACTIVE_STATUSES) {
+			const sessions = await ctx.db
+				.query("checkoutSessions")
+				.withIndex("by_status_expires_at", (q) =>
+					q.eq("status", status).lte("expiresAt", now)
+				)
+				.take(limit - checkoutSessionIds.length);
+			checkoutSessionIds.push(...sessions.map((session) => session._id));
+			if (checkoutSessionIds.length >= limit) {
+				break;
+			}
+		}
+		if (checkoutSessionIds.length < limit) {
+			const unfinishedTerminalSessions = await ctx.db
+				.query("checkoutSessions")
+				.withIndex("by_status_expires_at", (q) =>
+					q.eq("status", "expired").lte("expiresAt", now)
+				)
+				.filter((q) =>
+					q.and(
+						q.neq(q.field("providerExpiryStatus"), "succeeded"),
+						q.neq(q.field("providerExpiryStatus"), "not_required")
+					)
+				)
+				.take(limit - checkoutSessionIds.length);
+			checkoutSessionIds.push(
+				...unfinishedTerminalSessions
+					.filter(isProviderCleanupUnfinished)
+					.map((session) => session._id)
+			);
+		}
+		return { checkoutSessionIds, now };
+	})
+	.internal();
+
+export const recordProviderExpiryAttempt = convex
+	.mutation()
+	.input(recordProviderExpiryAttemptArgsValidator)
+	.handler(async (ctx, args) => {
+		const now = args.now ?? Date.now();
+		const checkoutSession = await ctx.db.get(args.checkoutSessionId);
+		if (!checkoutSession) {
+			throw new ConvexError("Checkout session not found");
+		}
+		if (
+			checkoutSession.providerExpiryStatus === "succeeded" ||
+			checkoutSession.providerExpiryStatus === "not_required"
+		) {
+			return releasePrepared(checkoutSession);
+		}
+		await ctx.db.patch(args.checkoutSessionId, {
+			providerExpiryAttemptedAt: now,
+			providerExpiryFailureReason: args.ok ? undefined : args.error,
+			providerExpiryStatus: args.ok ? "succeeded" : "failed",
+			updatedAt: now,
+		});
+		const updated = await ctx.db.get(args.checkoutSessionId);
+		if (!updated) {
+			throw new ConvexError("Checkout session missing after provider record");
+		}
+		return releasePrepared(updated);
 	})
 	.internal();
