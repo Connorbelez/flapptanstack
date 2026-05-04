@@ -102,6 +102,8 @@ import type * as dealLocks_mutations from "../dealLocks/mutations.js";
 import type * as dealLocks_validators from "../dealLocks/validators.js";
 import type * as dealReroutes_mutations from "../dealReroutes/mutations.js";
 import type * as dealReroutes_queries from "../dealReroutes/queries.js";
+import type * as deals_envelopeWebhooks from "../deals/envelopeWebhooks.js";
+import type * as deals_envelopes from "../deals/envelopes.js";
 import type * as deals_mutations from "../deals/mutations.js";
 import type * as deals_participantProjection from "../deals/participantProjection.js";
 import type * as deals_queries from "../deals/queries.js";
@@ -538,6 +540,8 @@ declare const fullApi: ApiFromModules<{
   "dealLocks/validators": typeof dealLocks_validators;
   "dealReroutes/mutations": typeof dealReroutes_mutations;
   "dealReroutes/queries": typeof dealReroutes_queries;
+  "deals/envelopeWebhooks": typeof deals_envelopeWebhooks;
+  "deals/envelopes": typeof deals_envelopes;
   "deals/mutations": typeof deals_mutations;
   "deals/participantProjection": typeof deals_participantProjection;
   "deals/queries": typeof deals_queries;
