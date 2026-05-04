@@ -12,6 +12,17 @@ import { BorrowerLayout } from "#/routes/borrower/route";
 import { LenderLayout } from "#/routes/lender/route";
 import { api } from "../../../convex/_generated/api";
 
+vi.mock("react", async () => {
+	const { createRequire } =
+		await vi.importActual<typeof import("node:module")>("node:module");
+	const require = createRequire(import.meta.url);
+	const reactCjs = require("react") as typeof import("react");
+	return {
+		...reactCjs,
+		default: reactCjs,
+	};
+});
+
 vi.mock("@tanstack/react-router", () => ({
 	createFileRoute: () => (config: Record<string, unknown>) => config,
 	Link: ({
@@ -32,6 +43,7 @@ vi.mock("convex/react", () => ({
 	AuthLoading: ({ children }: { children: ReactNode }) => (
 		<div data-testid="auth-loading-shell">{children}</div>
 	),
+	useMutation: () => vi.fn(async () => ({ success: true })),
 }));
 
 afterEach(() => {
@@ -96,6 +108,36 @@ const workspace: ParticipantDealWorkspace = {
 	documentPackage: {
 		readyAt: 1_800_000_000_000,
 		status: "ready",
+	},
+	legalRepresentation: {
+		actions: {
+			changeGuestEmail: { allowed: true, reason: null },
+			replaceLawyer: { allowed: true, reason: null },
+			resendInvitation: { allowed: true, reason: null },
+		},
+		activeLawyerAccessCount: 1,
+		currentInvitation: {
+			acceptedAt: null,
+			expiresAt: 1_800_000_100_000,
+			invitationId: "invitation_123" as never,
+			status: "pending",
+			targetEmail: "lawyer@test.fairlend.ca",
+			updatedAt: 1_800_000_000_000,
+		},
+		gate: {
+			message: "Signed representation engagement evidence is required.",
+			reasonCodes: ["engagement_missing"],
+		},
+		kind: "guest_invitation_sent",
+		label: "Guest invitation sent",
+		selectedLawyer: {
+			email: "lawyer@test.fairlend.ca",
+			lawyerId: "lawyer@test.fairlend.ca",
+			name: "Laura Lawyer",
+			type: "guest_lawyer",
+		},
+		showInDealViews: true,
+		summary: "Invitation is pending for lawyer@test.fairlend.ca.",
 	},
 	mortgage: {
 		interestRate: 9.5,
@@ -220,6 +262,9 @@ describe("participant deal workspace UI", () => {
 		);
 
 		expect(screen.getByText("Overview")).toBeTruthy();
+		expect(screen.getByText("Legal Representation")).toBeTruthy();
+		expect(screen.getByText("Guest invitation sent")).toBeTruthy();
+		expect(screen.getByRole("button", { name: /resend/i })).toBeTruthy();
 		expect(screen.getByText("Documents & Signatures")).toBeTruthy();
 		expect(screen.getByText("Timeline")).toBeTruthy();
 		expect(screen.getByText("Parties & Counsel")).toBeTruthy();

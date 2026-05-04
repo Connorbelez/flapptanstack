@@ -18,6 +18,7 @@ import type {
 	AdminDealOperationsDetail,
 	AdminDealOperationsProjection,
 } from "../../../convex/deals/queries";
+import type { LegalRepresentationStatusProjection } from "../../../convex/legalRepresentation/status";
 import { DealOperationActionControls } from "#/components/admin/deals/DealOperationActionControls";
 import { DealOperationsConsole } from "#/components/admin/deals/DealOperationsConsole";
 import { DealOperationsPipeline } from "#/components/admin/deals/DealOperationsPipeline";
@@ -73,6 +74,42 @@ const MORTGAGE_ID = "mortgage_1" as Id<"mortgages">;
 const useMutationMock = useMutation as unknown as ReturnType<typeof vi.fn>;
 const useQueryMock = useQuery as unknown as ReturnType<typeof vi.fn>;
 
+function createLegalRepresentationProjection(
+	overrides: Partial<LegalRepresentationStatusProjection> = {}
+): LegalRepresentationStatusProjection {
+	return {
+		actions: {
+			changeGuestEmail: { allowed: true, reason: null },
+			replaceLawyer: { allowed: true, reason: null },
+			resendInvitation: { allowed: true, reason: null },
+		},
+		activeLawyerAccessCount: 1,
+		currentInvitation: {
+			acceptedAt: null,
+			expiresAt: 1_800_000_100_000,
+			invitationId: "invitation_1" as Id<"lawyerInvitations">,
+			status: "pending",
+			targetEmail: "lawyer@example.com",
+			updatedAt: 1_800_000_000_000,
+		},
+		gate: {
+			message: "Signed representation engagement evidence is required.",
+			reasonCodes: ["engagement_missing"],
+		},
+		kind: "guest_invitation_sent",
+		label: "Guest invitation sent",
+		selectedLawyer: {
+			email: "lawyer@example.com",
+			lawyerId: "lawyer@example.com",
+			name: "Closing Lawyer",
+			type: "guest_lawyer",
+		},
+		showInDealViews: true,
+		summary: "Invitation is pending for lawyer@example.com.",
+		...overrides,
+	};
+}
+
 function createCard(
 	overrides: Partial<AdminDealOperationsCard> = {}
 ): AdminDealOperationsCard {
@@ -116,6 +153,7 @@ function createCard(
 		filters: ["all", "needs_action", "blocked"],
 		fractionalShareDisplayPercent: 25,
 		fractionalShareUnits: 2500,
+		legalRepresentation: createLegalRepresentationProjection(),
 		lifecycle: {
 			phase: "initiated",
 			status: "initiated",
@@ -258,25 +296,26 @@ function createDetail(): AdminDealOperationsDetail {
 		documentInstances: [],
 		documentPackage: null,
 		lifecycle: card.lifecycle,
-			mortgage: {
-				maturityDate: "2031-01-01",
-				mortgageId: MORTGAGE_ID,
-				paymentAmount: 2500,
-				paymentFrequency: "monthly",
-				principal: 500_000,
-				status: "funded",
-			},
+		legalRepresentation: createLegalRepresentationProjection(),
+		mortgage: {
+			maturityDate: "2031-01-01",
+			mortgageId: MORTGAGE_ID,
+			paymentAmount: 2500,
+			paymentFrequency: "monthly",
+			principal: 500_000,
+			status: "funded",
+		},
 		nextActions: [card.nextAction].filter(
 			(action): action is NonNullable<typeof action> => action !== null
 		),
 		participants: card.participants,
-			property: {
-				city: "Toronto",
-				propertyType: "residential",
-				province: "ON",
-				streetAddress: "123 King Street",
-				unit: null,
-			},
+		property: {
+			city: "Toronto",
+			propertyType: "residential",
+			province: "ON",
+			streetAddress: "123 King Street",
+			unit: null,
+		},
 		signing: {
 			activeAttemptId: null,
 			attempts: [],
@@ -348,6 +387,8 @@ describe("deal operations components", () => {
 		expect(screen.getByRole("heading", { name: "Deal deal_1" })).not.toBeNull();
 		expect(screen.getByText("Lifecycle")).not.toBeNull();
 		expect(screen.getByText("Blockers And Exceptions")).not.toBeNull();
+		expect(screen.getAllByText("Legal Representation").length).toBeGreaterThan(0);
+		expect(screen.getByText("Guest invitation sent")).not.toBeNull();
 		expect(screen.getByText("Buyer One (buyer@example.com)")).not.toBeNull();
 		expect(screen.getByText("Package And Signing")).not.toBeNull();
 		expect(screen.getByText("Required signers")).not.toBeNull();
