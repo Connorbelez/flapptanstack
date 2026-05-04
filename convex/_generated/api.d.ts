@@ -16,6 +16,10 @@ import type * as accrual_interestMath from "../accrual/interestMath.js";
 import type * as accrual_ownershipPeriods from "../accrual/ownershipPeriods.js";
 import type * as accrual_queryHelpers from "../accrual/queryHelpers.js";
 import type * as accrual_types from "../accrual/types.js";
+import type * as admin_lenders_reassignment from "../admin/lenders/reassignment.js";
+import type * as admin_lenders_reassignmentInternal from "../admin/lenders/reassignmentInternal.js";
+import type * as admin_lenders_reassignmentResolution from "../admin/lenders/reassignmentResolution.js";
+import type * as admin_lenders_reassignmentTypes from "../admin/lenders/reassignmentTypes.js";
 import type * as admin_mortgages_ownership from "../admin/mortgages/ownership.js";
 import type * as admin_origination_caseDocuments from "../admin/origination/caseDocuments.js";
 import type * as admin_origination_cases from "../admin/origination/cases.js";
@@ -474,6 +478,7 @@ import type * as seed_seedObligationStates from "../seed/seedObligationStates.js
 import type * as seed_seedOnboardingRequest from "../seed/seedOnboardingRequest.js";
 import type * as seed_seedPaymentData from "../seed/seedPaymentData.js";
 import type * as seed_seedPlatformOwnership from "../seed/seedPlatformOwnership.js";
+import type * as test_adminLenderReassignmentE2e from "../test/adminLenderReassignmentE2e.js";
 import type * as test_authTestEndpoints from "../test/authTestEndpoints.js";
 import type * as test_dealPackageE2e from "../test/dealPackageE2e.js";
 import type * as test_dealPortalE2e from "../test/dealPortalE2e.js";
@@ -516,6 +521,10 @@ declare const fullApi: ApiFromModules<{
   "accrual/ownershipPeriods": typeof accrual_ownershipPeriods;
   "accrual/queryHelpers": typeof accrual_queryHelpers;
   "accrual/types": typeof accrual_types;
+  "admin/lenders/reassignment": typeof admin_lenders_reassignment;
+  "admin/lenders/reassignmentInternal": typeof admin_lenders_reassignmentInternal;
+  "admin/lenders/reassignmentResolution": typeof admin_lenders_reassignmentResolution;
+  "admin/lenders/reassignmentTypes": typeof admin_lenders_reassignmentTypes;
   "admin/mortgages/ownership": typeof admin_mortgages_ownership;
   "admin/origination/caseDocuments": typeof admin_origination_caseDocuments;
   "admin/origination/cases": typeof admin_origination_cases;
@@ -974,6 +983,7 @@ declare const fullApi: ApiFromModules<{
   "seed/seedOnboardingRequest": typeof seed_seedOnboardingRequest;
   "seed/seedPaymentData": typeof seed_seedPaymentData;
   "seed/seedPlatformOwnership": typeof seed_seedPlatformOwnership;
+  "test/adminLenderReassignmentE2e": typeof test_adminLenderReassignmentE2e;
   "test/authTestEndpoints": typeof test_authTestEndpoints;
   "test/dealPackageE2e": typeof test_dealPackageE2e;
   "test/dealPortalE2e": typeof test_dealPortalE2e;

@@ -83,7 +83,12 @@ function isSearchArgs(args: unknown): args is { search?: string } {
 
 function isPreviewArgs(
 	args: unknown
-): args is { lenderId: Id<"lenders">; targetBrokerId: Id<"brokers"> } {
+): args is {
+	expectedCurrentBrokerId?: Id<"brokers">;
+	expectedCurrentOrgId?: string;
+	lenderId: Id<"lenders">;
+	targetBrokerId: Id<"brokers">;
+} {
 	return (
 		typeof args === "object" &&
 		args !== null &&
@@ -157,7 +162,12 @@ function expectSearchQuery(search: string) {
 function expectPreviewQuery(targetBrokerId: Id<"brokers">) {
 	expect(useQueryMock.mock.calls).toContainEqual([
 		expect.anything(),
-		{ lenderId: "lender_1", targetBrokerId },
+		{
+			expectedCurrentBrokerId: "broker_current",
+			expectedCurrentOrgId: "org_meridian",
+			lenderId: "lender_1",
+			targetBrokerId,
+		},
 	]);
 }
 
@@ -168,7 +178,12 @@ function expectPreviewSkipped() {
 function expectNoPreviewQuery(targetBrokerId: Id<"brokers">) {
 	expect(useQueryMock.mock.calls).not.toContainEqual([
 		expect.anything(),
-		{ lenderId: "lender_1", targetBrokerId },
+		{
+			expectedCurrentBrokerId: "broker_current",
+			expectedCurrentOrgId: "org_meridian",
+			lenderId: "lender_1",
+			targetBrokerId,
+		},
 	]);
 }
 
@@ -352,6 +367,42 @@ describe("BrokerReassignmentDialog", () => {
 		await waitFor(() => {
 			expect(toastErrorMock).toHaveBeenCalledWith(
 				"WorkOS transfer incomplete. Lender assignment was not changed."
+			);
+		});
+		expect(onOpenChange).not.toHaveBeenCalledWith(false);
+	});
+
+	it("shows repair-needed reassignment failures from structured Convex errors", async () => {
+		const user = userEvent.setup({ document: dom.window.document });
+		const reassignBroker = mock(async () => {
+			throw Object.assign(new Error("Raw WorkOS failure"), {
+				data: {
+					attemptId: "attempt_repair",
+					canonicalAssignmentChanged: false,
+					code: "LENDER_BROKER_REASSIGNMENT_REPAIR_NEEDED",
+					message:
+						"Identity transfer incomplete. Lender assignment was not changed. Repair needed. Attempt attempt_repair.",
+					repairNeeded: true,
+				},
+			});
+		});
+		const onOpenChange = mock(() => undefined);
+		mockDialogQueries();
+		useActionMock.mockReturnValue(reassignBroker);
+
+		const view = renderDialog({ onOpenChange });
+
+		await user.click(
+			await view.findByRole("button", { name: /FairLend MIC/i })
+		);
+		await view.findByText("app.localhost:3000");
+		await user.click(
+			view.getByRole("button", { name: "Confirm reassignment" })
+		);
+
+		await waitFor(() => {
+			expect(toastErrorMock).toHaveBeenCalledWith(
+				"Identity transfer incomplete. Lender assignment was not changed. Repair needed. Attempt attempt_repair."
 			);
 		});
 		expect(onOpenChange).not.toHaveBeenCalledWith(false);

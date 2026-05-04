@@ -15,13 +15,14 @@ export const getReassignmentActionContext = convex
 		if (!lender) {
 			throw new ConvexError("Lender not found");
 		}
+		const validationBlockingReasons: string[] = [];
 		if (lender.brokerId !== args.expectedCurrentBrokerId) {
-			throw new ConvexError(
+			validationBlockingReasons.push(
 				"Lender broker assignment changed. Refresh and try again."
 			);
 		}
 		if ((lender.orgId ?? null) !== (args.expectedCurrentOrgId ?? null)) {
-			throw new ConvexError(
+			validationBlockingReasons.push(
 				"Lender organization assignment changed. Refresh and try again."
 			);
 		}
@@ -35,7 +36,13 @@ export const getReassignmentActionContext = convex
 			throw new ConvexError("Reassignment context is incomplete");
 		}
 
-		return { currentBroker, lender, lenderUser, targetBroker };
+		return {
+			currentBroker,
+			lender,
+			lenderUser,
+			targetBroker,
+			validationBlockingReasons,
+		};
 	})
 	.internal();
 
@@ -179,6 +186,7 @@ export const markReassignmentFailed = convex
 		currentMembershipRoleSlugsBefore: v.optional(v.array(v.string())),
 		failureMessage: v.string(),
 		failurePhase: v.union(
+			v.literal("validation"),
 			v.literal("target_membership"),
 			v.literal("old_membership_removal"),
 			v.literal("rollback"),
@@ -203,6 +211,7 @@ export const markReassignmentFailed = convex
 			currentMembershipRoleSlugsBefore: string[];
 			failureMessage: string;
 			failurePhase:
+				| "validation"
 				| "target_membership"
 				| "old_membership_removal"
 				| "rollback"

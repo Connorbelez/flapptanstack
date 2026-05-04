@@ -527,6 +527,7 @@ export default defineSchema({
 		failureMessage: v.optional(v.string()),
 		failurePhase: v.optional(
 			v.union(
+				v.literal("validation"),
 				v.literal("target_membership"),
 				v.literal("old_membership_removal"),
 				v.literal("rollback"),
@@ -2000,7 +2001,10 @@ export default defineSchema({
 	feeSetTemplates: defineTable({
 		name: v.string(),
 		description: v.optional(v.string()),
-		isPlatformDefault: v.boolean(),
+		// Optional during the online migration from legacy fee-set rows.
+		// Backfill `undefined` to `false` or the named active platform default,
+		// then this can be tightened back to required.
+		isPlatformDefault: v.optional(v.boolean()),
 		status: feeStatusValidator,
 		createdAt: v.number(),
 		updatedAt: v.number(),

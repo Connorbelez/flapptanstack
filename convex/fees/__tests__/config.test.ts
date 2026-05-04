@@ -226,10 +226,26 @@ const listFeeSetTemplatesRef = makeFunctionReference<
 	Array<{
 		_id: Id<"feeSetTemplates">;
 		name: string;
-		isPlatformDefault: boolean;
+		isPlatformDefault?: boolean;
 		status: "active" | "inactive";
 	}>
 >("fees/queries:listFeeSetTemplates");
+
+const runFeeSetTemplatePlatformDefaultBackfillRef = makeFunctionReference<
+	"mutation",
+	Record<string, never>,
+	null
+>("fees/migrations:runFeeSetTemplatePlatformDefaultBackfill");
+
+const getFeeSetTemplatePlatformDefaultBackfillStatusRef = makeFunctionReference<
+	"query",
+	Record<string, never>,
+	{
+		feeSetTemplateCount: number;
+		missingPlatformDefaultFlagCount: number;
+		missingPlatformDefaultFlagIds: Id<"feeSetTemplates">[];
+	}
+>("fees/migrations:getFeeSetTemplatePlatformDefaultBackfillStatus");
 
 async function seedMortgageDoc(t: ReturnType<typeof createTestConvex>) {
 	return t.run(async (ctx) => {
@@ -467,6 +483,87 @@ describe("mortgage fee configuration", () => {
 			isPlatformDefault: true,
 			name: DEFAULT_FEE_SET_NAME,
 			status: "active",
+		});
+	});
+
+	it("repairs a legacy named standard fee set missing the platform default flag", async () => {
+		const t = createTestConvex();
+		const existingId = await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("feeSetTemplates", {
+				name: DEFAULT_FEE_SET_NAME,
+				description: "Legacy standard fee set without default flag",
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const defaults = await t.run(async (ctx) => {
+			return await ensureDefaultFeeTemplatesAndSet(ctx.db);
+		});
+
+		expect(defaults.feeSetId).toBe(existingId);
+		const rows = await t.run(async (ctx) => {
+			return await ctx.db.query("feeSetTemplates").collect();
+		});
+		expect(rows.find((row) => row._id === existingId)).toMatchObject({
+			isPlatformDefault: true,
+			name: DEFAULT_FEE_SET_NAME,
+			status: "active",
+		});
+	});
+
+	it("backfills legacy fee set default flags for schema rollout", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+		const [standardId, customId] = await t.run(async (ctx) => {
+			const now = Date.now();
+			const standardFeeSetId = await ctx.db.insert("feeSetTemplates", {
+				name: DEFAULT_FEE_SET_NAME,
+				description: "Legacy standard fee set without default flag",
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			const customFeeSetId = await ctx.db.insert("feeSetTemplates", {
+				name: "Custom Fees",
+				description: "Legacy custom fee set without default flag",
+				status: "active",
+				createdAt: now,
+				updatedAt: now,
+			});
+			return [standardFeeSetId, customFeeSetId] as const;
+		});
+
+		expect(
+			await asAdmin.query(getFeeSetTemplatePlatformDefaultBackfillStatusRef, {})
+		).toMatchObject({
+			feeSetTemplateCount: 2,
+			missingPlatformDefaultFlagCount: 2,
+			missingPlatformDefaultFlagIds: expect.arrayContaining([
+				standardId,
+				customId,
+			]),
+		});
+
+		await asAdmin.mutation(runFeeSetTemplatePlatformDefaultBackfillRef, {});
+
+		expect(
+			await asAdmin.query(getFeeSetTemplatePlatformDefaultBackfillStatusRef, {})
+		).toMatchObject({
+			feeSetTemplateCount: 2,
+			missingPlatformDefaultFlagCount: 0,
+		});
+		const rows = await t.run(async (ctx) => {
+			return await ctx.db.query("feeSetTemplates").collect();
+		});
+		expect(rows.find((row) => row._id === standardId)).toMatchObject({
+			isPlatformDefault: true,
+		});
+		expect(rows.find((row) => row._id === customId)).toMatchObject({
+			isPlatformDefault: false,
 		});
 	});
 

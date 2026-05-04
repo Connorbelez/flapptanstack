@@ -22,6 +22,7 @@ interface ReassignmentActionContext {
 	lender: Doc<"lenders">;
 	lenderUser: Doc<"users">;
 	targetBroker: Doc<"brokers">;
+	validationBlockingReasons: string[];
 }
 
 interface ReassignmentContextArgs extends Record<string, unknown> {
@@ -70,6 +71,7 @@ interface MarkReassignmentFailedArgs extends Record<string, unknown> {
 	currentMembershipRoleSlugsBefore?: string[];
 	failureMessage: string;
 	failurePhase:
+		| "validation"
 		| "target_membership"
 		| "old_membership_removal"
 		| "rollback"
@@ -91,6 +93,7 @@ interface ReassignBrokerResult {
 interface TargetMembershipTransferResult {
 	rollback:
 		| { kind: "none" }
+		| { kind: "deactivate"; membershipId: string }
 		| { kind: "delete"; membershipId: string }
 		| {
 				kind: "restore_roles";
@@ -148,7 +151,12 @@ const markReassignmentFailedRef = makeFunctionReference<
 
 const previewBrokerReassignmentRef = makeFunctionReference<
 	"query",
-	{ lenderId: Id<"lenders">; targetBrokerId: Id<"brokers"> },
+	{
+		expectedCurrentBrokerId?: Id<"brokers">;
+		expectedCurrentOrgId?: string;
+		lenderId: Id<"lenders">;
+		targetBrokerId: Id<"brokers">;
+	},
 	BrokerReassignmentPreview
 >("admin/lenders/reassignment:previewBrokerReassignment");
 
@@ -182,6 +190,21 @@ function isMissingCreatedMembershipIdError(error: unknown) {
 		error instanceof Error &&
 		error.message === MISSING_CREATED_MEMBERSHIP_ID_ERROR
 	);
+}
+
+function repairNeededError(args: {
+	attemptId: Id<"lenderBrokerReassignmentAttempts">;
+	canonicalAssignmentChanged: boolean;
+	phase: "rollback" | "convex_patch";
+}) {
+	return new ConvexError({
+		attemptId: String(args.attemptId),
+		canonicalAssignmentChanged: args.canonicalAssignmentChanged,
+		code: "LENDER_BROKER_REASSIGNMENT_REPAIR_NEEDED",
+		message: `Identity transfer incomplete. Lender assignment was not changed. Repair needed. Attempt ${String(args.attemptId)}.`,
+		phase: args.phase,
+		repairNeeded: true,
+	});
 }
 
 async function markAttemptFailed(
@@ -219,11 +242,14 @@ async function transferTargetMembership(args: {
 	try {
 		const memberships = await args.provisioning.listOrganizationMemberships({
 			organizationId: args.targetOrgId,
-			statuses: ["active"],
+			statuses: ["active", "inactive"],
 			userId: args.actionContext.lenderUser.authId,
 		});
-		const activeTargetMembershipWithRole = memberships.find((membership) =>
-			hasMembershipRole(membership, args.roleSlug)
+		const activeMemberships = memberships.filter(
+			(membership) => membership.status === "active"
+		);
+		const activeTargetMembershipWithRole = activeMemberships.find(
+			(membership) => hasMembershipRole(membership, args.roleSlug)
 		);
 		if (activeTargetMembershipWithRole) {
 			return {
@@ -232,7 +258,7 @@ async function transferTargetMembership(args: {
 				targetMembershipWasPreexisting: true,
 			};
 		}
-		const activeTargetMembership = memberships[0];
+		const activeTargetMembership = activeMemberships[0];
 		if (activeTargetMembership) {
 			const originalRoleSlugs = membershipRoleSlugs(activeTargetMembership);
 			const updatedRoleSlugs = [...originalRoleSlugs, args.roleSlug];
@@ -247,6 +273,24 @@ async function transferTargetMembership(args: {
 					originalRoleSlugs,
 				},
 				targetMembershipId: activeTargetMembership.id,
+				targetMembershipWasPreexisting: true,
+			};
+		}
+		const inactiveTargetMembership = memberships.find(
+			(membership) => membership.status === "inactive"
+		);
+		if (inactiveTargetMembership) {
+			const created = await args.provisioning.createOrganizationMembership({
+				organizationId: args.targetOrgId,
+				roleSlug: args.roleSlug,
+				userId: args.actionContext.lenderUser.authId,
+			});
+			if (!created.id) {
+				throw new Error(MISSING_CREATED_MEMBERSHIP_ID_ERROR);
+			}
+			return {
+				rollback: { kind: "deactivate", membershipId: created.id },
+				targetMembershipId: created.id,
 				targetMembershipWasPreexisting: true,
 			};
 		}
@@ -338,6 +382,13 @@ async function removeCurrentMembership(args: {
 			targetMembershipWasPreexisting:
 				args.targetMembership.targetMembershipWasPreexisting,
 		});
+		if (rollback.status === "failed") {
+			throw repairNeededError({
+				attemptId: args.attemptId,
+				canonicalAssignmentChanged: false,
+				phase: "rollback",
+			});
+		}
 		throw error;
 	}
 }
@@ -355,6 +406,10 @@ async function rollbackCreatedTargetMembership(args: {
 			await args.provisioning.deleteOrganizationMembership(
 				rollback.membershipId
 			);
+		} else if (rollback.kind === "deactivate") {
+			await args.provisioning.deactivateOrganizationMembership(
+				rollback.membershipId
+			);
 		} else {
 			await args.provisioning.updateOrganizationMembership(
 				rollback.membershipId,
@@ -368,7 +423,12 @@ async function rollbackCreatedTargetMembership(args: {
 }
 
 export const previewBrokerReassignment = adminQuery
-	.input({ lenderId: v.id("lenders"), targetBrokerId: v.id("brokers") })
+	.input({
+		expectedCurrentBrokerId: v.optional(v.id("brokers")),
+		expectedCurrentOrgId: v.optional(v.string()),
+		lenderId: v.id("lenders"),
+		targetBrokerId: v.id("brokers"),
+	})
 	.handler(async (ctx, args): Promise<BrokerReassignmentPreview> => {
 		const lender = await ctx.db.get(args.lenderId);
 		if (!lender) {
@@ -392,6 +452,22 @@ export const previewBrokerReassignment = adminQuery
 		const target = await buildBrokerReassignmentPartySummary(ctx, targetBroker);
 		const blockingReasons: string[] = [];
 
+		if (
+			args.expectedCurrentBrokerId &&
+			lender.brokerId !== args.expectedCurrentBrokerId
+		) {
+			blockingReasons.push(
+				"Lender broker assignment changed. Refresh and try again."
+			);
+		}
+		if (
+			"expectedCurrentOrgId" in args &&
+			(lender.orgId ?? null) !== (args.expectedCurrentOrgId ?? null)
+		) {
+			blockingReasons.push(
+				"Lender organization assignment changed. Refresh and try again."
+			);
+		}
 		if (targetBroker._id === lender.brokerId) {
 			blockingReasons.push("Target broker is already assigned to this lender.");
 		}
@@ -456,21 +532,53 @@ export const reassignBroker = adminAction
 			args
 		);
 		const targetOrgId = actionContext.targetBroker.orgId;
+
+		const preview = await ctx.runQuery(previewBrokerReassignmentRef, {
+			expectedCurrentBrokerId: args.expectedCurrentBrokerId,
+			expectedCurrentOrgId: args.expectedCurrentOrgId,
+			lenderId: args.lenderId,
+			targetBrokerId: args.targetBrokerId,
+		});
+		const validationBlockingReasons = [
+			...actionContext.validationBlockingReasons,
+			...preview.blockingReasons,
+		];
+		if (!targetOrgId) {
+			validationBlockingReasons.push(
+				"Target broker organization could not be resolved."
+			);
+		}
+		if (validationBlockingReasons.length > 0) {
+			const failureMessage = [...new Set(validationBlockingReasons)].join(" ");
+			const attemptId = await ctx.runMutation(markReassignmentStartedRef, {
+				adminAuthId: ctx.viewer.authId,
+				currentBrokerId: actionContext.currentBroker._id,
+				currentOrgId: actionContext.lender.orgId,
+				currentPortalHost: preview.current.portal?.host,
+				currentPortalId: definedPortalId(preview.current.portal?.portalId),
+				lenderId: actionContext.lender._id,
+				lenderUserId: actionContext.lenderUser._id,
+				targetBrokerId: actionContext.targetBroker._id,
+				targetOrgId: targetOrgId ?? "",
+				targetPortalHost: preview.target.portal?.host,
+				targetPortalId: definedPortalId(preview.target.portal?.portalId),
+			});
+			await markAttemptFailed(ctx, {
+				attemptId,
+				failureMessage,
+				failurePhase: "validation",
+				repairNeeded: false,
+				rollbackStatus: "not_needed",
+			});
+			throw new ConvexError(failureMessage);
+		}
+		if (!preview.target.portal) {
+			throw new ConvexError("Target portal could not be resolved.");
+		}
 		if (!targetOrgId) {
 			throw new ConvexError(
 				"Target broker organization could not be resolved."
 			);
-		}
-
-		const preview = await ctx.runQuery(previewBrokerReassignmentRef, {
-			lenderId: args.lenderId,
-			targetBrokerId: args.targetBrokerId,
-		});
-		if (preview.blockingReasons.length > 0) {
-			throw new ConvexError(preview.blockingReasons.join(" "));
-		}
-		if (!preview.target.portal) {
-			throw new ConvexError("Target portal could not be resolved.");
 		}
 
 		const targetPortalId = await resolveTargetPortalId(ctx, {
@@ -547,7 +655,11 @@ export const reassignBroker = adminAction
 				targetMembershipWasPreexisting:
 					targetMembership.targetMembershipWasPreexisting,
 			});
-			throw error;
+			throw repairNeededError({
+				attemptId,
+				canonicalAssignmentChanged: false,
+				phase: "convex_patch",
+			});
 		}
 
 		return {

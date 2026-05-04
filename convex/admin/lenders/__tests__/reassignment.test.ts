@@ -22,6 +22,8 @@ import schema from "../../../schema";
 import { convexModules } from "../../../test/moduleMaps";
 
 interface PreviewArgs extends Record<string, unknown> {
+	expectedCurrentBrokerId?: Id<"brokers">;
+	expectedCurrentOrgId?: string;
 	lenderId: Id<"lenders">;
 	targetBrokerId: Id<"brokers">;
 }
@@ -197,6 +199,10 @@ function createWorkosProvisioningMock(overrides?: {
 				),
 	};
 	return provisioning;
+}
+
+function thrownMessage(error: unknown) {
+	return error instanceof Error ? error.message : String(error);
 }
 
 async function insertUser(
@@ -615,6 +621,31 @@ describe("previewBrokerReassignment", () => {
 			"Target broker is already assigned to this lender."
 		);
 	});
+
+	it("blocks stale expected current assignment in the preview", async () => {
+		const t = createTestHarness();
+		const { lenderId } = await seedBaseReassignmentFixture(t);
+		const staleBroker = await seedExternalTargetBroker(t, {
+			authId: "user_preview_stale_broker",
+			brokerageName: "Preview Stale Brokerage",
+			orgId: "org_preview_stale",
+			portalSlug: "preview-stale",
+		});
+		const target = await seedExternalTargetBroker(t);
+
+		const preview = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(previewBrokerReassignmentRef, {
+				expectedCurrentBrokerId: staleBroker.targetBrokerId,
+				expectedCurrentOrgId: "org_current_brokerage",
+				lenderId,
+				targetBrokerId: target.targetBrokerId,
+			});
+
+		expect(preview.blockingReasons).toContain(
+			"Lender broker assignment changed. Refresh and try again."
+		);
+	});
 });
 
 describe("searchActiveBrokerTargets", () => {
@@ -708,7 +739,7 @@ describe("reassignBroker", () => {
 			1,
 			{
 				organizationId: target.orgId,
-				statuses: ["active"],
+				statuses: ["active", "inactive"],
 				userId: "user_lender",
 			}
 		);
@@ -796,6 +827,64 @@ describe("reassignBroker", () => {
 		expect(user?.homePortalId).toBe(target.targetPortalId);
 		const attempt = await readAttempt(t, result.attemptId);
 		expect(attempt?.targetMembershipId).toBe("om_target_existing");
+		expect(attempt?.targetMembershipWasPreexisting).toBe(true);
+	});
+
+	it("reactivates an inactive target membership instead of treating the target org as new", async () => {
+		const t = createTestHarness();
+		const { currentBrokerId, lenderId, lenderUserId } =
+			await seedBaseReassignmentFixture(t);
+		const target = await seedExternalTargetBroker(t);
+		const provisioning = createWorkosProvisioningMock({
+			createOrganizationMembership: vi
+				.fn()
+				.mockResolvedValue({ id: "om_target_inactive" }),
+			memberships: [
+				createWorkosMembership({
+					id: "om_target_inactive",
+					organizationId: target.orgId,
+					status: "inactive",
+					userId: "user_lender",
+				}),
+				createWorkosMembership({
+					id: "om_old",
+					organizationId: "org_current_brokerage",
+					userId: "user_lender",
+				}),
+			],
+		});
+		setWorkosProvisioningForTests(provisioning);
+
+		const result = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.action(reassignBrokerRef, {
+				expectedCurrentBrokerId: currentBrokerId,
+				expectedCurrentOrgId: "org_current_brokerage",
+				lenderId,
+				targetBrokerId: target.targetBrokerId,
+			});
+
+		expect(provisioning.listOrganizationMemberships).toHaveBeenNthCalledWith(
+			1,
+			{
+				organizationId: target.orgId,
+				statuses: ["active", "inactive"],
+				userId: "user_lender",
+			}
+		);
+		expect(provisioning.createOrganizationMembership).toHaveBeenCalledWith({
+			organizationId: target.orgId,
+			roleSlug: "lender",
+			userId: "user_lender",
+		});
+		const { lender, user } = await readCanonicalAssignment(t, {
+			lenderId,
+			lenderUserId,
+		});
+		expect(lender?.brokerId).toBe(target.targetBrokerId);
+		expect(user?.homePortalId).toBe(target.targetPortalId);
+		const attempt = await readAttempt(t, result.attemptId);
+		expect(attempt?.targetMembershipId).toBe("om_target_inactive");
 		expect(attempt?.targetMembershipWasPreexisting).toBe(true);
 	});
 
@@ -908,7 +997,61 @@ describe("reassignBroker", () => {
 		expect(after.lender?.brokerId).toBe(before.lender?.brokerId);
 		expect(after.lender?.orgId).toBe(before.lender?.orgId);
 		expect(after.user?.homePortalId).toBe(before.user?.homePortalId);
-		expect(await readLatestAttemptForLender(t, lenderId)).toBeNull();
+		const attempt = await readLatestAttemptForLender(t, lenderId);
+		expect(attempt?.status).toBe("failed");
+		expect(attempt?.failurePhase).toBe("validation");
+		expect(attempt?.rollbackStatus).toBe("not_needed");
+		expect(attempt?.failureMessage).toContain(
+			"Target broker is already assigned to this lender."
+		);
+	});
+
+	it("records validation evidence when an inactive target broker is submitted", async () => {
+		const t = createTestHarness();
+		const { currentBrokerId, lenderId, lenderUserId } =
+			await seedBaseReassignmentFixture(t);
+		const targetBrokerUserId = await insertUser(t, {
+			authId: "user_action_inactive_broker",
+			email: "action-inactive-broker@fairlend.test",
+			firstName: "Action",
+			lastName: "Inactive",
+		});
+		const targetBrokerId = await insertBroker(t, {
+			brokerageName: "Action Inactive Brokerage",
+			orgId: "org_action_inactive",
+			status: "inactive",
+			userId: targetBrokerUserId,
+		});
+		await insertPortal(t, {
+			brokerId: targetBrokerId,
+			localHost: "action-inactive.localhost:3000",
+			orgId: "org_action_inactive",
+			portalType: "broker",
+			productionHost: "action-inactive.fairlend.ca",
+			slug: "action-inactive",
+		});
+		const before = await readCanonicalAssignment(t, { lenderId, lenderUserId });
+		const provisioning = createWorkosProvisioningMock();
+		setWorkosProvisioningForTests(provisioning);
+
+		await expect(
+			t.withIdentity(FAIRLEND_ADMIN).action(reassignBrokerRef, {
+				expectedCurrentBrokerId: currentBrokerId,
+				expectedCurrentOrgId: "org_current_brokerage",
+				lenderId,
+				targetBrokerId,
+			})
+		).rejects.toThrow("Target broker is not active.");
+
+		expect(provisioning.listOrganizationMemberships).not.toHaveBeenCalled();
+		const after = await readCanonicalAssignment(t, { lenderId, lenderUserId });
+		expect(after.lender?.brokerId).toBe(before.lender?.brokerId);
+		expect(after.lender?.orgId).toBe(before.lender?.orgId);
+		expect(after.user?.homePortalId).toBe(before.user?.homePortalId);
+		const attempt = await readLatestAttemptForLender(t, lenderId);
+		expect(attempt?.status).toBe("failed");
+		expect(attempt?.failurePhase).toBe("validation");
+		expect(attempt?.failureMessage).toContain("Target broker is not active.");
 	});
 
 	it("leaves persisted mortgage and deal assignment scope unchanged", async () => {
@@ -1108,14 +1251,22 @@ describe("reassignBroker", () => {
 		});
 		setWorkosProvisioningForTests(provisioning);
 
-		await expect(
-			t.withIdentity(FAIRLEND_ADMIN).action(reassignBrokerRef, {
+		let thrown: unknown;
+		try {
+			await t.withIdentity(FAIRLEND_ADMIN).action(reassignBrokerRef, {
 				expectedCurrentBrokerId: currentBrokerId,
 				expectedCurrentOrgId: "org_current_brokerage",
 				lenderId,
 				targetBrokerId: target.targetBrokerId,
-			})
-		).rejects.toThrow("WorkOS deactivate failed");
+			});
+		} catch (error) {
+			thrown = error;
+		}
+
+		expect(thrownMessage(thrown)).toContain(
+			"Identity transfer incomplete. Lender assignment was not changed."
+		);
+		expect(thrownMessage(thrown)).toContain("Repair needed.");
 
 		const after = await readCanonicalAssignment(t, { lenderId, lenderUserId });
 		expect(after.lender?.brokerId).toBe(before.lender?.brokerId);
@@ -1134,6 +1285,7 @@ describe("reassignBroker", () => {
 		expect(attempt?.currentMembershipRoleSlugsAfter).toEqual([]);
 		expect(attempt?.failureMessage).toContain("WorkOS deactivate failed");
 		expect(attempt?.failureMessage).toContain("WorkOS rollback delete failed");
+		expect(thrownMessage(thrown)).toContain(String(attempt?._id));
 	});
 
 	it("marks repair needed when assignment changes before the final Convex patch", async () => {
@@ -1172,16 +1324,22 @@ describe("reassignBroker", () => {
 		});
 		setWorkosProvisioningForTests(provisioning);
 
-		await expect(
-			t.withIdentity(FAIRLEND_ADMIN).action(reassignBrokerRef, {
+		let thrown: unknown;
+		try {
+			await t.withIdentity(FAIRLEND_ADMIN).action(reassignBrokerRef, {
 				expectedCurrentBrokerId: currentBrokerId,
 				expectedCurrentOrgId: "org_current_brokerage",
 				lenderId,
 				targetBrokerId: target.targetBrokerId,
-			})
-		).rejects.toThrow(
-			"Lender assignment changed during reassignment. Manual repair required."
+			});
+		} catch (error) {
+			thrown = error;
+		}
+
+		expect(thrownMessage(thrown)).toContain(
+			"Identity transfer incomplete. Lender assignment was not changed."
 		);
+		expect(thrownMessage(thrown)).toContain("Repair needed.");
 
 		const after = await readCanonicalAssignment(t, { lenderId, lenderUserId });
 		expect(after.lender?.brokerId).toBe(raceBroker.targetBrokerId);
@@ -1197,6 +1355,7 @@ describe("reassignBroker", () => {
 		expect(attempt?.failureMessage).toContain(
 			"Lender assignment changed during reassignment"
 		);
+		expect(thrownMessage(thrown)).toContain(String(attempt?._id));
 	});
 
 	it("blocks stale expected current broker before WorkOS and leaves Convex unchanged", async () => {
@@ -1229,6 +1388,12 @@ describe("reassignBroker", () => {
 		expect(after.lender?.brokerId).toBe(before.lender?.brokerId);
 		expect(after.lender?.orgId).toBe(before.lender?.orgId);
 		expect(after.user?.homePortalId).toBe(before.user?.homePortalId);
+		const attempt = await readLatestAttemptForLender(t, lenderId);
+		expect(attempt?.status).toBe("failed");
+		expect(attempt?.failurePhase).toBe("validation");
+		expect(attempt?.failureMessage).toContain(
+			"Lender broker assignment changed. Refresh and try again."
+		);
 	});
 
 	it("blocks stale expected current org before WorkOS and leaves Convex unchanged", async () => {

@@ -2,13 +2,18 @@ import { Migrations } from "@convex-dev/migrations";
 import { components, internal } from "../_generated/api";
 import type { DataModel, Id } from "../_generated/dataModel";
 import { adminMutation, adminQuery } from "../fluent";
-import { attachDefaultFeeSetToMortgage, FEE_POLICY_VERSION } from "./resolver";
+import {
+	attachDefaultFeeSetToMortgage,
+	DEFAULT_FEE_SET_NAME,
+	FEE_POLICY_VERSION,
+} from "./resolver";
 
 const migrations = new Migrations<DataModel>(components.migrations);
 
 const migrationRefs = internal as unknown as {
 	fees: {
 		migrations: {
+			backfillFeeSetTemplatePlatformDefault: never;
 			backfillMortgageFees: never;
 			backfillServicingAccountingFields: never;
 		};
@@ -99,6 +104,22 @@ export const backfillServicingAccountingFields = migrations.define({
 	},
 });
 
+export const backfillFeeSetTemplatePlatformDefault = migrations.define({
+	table: "feeSetTemplates",
+	migrateOne: async (ctx, feeSetTemplate) => {
+		if (feeSetTemplate.isPlatformDefault !== undefined) {
+			return;
+		}
+
+		await ctx.db.patch(feeSetTemplate._id, {
+			isPlatformDefault:
+				feeSetTemplate.name === DEFAULT_FEE_SET_NAME &&
+				feeSetTemplate.status === "active",
+			updatedAt: Date.now(),
+		});
+	},
+});
+
 export const runMortgageFeeBackfill = adminMutation
 	.input({})
 	.handler(async (ctx) => {
@@ -115,6 +136,16 @@ export const runServicingAccountingBackfill = adminMutation
 		await migrations.runOne(
 			ctx,
 			migrationRefs.fees.migrations.backfillServicingAccountingFields
+		);
+	})
+	.public();
+
+export const runFeeSetTemplatePlatformDefaultBackfill = adminMutation
+	.input({})
+	.handler(async (ctx) => {
+		await migrations.runOne(
+			ctx,
+			migrationRefs.fees.migrations.backfillFeeSetTemplatePlatformDefault
 		);
 	})
 	.public();
@@ -160,6 +191,24 @@ export const getServicingAccountingBackfillStatus = adminQuery
 			missingAccountingFieldCount: missingAccountingFields.length,
 			missingAccountingFieldIds: missingAccountingFields.map(
 				(entry) => entry._id
+			),
+		};
+	})
+	.public();
+
+export const getFeeSetTemplatePlatformDefaultBackfillStatus = adminQuery
+	.input({})
+	.handler(async (ctx) => {
+		const feeSetTemplates = await ctx.db.query("feeSetTemplates").collect();
+		const missingPlatformDefaultFlag = feeSetTemplates.filter(
+			(template) => template.isPlatformDefault === undefined
+		);
+
+		return {
+			feeSetTemplateCount: feeSetTemplates.length,
+			missingPlatformDefaultFlagCount: missingPlatformDefaultFlag.length,
+			missingPlatformDefaultFlagIds: missingPlatformDefaultFlag.map(
+				(template) => template._id
 			),
 		};
 	})

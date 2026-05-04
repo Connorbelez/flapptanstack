@@ -49,7 +49,12 @@ const searchActiveBrokerTargetsRef = makeFunctionReference<
 
 const previewBrokerReassignmentRef = makeFunctionReference<
 	"query",
-	{ lenderId: Id<"lenders">; targetBrokerId: Id<"brokers"> },
+	{
+		expectedCurrentBrokerId?: Id<"brokers">;
+		expectedCurrentOrgId?: string;
+		lenderId: Id<"lenders">;
+		targetBrokerId: Id<"brokers">;
+	},
 	BrokerReassignmentPreview
 >("admin/lenders/reassignment:previewBrokerReassignment");
 
@@ -64,10 +69,26 @@ const reassignBrokerRef = makeFunctionReference<
 	ReassignBrokerResult
 >("admin/lenders/reassignment:reassignBroker");
 
+function getStructuredErrorMessage(error: Error) {
+	if (!("data" in error)) {
+		return null;
+	}
+
+	const data = error.data;
+	if (typeof data !== "object" || data === null || !("message" in data)) {
+		return null;
+	}
+
+	const message = data.message;
+	return typeof message === "string" ? message : null;
+}
+
 function describeError(error: unknown) {
-	return error instanceof Error
-		? error.message
-		: "Unable to reassign lender broker";
+	if (!(error instanceof Error)) {
+		return "Unable to reassign lender broker";
+	}
+
+	return getStructuredErrorMessage(error) ?? error.message;
 }
 
 function formatPortalHost(
@@ -178,7 +199,14 @@ export function BrokerReassignmentDialog({
 	);
 	const preview = useQuery(
 		previewBrokerReassignmentRef,
-		open && targetBrokerId ? { lenderId, targetBrokerId } : "skip"
+		open && targetBrokerId
+			? {
+					expectedCurrentBrokerId: currentBrokerId,
+					expectedCurrentOrgId: currentOrgId,
+					lenderId,
+					targetBrokerId,
+				}
+			: "skip"
 	);
 	const reassignBroker = useAction(reassignBrokerRef);
 	const blockingReasons = preview?.blockingReasons ?? [];
