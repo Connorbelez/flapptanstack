@@ -229,4 +229,92 @@ describe("route auth permission helpers", () => {
 			)
 		).toBeNull();
 	});
+
+	it("returns a reusable beforeLoad guard for marketplace routes", () => {
+		const guard = guardRouteAccess("listings");
+
+		expect(
+			captureThrown(() =>
+				guard({
+					context: {
+						userId: "user_lender",
+						token: "token",
+						orgId: "org_lender",
+						permissions: ["listing:view"],
+						role: "lender",
+						roles: ["lender"],
+					},
+					location: {
+						href: "/listings",
+					},
+				})
+			)
+		).toBeNull();
+
+		expect(
+			captureThrown(() =>
+				guard({
+					context: {
+						userId: "user_member",
+						token: "token",
+						orgId: "org_member",
+						permissions: [],
+						role: "member",
+						roles: ["member"],
+					},
+					location: {
+						href: "/listings",
+					},
+				})
+			)
+		).toMatchObject({
+			options: {
+				statusCode: 307,
+				to: "/unauthorized",
+			},
+		});
+	});
+
+	it("provides a direct helper for composed route guards", () => {
+		expect(
+			captureThrown(() =>
+				assertRouteAccess("listings", {
+					context: {
+						userId: null,
+						token: null,
+						orgId: null,
+						permissions: [],
+						role: null,
+						roles: [],
+					},
+					location: {
+						pathname: "/listings",
+					},
+				})
+			)
+		).toMatchObject({
+			options: {
+				statusCode: 307,
+				to: "/sign-in",
+			},
+		});
+
+		expect(
+			captureThrown(() =>
+				assertRouteAccess("listings", {
+					context: {
+						userId: "user_lender",
+						token: "token",
+						orgId: "org_lender",
+						permissions: ["listing:view"],
+						role: "lender",
+						roles: ["lender"],
+					},
+					location: {
+						href: "/listings",
+					},
+				})
+			)
+		).toBeNull();
+	});
 });

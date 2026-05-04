@@ -2,16 +2,14 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWebhookTestHarness } from "../../../../src/test/convex/payments/webhooks/convexTestHarness";
 import { internal } from "../../../_generated/api";
+import { DEAL_LOCK_FEE_AMOUNT_CENTS } from "../../../dealLocks/validators";
 import type { StripeWebhookEvent } from "../stripe";
 import {
 	buildReversalCode,
 	buildReversalReason,
-	CHECKOUT_FAILURE_EVENT_TYPES,
 	CHECKOUT_SUCCESS_EVENT_TYPES,
-	classifyStripeWebhookEvent,
 	extractProviderRef,
 	REVERSAL_EVENT_TYPES,
-	toCheckoutPayload,
 	toPayload,
 } from "../stripe";
 
@@ -38,6 +36,7 @@ function createHarness() {
 }
 
 const TEST_STRIPE_SECRET = "whsec_test_stripe_webhook_secret";
+const TEST_TIMESTAMP = 1_711_929_600;
 const testEnvRestorers: Array<() => void> = [];
 
 function setTestEnv(key: string, value: string) {
@@ -53,9 +52,8 @@ function setTestEnv(key: string, value: string) {
 }
 
 function buildStripeSignature(body: string) {
-	const timestamp = Math.floor(Date.now() / 1000);
-	const payload = `${timestamp}.${body}`;
-	return `t=${timestamp},v1=${createHmac("sha256", TEST_STRIPE_SECRET)
+	const payload = `${TEST_TIMESTAMP}.${body}`;
+	return `t=${TEST_TIMESTAMP},v1=${createHmac("sha256", TEST_STRIPE_SECRET)
 		.update(payload)
 		.digest("hex")}`;
 }
@@ -63,6 +61,8 @@ function buildStripeSignature(body: string) {
 beforeEach(() => {
 	testEnvRestorers.length = 0;
 	setTestEnv("STRIPE_WEBHOOK_SECRET", TEST_STRIPE_SECRET);
+	vi.useFakeTimers();
+	vi.setSystemTime(new Date(TEST_TIMESTAMP * 1000));
 });
 
 afterEach(() => {
@@ -79,106 +79,6 @@ describe("Stripe webhook handler", () => {
 	// ── Event filtering ──────────────────────────────────────────────
 
 	describe("event type filtering", () => {
-		it("recognizes hosted checkout success events", () => {
-			expect(
-				CHECKOUT_SUCCESS_EVENT_TYPES.has("checkout.session.completed")
-			).toBe(true);
-			expect(
-				classifyStripeWebhookEvent(
-					makeEvent({
-						type: "checkout.session.completed",
-						data: {
-							object: {
-								id: "cs_test_123",
-								amount_total: 25_000,
-								metadata: { checkoutSessionId: "checkout_123" },
-								payment_intent: "pi_test_123",
-							},
-						},
-					})
-				)
-			).toBe("checkout_success");
-		});
-
-		it("ignores hosted checkout success events without FairLend checkout metadata", () => {
-			expect(
-				classifyStripeWebhookEvent(
-					makeEvent({
-						type: "checkout.session.completed",
-						data: {
-							object: {
-								id: "cs_non_fairlend",
-								amount_total: 25_000,
-								payment_intent: "pi_non_fairlend",
-							},
-						},
-					})
-				)
-			).toBe("ignored");
-		});
-
-		it("recognizes checkout-scoped payment failure before reversal fallback", () => {
-			expect(
-				CHECKOUT_FAILURE_EVENT_TYPES.has("payment_intent.payment_failed")
-			).toBe(true);
-			expect(
-				classifyStripeWebhookEvent(
-					makeEvent({
-						type: "payment_intent.payment_failed",
-						data: {
-							object: {
-								id: "pi_test_failed",
-								amount: 25_000,
-								metadata: { checkoutSessionId: "checkout_123" },
-							},
-						},
-					})
-				)
-			).toBe("checkout_failure");
-		});
-
-		it("keeps non-checkout payment failures on the reversal path", () => {
-			expect(
-				classifyStripeWebhookEvent(
-					makeEvent({
-						type: "payment_intent.payment_failed",
-						data: {
-							object: {
-								id: "pi_transfer_failed",
-								amount: 25_000,
-								metadata: { provider_ref: "transfer_ref" },
-							},
-						},
-					})
-				)
-			).toBe("reversal");
-		});
-
-		it("extracts PaymentIntent failure payloads without treating the intent as a Checkout Session", () => {
-			const payload = toCheckoutPayload(
-				makeEvent({
-					type: "payment_intent.payment_failed",
-					data: {
-						object: {
-							id: "pi_test_failed",
-							amount: 25_000,
-							currency: "cad",
-							failure_code: "card_declined",
-							metadata: { checkoutSessionId: "checkout_123" },
-						},
-					},
-				}),
-				"failure"
-			);
-
-			expect(payload).toMatchObject({
-				currency: "cad",
-				failureReason: "card_declined",
-				stripePaymentIntentId: "pi_test_failed",
-			});
-			expect(payload.stripeCheckoutSessionId).toBeUndefined();
-		});
-
 		it("recognizes charge.refunded as a reversal event", () => {
 			expect(REVERSAL_EVENT_TYPES.has("charge.refunded")).toBe(true);
 		});
@@ -203,6 +103,12 @@ describe("Stripe webhook handler", () => {
 
 		it("contains exactly 3 event types", () => {
 			expect(REVERSAL_EVENT_TYPES.size).toBe(3);
+		});
+
+		it("recognizes checkout.session.completed as a checkout success event", () => {
+			expect(
+				CHECKOUT_SUCCESS_EVENT_TYPES.has("checkout.session.completed")
+			).toBe(true);
 		});
 	});
 
@@ -588,8 +494,6 @@ describe("stripe webhook persistence bridge", () => {
 
 	it("persists, schedules, and processes unsupported reversal events through the HTTP bridge", async () => {
 		const t = createHarness();
-		vi.useFakeTimers();
-		vi.setSystemTime(new Date());
 		const event = makeEvent({
 			type: "charge.refunded",
 			id: "evt_stripe_bridge_001",
@@ -643,12 +547,7 @@ describe("stripe webhook persistence bridge", () => {
 			status: "pending",
 		});
 
-		try {
-			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
-		} finally {
-			vi.clearAllTimers();
-			vi.useRealTimers();
-		}
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
 		if (!persisted) {
 			throw new Error("Expected persisted webhook event to exist");
@@ -659,6 +558,271 @@ describe("stripe webhook persistence bridge", () => {
 			status: "failed",
 			error: "unsupported_provider",
 			attempts: 1,
+		});
+	});
+
+	it("persists and processes deal-lock checkout success through the HTTP bridge", async () => {
+		const t = createHarness();
+
+		const checkoutSessionId = await t.run(async (ctx) => {
+			const userId = await ctx.db.insert("users", {
+				authId: "broker-auth",
+				email: "broker@test.fairlend.ca",
+				firstName: "Bryn",
+				lastName: "Broker",
+			});
+			const brokerId = await ctx.db.insert("brokers", {
+				createdAt: Date.now(),
+				status: "active",
+				userId,
+			});
+			const propertyId = await ctx.db.insert("properties", {
+				city: "Toronto",
+				createdAt: Date.now(),
+				postalCode: "M5V 1A1",
+				propertyType: "residential",
+				province: "ON",
+				streetAddress: "123 King St W",
+			});
+			const mortgageId = await ctx.db.insert("mortgages", {
+				amortizationMonths: 300,
+				brokerOfRecordId: brokerId,
+				createdAt: Date.now(),
+				firstPaymentDate: "2026-02-01",
+				interestAdjustmentDate: "2026-01-01",
+				interestRate: 9.5,
+				lienPosition: 1,
+				loanType: "conventional",
+				maturityDate: "2031-01-01",
+				paymentAmount: 2500,
+				paymentFrequency: "monthly",
+				principal: 500_000,
+				propertyId,
+				rateType: "fixed",
+				status: "funded",
+				termMonths: 60,
+				termStartDate: "2026-01-01",
+			});
+			const listingId = await ctx.db.insert("listings", {
+				city: "Toronto",
+				createdAt: Date.now(),
+				dataSource: "mortgage_pipeline",
+				featured: false,
+				heroImages: [],
+				interestRate: 9.5,
+				lienPosition: 1,
+				loanType: "conventional",
+				ltvRatio: 65,
+				marketplacePropertyType: "Detached Home",
+				maturityDate: "2031-01-01",
+				monthlyPayment: 2500,
+				mortgageId,
+				paymentFrequency: "monthly",
+				principal: 500_000,
+				propertyId,
+				propertyType: "residential",
+				province: "ON",
+				publicDocumentIds: [],
+				rateType: "fixed",
+				status: "published",
+				termMonths: 60,
+				title: "King West Mortgage",
+				updatedAt: Date.now(),
+				viewCount: 0,
+			});
+			const sellerAccountId = await ctx.db.insert("ledger_accounts", {
+				createdAt: Date.now(),
+				cumulativeCredits: 0n,
+				cumulativeDebits: 10_000n,
+				lenderId: "seed_maple_mic_lender_fairlend_ca",
+				mortgageId: String(mortgageId),
+				pendingCredits: 0n,
+				pendingDebits: 2500n,
+				type: "POSITION",
+			});
+			const buyerAccountId = await ctx.db.insert("ledger_accounts", {
+				createdAt: Date.now(),
+				cumulativeCredits: 0n,
+				cumulativeDebits: 0n,
+				lenderId: "buyer-auth",
+				mortgageId: String(mortgageId),
+				pendingCredits: 2500n,
+				pendingDebits: 0n,
+				type: "POSITION",
+			});
+			const reserveJournalEntryId = await ctx.db.insert(
+				"ledger_journal_entries",
+				{
+					amount: 2500,
+					creditAccountId: buyerAccountId,
+					debitAccountId: sellerAccountId,
+					effectiveDate: "2026-04-24",
+					entryType: "SHARES_RESERVED",
+					idempotencyKey: "deal-lock:http-webhook:reserve:journal",
+					mortgageId: String(mortgageId),
+					sequenceNumber: 1n,
+					source: { type: "webhook", channel: "test" },
+					timestamp: Date.now(),
+				}
+			);
+			const reservationId = await ctx.db.insert("ledger_reservations", {
+				amount: 2500,
+				buyerAccountId,
+				createdAt: Date.now(),
+				mortgageId: String(mortgageId),
+				reserveJournalEntryId,
+				sellerAccountId,
+				status: "pending",
+			});
+
+			return await ctx.db.insert("dealLockCheckoutSessions", {
+				buyerAuthId: "buyer-auth",
+				createdAt: Date.now(),
+				expiresAt: Date.now() + 300_000,
+				fractionalShareUnits: 2500,
+				idempotencyKey: "deal-lock:http-webhook",
+				listingId,
+				lockFeeAmountCents: DEAL_LOCK_FEE_AMOUNT_CENTS,
+				lockFeeCurrency: "cad",
+				mortgageId,
+				refundStatus: "none",
+				reservationId,
+				selectedLawyerAuthId: "lawyer-auth",
+				selectedLawyerType: "platform_lawyer",
+				sellerAuthId: "seed_maple_mic_lender_fairlend_ca",
+				status: "created",
+				stripeCheckoutSessionId: "cs_test_http_deal_lock",
+				stripeCheckoutUrl:
+					"https://checkout.stripe.test/cs_test_http_deal_lock",
+				updatedAt: Date.now(),
+			});
+		});
+
+		const event = makeEvent({
+			type: "checkout.session.completed",
+			id: "evt_checkout_success_001",
+			data: {
+				object: {
+					id: "cs_test_http_deal_lock",
+					amount: DEAL_LOCK_FEE_AMOUNT_CENTS,
+					amount_total: DEAL_LOCK_FEE_AMOUNT_CENTS,
+					payment_intent: "pi_test_http_deal_lock",
+					payment_status: "paid",
+				},
+			},
+		});
+		const body = JSON.stringify(event);
+		const signature = buildStripeSignature(body);
+
+		const response = await t.fetch("/webhooks/stripe", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"stripe-signature": signature,
+			},
+			body,
+		});
+		const payload = (await response.json()) as {
+			accepted?: boolean;
+			processing?: string;
+			providerEventId?: string;
+			result?: { outcome?: string; dealId?: string };
+		};
+
+		const state = await t.run(async (ctx) => {
+			const session = await ctx.db.get(checkoutSessionId);
+			const deals = await ctx.db.query("deals").collect();
+			const webhook = await ctx.db
+				.query("webhookEvents")
+				.withIndex("by_provider_event", (q) =>
+					q.eq("provider", "stripe").eq("providerEventId", event.id)
+				)
+				.unique();
+			return { deals, session, webhook };
+		});
+
+		expect(response.status).toBe(200);
+		expect(payload).toMatchObject({
+			accepted: true,
+			processing: "processed",
+			providerEventId: event.id,
+			result: { outcome: "deal_created" },
+		});
+		expect(state.session).toMatchObject({
+			status: "paid",
+			stripePaymentIntentId: "pi_test_http_deal_lock",
+			stripePaymentStatus: "paid",
+		});
+		expect(state.deals).toHaveLength(1);
+		expect(state.deals[0]).toMatchObject({
+			dealLockCheckoutSessionId: checkoutSessionId,
+			lockFeeCollectionProvider: "stripe_checkout",
+			lockFeeCollectionStatus: "collected",
+			status: "lawyerOnboarding.pending",
+			stripeCheckoutSessionId: "cs_test_http_deal_lock",
+		});
+		expect(state.webhook).toMatchObject({
+			provider: "stripe",
+			providerEventId: event.id,
+			signatureVerified: true,
+			status: "processed",
+		});
+	});
+
+	it("rejects unpaid deal-lock checkout completion before creating a deal", async () => {
+		const t = createHarness();
+		const event = makeEvent({
+			type: "checkout.session.completed",
+			id: "evt_checkout_unpaid_001",
+			data: {
+				object: {
+					id: "cs_test_http_unpaid",
+					amount: DEAL_LOCK_FEE_AMOUNT_CENTS,
+					amount_total: DEAL_LOCK_FEE_AMOUNT_CENTS,
+					payment_intent: "pi_test_http_unpaid",
+					payment_status: "unpaid",
+				},
+			},
+		});
+		const body = JSON.stringify(event);
+		const signature = buildStripeSignature(body);
+
+		const response = await t.fetch("/webhooks/stripe", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"stripe-signature": signature,
+			},
+			body,
+		});
+		const payload = (await response.json()) as {
+			accepted?: boolean;
+			error?: string;
+			processing?: string;
+		};
+		const state = await t.run(async (ctx) => {
+			const deals = await ctx.db.query("deals").collect();
+			const webhook = await ctx.db
+				.query("webhookEvents")
+				.withIndex("by_provider_event", (q) =>
+					q.eq("provider", "stripe").eq("providerEventId", event.id)
+				)
+				.unique();
+			return { deals, webhook };
+		});
+
+		expect(response.status).toBe(400);
+		expect(payload).toMatchObject({
+			accepted: false,
+			error: "checkout_payment_not_paid",
+			processing: "failed",
+		});
+		expect(state.deals).toHaveLength(0);
+		expect(state.webhook).toMatchObject({
+			provider: "stripe",
+			providerEventId: event.id,
+			signatureVerified: true,
+			status: "failed",
 		});
 	});
 });

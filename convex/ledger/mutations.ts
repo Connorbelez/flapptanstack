@@ -1,6 +1,6 @@
 import { ConvexError } from "convex/values";
 
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { adminMutation, ledgerMutation } from "../fluent";
@@ -743,7 +743,7 @@ export interface VoidReservationArgs {
 	effectiveDate: string;
 	idempotencyKey: string;
 	reason: string;
-	reservationId: Doc<"ledger_reservations">["_id"];
+	reservationId: Id<"ledger_reservations">;
 	source: EventSource;
 }
 
@@ -751,6 +751,7 @@ export async function voidReservationHandler(
 	ctx: MutationCtx,
 	args: VoidReservationArgs
 ) {
+	// Idempotency
 	const existingEntry = await ctx.db
 		.query("ledger_journal_entries")
 		.withIndex("by_idempotency", (q) =>
@@ -796,6 +797,7 @@ export async function voidReservationHandler(
 		});
 	}
 
+	// Release pending fields before posting audit entry
 	const amountDelta = BigInt(reservation.amount);
 	await ctx.db.patch(reservation.sellerAccountId, {
 		pendingCredits: (sellerAccount.pendingCredits ?? 0n) - amountDelta,
@@ -804,6 +806,7 @@ export async function voidReservationHandler(
 		pendingDebits: (buyerAccount.pendingDebits ?? 0n) - amountDelta,
 	});
 
+	// Post SHARES_VOIDED: reverse direction (seller receives ← buyer gives)
 	const journalEntry = await postEntry(ctx, {
 		entryType: "SHARES_VOIDED",
 		mortgageId: reservation.mortgageId,
@@ -817,6 +820,7 @@ export async function voidReservationHandler(
 		reservationId: reservation._id,
 	});
 
+	// Finalize reservation
 	await ctx.db.patch(reservation._id, {
 		status: "voided",
 		voidJournalEntryId: journalEntry._id,

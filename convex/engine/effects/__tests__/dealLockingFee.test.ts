@@ -9,8 +9,6 @@
  * within internal actions are skipped (convex-test limitation). Those paths
  * are tested in integration/e2e tests.
  */
-
-import { getFunctionName } from "convex/server";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getInitialSnapshot, transition } from "xstate";
@@ -241,6 +239,32 @@ describe("deals schema — lockingFeeAmount field", () => {
 		expect(deal).not.toBeNull();
 		expect(deal?.lockingFeeAmount).toBeUndefined();
 	});
+
+	it("accepts Stripe lock fee collection metadata", async () => {
+		const base = await seedBaseData(t);
+		const { dealId } = await seedDeal(t, base, {
+			lockingFeeAmount: 25_000,
+		});
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(dealId, {
+				lockFeeCollectionProvider: "stripe_checkout",
+				lockFeeCollectionStatus: "collected",
+				stripeCheckoutSessionId: "cs_test_schema",
+				stripePaymentIntentId: "pi_test_schema",
+				stripePaymentStatus: "paid",
+			});
+		});
+
+		const deal = await t.run(async (ctx) => ctx.db.get(dealId));
+		expect(deal).toMatchObject({
+			lockFeeCollectionProvider: "stripe_checkout",
+			lockFeeCollectionStatus: "collected",
+			stripeCheckoutSessionId: "cs_test_schema",
+			stripePaymentIntentId: "pi_test_schema",
+			stripePaymentStatus: "paid",
+		});
+	});
 });
 
 // ── collectLockingFee effect handler tests ─────────────────────────
@@ -380,6 +404,31 @@ describe("collectLockingFee effect", () => {
 		expect(actionArgs).toEqual({ transferId: fakeTransferId });
 	});
 
+	it("skips manual fee collection when Stripe checkout already collected it", async () => {
+		const fakeDealId = "deals:test-deal-stripe-fee" as Id<"deals">;
+
+		const runQuery = vi.fn().mockResolvedValue({
+			_id: fakeDealId,
+			buyerId: "buyer-user-1",
+			lockFeeCollectionProvider: "stripe_checkout",
+			lockFeeCollectionStatus: "collected",
+			lockingFeeAmount: 25_000,
+			mortgageId: "mortgages:test-mortgage-456",
+			sellerId: "seller-user-1",
+			status: "lawyerOnboarding.pending",
+		});
+		const runMutation = vi.fn();
+		const runAction = vi.fn();
+
+		await collectLockingFeeAction._handler(
+			{ runQuery, runMutation, runAction },
+			makeEffectArgs(fakeDealId, "collectLockingFee")
+		);
+
+		expect(runMutation).not.toHaveBeenCalled();
+		expect(runAction).not.toHaveBeenCalled();
+	});
+
 	it("idempotency key is deterministic per deal", async () => {
 		const fakeDealId = "deals:test-deal-abc" as Id<"deals">;
 
@@ -445,47 +494,33 @@ describe("collectLockingFee effect", () => {
 });
 
 describe("reserveShares effect", () => {
-	it("skips reservation creation when the marketplace deal already has a reservationId", async () => {
-		const fakeDealId = "deals:marketplace-deal" as Id<"deals">;
+	it("skips reservation creation when the deal already links a checkout reservation", async () => {
+		const fakeDealId = "deals:test-deal-reserved" as Id<"deals">;
 		const fakeReservationId =
-			"ledger_reservations:checkout-reservation" as Id<"ledger_reservations">;
-		const runQuery = vi.fn().mockImplementation((reference) => {
-			const referenceName = getFunctionName(reference);
-			if (referenceName === "deals/queries:getInternalDeal") {
-				return Promise.resolve({
-					_id: fakeDealId,
-					buyerId: "buyer-lender",
-					fractionalShare: 1000,
-					lenderId: "lenders:buyer-lender",
-					mortgageId: "mortgages:m1",
-					reservationId: fakeReservationId,
-					sellerId: "seller-lender",
-					status: "lawyerOnboarding.pending",
-				});
-			}
-			if (referenceName === "ledger/queries:getReservationById") {
-				return Promise.resolve({
-					_id: fakeReservationId,
-					status: "pending",
-				});
-			}
-			return Promise.resolve(null);
-		});
+			"ledger_reservations:test-reservation-123" as Id<"ledger_reservations">;
+
+		const runQuery = vi
+			.fn()
+			.mockResolvedValueOnce({
+				_id: fakeDealId,
+				fractionalShare: 2500,
+				mortgageId: "mortgages:test-mortgage-456",
+				reservationId: fakeReservationId,
+				status: "lawyerOnboarding.pending",
+			})
+			.mockResolvedValueOnce({
+				_id: fakeReservationId,
+				dealId: fakeDealId,
+				status: "pending",
+			});
 		const runMutation = vi.fn();
-		const mockCtx = { runMutation, runQuery };
 
 		await reserveSharesAction._handler(
-			mockCtx,
+			{ runMutation, runQuery },
 			makeEffectArgs(fakeDealId, "reserveShares")
 		);
 
+		expect(runQuery).toHaveBeenCalledTimes(2);
 		expect(runMutation).not.toHaveBeenCalled();
-		expect(
-			runQuery.mock.calls.some(
-				([reference]) =>
-					getFunctionName(reference) ===
-					"ledger/queries:getAccountByMortgageAndLender"
-			)
-		).toBe(false);
 	});
 });
