@@ -18,7 +18,7 @@
     "test:e2e:ui": "playwright test --ui",
     "format": "biome format",
     "lint": "biome lint",
-    "check": "biome check . --write",
+    "check": "biome check . --write --max-diagnostics=300",
     "ultracite:check": "ultracite check .",
     "ultracite:fix": "ultracite fix .",
     "prepare": "husky",
