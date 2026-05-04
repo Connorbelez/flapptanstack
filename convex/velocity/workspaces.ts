@@ -488,6 +488,34 @@ async function documentLinkDetail(
 	};
 }
 
+function activationAttemptDetail(
+	attempt: Doc<"velocityActivationAttempts"> | null
+) {
+	if (!attempt) {
+		return null;
+	}
+
+	return {
+		activationAttemptId: attempt._id,
+		bankAccountId: attempt.bankAccountId ?? null,
+		completedAt: attempt.completedAt ?? null,
+		externalCollectionScheduleId: attempt.externalCollectionScheduleId ?? null,
+		externalCustomerProfileId: attempt.externalCustomerProfileId ?? null,
+		failedAt: attempt.failedAt ?? null,
+		failureCode: attempt.failureCode ?? null,
+		failureMessage: attempt.failureMessage ?? null,
+		idempotencyKey: attempt.idempotencyKey,
+		listingId: attempt.listingId ?? null,
+		mortgageId: attempt.mortgageId ?? null,
+		reviewedSnapshotHash: attempt.reviewedSnapshotHash,
+		reviewedSnapshotId: attempt.reviewedSnapshotId,
+		rotessaCustomerRef: attempt.rotessaCustomerRef ?? null,
+		rotessaScheduleRef: attempt.rotessaScheduleRef ?? null,
+		startedAt: attempt.startedAt,
+		status: attempt.status,
+	};
+}
+
 function fairlendEnrichmentDetail(
 	enrichment: VelocityFairLendEnrichmentV1
 ): VelocityFairLendEnrichmentV1 {
@@ -509,29 +537,38 @@ async function workspaceDetail(
 	ctx: Pick<QueryCtx | MutationCtx, "db">,
 	workspace: VelocityWorkspace
 ) {
-	const [documentLinks, exceptions, snapshots] = await Promise.all([
-		ctx.db
-			.query("velocityPackageDocumentLinks")
-			.withIndex("by_workspace_role", (query) =>
-				query.eq("workspaceId", workspace._id)
-			)
-			.collect(),
-		ctx.db
-			.query("velocityPackageExceptions")
-			.filter((query) => query.eq(query.field("workspaceId"), workspace._id))
-			.collect(),
-		ctx.db
-			.query("velocityPackageSnapshots")
-			.withIndex("by_workspace_created_at", (query) =>
-				query.eq("workspaceId", workspace._id)
-			)
-			.order("desc")
-			.collect(),
-	]);
+	const [documentLinks, exceptions, latestActivationAttempt, snapshots] =
+		await Promise.all([
+			ctx.db
+				.query("velocityPackageDocumentLinks")
+				.withIndex("by_workspace_role", (query) =>
+					query.eq("workspaceId", workspace._id)
+				)
+				.collect(),
+			ctx.db
+				.query("velocityPackageExceptions")
+				.filter((query) => query.eq(query.field("workspaceId"), workspace._id))
+				.collect(),
+			ctx.db
+				.query("velocityActivationAttempts")
+				.withIndex("by_workspace_started_at", (query) =>
+					query.eq("workspaceId", workspace._id)
+				)
+				.order("desc")
+				.first(),
+			ctx.db
+				.query("velocityPackageSnapshots")
+				.withIndex("by_workspace_created_at", (query) =>
+					query.eq("workspaceId", workspace._id)
+				)
+				.order("desc")
+				.collect(),
+		]);
 
 	return {
 		workspaceId: workspace._id,
 		activation: workspace.activation ?? null,
+		activationAttempt: activationAttemptDetail(latestActivationAttempt),
 		auditSubject: {
 			entityId: String(workspace._id),
 			entityType: "velocityPackageWorkspace" as const,

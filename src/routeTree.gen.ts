@@ -145,6 +145,7 @@ import { Route as DemoBrokerWhitelabelListingsIndexRouteImport } from './routes/
 import { Route as DemoDocumentEngineDesignerTemplateIdRouteImport } from './routes/demo/document-engine/designer.$templateId'
 import { Route as DemoCrmObjectDefIdRecordIdRouteImport } from './routes/demo/crm/$objectDefId.$recordId'
 import { Route as DemoBrokerWhitelabelListingsListingIdRouteImport } from './routes/demo/broker-whitelabel/listings/$listingId'
+import { Route as AdminVelocityWorkspaceIdReviewRouteImport } from './routes/admin.velocity.$workspaceId.review'
 import { Route as AdminDocumentEngineDesignerTemplateIdRouteImport } from './routes/admin.document-engine.designer.$templateId'
 import { Route as DemoRbacAdminUnderwritingRouteRouteImport } from './routes/demo/rbac/admin/underwriting/route'
 import { Route as DemoAmpsMortgagesMortgageIdPaymentsRouteImport } from './routes/demo/amps/mortgages.$mortgageId.payments'
@@ -867,6 +868,12 @@ const DemoBrokerWhitelabelListingsListingIdRoute =
     path: '/$listingId',
     getParentRoute: () => DemoBrokerWhitelabelListingsRouteRoute,
   } as any)
+const AdminVelocityWorkspaceIdReviewRoute =
+  AdminVelocityWorkspaceIdReviewRouteImport.update({
+    id: '/velocity/$workspaceId/review',
+    path: '/velocity/$workspaceId/review',
+    getParentRoute: () => AdminRouteRoute,
+  } as any)
 const AdminDocumentEngineDesignerTemplateIdRoute =
   AdminDocumentEngineDesignerTemplateIdRouteImport.update({
     id: '/designer/$templateId',
@@ -1021,6 +1028,7 @@ export interface FileRoutesByFullPath {
   '/demo/rbac/': typeof DemoRbacIndexRoute
   '/demo/rbac/admin/underwriting': typeof DemoRbacAdminUnderwritingRouteRoute
   '/admin/document-engine/designer/$templateId': typeof AdminDocumentEngineDesignerTemplateIdRoute
+  '/admin/velocity/$workspaceId/review': typeof AdminVelocityWorkspaceIdReviewRoute
   '/demo/broker-whitelabel/listings/$listingId': typeof DemoBrokerWhitelabelListingsListingIdRoute
   '/demo/crm/$objectDefId/$recordId': typeof DemoCrmObjectDefIdRecordIdRoute
   '/demo/document-engine/designer/$templateId': typeof DemoDocumentEngineDesignerTemplateIdRoute
@@ -1149,6 +1157,7 @@ export interface FileRoutesByTo {
   '/demo/rbac': typeof DemoRbacIndexRoute
   '/demo/rbac/admin/underwriting': typeof DemoRbacAdminUnderwritingRouteRoute
   '/admin/document-engine/designer/$templateId': typeof AdminDocumentEngineDesignerTemplateIdRoute
+  '/admin/velocity/$workspaceId/review': typeof AdminVelocityWorkspaceIdReviewRoute
   '/demo/broker-whitelabel/listings/$listingId': typeof DemoBrokerWhitelabelListingsListingIdRoute
   '/demo/crm/$objectDefId/$recordId': typeof DemoCrmObjectDefIdRecordIdRoute
   '/demo/document-engine/designer/$templateId': typeof DemoDocumentEngineDesignerTemplateIdRoute
@@ -1291,6 +1300,7 @@ export interface FileRoutesById {
   '/demo/rbac/': typeof DemoRbacIndexRoute
   '/demo/rbac/admin/underwriting': typeof DemoRbacAdminUnderwritingRouteRoute
   '/admin/document-engine/designer/$templateId': typeof AdminDocumentEngineDesignerTemplateIdRoute
+  '/admin/velocity/$workspaceId/review': typeof AdminVelocityWorkspaceIdReviewRoute
   '/demo/broker-whitelabel/listings/$listingId': typeof DemoBrokerWhitelabelListingsListingIdRoute
   '/demo/crm/$objectDefId/$recordId': typeof DemoCrmObjectDefIdRecordIdRoute
   '/demo/document-engine/designer/$templateId': typeof DemoDocumentEngineDesignerTemplateIdRoute
@@ -1434,6 +1444,7 @@ export interface FileRouteTypes {
     | '/demo/rbac/'
     | '/demo/rbac/admin/underwriting'
     | '/admin/document-engine/designer/$templateId'
+    | '/admin/velocity/$workspaceId/review'
     | '/demo/broker-whitelabel/listings/$listingId'
     | '/demo/crm/$objectDefId/$recordId'
     | '/demo/document-engine/designer/$templateId'
@@ -1562,6 +1573,7 @@ export interface FileRouteTypes {
     | '/demo/rbac'
     | '/demo/rbac/admin/underwriting'
     | '/admin/document-engine/designer/$templateId'
+    | '/admin/velocity/$workspaceId/review'
     | '/demo/broker-whitelabel/listings/$listingId'
     | '/demo/crm/$objectDefId/$recordId'
     | '/demo/document-engine/designer/$templateId'
@@ -1703,6 +1715,7 @@ export interface FileRouteTypes {
     | '/demo/rbac/'
     | '/demo/rbac/admin/underwriting'
     | '/admin/document-engine/designer/$templateId'
+    | '/admin/velocity/$workspaceId/review'
     | '/demo/broker-whitelabel/listings/$listingId'
     | '/demo/crm/$objectDefId/$recordId'
     | '/demo/document-engine/designer/$templateId'
@@ -2722,6 +2735,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoBrokerWhitelabelListingsListingIdRouteImport
       parentRoute: typeof DemoBrokerWhitelabelListingsRouteRoute
     }
+    '/admin/velocity/$workspaceId/review': {
+      id: '/admin/velocity/$workspaceId/review'
+      path: '/velocity/$workspaceId/review'
+      fullPath: '/admin/velocity/$workspaceId/review'
+      preLoaderRoute: typeof AdminVelocityWorkspaceIdReviewRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/document-engine/designer/$templateId': {
       id: '/admin/document-engine/designer/$templateId'
       path: '/designer/$templateId'
@@ -2877,6 +2897,7 @@ interface AdminRouteRouteChildren {
   AdminPaymentOperationsRoute: typeof AdminPaymentOperationsRoute
   AdminRotessaReconciliationRoute: typeof AdminRotessaReconciliationRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminVelocityWorkspaceIdReviewRoute: typeof AdminVelocityWorkspaceIdReviewRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
@@ -2894,6 +2915,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminPaymentOperationsRoute: AdminPaymentOperationsRoute,
   AdminRotessaReconciliationRoute: AdminRotessaReconciliationRoute,
   AdminSettingsRoute: AdminSettingsRoute,
+  AdminVelocityWorkspaceIdReviewRoute: AdminVelocityWorkspaceIdReviewRoute,
 }
 
 const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
