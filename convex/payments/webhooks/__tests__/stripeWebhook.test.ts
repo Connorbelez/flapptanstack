@@ -6,8 +6,12 @@ import type { StripeWebhookEvent } from "../stripe";
 import {
 	buildReversalCode,
 	buildReversalReason,
+	CHECKOUT_FAILURE_EVENT_TYPES,
+	CHECKOUT_SUCCESS_EVENT_TYPES,
+	classifyStripeWebhookEvent,
 	extractProviderRef,
 	REVERSAL_EVENT_TYPES,
+	toCheckoutPayload,
 	toPayload,
 } from "../stripe";
 
@@ -34,7 +38,6 @@ function createHarness() {
 }
 
 const TEST_STRIPE_SECRET = "whsec_test_stripe_webhook_secret";
-const TEST_TIMESTAMP = 1_711_929_600;
 const testEnvRestorers: Array<() => void> = [];
 
 function setTestEnv(key: string, value: string) {
@@ -50,8 +53,9 @@ function setTestEnv(key: string, value: string) {
 }
 
 function buildStripeSignature(body: string) {
-	const payload = `${TEST_TIMESTAMP}.${body}`;
-	return `t=${TEST_TIMESTAMP},v1=${createHmac("sha256", TEST_STRIPE_SECRET)
+	const timestamp = Math.floor(Date.now() / 1000);
+	const payload = `${timestamp}.${body}`;
+	return `t=${timestamp},v1=${createHmac("sha256", TEST_STRIPE_SECRET)
 		.update(payload)
 		.digest("hex")}`;
 }
@@ -59,8 +63,6 @@ function buildStripeSignature(body: string) {
 beforeEach(() => {
 	testEnvRestorers.length = 0;
 	setTestEnv("STRIPE_WEBHOOK_SECRET", TEST_STRIPE_SECRET);
-	vi.useFakeTimers();
-	vi.setSystemTime(new Date(TEST_TIMESTAMP * 1000));
 });
 
 afterEach(() => {
@@ -77,6 +79,106 @@ describe("Stripe webhook handler", () => {
 	// ── Event filtering ──────────────────────────────────────────────
 
 	describe("event type filtering", () => {
+		it("recognizes hosted checkout success events", () => {
+			expect(
+				CHECKOUT_SUCCESS_EVENT_TYPES.has("checkout.session.completed")
+			).toBe(true);
+			expect(
+				classifyStripeWebhookEvent(
+					makeEvent({
+						type: "checkout.session.completed",
+						data: {
+							object: {
+								id: "cs_test_123",
+								amount_total: 25_000,
+								metadata: { checkoutSessionId: "checkout_123" },
+								payment_intent: "pi_test_123",
+							},
+						},
+					})
+				)
+			).toBe("checkout_success");
+		});
+
+		it("ignores hosted checkout success events without FairLend checkout metadata", () => {
+			expect(
+				classifyStripeWebhookEvent(
+					makeEvent({
+						type: "checkout.session.completed",
+						data: {
+							object: {
+								id: "cs_non_fairlend",
+								amount_total: 25_000,
+								payment_intent: "pi_non_fairlend",
+							},
+						},
+					})
+				)
+			).toBe("ignored");
+		});
+
+		it("recognizes checkout-scoped payment failure before reversal fallback", () => {
+			expect(
+				CHECKOUT_FAILURE_EVENT_TYPES.has("payment_intent.payment_failed")
+			).toBe(true);
+			expect(
+				classifyStripeWebhookEvent(
+					makeEvent({
+						type: "payment_intent.payment_failed",
+						data: {
+							object: {
+								id: "pi_test_failed",
+								amount: 25_000,
+								metadata: { checkoutSessionId: "checkout_123" },
+							},
+						},
+					})
+				)
+			).toBe("checkout_failure");
+		});
+
+		it("keeps non-checkout payment failures on the reversal path", () => {
+			expect(
+				classifyStripeWebhookEvent(
+					makeEvent({
+						type: "payment_intent.payment_failed",
+						data: {
+							object: {
+								id: "pi_transfer_failed",
+								amount: 25_000,
+								metadata: { provider_ref: "transfer_ref" },
+							},
+						},
+					})
+				)
+			).toBe("reversal");
+		});
+
+		it("extracts PaymentIntent failure payloads without treating the intent as a Checkout Session", () => {
+			const payload = toCheckoutPayload(
+				makeEvent({
+					type: "payment_intent.payment_failed",
+					data: {
+						object: {
+							id: "pi_test_failed",
+							amount: 25_000,
+							currency: "cad",
+							failure_code: "card_declined",
+							metadata: { checkoutSessionId: "checkout_123" },
+						},
+					},
+				}),
+				"failure"
+			);
+
+			expect(payload).toMatchObject({
+				currency: "cad",
+				failureReason: "card_declined",
+				stripePaymentIntentId: "pi_test_failed",
+			});
+			expect(payload.stripeCheckoutSessionId).toBeUndefined();
+		});
+
 		it("recognizes charge.refunded as a reversal event", () => {
 			expect(REVERSAL_EVENT_TYPES.has("charge.refunded")).toBe(true);
 		});
@@ -486,6 +588,8 @@ describe("stripe webhook persistence bridge", () => {
 
 	it("persists, schedules, and processes unsupported reversal events through the HTTP bridge", async () => {
 		const t = createHarness();
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date());
 		const event = makeEvent({
 			type: "charge.refunded",
 			id: "evt_stripe_bridge_001",
@@ -539,7 +643,12 @@ describe("stripe webhook persistence bridge", () => {
 			status: "pending",
 		});
 
-		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+		try {
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		}
 
 		if (!persisted) {
 			throw new Error("Expected persisted webhook event to exist");

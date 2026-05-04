@@ -32,6 +32,16 @@ export interface HostedCheckoutSession {
 	readonly url: string;
 }
 
+export interface RefundPaymentIntentRequest {
+	readonly amount: number;
+	readonly idempotencyKey: string;
+	readonly paymentIntentId: string;
+}
+
+export interface RefundPaymentIntentResult {
+	readonly stripeRefundId: string;
+}
+
 export interface CheckoutProvider {
 	createHostedCheckoutSession(
 		request: CreateHostedCheckoutSessionRequest
@@ -41,6 +51,9 @@ export interface CheckoutProvider {
 	): Promise<
 		{ readonly ok: true } | { readonly ok: false; readonly error: string }
 	>;
+	refundPaymentIntent(
+		request: RefundPaymentIntentRequest
+	): Promise<RefundPaymentIntentResult>;
 }
 
 export interface StripeCheckoutProviderConfig {
@@ -53,6 +66,10 @@ interface StripeCheckoutSessionResponse {
 	readonly id?: unknown;
 	readonly payment_intent?: unknown;
 	readonly url?: unknown;
+}
+
+interface StripeRefundResponse {
+	readonly id?: unknown;
 }
 
 const STRIPE_API_VERSION = "2025-10-29.clover";
@@ -132,6 +149,13 @@ function readStripeCheckoutSessionResponse(
 	};
 }
 
+function readStripeRefundResponse(value: StripeRefundResponse) {
+	if (typeof value.id !== "string" || value.id.trim().length === 0) {
+		throw new Error("Stripe refund response missing id");
+	}
+	return { stripeRefundId: value.id };
+}
+
 async function parseStripeResponse(response: Response): Promise<unknown> {
 	const body = await response.text();
 	if (!response.ok) {
@@ -186,6 +210,30 @@ export function createStripeCheckoutProvider(
 				ok: false,
 				error: `Stripe Checkout expire failed with ${response.status}: ${await response.text()}`,
 			};
+		},
+		async refundPaymentIntent(request) {
+			assertNonEmptyString(request.paymentIntentId, "paymentIntentId");
+			assertNonEmptyString(request.idempotencyKey, "idempotencyKey");
+			if (!Number.isInteger(request.amount) || request.amount <= 0) {
+				throw new Error("Refund amount must be a positive integer");
+			}
+			const params = new URLSearchParams();
+			params.append("payment_intent", request.paymentIntentId);
+			params.append("amount", String(request.amount));
+			const response = await fetchImpl(`${apiBaseUrl}/v1/refunds`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${config.secretKey}`,
+					"Content-Type": "application/x-www-form-urlencoded",
+					"Idempotency-Key": request.idempotencyKey,
+					"Stripe-Version": STRIPE_API_VERSION,
+				},
+				body: params,
+			});
+			const parsed = (await parseStripeResponse(
+				response
+			)) as StripeRefundResponse;
+			return readStripeRefundResponse(parsed);
 		},
 	};
 }

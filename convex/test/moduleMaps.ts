@@ -62,10 +62,18 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../auth/resourceChecks.ts"),
 	"/convex/checkout/actions.ts": async () =>
 		await import("./../checkout/actions.ts"),
+	"/convex/checkout/dealHandoff.ts": async () =>
+		await import("./../checkout/dealHandoff.ts"),
 	"/convex/checkout/metadata.ts": async () =>
 		await import("./../checkout/metadata.ts"),
 	"/convex/checkout/mutations.ts": async () =>
 		await import("./../checkout/mutations.ts"),
+	"/convex/checkout/queries.ts": async () =>
+		await import("./../checkout/queries.ts"),
+	"/convex/checkout/reconciliation.ts": async () =>
+		await import("./../checkout/reconciliation.ts"),
+	"/convex/checkout/refunds.ts": async () =>
+		await import("./../checkout/refunds.ts"),
 	"/convex/checkout/status.ts": async () =>
 		await import("./../checkout/status.ts"),
 	"/convex/checkout/stripe.ts": async () =>

@@ -30,6 +30,22 @@ export const reserveShares = internalAction({
 			return; // Graceful failure - deal stays in pending
 		}
 
+		if (deal.reservationId) {
+			const reservation = await ctx.runQuery(
+				internal.ledger.queries.getReservationById,
+				{ reservationId: deal.reservationId }
+			);
+			if (reservation) {
+				console.info(
+					`[reserveShares] Deal ${dealId} already has reservation ${deal.reservationId}; skipping duplicate reservation`
+				);
+				return;
+			}
+			console.warn(
+				`[reserveShares] Deal ${dealId} references missing reservation ${deal.reservationId}; continuing with reservation lookup`
+			);
+		}
+
 		// 2. Look up any existing reservation for this deal
 		const existingReservation = await ctx.runQuery(
 			internal.ledger.queries.getReservationByDealId,
