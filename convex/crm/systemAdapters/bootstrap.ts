@@ -162,6 +162,20 @@ const DEAL_STATUS_COLORS: Record<string, string> = {
 	failed: "#ef4444",
 };
 
+const MIC_ACCESS_REQUEST_STATUS_COLORS: Record<string, string> = {
+	pending_review: "#eab308",
+	approved: "#22c55e",
+	rejected: "#ef4444",
+};
+
+const MIC_ACCESS_REQUEST_PROVISIONING_COLORS: Record<string, string> = {
+	pending: "#eab308",
+	not_started: "#6b7280",
+	in_progress: "#3b82f6",
+	completed: "#22c55e",
+	failed: "#ef4444",
+};
+
 const OBLIGATION_TYPE_COLORS: Record<string, string> = {
 	regular_interest: "#3b82f6",
 	arrears_cure: "#f97316",
@@ -717,7 +731,34 @@ export const SYSTEM_OBJECT_CONFIGS: readonly SystemObjectConfig[] = [
 		description:
 			"Fractional mortgage deals from initiation through confirmation",
 		nativeTable: "deals",
+		defaultVisibleFieldNames: [
+			"lockingDate",
+			"fractionalShare",
+			"lockingFeeAmount",
+			"status",
+		],
 		fields: [
+			{
+				name: "mortgageId",
+				label: "Mortgage ID",
+				fieldType: "text",
+				nativeColumnPath: "mortgageId",
+				isVisibleByDefault: false,
+			},
+			{
+				name: "lenderId",
+				label: "Lender ID",
+				fieldType: "text",
+				nativeColumnPath: "lenderId",
+				isVisibleByDefault: false,
+			},
+			{
+				name: "buyerId",
+				label: "Buyer Auth ID",
+				fieldType: "text",
+				nativeColumnPath: "buyerId",
+				isVisibleByDefault: false,
+			},
 			{
 				name: "fractionalShare",
 				label: "Fractional Share",
@@ -728,6 +769,12 @@ export const SYSTEM_OBJECT_CONFIGS: readonly SystemObjectConfig[] = [
 				name: "closingDate",
 				label: "Closing Date",
 				fieldType: "date",
+				nativeColumnPath: "closingDate",
+			},
+			{
+				name: "lockingDate",
+				label: "Locking Date",
+				fieldType: "datetime",
 				nativeColumnPath: "closingDate",
 			},
 			{
@@ -752,6 +799,111 @@ export const SYSTEM_OBJECT_CONFIGS: readonly SystemObjectConfig[] = [
 				label: "Locking Fee Amount",
 				fieldType: "currency",
 				nativeColumnPath: "lockingFeeAmount",
+			},
+		],
+	},
+	{
+		name: "micInvestorAccessRequest",
+		singularLabel: "MIC Access Request",
+		pluralLabel: "MIC Access Requests",
+		icon: "users",
+		description:
+			"Investor access requests for MIC portals with review and provisioning lifecycle",
+		nativeTable: "micInvestorAccessRequests",
+		defaultVisibleFieldNames: [
+			"email",
+			"status",
+			"provisioningState",
+			"requestedAt",
+			"reviewedAt",
+			"reviewedBy",
+		],
+		fields: [
+			{
+				name: "email",
+				label: "Email",
+				fieldType: "text",
+				nativeColumnPath: "email",
+			},
+			{
+				name: "normalizedEmail",
+				label: "Normalized Email",
+				fieldType: "text",
+				nativeColumnPath: "normalizedEmail",
+			},
+			{
+				name: "portalId",
+				label: "Portal ID",
+				fieldType: "text",
+				nativeColumnPath: "portalId",
+			},
+			{
+				name: "status",
+				label: "Status",
+				fieldType: "select",
+				nativeColumnPath: "status",
+				options: opts(
+					["pending_review", "approved", "rejected"],
+					MIC_ACCESS_REQUEST_STATUS_COLORS
+				),
+			},
+			{
+				name: "requestedAt",
+				label: "Requested At",
+				fieldType: "datetime",
+				nativeColumnPath: "requestedAt",
+			},
+			{
+				name: "reviewedAt",
+				label: "Reviewed At",
+				fieldType: "datetime",
+				nativeColumnPath: "reviewedAt",
+			},
+			{
+				name: "reviewedBy",
+				label: "Reviewed By",
+				fieldType: "text",
+				nativeColumnPath: "reviewedBy",
+			},
+			{
+				name: "rejectionReason",
+				label: "Rejection Reason",
+				fieldType: "text",
+				nativeColumnPath: "rejectionReason",
+			},
+			{
+				name: "provisioningState",
+				label: "Provisioning State",
+				fieldType: "select",
+				nativeColumnPath: "provisioningState",
+				options: opts(
+					["pending", "not_started", "in_progress", "completed", "failed"],
+					MIC_ACCESS_REQUEST_PROVISIONING_COLORS
+				),
+			},
+			{
+				name: "provisioningError",
+				label: "Provisioning Error",
+				fieldType: "text",
+				nativeColumnPath: "provisioningError",
+			},
+			{
+				name: "invitedUserWorkosId",
+				label: "Invited User WorkOS ID",
+				fieldType: "text",
+				nativeColumnPath: "invitedUserWorkosId",
+			},
+			{
+				name: "membershipWorkosId",
+				label: "Membership WorkOS ID",
+				fieldType: "text",
+				nativeColumnPath: "membershipWorkosId",
+			},
+			{
+				name: "lastTransitionAt",
+				label: "Last Transition At",
+				fieldType: "datetime",
+				nativeColumnPath: "lastTransitionAt",
 			},
 		],
 	},

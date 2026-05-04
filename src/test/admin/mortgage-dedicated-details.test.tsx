@@ -2,15 +2,44 @@
  * @vitest-environment jsdom
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
+import { useMutation } from "convex/react";
+import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import type {
 	NormalizedFieldDefinition,
 	UnifiedRecord,
 } from "../../../convex/crm/types";
 import { MortgagesDedicatedDetailsContent } from "#/components/admin/shell/dedicated-detail-panels";
+
+const clearMicSaleAvailabilityOverrideMock = vi.fn(async () => ({}));
+const defaultMutationMock = vi.fn(async () => ({}));
+const setMicSaleAvailabilityOverrideMock = vi.fn(async () => ({
+	capLedgerUnits: 4000,
+}));
+
+vi.mock("convex/react", () => {
+	return {
+		useAction: vi.fn(),
+		useMutation: vi.fn(),
+		useQuery: vi.fn(),
+	};
+});
+
+vi.mock("#/components/admin/mortgages/MortgagePackageApplyButton", () => ({
+	MortgagePackageApplyButton: () => (
+		<button type="button">Apply document package</button>
+	),
+}));
 
 vi.mock("@tanstack/react-router", async () => {
 	const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
@@ -80,13 +109,32 @@ function buildFieldDef(args: {
 	};
 }
 
+beforeEach(() => {
+	vi.mocked(useMutation).mockImplementation((mutation) => {
+		const functionName = getFunctionName(mutation);
+		if (
+			functionName ===
+			"admin/mortgages/ownership:setMicSaleAvailabilityOverride"
+		) {
+			return setMicSaleAvailabilityOverrideMock;
+		}
+		if (
+			functionName ===
+			"admin/mortgages/ownership:clearMicSaleAvailabilityOverride"
+		) {
+			return clearMicSaleAvailabilityOverrideMock;
+		}
+		return defaultMutationMock;
+	});
+});
+
 afterEach(() => {
 	cleanup();
 	vi.clearAllMocks();
 });
 
 describe("mortgage dedicated details", () => {
-	it("renders the phase-6 payment, valuation, and document blueprint context", () => {
+	it("renders the phase-6 payment, valuation, and document blueprint context", async () => {
 		const detailContext = {
 				borrowers: [
 					{
@@ -124,6 +172,21 @@ describe("mortgage dedicated details", () => {
 					publishedAt: null,
 					status: "draft",
 					title: "King West bridge opportunity",
+				},
+				micSaleAvailability: {
+					availableForSaleLedgerUnits: 6_000,
+					capLedgerUnits: 6_000,
+					capReason: "Limit staged MIC sale availability.",
+					capUpdatedAt: Date.now(),
+					capUpdatedBy: "admin_user",
+					canonicalMicLenderAuthId: "seed_fairlend_mic_lender_fairlend_ca",
+					hasMicPosition: true,
+					lockedLedgerUnits: 1_000,
+					micAvailableLedgerUnits: 9_000,
+					micOwnedLedgerUnits: 10_000,
+					soldLedgerUnits: 0,
+					totalInvestors: 0,
+					totalLedgerUnits: 10_000,
 				},
 				latestValuationSnapshot: {
 					createdByUserId: "user_admin_1",
@@ -323,6 +386,7 @@ describe("mortgage dedicated details", () => {
 		render(
 			<MortgagesDedicatedDetailsContent
 				canManageMortgageDocuments
+				canManageOwnershipOverrides
 				canRetryCollectionsActivation
 				detailContext={detailContext}
 				detailFields={fields}
@@ -380,15 +444,64 @@ describe("mortgage dedicated details", () => {
 		expect(
 			screen.getByRole("link", { name: "Ada Borrower" }).getAttribute("href")
 		).toBe("/admin/borrowers/borrower_1");
-		expect(
-			screen
-				.getByRole("link", { name: "Open property record" })
-				.getAttribute("href")
-		).toBe("/admin/properties/property_1");
-		expect(
-			screen
-				.getByRole("link", { name: "Open obligation" })
-				.getAttribute("href")
-		).toBe("/admin/obligations/obligation_1");
+			expect(
+				screen
+					.getByRole("link", { name: "Open property record" })
+					.getAttribute("href")
+			).toBe("/admin/properties/property_1");
+			expect(
+				screen
+					.getByRole("link", { name: "Open obligation" })
+					.getAttribute("href")
+			).toBe("/admin/obligations/obligation_1");
+			const micSaleAvailabilitySection = screen
+				.getByRole("heading", {
+					exact: true,
+					name: "MIC Sale Availability",
+				})
+				.closest("section");
+			expect(micSaleAvailabilitySection?.textContent).toContain("MIC Owned");
+			expect(micSaleAvailabilitySection?.textContent).toContain("10 / 10");
+			expect(micSaleAvailabilitySection?.textContent).toContain(
+				"Available For Sale"
+			);
+			expect(micSaleAvailabilitySection?.textContent).toContain("6 / 10");
+
+			fireEvent.change(
+				within(micSaleAvailabilitySection as HTMLElement).getByLabelText(
+					"Available for sale"
+				),
+				{ target: { value: "4" } }
+			);
+			fireEvent.change(
+				within(micSaleAvailabilitySection as HTMLElement).getByLabelText(
+					"Reason"
+				),
+				{ target: { value: "Reduce staged MIC sale cap." } }
+			);
+			fireEvent.click(screen.getByRole("button", { name: "Save sale cap" }));
+
+			await waitFor(() => {
+				expect(setMicSaleAvailabilityOverrideMock).toHaveBeenCalledWith({
+					availableLedgerUnits: 4000,
+					mortgageId: "mortgage_1",
+					reason: "Reduce staged MIC sale cap.",
+				});
+			});
+
+			fireEvent.change(
+				within(micSaleAvailabilitySection as HTMLElement).getByLabelText(
+					"Reason"
+				),
+				{ target: { value: "Clear staged MIC sale cap." } }
+			);
+			fireEvent.click(screen.getByRole("button", { name: "Clear cap" }));
+
+			await waitFor(() => {
+				expect(clearMicSaleAvailabilityOverrideMock).toHaveBeenCalledWith({
+					mortgageId: "mortgage_1",
+					reason: "Clear staged MIC sale cap.",
+				});
+			});
+		});
 	});
-});

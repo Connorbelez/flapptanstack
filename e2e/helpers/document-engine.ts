@@ -6,7 +6,11 @@ import {
 	test,
 	type Page,
 } from "@playwright/test";
+import { ConvexHttpClient } from "convex/browser";
 import { PDFDocument } from "pdf-lib";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+import { readE2eAccessToken } from "./origination";
 import {
 	TEST_ADMIN_ORG_ID,
 	createAuthStorageState,
@@ -16,6 +20,14 @@ export const BASE_URL = "/demo/document-engine";
 // Playwright reads `storageState` before `beforeAll`, so this path stays stable.
 // The helper in `auth-storage.ts` writes it atomically to avoid worker races.
 export const ADMIN_STORAGE_STATE = ".auth/admin.json";
+
+function requireEnv(name: string): string {
+	const value = process.env[name];
+	if (!value) {
+		throw new Error(`Missing required env var: ${name}`);
+	}
+	return value;
+}
 
 function getBaseURL(): string {
 	const baseURL = test.info().project.use.baseURL;
@@ -84,10 +96,12 @@ export async function openAdminPage(browser: Browser): Promise<{
  * Create a minimal valid PDF buffer for upload testing.
  * Uses pdf-lib (already a project dependency) to produce a single-page US Letter PDF.
  */
-export async function createTestPdfBuffer(): Promise<Buffer> {
+export async function createTestPdfBuffer(
+	label = "E2E Test Document"
+): Promise<Buffer> {
 	const doc = await PDFDocument.create();
 	const page = doc.addPage([612, 792]); // US Letter dimensions
-	page.drawText("E2E Test Document", { x: 50, y: 700, size: 20 });
+	page.drawText(label, { x: 50, y: 700, size: 20 });
 	const bytes = await doc.save();
 	return Buffer.from(bytes);
 }
@@ -278,4 +292,172 @@ export async function expectDesignerRendered(page: Page): Promise<void> {
 	// pdfme renders multiple child divs for sidebar, canvas, etc.
 	const childCount = await container.locator(":scope > *").count();
 	expect(childCount).toBeGreaterThan(0);
+}
+
+export interface E2ePublishedTemplate {
+	basePdfId: string;
+	name: string;
+	templateId: string;
+}
+
+type E2eTemplateField =
+	| {
+			readonly type: "interpolable";
+			readonly variableKey: string;
+	  }
+	| {
+			readonly signatoryPlatformRole: string;
+			readonly type: "signable";
+	  };
+
+interface E2eTemplateSignatory {
+	readonly platformRole: string;
+	readonly role: "approver" | "signatory" | "viewer";
+}
+
+export async function createPublishedTemplate(
+	page: Page,
+	args: {
+		readonly fields: readonly E2eTemplateField[];
+		readonly name: string;
+		readonly signatories: readonly E2eTemplateSignatory[];
+	}
+): Promise<E2ePublishedTemplate> {
+	const accessToken = await readE2eAccessToken(page);
+	const convex = new ConvexHttpClient(requireEnv("VITE_CONVEX_URL"));
+	convex.setAuth(accessToken);
+
+	for (const field of args.fields) {
+		if (field.type === "interpolable") {
+			await ensureSystemVariable(convex, field.variableKey);
+		}
+	}
+
+	const basePdfId = await uploadBasePdf(convex, {
+		contents: await createTestPdfBuffer(`${args.name} Base PDF`),
+		name: `${args.name} Base`,
+	});
+	const templateId = await convex.mutation(api.documentEngine.templates.create, {
+		basePdfId,
+		description: `${args.name} description`,
+		name: args.name,
+	});
+
+	await convex.mutation(api.documentEngine.templates.saveDraft, {
+		draft: {
+			fields: args.fields.map((field, index) => {
+				const baseField = {
+					id: `${args.name}-${index}`,
+					label:
+						field.type === "interpolable"
+							? field.variableKey
+							: field.signatoryPlatformRole,
+					position: {
+						height: 18,
+						page: 0,
+						width: field.type === "interpolable" ? 220 : 120,
+						x: 72,
+						y: 120 + index * 40,
+					},
+					required: true,
+				};
+				if (field.type === "interpolable") {
+					return {
+						...baseField,
+						type: "interpolable" as const,
+						variableKey: field.variableKey,
+					};
+				}
+				return {
+					...baseField,
+					signableType: "SIGNATURE" as const,
+					signatoryPlatformRole: field.signatoryPlatformRole,
+					type: "signable" as const,
+				};
+			}),
+			pdfmeSchema: [],
+			signatories: args.signatories.map((signatory, index) => ({
+				label: signatory.platformRole,
+				order: index + 1,
+				platformRole: signatory.platformRole,
+				role: signatory.role,
+			})),
+		},
+		id: templateId,
+	});
+	await convex.mutation(api.documentEngine.templates.publish, {
+		id: templateId,
+		publishedBy: "e2e",
+	});
+
+	return {
+		basePdfId: String(basePdfId),
+		name: args.name,
+		templateId: String(templateId),
+	};
+}
+
+async function ensureSystemVariable(
+	convex: ConvexHttpClient,
+	key: string
+): Promise<void> {
+	const existing = await convex.query(api.documentEngine.systemVariables.getByKey, {
+		key,
+	});
+	if (existing) {
+		return;
+	}
+
+	await convex.mutation(api.documentEngine.systemVariables.create, {
+		createdBy: "e2e",
+		formatOptions: {},
+		key,
+		label: key,
+		type: "string",
+	});
+}
+
+async function uploadBasePdf(
+	convex: ConvexHttpClient,
+	args: { readonly contents: Uint8Array; readonly name: string }
+): Promise<Id<"documentBasePdfs">> {
+	const { uploadUrl } = await convex.mutation(
+		api.documentEngine.basePdfs.generateUploadUrl,
+		{}
+	);
+	const uploadResponse = await fetch(uploadUrl, {
+		body: new Blob([new Uint8Array(args.contents)], {
+			type: "application/pdf",
+		}),
+		headers: { "Content-Type": "application/pdf" },
+		method: "POST",
+	});
+	if (!uploadResponse.ok) {
+		throw new Error(`Storage upload failed with status ${uploadResponse.status}`);
+	}
+
+	const { storageId } = (await uploadResponse.json()) as {
+		storageId: Id<"_storage">;
+	};
+	const metadata = await convex.action(
+		api.documentEngine.basePdfs.extractPdfMetadata,
+		{
+			fileRef: storageId,
+		}
+	);
+	if (!metadata.pageDimensions) {
+		throw new Error("Base PDF metadata did not include page dimensions");
+	}
+
+	const result = await convex.mutation(api.documentEngine.basePdfs.create, {
+		description: `${args.name} description`,
+		fileHash: metadata.fileHash,
+		fileRef: storageId,
+		fileSize: metadata.fileSize,
+		name: args.name,
+		pageCount: metadata.pageCount,
+		pageDimensions: metadata.pageDimensions,
+		uploadedBy: "e2e",
+	});
+	return result.id;
 }

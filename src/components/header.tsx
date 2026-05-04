@@ -62,6 +62,7 @@ const demoSections: DemoSection[] = [
 		links: [
 			{ to: "/demo/amps", label: "AMPS Demo" },
 			{ to: "/demo/document-engine", label: "Document Engine" },
+			{ to: "/demo/deal-closing-pipeline", label: "Deal Closing Pipeline" },
 			{ to: "/demo/audit-traceability", label: "Audit & Traceability" },
 			{ to: "/demo/governed-transitions", label: "Governed Transitions" },
 		],
@@ -69,7 +70,7 @@ const demoSections: DemoSection[] = [
 ];
 
 const demoLinkClassName =
-	"block rounded-lg px-3 py-2 text-sm text-[var(--sea-ink-soft)] no-underline transition hover:bg-[var(--link-bg-hover)] hover:text-[var(--sea-ink)]";
+	"block rounded-lg px-3 py-2 text-sm !text-[var(--sea-ink-soft)] no-underline transition hover:bg-[var(--link-bg-hover)] hover:!text-[var(--sea-ink)]";
 
 export default function Header() {
 	return (
@@ -77,7 +78,7 @@ export default function Header() {
 			<nav className="page-wrap flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 py-3 sm:py-4">
 				<h2 className="m-0 shrink-0 font-semibold text-base tracking-tight">
 					<Link
-						className="inline-flex items-center gap-2 rounded-full border border-(--chip-line) bg-(--chip-bg) px-3 py-1.5 text-(--sea-ink) text-sm no-underline shadow-[0_8px_24px_rgba(30,90,72,0.08)] sm:px-4 sm:py-2"
+						className="!text-[var(--sea-ink)] inline-flex items-center gap-2 rounded-full border border-(--chip-line) bg-(--chip-bg) px-3 py-1.5 text-sm no-underline shadow-[0_8px_24px_rgba(30,90,72,0.08)] sm:px-4 sm:py-2"
 						to="/"
 						viewTransition
 					>
@@ -88,7 +89,7 @@ export default function Header() {
 
 				<div className="ml-auto flex items-center gap-1.5 sm:ml-0 sm:gap-2">
 					<a
-						className="hidden rounded-xl p-2 text-(--sea-ink-soft) transition hover:bg-(--link-bg-hover) hover:text-(--sea-ink) sm:block"
+						className="!text-[var(--sea-ink-soft)] hover:!text-[var(--sea-ink)] hidden rounded-xl p-2 transition hover:bg-(--link-bg-hover) sm:block"
 						href="https://x.com/tan_stack"
 						rel="noreferrer"
 						target="_blank"
@@ -102,7 +103,7 @@ export default function Header() {
 						</svg>
 					</a>
 					<a
-						className="hidden rounded-xl p-2 text-(--sea-ink-soft) transition hover:bg-(--link-bg-hover) hover:text-(--sea-ink) sm:block"
+						className="!text-[var(--sea-ink-soft)] hover:!text-[var(--sea-ink)] hidden rounded-xl p-2 transition hover:bg-(--link-bg-hover) sm:block"
 						href="https://github.com/TanStack"
 						rel="noreferrer"
 						target="_blank"
@@ -184,7 +185,7 @@ export default function Header() {
 											<Link
 												activeProps={{
 													className:
-														"block rounded-lg bg-[var(--link-bg-hover)] px-3 py-2 text-sm text-[var(--sea-ink)] no-underline transition",
+														"block rounded-lg bg-[var(--link-bg-hover)] px-3 py-2 text-sm !text-[var(--sea-ink)] no-underline transition",
 												}}
 												className={demoLinkClassName}
 												key={demoLink.to}

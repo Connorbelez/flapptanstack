@@ -17,6 +17,7 @@ import {
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
@@ -106,6 +107,10 @@ export function DocumentEngineVariablesPage() {
 					<DialogContent>
 						<DialogHeader>
 							<DialogTitle>Create System Variable</DialogTitle>
+							<DialogDescription>
+								Add a reusable variable that templates can interpolate from
+								system data.
+							</DialogDescription>
 						</DialogHeader>
 						<div className="space-y-4">
 							<div>
@@ -233,6 +238,11 @@ export function DocumentEngineVariablesPage() {
 										<div className="flex items-center gap-2">
 											<code className="font-mono text-sm">{variable.key}</code>
 											<Badge variant="secondary">{variable.type}</Badge>
+											{variable.readOnly ? (
+												<Badge variant="outline">Canonical</Badge>
+											) : (
+												<Badge variant="outline">Custom</Badge>
+											)}
 										</div>
 										<p className="font-medium text-sm">{variable.label}</p>
 										{variable.description ? (
@@ -254,13 +264,16 @@ export function DocumentEngineVariablesPage() {
 												variable.formatOptions ?? undefined
 											)}
 										</p>
-										<Button
-											onClick={() => removeVariable({ id: variable._id })}
-											size="icon"
-											variant="ghost"
-										>
-											<Trash2 className="size-4" />
-										</Button>
+										{variable.readOnly ? null : (
+											<Button
+												aria-label={`Delete ${variable.key}`}
+												onClick={() => removeVariable({ id: variable._id })}
+												size="icon"
+												variant="ghost"
+											>
+												<Trash2 className="size-4" />
+											</Button>
+										)}
 									</div>
 								</div>
 							))}

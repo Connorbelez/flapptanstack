@@ -4,7 +4,6 @@ import type { MutationCtx } from "../_generated/server";
 import { getLenderByAuthId } from "../auth/actorResolution";
 import { convex } from "../fluent";
 import { getAccountLenderId } from "../ledger/accountOwnership";
-import { getAvailableBalance } from "../ledger/accounts";
 import {
 	reserveSharesHandler,
 	voidReservationHandler,
@@ -14,6 +13,7 @@ import {
 	clampMarketplaceFiltersToLenderConstraints,
 	resolveViewerLenderConstraintForPortal,
 } from "../listings/portalVisibility";
+import { getCanonicalMicSellerAccountForSale } from "../mortgages/micSaleAvailability";
 import {
 	assertCheckoutTransitionAllowed,
 	CHECKOUT_ACTIVE_STATUSES,
@@ -314,44 +314,18 @@ function resolveLedgerLenderId(lender: LenderDoc): string {
 async function resolveSellerAccount(
 	ctx: MutationCtx,
 	args: {
-		buyerLedgerLenderId: string;
 		mortgageId: Id<"mortgages">;
 		requestedFractions: number;
 	}
 ): Promise<LedgerAccountDoc | null> {
-	const accounts = await ctx.db
-		.query("ledger_accounts")
-		.withIndex("by_type_and_mortgage", (q) =>
-			q.eq("type", "POSITION").eq("mortgageId", String(args.mortgageId))
-		)
-		.collect();
-
-	const candidates = accounts
-		.map((account) => ({
-			account,
-			availableBalance: getAvailableBalance(account),
-			lenderId: getAccountLenderId(account),
-		}))
-		.filter(
-			(
-				candidate
-			): candidate is {
-				account: LedgerAccountDoc;
-				availableBalance: bigint;
-				lenderId: string;
-			} =>
-				candidate.lenderId !== undefined &&
-				candidate.lenderId !== args.buyerLedgerLenderId &&
-				candidate.availableBalance >= BigInt(args.requestedFractions)
-		)
-		.sort((left, right) => {
-			if (left.availableBalance !== right.availableBalance) {
-				return left.availableBalance > right.availableBalance ? -1 : 1;
-			}
-			return String(left.account._id).localeCompare(String(right.account._id));
-		});
-
-	return candidates[0]?.account ?? null;
+	return (
+		(
+			await getCanonicalMicSellerAccountForSale(ctx, {
+				mortgageId: args.mortgageId,
+				requestedLedgerUnits: args.requestedFractions,
+			})
+		)?.account ?? null
+	);
 }
 
 export const prepareMarketplaceCheckout = convex
@@ -433,7 +407,6 @@ export const prepareMarketplaceCheckout = convex
 
 		const buyerLedgerLenderId = resolveLedgerLenderId(lender);
 		const sellerAccount = await resolveSellerAccount(ctx, {
-			buyerLedgerLenderId,
 			mortgageId: listingCheck.mortgageId,
 			requestedFractions,
 		});

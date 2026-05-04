@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { listingQuery } from "../fluent";
+import { loadMortgagePaymentSnapshots } from "../payments/mortgagePaymentSnapshot";
 import type { PortalPricingPolicyDoc } from "../portals/pricing";
 import { projectListingForPortal } from "../portals/pricing";
 import {
@@ -30,10 +31,12 @@ const OFFSET_CURSOR_PREFIX = "offset:";
 const OFFSET_CURSOR_PATTERN = /^\d+$/;
 
 type ListingDoc = Doc<"listings">;
+type ObligationDoc = Doc<"obligations">;
 type MarketplacePropertyType = NonNullable<
 	ListingDoc["marketplacePropertyType"]
 >;
 type MortgageTypeLabel = "First" | "Second" | "Other";
+type MarketplaceUpcomingPaymentStatus = "due" | "none" | "overdue" | "planned";
 
 export interface MarketplaceFilters {
 	interestRate?: { max?: number; min?: number };
@@ -218,6 +221,55 @@ function buildListingSummary(listing: ListingDoc): string {
 	return listing.marketplaceCopy ?? listing.description ?? "Mortgage Listing";
 }
 
+function toMarketplaceUpcomingPaymentStatus(
+	obligation: ObligationDoc
+): MarketplaceUpcomingPaymentStatus {
+	switch (obligation.status) {
+		case "due":
+			return "due";
+		case "overdue":
+		case "partially_settled":
+			return "overdue";
+		default:
+			return "planned";
+	}
+}
+
+async function loadMarketplaceNextPaymentDue(
+	ctx: Pick<QueryCtx, "db">,
+	mortgageId: ListingDoc["mortgageId"]
+) {
+	if (!mortgageId) {
+		return null;
+	}
+
+	const obligation = await ctx.db
+		.query("obligations")
+		.withIndex("by_mortgage_and_date", (q) => q.eq("mortgageId", mortgageId))
+		.order("asc")
+		.filter((q) =>
+			q.and(
+				q.neq(q.field("status"), "settled"),
+				q.neq(q.field("status"), "waived")
+			)
+		)
+		.first();
+
+	if (!obligation) {
+		return {
+			amount: null,
+			date: null,
+			status: "none" satisfies MarketplaceUpcomingPaymentStatus,
+		};
+	}
+
+	return {
+		amount: obligation.amount,
+		date: obligation.dueDate,
+		status: toMarketplaceUpcomingPaymentStatus(obligation),
+	};
+}
+
 function getMarketplacePropertyType(
 	listing: ListingDoc
 ): MarketplacePropertyType {
@@ -276,7 +328,7 @@ async function getSimilarMarketplaceListings(
 ) {
 	// TODO: Add an index ordered for featured/displayOrder/publishedAt so this
 	// detail hot path can read the top 3 similar listings without JS sorting.
-	const candidates = await ctx.db
+	const samePropertyTypeCandidates = await ctx.db
 		.query("listings")
 		.withIndex("by_marketplace_property_type_and_status", (q) =>
 			q
@@ -285,28 +337,45 @@ async function getSimilarMarketplaceListings(
 		)
 		.take(SIMILAR_LISTING_CANDIDATE_LIMIT);
 
-	return await Promise.all(
-		candidates
-			.filter((candidate) => candidate._id !== listing._id)
-			.sort(compareMarketplaceListings)
-			.slice(0, 3)
-			.map(async (candidate) => {
-				const projectedCandidate = pricingPolicy
-					? projectListingForPortal(candidate, pricingPolicy)
-					: candidate;
+	const candidatesById = new Map<string, ListingDoc>();
+	for (const candidate of samePropertyTypeCandidates) {
+		candidatesById.set(String(candidate._id), candidate);
+	}
 
-				return {
-					heroImageUrl: await getHeroImageUrl(ctx, candidate.heroImages[0]),
-					id: String(candidate._id),
-					interestRate: projectedCandidate.interestRate,
-					locationLabel: buildLocationLabel(candidate) ?? "",
-					ltvRatio: candidate.ltvRatio,
-					mortgageTypeLabel: lienPositionToMortgageType(candidate.lienPosition),
-					principal: candidate.principal,
-					propertyTypeLabel: candidate.marketplacePropertyType,
-					title: candidate.title ?? "Mortgage Listing",
-				};
-			})
+	if (candidatesById.size < 4) {
+		const fallbackCandidates = await ctx.db
+			.query("listings")
+			.withIndex("by_status", (q) => q.eq("status", "published"))
+			.take(SIMILAR_LISTING_CANDIDATE_LIMIT);
+
+		for (const candidate of fallbackCandidates) {
+			candidatesById.set(String(candidate._id), candidate);
+		}
+	}
+
+	const similarListings = Array.from(candidatesById.values())
+		.filter((candidate) => candidate._id !== listing._id)
+		.sort(compareMarketplaceListings)
+		.slice(0, 3);
+
+	return await Promise.all(
+		similarListings.map(async (candidate) => {
+			const projectedCandidate = pricingPolicy
+				? projectListingForPortal(candidate, pricingPolicy)
+				: candidate;
+
+			return {
+				heroImageUrl: await getHeroImageUrl(ctx, candidate.heroImages[0]),
+				id: String(candidate._id),
+				interestRate: projectedCandidate.interestRate,
+				locationLabel: buildLocationLabel(candidate) ?? "",
+				ltvRatio: candidate.ltvRatio,
+				mortgageTypeLabel: lienPositionToMortgageType(candidate.lienPosition),
+				principal: projectedCandidate.principal,
+				propertyTypeLabel: getMarketplacePropertyType(candidate),
+				title: candidate.title ?? "Mortgage Listing",
+			};
+		})
 	);
 }
 
@@ -505,6 +574,8 @@ export const getMarketplaceListingDetail = listingQuery
 			encumbrances,
 			similarListings,
 			closingLawyers,
+			paymentSnapshots,
+			nextPaymentDue,
 		] = await Promise.all([
 			buildMarketplaceAvailabilitySummary(ctx, listing.mortgageId),
 			readListingPublicDocuments(ctx, {
@@ -520,7 +591,14 @@ export const getMarketplaceListingDetail = listingQuery
 			listing.mortgageId
 				? getMarketplaceClosingLawyers(ctx, listing.mortgageId)
 				: Promise.resolve([]),
+			listing.mortgageId
+				? loadMortgagePaymentSnapshots(ctx, [listing.mortgageId])
+				: Promise.resolve(new Map()),
+			loadMarketplaceNextPaymentDue(ctx, listing.mortgageId),
 		]);
+		const paymentSnapshot = listing.mortgageId
+			? (paymentSnapshots.get(String(listing.mortgageId)) ?? null)
+			: null;
 
 		return {
 			appraisals,
@@ -559,6 +637,8 @@ export const getMarketplaceListingDetail = listingQuery
 				monthlyPayment: projectedListing.monthlyPayment,
 				paymentFrequency: listing.paymentFrequency,
 				paymentHistory: listing.paymentHistory ?? null,
+				nextPaymentDue,
+				paymentSnapshot,
 				principal: listing.principal,
 				propertyTypeLabel: getMarketplacePropertyType(listing),
 				rateType: listing.rateType,

@@ -102,6 +102,13 @@ export const get = documentQuery
 	})
 	.public();
 
+export const list = documentQuery
+	.input({})
+	.handler(async (ctx) => {
+		return await ctx.db.query("documentAssets").order("desc").collect();
+	})
+	.public();
+
 export const getUrl = documentQuery
 	.input({
 		assetId: v.id("documentAssets"),

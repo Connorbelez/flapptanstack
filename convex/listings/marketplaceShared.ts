@@ -1,9 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { FAIRLEND_MIC_POOL_LENDER_ID } from "../constants";
-import { getAccountLenderId } from "../ledger/accountOwnership";
-import { getAvailableBalance, getPostedBalance } from "../ledger/accounts";
 import { TOTAL_SUPPLY } from "../ledger/constants";
+import { buildMortgageMicSaleAvailabilitySummary } from "../mortgages/micSaleAvailability";
 
 export interface MarketplaceAvailabilitySummary {
 	availableFractions: number;
@@ -14,10 +12,6 @@ export interface MarketplaceAvailabilitySummary {
 	soldPercent: number;
 	totalFractions: number;
 	totalInvestors: number;
-}
-
-function isMicLenderId(lenderId: string): boolean {
-	return lenderId === FAIRLEND_MIC_POOL_LENDER_ID;
 }
 
 function roundToTwoDecimals(value: number): number {
@@ -94,7 +88,7 @@ export function lienPositionToMortgageType(
 }
 
 export async function buildMarketplaceAvailabilitySummary(
-	ctx: { db: Pick<QueryCtx["db"], "query"> },
+	ctx: { db: Pick<QueryCtx["db"], "get" | "query"> },
 	mortgageId: Doc<"listings">["mortgageId"]
 ): Promise<MarketplaceAvailabilitySummary> {
 	const totalFractions = toSafeNumber(TOTAL_SUPPLY, "totalFractions");
@@ -108,74 +102,22 @@ export async function buildMarketplaceAvailabilitySummary(
 		});
 	}
 
-	const accounts = await ctx.db
-		.query("ledger_accounts")
-		.withIndex("by_type_and_mortgage", (q) =>
-			q.eq("type", "POSITION").eq("mortgageId", String(mortgageId))
-		)
-		.collect();
-
-	const positions = accounts
-		.map((account) => ({
-			account,
-			availableBalance: getAvailableBalance(account),
-			lenderId: getAccountLenderId(account),
-			postedBalance: getPostedBalance(account),
-		}))
-		.filter(
-			(
-				position
-			): position is {
-				account: (typeof accounts)[number];
-				availableBalance: bigint;
-				lenderId: string;
-				postedBalance: bigint;
-			} => position.postedBalance > 0n && position.lenderId !== undefined
-		);
-
-	const micPositions = positions.filter((position) =>
-		isMicLenderId(position.lenderId)
+	const micAvailability = await buildMortgageMicSaleAvailabilitySummary(
+		ctx,
+		mortgageId
 	);
-	const soldFractions = toSafeNumber(
-		positions
-			.filter((position) => !isMicLenderId(position.lenderId))
-			.reduce((total, position) => total + position.postedBalance, 0n),
-		"soldFractions"
-	);
-	const totalInvestors = positions.filter(
-		(position) => !isMicLenderId(position.lenderId)
-	).length;
-	const lockedFractions = toSafeNumber(
-		micPositions.reduce(
-			(total, position) => total + (position.account.pendingCredits ?? 0n),
-			0n
-		),
-		"lockedFractions"
-	);
-	const availableFractions = micPositions.length
-		? Math.max(
-				toSafeNumber(
-					micPositions.reduce(
-						(total, position) => total + position.availableBalance,
-						0n
-					),
-					"availableFractions"
-				),
-				0
-			)
-		: Math.max(totalFractions - soldFractions - lockedFractions, 0);
 
 	return buildAvailabilitySummary({
-		availableFractions,
-		lockedFractions,
-		soldFractions,
+		availableFractions: micAvailability.availableForSaleLedgerUnits,
+		lockedFractions: micAvailability.lockedLedgerUnits,
+		soldFractions: micAvailability.soldLedgerUnits,
 		totalFractions,
-		totalInvestors,
+		totalInvestors: micAvailability.totalInvestors,
 	});
 }
 
 export async function attachMarketplaceAvailabilityToListings(
-	ctx: { db: Pick<QueryCtx["db"], "query"> },
+	ctx: { db: Pick<QueryCtx["db"], "get" | "query"> },
 	listings: Doc<"listings">[]
 ) {
 	const mortgageIds = [

@@ -26,6 +26,7 @@ import {
 	computedFieldMetadataValidator,
 	editabilityMetadataValidator,
 	entityKindValidator,
+	fieldReferenceIdValidator,
 	fieldRendererHintValidator,
 	fieldTypeValidator,
 	filterOperatorValidator,
@@ -58,6 +59,9 @@ import {
 	dispersalStatusValidator,
 } from "./dispersal/validators";
 import {
+	documentGroupVersionSnapshotValidator,
+	documentPackageDraftValidator,
+	documentPackageSnapshotValidator,
 	draftStateValidator,
 	entityFieldValidator,
 	entitySourceValidator,
@@ -87,6 +91,7 @@ import {
 	generatedDocumentSigningStatusValidator,
 	mortgageDocumentBlueprintClassValidator,
 	mortgageDocumentBlueprintStatusValidator,
+	mortgageDocumentMappingOverridesValidator,
 	mortgageDocumentSourceKindValidator,
 	mortgageDocumentTemplateSnapshotMetaValidator,
 	mortgageDocumentValidationSummaryValidator,
@@ -322,7 +327,6 @@ export default defineSchema({
 		teaserListingLimit: v.optional(v.number()),
 		defaultPostAuthPath: v.optional(v.string()),
 		micLenderAuthId: v.optional(v.string()),
-		lenderId: v.optional(v.id("lenders")),
 		landingPageId: v.optional(v.id("portalLandingPages")),
 		pricingPolicyId: v.optional(v.id("portalPricingPolicies")),
 		createdAt: v.number(),
@@ -1138,6 +1142,7 @@ export default defineSchema({
 		templateSnapshotMeta: v.optional(
 			mortgageDocumentTemplateSnapshotMetaValidator
 		),
+		mappingOverrides: v.optional(mortgageDocumentMappingOverridesValidator),
 		createdByUserId: v.id("users"),
 		createdAt: v.number(),
 		archivedAt: v.optional(v.number()),
@@ -1608,6 +1613,15 @@ export default defineSchema({
 			"status",
 		]),
 
+	mortgageMicSaleAvailabilityOverrides: defineTable({
+		mortgageId: v.id("mortgages"),
+		availableLedgerUnits: v.optional(v.number()),
+		reason: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		updatedBy: v.string(),
+	}).index("by_mortgage", ["mortgageId"]),
+
 	mortgageBorrowers: defineTable({
 		mortgageId: v.id("mortgages"),
 		borrowerId: v.id("borrowers"),
@@ -1741,6 +1755,35 @@ export default defineSchema({
 		stripePaymentIntentId: v.optional(v.string()),
 		lockFeeTransferRequestId: v.optional(v.id("transferRequests")),
 		dealId: v.optional(v.id("deals")),
+		providerExpiryAttemptedAt: v.optional(v.number()),
+		providerExpiryStatus: v.optional(
+			v.union(
+				v.literal("failed"),
+				v.literal("not_required"),
+				v.literal("succeeded")
+			)
+		),
+		providerExpiryFailureReason: v.optional(v.string()),
+		lateSuccessRefund: v.optional(
+			v.object({
+				status: v.union(
+					v.literal("intent_recorded"),
+					v.literal("completed"),
+					v.literal("failed")
+				),
+				amount: checkoutLockFeeAmountValidator,
+				currency: checkoutLockFeeCurrencyValidator,
+				idempotencyKey: v.string(),
+				providerEventId: v.string(),
+				paymentIntentId: v.string(),
+				webhookEventId: v.id("webhookEvents"),
+				attemptedAt: v.number(),
+				stripeRefundId: v.optional(v.string()),
+				completedAt: v.optional(v.number()),
+				failedAt: v.optional(v.number()),
+				error: v.optional(v.string()),
+			})
+		),
 		startedAt: v.number(),
 		expiresAt: v.number(),
 		completedAt: v.optional(v.number()),
@@ -2413,10 +2456,13 @@ export default defineSchema({
 		lockFeeCollectionStatus: v.optional(dealLockFeeCollectionStatusValidator),
 		lawyerId: v.optional(v.string()),
 		reservationId: v.optional(v.id("ledger_reservations")),
+		checkoutSessionId: v.optional(v.id("checkoutSessions")),
+		lockFeeTransferRequestId: v.optional(v.id("transferRequests")),
 		dealLockCheckoutSessionId: v.optional(v.id("dealLockCheckoutSessions")),
 		stripeCheckoutSessionId: v.optional(v.string()),
 		stripePaymentIntentId: v.optional(v.string()),
 		stripePaymentStatus: v.optional(v.string()),
+		selectedLawyer: v.optional(selectedLawyerSnapshotValidator),
 		lawyerType: v.optional(
 			v.union(v.literal("platform_lawyer"), v.literal("guest_lawyer"))
 		),
@@ -2432,6 +2478,8 @@ export default defineSchema({
 		.index("by_lender", ["lenderId"])
 		.index("by_buyer", ["buyerId"])
 		.index("by_seller", ["sellerId"])
+		.index("by_checkout_session", ["checkoutSessionId"])
+		.index("by_reservation", ["reservationId"])
 		.index("by_org", ["orgId"])
 		.index("by_org_status", ["orgId", "status"]),
 
@@ -3113,6 +3161,46 @@ export default defineSchema({
 		updatedAt: v.number(),
 	}).index("by_name", ["name"]),
 
+	documentGroupVersions: defineTable({
+		groupId: v.id("documentTemplateGroups"),
+		publishedAt: v.number(),
+		publishedBy: v.optional(v.string()),
+		snapshot: documentGroupVersionSnapshotValidator,
+		version: v.number(),
+	}).index("by_group", ["groupId", "version"]),
+
+	documentPackageDefinitions: defineTable({
+		createdAt: v.number(),
+		currentPublishedVersion: v.optional(v.number()),
+		description: v.optional(v.string()),
+		draft: documentPackageDraftValidator,
+		hasDraftChanges: v.boolean(),
+		name: v.string(),
+		updatedAt: v.number(),
+	})
+		.index("by_name", ["name"])
+		.index("by_updated_at", ["updatedAt"]),
+
+	documentPackageVersions: defineTable({
+		packageId: v.id("documentPackageDefinitions"),
+		publishedAt: v.number(),
+		publishedBy: v.optional(v.string()),
+		snapshot: documentPackageSnapshotValidator,
+		version: v.number(),
+	}).index("by_package", ["packageId", "version"]),
+
+	mortgagePackageApplications: defineTable({
+		archivedAt: v.optional(v.number()),
+		archivedByUserId: v.optional(v.id("users")),
+		createdAt: v.number(),
+		createdByUserId: v.optional(v.id("users")),
+		mortgageId: v.id("mortgages"),
+		packageVersionId: v.id("documentPackageVersions"),
+		status: v.union(v.literal("active"), v.literal("archived")),
+	})
+		.index("by_mortgage_status", ["mortgageId", "status", "createdAt"])
+		.index("by_package_version", ["packageVersionId", "createdAt"]),
+
 	// ══════════════════════════════════════════════════════════
 	// GENERATED DOCUMENTS (consumer-side document tracking)
 	// ══════════════════════════════════════════════════════════
@@ -3755,8 +3843,8 @@ export default defineSchema({
 		sourceViewDefId: v.optional(v.id("viewDefs")),
 		name: v.string(),
 		viewType: viewTypeValidator,
-		visibleFieldIds: v.array(v.id("fieldDefs")),
-		fieldOrder: v.array(v.id("fieldDefs")),
+		visibleFieldIds: v.array(fieldReferenceIdValidator),
+		fieldOrder: v.array(fieldReferenceIdValidator),
 		filters: v.optional(v.array(savedViewFilterValidator)),
 		filtersJson: v.optional(v.string()),
 		groupByFieldId: v.optional(v.id("fieldDefs")),

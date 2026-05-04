@@ -155,7 +155,105 @@ async function seedMortgageBlueprintFixture(
 	});
 }
 
+async function seedDocumentTemplate(args: {
+	currentPublishedVersion?: number;
+	includeVersion?: boolean;
+	name: string;
+	t: ReturnType<typeof createTestConvex>;
+}) {
+	return args.t.run(async (ctx) => {
+		const fileRef = await (
+			ctx.storage as unknown as {
+				store: (blob: Blob) => Promise<Id<"_storage">>;
+			}
+		).store(new Blob([args.name]));
+		const basePdfId = await ctx.db.insert("documentBasePdfs", {
+			fileHash: `template-base-${args.name}`,
+			fileRef,
+			fileSize: 64,
+			name: `${args.name} base`,
+			pageCount: 1,
+			pageDimensions: [{ height: 792, page: 0, width: 612 }],
+			uploadedAt: Date.now(),
+			uploadedBy: "test_admin",
+		});
+		const snapshot = {
+			fields: [
+				{
+					id: `${args.name}-principal`,
+					position: { height: 20, page: 0, width: 120, x: 10, y: 10 },
+					type: "interpolable" as const,
+					variableKey: "mortgage_principal",
+				},
+			],
+			pdfmeSchema: [],
+			signatories: [],
+		};
+		const templateId = await ctx.db.insert("documentTemplates", {
+			basePdfHash: `template-base-${args.name}`,
+			basePdfId,
+			createdAt: Date.now(),
+			currentPublishedVersion: args.currentPublishedVersion,
+			description: `${args.name} description`,
+			draft: snapshot,
+			hasDraftChanges: false,
+			name: args.name,
+			updatedAt: Date.now(),
+		});
+
+		if (args.includeVersion ?? true) {
+			await ctx.db.insert("documentTemplateVersions", {
+				basePdfHash: `template-base-${args.name}`,
+				basePdfId,
+				publishedAt: Date.now(),
+				publishedBy: "test_admin",
+				snapshot,
+				templateId,
+				version: args.currentPublishedVersion ?? 1,
+			});
+		}
+
+		return templateId;
+	});
+}
+
 describe("documents/mortgageBlueprints", () => {
+	it("skips stale published template pointers when listing attachable templates", async () => {
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+
+		const validTemplateId = await seedDocumentTemplate({
+			currentPublishedVersion: 1,
+			name: "Valid template",
+			t,
+		});
+		const staleTemplateId = await seedDocumentTemplate({
+			currentPublishedVersion: 7,
+			includeVersion: false,
+			name: "Stale template",
+			t,
+		});
+		await seedDocumentTemplate({
+			includeVersion: false,
+			name: "Draft template",
+			t,
+		});
+
+		const templates = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(api.documents.mortgageBlueprints.listAttachableTemplates, {});
+
+		expect(templates).toHaveLength(1);
+		expect(templates[0]).toMatchObject({
+			currentPublishedVersion: 1,
+			name: "Valid template",
+			templateId: validTemplateId,
+		});
+		expect(
+			templates.some((template) => template.templateId === staleTemplateId)
+		).toBe(false);
+	});
+
 	it("lists active mortgage blueprints and archives them", async () => {
 		const t = createTestConvex({ includeWorkflowComponents: false });
 		const fixture = await seedMortgageBlueprintFixture(t);

@@ -9,9 +9,10 @@ import {
 	seedObjectWithFields,
 	seedRecord,
 } from "../../../src/test/convex/crm/helpers";
-import { api } from "../../_generated/api";
+import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import type {
+	FieldReferenceId,
 	RecordFilter,
 	RecordSort,
 	SavedViewFilterDefinition,
@@ -20,7 +21,7 @@ import type {
 } from "../types";
 
 interface CreateUserSavedViewArgs {
-	fieldOrder?: Id<"fieldDefs">[];
+	fieldOrder?: FieldReferenceId[];
 	filters?: SavedViewFilterDefinition[];
 	groupByFieldId?: Id<"fieldDefs">;
 	isDefault?: boolean;
@@ -29,19 +30,19 @@ interface CreateUserSavedViewArgs {
 	sort?: RecordSort;
 	sourceViewDefId?: Id<"viewDefs">;
 	viewType: ViewLayout;
-	visibleFieldIds?: Id<"fieldDefs">[];
+	visibleFieldIds?: FieldReferenceId[];
 }
 
 interface UpdateUserSavedViewArgs {
 	aggregatePresets?: UserSavedViewDefinition["aggregatePresets"];
-	fieldOrder?: Id<"fieldDefs">[];
+	fieldOrder?: FieldReferenceId[];
 	filters?: SavedViewFilterDefinition[];
 	groupByFieldId?: Id<"fieldDefs">;
 	isDefault?: boolean;
 	name?: string;
 	sort?: RecordSort | null;
 	userSavedViewId: Id<"userSavedViews">;
-	visibleFieldIds?: Id<"fieldDefs">[];
+	visibleFieldIds?: FieldReferenceId[];
 }
 
 interface TableQueryResult {
@@ -300,6 +301,57 @@ describe("CRM user saved views", () => {
 		expect(schema.effectiveView.filters[0]?.operator).toBe("is");
 		expect(schema.effectiveView.filters[0]?.value).toBe("new");
 		expect(schema.effectiveView.sort).toEqual(sort);
+	});
+
+	it("persists adapter computed columns in table saved-view visibility", async () => {
+		const orgId = "org_crm_test_001";
+		await t.mutation(
+			internal.crm.systemAdapters.bootstrap.bootstrapSystemObjects,
+			{ orgId }
+		);
+
+		const dealObject = await t.run(async (ctx) => {
+			return ctx.db
+				.query("objectDefs")
+				.withIndex("by_org_name", (query) =>
+					query.eq("orgId", orgId).eq("name", "deal")
+				)
+				.first();
+		});
+		expect(dealObject).not.toBeNull();
+		if (!dealObject) {
+			throw new Error("Deal system object not found");
+		}
+
+		const views = await asAdmin(t).query(api.crm.viewDefs.listViews, {
+			objectDefId: dealObject._id,
+		});
+		const defaultView = views.find((view) => view.isDefault);
+		expect(defaultView).toBeDefined();
+		if (!defaultView) {
+			throw new Error("Deal default view not found");
+		}
+
+		const userSavedViewId = await asAdmin(t).mutation(CREATE_USER_SAVED_VIEW, {
+			name: "Deal computed columns",
+			objectDefId: dealObject._id,
+			sourceViewDefId: defaultView._id,
+			viewType: "table",
+			isDefault: true,
+			visibleFieldIds: ["computed:loanAmount"],
+			fieldOrder: ["computed:loanAmount"],
+		});
+
+		const schema = (await asAdmin(t).query(api.crm.viewQueries.getViewSchema, {
+			viewDefId: defaultView._id,
+		})) as ViewSchemaResult;
+
+		expect(schema.effectiveView.activeSavedViewId).toBe(userSavedViewId);
+		expect(
+			schema.columns
+				.filter((column) => column.isVisible)
+				.map((column) => column.name)
+		).toEqual(["loanAmount"]);
 	});
 
 	it("persists saved-view sort and returns it from listUserSavedViews", async () => {

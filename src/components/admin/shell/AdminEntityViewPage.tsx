@@ -23,6 +23,7 @@ import {
 import { api } from "../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type {
+	FieldReferenceId,
 	RecordFilter,
 	RecordSort,
 	UserSavedViewDefinition,
@@ -65,7 +66,10 @@ function findFieldIdByName(
 	}
 
 	const field = schema.fields.find((entry) => entry.name === fieldName);
-	return field?.fieldDefId;
+	if (!field?.fieldDefId || field.fieldDefId.startsWith("computed:")) {
+		return undefined;
+	}
+	return field.fieldDefId as Id<"fieldDefs">;
 }
 
 function serializeFilterValue(value: unknown) {
@@ -423,7 +427,7 @@ export function AdminEntityViewPage({
 	async function persistTableSavedViewState(args: {
 		filters?: readonly RecordFilter[];
 		sort?: RecordSort | null;
-		visibleFieldIds?: readonly Id<"fieldDefs">[];
+		visibleFieldIds?: readonly FieldReferenceId[];
 	}) {
 		if (
 			!(activeViewMode === "table" && objectDef && activeSourceView && schema)
@@ -473,7 +477,7 @@ export function AdminEntityViewPage({
 	}
 
 	async function handleColumnVisibilityChange(
-		fieldDefId: Id<"fieldDefs">,
+		fieldDefId: FieldReferenceId,
 		nextVisible: boolean
 	) {
 		if (!schema) {
@@ -496,11 +500,13 @@ export function AdminEntityViewPage({
 		}
 
 		const nextVisibleFieldIds = nextVisible
-			? schema.effectiveView.fieldOrder.filter(
-					(candidateFieldDefId) =>
-						String(candidateFieldDefId) === String(fieldDefId) ||
-						currentVisibleSet.has(String(candidateFieldDefId))
-				)
+			? schema.columns
+					.map((column) => column.fieldDefId)
+					.filter(
+						(candidateFieldDefId) =>
+							String(candidateFieldDefId) === String(fieldDefId) ||
+							currentVisibleSet.has(String(candidateFieldDefId))
+					)
 			: currentVisibleFieldIds.filter(
 					(candidateFieldDefId) =>
 						String(candidateFieldDefId) !== String(fieldDefId)

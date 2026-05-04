@@ -22,6 +22,7 @@ import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type {
 	EntityViewAdapterContract,
 	EntityViewRow,
+	FieldReferenceId,
 	NormalizedFieldDefinition,
 	RecordFilter,
 	RecordSort,
@@ -54,7 +55,7 @@ interface AdminEntityTableViewProps {
 		"entityType" | "titleFieldName"
 	>;
 	readonly columns: readonly AdminViewColumn[];
-	readonly defaultVisibleFieldIds: readonly Id<"fieldDefs">[];
+	readonly defaultVisibleFieldIds: readonly FieldReferenceId[];
 	readonly fields: readonly NormalizedFieldDefinition[];
 	readonly footerAggregates: readonly TableFooterAggregateResult[];
 	readonly isMutating?: boolean;
@@ -68,7 +69,7 @@ interface AdminEntityTableViewProps {
 		direction: RecordSort["direction"] | null
 	) => void;
 	readonly onChangeColumnVisibility: (
-		fieldDefId: Id<"fieldDefs">,
+		fieldDefId: FieldReferenceId,
 		nextVisible: boolean
 	) => void;
 	readonly onClearAllControls: () => void;
@@ -277,17 +278,24 @@ export function AdminEntityTableView({
 										<div className="min-w-0">
 											<p className="truncate font-medium">{column.label}</p>
 										</div>
-										{schemaColumn ? (
+										{schemaColumn &&
+										schemaColumn.normalizedFieldKind !== "computed" ? (
 											<AdminTableColumnHeaderControls
 												column={schemaColumn}
 												currentFilter={currentFilter}
 												currentSortDirection={currentSortDirection}
 												disabled={isMutating}
 												onApplyFilter={(nextFilter) =>
-													onApplyColumnFilter(column.fieldDefId, nextFilter)
+													onApplyColumnFilter(
+														column.fieldDefId as Id<"fieldDefs">,
+														nextFilter
+													)
 												}
 												onChangeSort={(direction) =>
-													onChangeColumnSort(column.fieldDefId, direction)
+													onChangeColumnSort(
+														column.fieldDefId as Id<"fieldDefs">,
+														direction
+													)
 												}
 											/>
 										) : null}

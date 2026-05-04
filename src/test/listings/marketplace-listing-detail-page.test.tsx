@@ -89,11 +89,11 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				comparables: [
 					{
 						address: "12 Mercer Street",
-						adjustedValue: 655000,
+						adjustedValue: 65_500_000,
 						id: "comp-1",
 						propertyType: "Condo",
 						saleDate: "2026-02-14",
-						salePrice: 648000,
+						salePrice: 64_800_000,
 						squareFootage: 812,
 					},
 				],
@@ -101,8 +101,8 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				id: "appraisal-1",
 				reportDate: "2026-02-22",
 				type: "desktop",
-				valueAsIfComplete: 705000,
-				valueAsIs: 675000,
+				valueAsIfComplete: 70_500_000,
+				valueAsIs: 67_500_000,
 			},
 		],
 		documents: [
@@ -123,41 +123,27 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				balanceAsOfDate: "2026-01-05",
 				holder: "Senior Charge Holder",
 				id: "enc-1",
-				outstandingBalance: 125000,
+				outstandingBalance: 12_500_000,
 				priority: 1,
 				type: "mortgage",
 			},
 		],
 		investment: {
 			availableFractions: 4200,
+			checkoutReady: true,
 			investorCount: 3,
 			lockedPercent: 12,
 			soldPercent: 28,
 			totalFractions: 10_000,
 		},
-		checkout: {
-			defaultFractions: 1,
-			disabledReason: null,
-			isEligible: true,
-			lawyers: [
-				{
-					detail: "FairLend closing counsel coordination",
-					email: "closing@fairlend.local",
-					firm: "FairLend Closing Network",
-					id: "fairlend-closing-network",
-					label: "FairLend Closing Network",
-					type: "platform_lawyer",
-				},
-			],
-			lockFee: {
-				amountCents: 25_000,
-				currency: "CAD",
-				display: "CAD 250",
+		lawyers: [
+			{
+				authId: "fairlend-closing-network",
+				displayName: "FairLend Closing Network",
+				email: "closing@fairlend.local",
+				role: "lawyer",
 			},
-			maximumFractions: 420,
-			minimumFractions: 1,
-			perFractionAmount: 450,
-		},
+		],
 		listing: {
 			approximateLatitude: 43.645,
 			approximateLongitude: -79.395,
@@ -186,7 +172,7 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				"Strong first-position opportunity with disciplined underwriting.",
 			maturityDate: "2028-03-15",
 			mortgageTypeLabel: "First",
-			monthlyPayment: 3187,
+			monthlyPayment: 318_700,
 			paymentFrequency: "monthly",
 			paymentHistory: {
 				byStatus: {
@@ -204,7 +190,20 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				],
 				totalObligations: 12,
 			},
-			principal: 450000,
+			paymentSnapshot: {
+				mostRecentPaymentAmount: 318_700,
+				mostRecentPaymentDate: Date.parse("2026-03-15T00:00:00.000Z"),
+				mostRecentPaymentStatus: "settled",
+				nextUpcomingPaymentAmount: 318_700,
+				nextUpcomingPaymentDate: Date.parse("2026-04-26T00:00:00.000Z"),
+				nextUpcomingPaymentStatus: "provider_scheduled",
+			},
+			nextPaymentDue: {
+				amount: 318_700,
+				date: Date.parse("2026-05-01T00:00:00.000Z"),
+				status: "planned",
+			},
+			principal: 45_000_000,
 			propertyTypeLabel: "Detached Home",
 			rateType: "fixed",
 			readOnly: true,
@@ -221,7 +220,7 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 				locationLabel: "Etobicoke, ON",
 				ltvRatio: 66,
 				mortgageTypeLabel: "First",
-				principal: 320000,
+				principal: 32_000_000,
 				propertyTypeLabel: "Condo",
 				title: "Lakeshore Condo Bridge",
 			},
@@ -238,6 +237,16 @@ describe("marketplace listing detail adapter", () => {
 		expect(model.investment.totalFractions).toBe(10);
 		expect(model.investment.perFractionAmount).toBe(45_000);
 		expect(model.investment.availabilityLabel).toBe("4.2 of 10 available");
+		expect(model.atAGlance).toContainEqual({
+			label: "Principal",
+			value: "$450,000",
+		});
+		expect(model.appraisal.asIs.value).toBe("$675,000");
+		expect(model.keyFinancials).toContainEqual({
+			label: "Monthly Payment",
+			note: "Monthly",
+			value: "$3,187",
+		});
 		expect(model.documents[0]?.url).toBe(
 			"https://example.com/appraisal-report.pdf"
 		);
@@ -247,6 +256,12 @@ describe("marketplace listing detail adapter", () => {
 		expect(model.paymentHistory).toMatchObject({
 			lateCount: 1,
 			missedCount: 1,
+			nextUpcoming: {
+				amount: "$3,187",
+				date: "May 1, 2026",
+				status: "planned",
+				statusLabel: "Planned",
+			},
 			onTimeRate: "80%",
 		});
 		expect(model.paymentHistory.months).toEqual([
@@ -276,7 +291,6 @@ describe("marketplace listing detail page", () => {
 			"success_pending"
 		);
 		expect(rendered.getAttribute("data-portal-id")).toBe("portal_meridian");
-		expect(rendered.getAttribute("data-listings-index-to")).toBe("/listings");
 		expect(rendered.getAttribute("data-title")).toBe(
 			"King West Bridge Opportunity"
 		);
@@ -308,7 +322,7 @@ describe("marketplace listing detail page", () => {
 			expect(startMarketplaceCheckout).toHaveBeenCalledWith({
 				listingId: "listing_123456",
 				portalId: "portal_meridian",
-				requestedFractions: 2,
+				requestedFractions: 2000,
 				selectedLawyer: {
 					type: "guest_lawyer",
 					name: "Jordan Counsel",

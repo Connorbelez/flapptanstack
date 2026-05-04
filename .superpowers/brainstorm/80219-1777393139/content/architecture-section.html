@@ -1,0 +1,67 @@
+<h2>Architecture Section</h2>
+<p class="subtitle">This is the proposed production document pipeline, with groups preserved as Documenso envelope units and packages introduced above them.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Document Engine Authoring</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+      <div class="placeholder">
+        <div class="label">Variables</div>
+        Canonical read-only + mapped custom variables
+      </div>
+      <div class="placeholder">
+        <div class="label">Templates</div>
+        Versioned document layouts
+      </div>
+      <div class="placeholder">
+        <div class="label">Groups</div>
+        One Documenso envelope definition
+      </div>
+      <div class="placeholder">
+        <div class="label">Packages</div>
+        Versioned bundle of groups + standalone docs
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">Operational Application</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div class="placeholder">
+        <div class="label">Mortgage Files</div>
+        Apply published package version future-only; allow mortgage-scoped overrides
+      </div>
+      <div class="placeholder">
+        <div class="label">Deal Lock</div>
+        Newly inserted deal row supplies lender, lawyer, fractions, investment amount, mortgage graph
+      </div>
+      <div class="placeholder">
+        <div class="label">Deal Documents</div>
+        Store immutable package snapshot and generated docs; link every row to deal detail
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>Core Contracts</h4>
+    <ul>
+      <li>Groups remain envelope-level and reusable</li>
+      <li>Packages are versioned standards, not signing envelopes</li>
+      <li>Mortgage package application is future-only</li>
+      <li>Locked deals snapshot everything needed for audit and regeneration diagnostics</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>Generated Outputs</h4>
+    <ul>
+      <li>One envelope per selected group</li>
+      <li>One envelope per standalone signable document</li>
+      <li>No envelope for static or non-signable generated documents</li>
+      <li>Published document views split template versions from locked-deal documents</li>
+    </ul>
+  </div>
+</div>

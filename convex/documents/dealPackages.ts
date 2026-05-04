@@ -11,6 +11,7 @@ import {
 	adminAction,
 	convex,
 	dealQuery,
+	documentQuery,
 	requirePermissionAction,
 } from "../fluent";
 import {
@@ -20,9 +21,9 @@ import {
 	dealDocumentInstanceKindValidator,
 	dealDocumentInstanceStatusValidator,
 	dealDocumentPackageStatusValidator,
+	dealDocumentSourceBlueprintSnapshotValidator,
 	dealPackageBlueprintSnapshotValidator,
 	generatedDocumentSigningStatusValidator,
-	mortgageDocumentBlueprintClassValidator,
 	signatureEnvelopeStatusValidator,
 	signatureProviderCodeValidator,
 	signatureProviderRoleValidator,
@@ -266,51 +267,38 @@ function normalizeText(value: string | null | undefined) {
 	return trimmed && trimmed.length > 0 ? trimmed : "";
 }
 
-function toBlueprintSnapshot(
+export function toDealPackageBlueprintSnapshot(
 	blueprint: Pick<
 		BlueprintRow,
+		| "_id"
+		| "assetId"
 		| "category"
 		| "class"
 		| "description"
 		| "displayName"
 		| "displayOrder"
+		| "mappingOverrides"
 		| "packageKey"
 		| "packageLabel"
 		| "templateId"
 		| "templateVersion"
 	>
-): DealDocumentSourceBlueprintSnapshot {
-	return {
-		category: blueprint.category,
-		class: blueprint.class,
-		description: blueprint.description,
-		displayName: blueprint.displayName,
-		displayOrder: blueprint.displayOrder,
-		packageKey: blueprint.packageKey,
-		packageLabel: blueprint.packageLabel,
-		templateId: blueprint.templateId,
-		templateVersion: blueprint.templateVersion,
-	};
-}
-
-function toPackageBlueprintSnapshot(
-	blueprint: Pick<
-		BlueprintRow,
-		"_id" | "assetId" | "category" | "class" | "description" | "displayName"
-	> &
-		Pick<
-			BlueprintRow,
-			| "displayOrder"
-			| "packageKey"
-			| "packageLabel"
-			| "templateId"
-			| "templateVersion"
-		>
 ): DealPackageBlueprintSnapshot {
 	return {
 		assetId: blueprint.assetId,
 		sourceBlueprintId: blueprint._id,
-		sourceBlueprintSnapshot: toBlueprintSnapshot(blueprint),
+		sourceBlueprintSnapshot: {
+			category: blueprint.category,
+			class: blueprint.class,
+			description: blueprint.description,
+			displayName: blueprint.displayName,
+			displayOrder: blueprint.displayOrder,
+			mappingOverrides: blueprint.mappingOverrides,
+			packageKey: blueprint.packageKey,
+			packageLabel: blueprint.packageLabel,
+			templateId: blueprint.templateId,
+			templateVersion: blueprint.templateVersion,
+		},
 	};
 }
 
@@ -475,6 +463,10 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 	const coBorrowers = snapshot.borrowers.filter(
 		(borrower) => borrower.role === "co_borrower"
 	);
+	const selectedFractionUnits = snapshot.dealParticipants.fractionalShareUnits;
+	const investmentAmount = Math.round(
+		(snapshot.mortgage.principal * selectedFractionUnits) / 10_000
+	);
 
 	return {
 		assigned_broker_email: snapshot.assignedBroker?.email ?? "",
@@ -487,6 +479,8 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 		borrower_primary_full_name: borrowerPrimary?.fullName ?? "",
 		broker_of_record_email: snapshot.brokerOfRecord.email,
 		broker_of_record_full_name: snapshot.brokerOfRecord.fullName,
+		deal_investment_amount: String(investmentAmount),
+		deal_selected_fraction_units: String(selectedFractionUnits),
 		lawyer_primary_email: lawyerPrimary?.email ?? "",
 		lawyer_primary_full_name: lawyerPrimary?.fullName ?? "",
 		listing_description: snapshot.listing?.description ?? "",
@@ -494,6 +488,7 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 		listing_title: snapshot.listing?.title ?? "",
 		lender_primary_email: lenderPrimary?.email ?? "",
 		lender_primary_full_name: lenderPrimary?.fullName ?? "",
+		lender_primary_system_id: snapshot.dealParticipants.buyer.userId ?? "",
 		mortgage_amortization_months: String(snapshot.mortgage.amortizationMonths),
 		mortgage_amount: String(snapshot.mortgage.principal),
 		mortgage_first_payment_date: snapshot.mortgage.firstPaymentDate,
@@ -1109,6 +1104,102 @@ export const listActivePackageBlueprintInputsInternal = convex
 	})
 	.internal();
 
+export const listActiveDocumentPackageBlueprintSnapshotsInternal = convex
+	.query()
+	.input({ mortgageId: v.id("mortgages") })
+	.handler(async (ctx, args): Promise<DealPackageBlueprintSnapshot[]> => {
+		const application = await ctx.db
+			.query("mortgagePackageApplications")
+			.withIndex("by_mortgage_status", (query) =>
+				query.eq("mortgageId", args.mortgageId).eq("status", "active")
+			)
+			.order("desc")
+			.first();
+		if (!application) {
+			return [];
+		}
+		const packageVersion = await ctx.db.get(application.packageVersionId);
+		if (!packageVersion) {
+			return [];
+		}
+
+		const snapshots: DealPackageBlueprintSnapshot[] = [];
+		for (const [itemIndex, item] of packageVersion.snapshot.items.entries()) {
+			if (item.kind === "group") {
+				for (const templateRef of item.templateRefs) {
+					const templateVersion = await ctx.db
+						.query("documentTemplateVersions")
+						.withIndex("by_template", (query) =>
+							query
+								.eq("templateId", templateRef.templateId)
+								.eq("version", templateRef.pinnedVersion)
+						)
+						.first();
+					const template = await ctx.db.get(templateRef.templateId);
+					const containsSignableFields =
+						templateVersion?.snapshot.fields.some(
+							(field) => field.type === "signable"
+						) ?? false;
+					snapshots.push({
+						sourceBlueprintSnapshot: {
+							class: containsSignableFields
+								? "private_templated_signable"
+								: "private_templated_non_signable",
+							displayName: `${item.name} - ${template?.name ?? "Document"}`,
+							displayOrder: item.order + templateRef.order / 100,
+							envelopeBoundaryKey: `group:${item.groupVersionId}`,
+							packageItemKind: "group",
+							packageKey: `group:${item.groupVersionId}:${templateRef.templateId}:${templateRef.pinnedVersion}`,
+							packageLabel: packageVersion.snapshot.name,
+							packageVersionId: packageVersion._id,
+							templateId: templateRef.templateId,
+							templateVersion: templateRef.pinnedVersion,
+						},
+					});
+				}
+				continue;
+			}
+
+			if (item.kind === "standalone_template") {
+				snapshots.push({
+					sourceBlueprintSnapshot: {
+						class: item.containsSignableFields
+							? "private_templated_signable"
+							: "private_templated_non_signable",
+						displayName: item.label ?? item.templateName,
+						displayOrder: item.order,
+						envelopeBoundaryKey: item.containsSignableFields
+							? `standalone:${item.templateId}:${item.templateVersion}`
+							: undefined,
+						packageItemKind: "standalone_template",
+						packageKey: `standalone:${item.templateId}:${item.templateVersion}`,
+						packageLabel: packageVersion.snapshot.name,
+						packageVersionId: packageVersion._id,
+						templateId: item.templateId,
+						templateVersion: item.templateVersion,
+					},
+				});
+				continue;
+			}
+
+			snapshots.push({
+				assetId: item.assetId,
+				sourceBlueprintSnapshot: {
+					class: "private_static",
+					displayName: item.label ?? item.assetName,
+					displayOrder: item.order + itemIndex / 100,
+					packageItemKind: "static_asset",
+					packageKey: `static:${item.assetId}`,
+					packageLabel: packageVersion.snapshot.name,
+					packageVersionId: packageVersion._id,
+				},
+			});
+		}
+
+		return snapshots;
+	})
+	.internal();
+
 export const getDocumentAssetInternal = convex
 	.query()
 	.input({ assetId: v.id("documentAssets") })
@@ -1170,17 +1261,7 @@ export const createDealDocumentInstance = convex
 		mortgageId: v.id("mortgages"),
 		packageId: v.id("dealDocumentPackages"),
 		sourceBlueprintId: v.optional(v.id("mortgageDocumentBlueprints")),
-		sourceBlueprintSnapshot: v.object({
-			category: v.optional(v.string()),
-			class: mortgageDocumentBlueprintClassValidator,
-			description: v.optional(v.string()),
-			displayName: v.string(),
-			displayOrder: v.number(),
-			packageKey: v.optional(v.string()),
-			packageLabel: v.optional(v.string()),
-			templateId: v.optional(v.id("documentTemplates")),
-			templateVersion: v.optional(v.number()),
-		}),
+		sourceBlueprintSnapshot: dealDocumentSourceBlueprintSnapshotValidator,
 		status: dealDocumentInstanceStatusValidator,
 		updatedAt: v.number(),
 	})
@@ -1369,17 +1450,7 @@ export const createSignatureEnvelopeWithRecipientsInternal = convex
 		),
 		sourceBlueprintId: v.optional(v.id("mortgageDocumentBlueprints")),
 		sourceBlueprintSnapshot: v.optional(
-			v.object({
-				category: v.optional(v.string()),
-				class: mortgageDocumentBlueprintClassValidator,
-				description: v.optional(v.string()),
-				displayName: v.string(),
-				displayOrder: v.number(),
-				packageKey: v.optional(v.string()),
-				packageLabel: v.optional(v.string()),
-				templateId: v.optional(v.id("documentTemplates")),
-				templateVersion: v.optional(v.number()),
-			})
+			dealDocumentSourceBlueprintSnapshotValidator
 		),
 		status: signatureEnvelopeStatusValidator,
 	})
@@ -2341,6 +2412,57 @@ function buildTemplateGenerationFailureMessage(args: {
 	return "Template generation failed";
 }
 
+function applyVariableMappingOverrides(args: {
+	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot;
+	variableBag: Record<string, string>;
+}) {
+	const overrides = new Map(
+		(args.sourceBlueprintSnapshot.mappingOverrides?.variables ?? []).map(
+			(row) => [row.templateVariableKey, row.dealVariableKey]
+		)
+	);
+	const mappedVariables: Record<string, string> = {};
+	for (const [templateVariableKey, dealVariableKey] of overrides) {
+		const value = args.variableBag[dealVariableKey];
+		if (typeof value === "string") {
+			mappedVariables[templateVariableKey] = value;
+		}
+	}
+	return {
+		...args.variableBag,
+		...mappedVariables,
+	};
+}
+
+function applySignatoryMappingOverrides(args: {
+	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot;
+	signatoryMapping: Array<{
+		platformRole: string;
+		name: string;
+		email: string;
+	}>;
+}) {
+	const participantsByRole = new Map(
+		args.signatoryMapping.map((participant) => [
+			participant.platformRole,
+			participant,
+		])
+	);
+	const overrides =
+		args.sourceBlueprintSnapshot.mappingOverrides?.signatories ?? [];
+	const mapped = [...args.signatoryMapping];
+	for (const override of overrides) {
+		const participant = participantsByRole.get(override.dealParticipantRole);
+		if (participant) {
+			mapped.push({
+				...participant,
+				platformRole: override.templatePlatformRole,
+			});
+		}
+	}
+	return mapped;
+}
+
 function buildGeneratedDocumentMetadata(args: {
 	packageId: Id<"dealDocumentPackages">;
 	sourceBlueprintId?: Id<"mortgageDocumentBlueprints">;
@@ -2471,11 +2593,17 @@ function toSignatureProviderRecipients(
 	}));
 }
 
-function buildEnvelopeRecipientRows(args: {
+export function buildEnvelopeRecipientRows(args: {
 	createEnvelopeResult: SignatureProviderCreateEnvelopeResult;
 	runtime: DealPackageRuntimeState;
 	signatureRecipients: SignatureProviderRecipientInput[];
 }) {
+	const participantsByEmail = new Map(
+		args.runtime.signatoryParticipants.map((participant) => [
+			participant.email.toLowerCase(),
+			participant,
+		])
+	);
 	const participantsByRole = new Map(
 		args.runtime.signatoryParticipants.map((participant) => [
 			participant.platformRole,
@@ -2493,7 +2621,9 @@ function buildEnvelopeRecipientRows(args: {
 		const providerRecipient = providerRecipientsByRole.get(
 			recipient.platformRole
 		);
-		const participant = participantsByRole.get(recipient.platformRole);
+		const participant =
+			participantsByEmail.get(recipient.email.toLowerCase()) ??
+			participantsByRole.get(recipient.platformRole);
 		return {
 			email: recipient.email,
 			name: recipient.name,
@@ -2673,13 +2803,21 @@ async function createSignableGeneratedInstance(
 	}
 
 	try {
+		const signatoryMapping = applySignatoryMappingOverrides({
+			signatoryMapping: runtime.signatories,
+			sourceBlueprintSnapshot,
+		});
+		const variables = applyVariableMappingOverrides({
+			sourceBlueprintSnapshot,
+			variableBag: runtime.variables,
+		});
 		const generationResult = await ctx.runAction(
 			internal.documentEngine.generation.generateSingleTemplate,
 			{
 				pinnedVersion: sourceBlueprintSnapshot.templateVersion ?? undefined,
-				signatoryMapping: runtime.signatories,
+				signatoryMapping,
 				templateId: sourceBlueprintSnapshot.templateId,
-				variables: runtime.variables,
+				variables,
 			}
 		);
 
@@ -2857,13 +2995,21 @@ async function createNonSignableGeneratedInstance(
 	}
 
 	try {
+		const signatoryMapping = applySignatoryMappingOverrides({
+			signatoryMapping: runtime.signatories,
+			sourceBlueprintSnapshot,
+		});
+		const variables = applyVariableMappingOverrides({
+			sourceBlueprintSnapshot,
+			variableBag: runtime.variables,
+		});
 		const generationResult = await ctx.runAction(
 			internal.documentEngine.generation.generateSingleTemplate,
 			{
 				pinnedVersion: sourceBlueprintSnapshot.templateVersion ?? undefined,
-				signatoryMapping: runtime.signatories,
+				signatoryMapping,
 				templateId: sourceBlueprintSnapshot.templateId,
-				variables: runtime.variables,
+				variables,
 			}
 		);
 
@@ -2979,13 +3125,30 @@ async function prepareDealPackageRuntime(
 						mortgageId: snapshot.mortgage._id,
 					}
 				);
-	const blueprintSnapshots =
+	const activePackageBlueprintSnapshots =
 		existingPackage?.blueprintSnapshots &&
 		existingPackage.blueprintSnapshots.length > 0
-			? existingPackage.blueprintSnapshots
-			: activeBlueprints.map((blueprint: BlueprintRow) =>
-					toPackageBlueprintSnapshot(blueprint)
+			? []
+			: await ctx.runQuery(
+					internal.documents.dealPackages
+						.listActiveDocumentPackageBlueprintSnapshotsInternal,
+					{
+						mortgageId: snapshot.mortgage._id,
+					}
 				);
+	let blueprintSnapshots: DealPackageBlueprintSnapshot[];
+	if (
+		existingPackage?.blueprintSnapshots &&
+		existingPackage.blueprintSnapshots.length > 0
+	) {
+		blueprintSnapshots = existingPackage.blueprintSnapshots;
+	} else if (activePackageBlueprintSnapshots.length > 0) {
+		blueprintSnapshots = activePackageBlueprintSnapshots;
+	} else {
+		blueprintSnapshots = activeBlueprints.map((blueprint: BlueprintRow) =>
+			toDealPackageBlueprintSnapshot(blueprint)
+		);
+	}
 	if (
 		existingPackage?.status === "ready" &&
 		!args.retry &&
@@ -3107,6 +3270,61 @@ export const retryPackageGeneration = retryPackageGenerationAction
 			dealId: args.dealId,
 			retry: true,
 		});
+	})
+	.public();
+
+export const listPublishedDealDocuments = documentQuery
+	.input({})
+	.handler(async (ctx) => {
+		const instances = await ctx.db
+			.query("dealDocumentInstances")
+			.order("desc")
+			.collect();
+		const activeInstances = instances.filter(
+			(instance) => instance.status !== "archived"
+		);
+
+		return await Promise.all(
+			activeInstances.map(async (instance) => {
+				const [packageRow, deal, mortgage, generatedDocument] =
+					await Promise.all([
+						ctx.db.get(instance.packageId),
+						ctx.db.get(instance.dealId),
+						ctx.db.get(instance.mortgageId),
+						instance.generatedDocumentId
+							? ctx.db.get(instance.generatedDocumentId)
+							: Promise.resolve(null),
+					]);
+				const documentAsset = instance.assetId
+					? await ctx.db.get(instance.assetId)
+					: null;
+				let documentUrl: string | null = null;
+				if (generatedDocument?.pdfStorageId) {
+					documentUrl = await ctx.storage.getUrl(
+						generatedDocument.pdfStorageId
+					);
+				} else if (documentAsset?.fileRef) {
+					documentUrl = await ctx.storage.getUrl(documentAsset.fileRef);
+				}
+
+				return {
+					dealHref: `/admin/deals/${String(instance.dealId)}`,
+					dealId: instance.dealId,
+					dealStatus: deal?.status ?? null,
+					displayName: instance.sourceBlueprintSnapshot.displayName,
+					documentUrl,
+					generatedDocumentId: instance.generatedDocumentId ?? null,
+					instanceId: instance._id,
+					mortgageId: mortgage?._id ?? instance.mortgageId,
+					packageId: packageRow?._id ?? instance.packageId,
+					packageStatus: packageRow?.status ?? null,
+					signingStatus: generatedDocument?.signingStatus ?? null,
+					status: instance.status,
+					templateVersion:
+						instance.sourceBlueprintSnapshot.templateVersion ?? null,
+				};
+			})
+		);
 	})
 	.public();
 

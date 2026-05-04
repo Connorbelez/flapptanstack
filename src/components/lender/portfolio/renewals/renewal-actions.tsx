@@ -204,8 +204,8 @@ class RenewalActionSurfaceView extends Component<
 				<div
 					className={
 						variant === "compact"
-							? "space-y-3 rounded-lg border border-border/70 p-3"
-							: "space-y-4 rounded-xl border border-border/70 p-4"
+							? "space-y-3 border-border/70 border-y py-3"
+							: "space-y-4 border-border/70 border-y py-4"
 					}
 					data-testid={`renewal-loading-${mortgageId}`}
 				>
@@ -260,8 +260,8 @@ class RenewalActionSurfaceView extends Component<
 			<div
 				className={
 					variant === "compact"
-						? "space-y-3 rounded-lg border border-border/70 bg-muted/10 p-3"
-						: "space-y-4 rounded-xl border border-border/70 bg-muted/10 p-4"
+						? "space-y-3 border-border/70 border-y bg-muted/10 py-3"
+						: "space-y-4 border-border/70 border-y bg-muted/10 py-4"
 				}
 				data-testid={`renewal-action-surface-${variant}-${mortgageId}`}
 			>

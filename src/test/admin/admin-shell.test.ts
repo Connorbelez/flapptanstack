@@ -362,6 +362,19 @@ describe("admin shell helpers", () => {
 		).toBe("Originations");
 	});
 
+	it("registers the document engine route in system navigation", () => {
+		const sections = getAdminNavigationSections();
+		const systemSection = sections.find((section) => section.domain === "system");
+		const documentEngineItem = systemSection?.items.find(
+			(item) => item.label === "Document Engine"
+		);
+
+		expect(documentEngineItem).toMatchObject({
+			kind: "route",
+			route: "/admin/document-engine",
+		});
+	});
+
 	it("identifies admin pathnames for root header suppression", () => {
 		expect(isAdminPathname("/admin")).toBe(true);
 		expect(isAdminPathname("/admin/listings")).toBe(true);

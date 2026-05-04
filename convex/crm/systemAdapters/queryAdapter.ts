@@ -131,6 +131,13 @@ async function getNativeTableRecordById(
 			const normalizedId = ctx.db.normalizeId("properties", recordId);
 			return normalizedId ? ctx.db.get(normalizedId) : null;
 		}
+		case "micInvestorAccessRequests": {
+			const normalizedId = ctx.db.normalizeId(
+				"micInvestorAccessRequests",
+				recordId
+			);
+			return normalizedId ? ctx.db.get(normalizedId) : null;
+		}
 		default: {
 			const exhaustiveCheck: never = tableName;
 			throw new ConvexError(`Unknown native table: ${String(exhaustiveCheck)}`);
@@ -200,6 +207,10 @@ async function paginateNativeTable(
 			// listings — no per-row orgId). The FairLend staff admin route is the
 			// only consumer, gated at the route/auth layer.
 			return ctx.db.query("properties").paginate(paginationOpts);
+		case "micInvestorAccessRequests":
+			// MIC investor access requests are scoped by portalId, not orgId.
+			// Admin access is gated at the route/auth layer.
+			return ctx.db.query("micInvestorAccessRequests").paginate(paginationOpts);
 		default:
 			throw new ConvexError(`Unknown native table: ${tableName}`);
 	}
@@ -262,6 +273,10 @@ async function takeNativeTable(
 		case "properties":
 			// See paginateNativeTable — properties are not org-scoped.
 			return ctx.db.query("properties").take(limit);
+		case "micInvestorAccessRequests":
+			// MIC investor access requests are scoped by portalId, not orgId.
+			// Admin access is gated at the route/auth layer.
+			return ctx.db.query("micInvestorAccessRequests").take(limit);
 		default:
 			throw new ConvexError(`Unknown native table: ${tableName}`);
 	}
@@ -276,7 +291,8 @@ export type NativeTableName =
 	| "deals"
 	| "obligations"
 	| "listings"
-	| "properties";
+	| "properties"
+	| "micInvestorAccessRequests";
 
 /**
  * Counts rows in a native system table using `.take()` rather than `.paginate()`.

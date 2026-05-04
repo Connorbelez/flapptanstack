@@ -4,7 +4,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getListingDetailMock } from "#/components/demo/listings/listing-detail-mock-data";
 import { ListingDetailPage } from "#/components/listings/ListingDetailPage";
 import type {
@@ -19,6 +19,18 @@ const reactModulePath = vi.hoisted(
 vi.mock("react", async () => {
 	return await vi.importActual<typeof import("react")>(reactModulePath);
 });
+
+vi.mock("#/components/listings/ListingPdfViewer", () => ({
+	ListingPdfViewer: ({
+		document,
+	}: {
+		document: { readonly label: string };
+	}) => <div data-testid="listing-pdf-viewer">{document.label}</div>,
+}));
+
+vi.mock("#/components/listings/ListingMap", () => ({
+	ListingMap: () => <div data-testid="listing-map" />,
+}));
 
 vi.mock("@tanstack/react-router", async () => {
 	const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
@@ -40,8 +52,23 @@ vi.mock("@tanstack/react-router", async () => {
 	};
 });
 
+beforeEach(() => {
+	vi.stubGlobal(
+		"IntersectionObserver",
+		class IntersectionObserver {
+			disconnect() {}
+			observe() {}
+			takeRecords() {
+				return [];
+			}
+			unobserve() {}
+		}
+	);
+});
+
 afterEach(() => {
 	cleanup();
+	vi.unstubAllGlobals();
 	vi.clearAllMocks();
 });
 

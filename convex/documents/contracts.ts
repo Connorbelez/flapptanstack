@@ -11,15 +11,26 @@ const MORTGAGE_DOCUMENT_SIGNATORY_ROLES = [
 ] as const;
 
 const SUPPORTED_DEAL_DOCUMENT_VARIABLE_KEYS = [
+	"assigned_broker_email",
 	"assigned_broker_full_name",
+	"borrower_co_1_email",
 	"borrower_co_1_full_name",
+	"borrower_co_2_email",
 	"borrower_co_2_full_name",
 	"borrower_primary_email",
 	"borrower_primary_full_name",
+	"broker_of_record_email",
 	"broker_of_record_full_name",
+	"deal_investment_amount",
+	"deal_selected_fraction_units",
+	"lawyer_primary_email",
 	"lawyer_primary_full_name",
 	"listing_description",
+	"listing_marketplace_copy",
 	"listing_title",
+	"lender_primary_email",
+	"lender_primary_full_name",
+	"lender_primary_system_id",
 	"mortgage_amortization_months",
 	"mortgage_amount",
 	"mortgage_first_payment_date",
@@ -76,6 +87,29 @@ export const mortgageDocumentValidationSummaryValidator = v.object({
 	unsupportedVariableKeys: v.array(v.string()),
 });
 
+const supportedDealDocumentVariableKeyValidator = v.union(
+	...SUPPORTED_DEAL_DOCUMENT_VARIABLE_KEYS.map((key) => v.literal(key))
+);
+
+const mortgageDocumentSignatoryRoleValidator = v.union(
+	...MORTGAGE_DOCUMENT_SIGNATORY_ROLES.map((role) => v.literal(role))
+);
+
+export const mortgageDocumentVariableMappingOverrideValidator = v.object({
+	dealVariableKey: supportedDealDocumentVariableKeyValidator,
+	templateVariableKey: v.string(),
+});
+
+export const mortgageDocumentSignatoryMappingOverrideValidator = v.object({
+	dealParticipantRole: mortgageDocumentSignatoryRoleValidator,
+	templatePlatformRole: v.string(),
+});
+
+export const mortgageDocumentMappingOverridesValidator = v.object({
+	signatories: v.array(mortgageDocumentSignatoryMappingOverrideValidator),
+	variables: v.array(mortgageDocumentVariableMappingOverrideValidator),
+});
+
 export type MortgageDocumentBlueprintClass = Infer<
 	typeof mortgageDocumentBlueprintClassValidator
 >;
@@ -90,6 +124,16 @@ export type MortgageDocumentBlueprintStatus = Infer<
 
 export type MortgageDocumentValidationSummary = Infer<
 	typeof mortgageDocumentValidationSummaryValidator
+>;
+
+export type MortgageDocumentMappingOverrides = Infer<
+	typeof mortgageDocumentMappingOverridesValidator
+>;
+export type MortgageDocumentVariableMappingOverride = Infer<
+	typeof mortgageDocumentVariableMappingOverrideValidator
+>;
+export type MortgageDocumentSignatoryMappingOverride = Infer<
+	typeof mortgageDocumentSignatoryMappingOverrideValidator
 >;
 
 export const dealDocumentPackageStatusValidator = v.union(
@@ -261,8 +305,18 @@ export const dealDocumentSourceBlueprintSnapshotValidator = v.object({
 	description: v.optional(v.string()),
 	displayName: v.string(),
 	displayOrder: v.number(),
+	mappingOverrides: v.optional(mortgageDocumentMappingOverridesValidator),
 	packageKey: v.optional(v.string()),
 	packageLabel: v.optional(v.string()),
+	packageItemKind: v.optional(
+		v.union(
+			v.literal("group"),
+			v.literal("standalone_template"),
+			v.literal("static_asset")
+		)
+	),
+	packageVersionId: v.optional(v.id("documentPackageVersions")),
+	envelopeBoundaryKey: v.optional(v.string()),
 	templateId: v.optional(v.id("documentTemplates")),
 	templateVersion: v.optional(v.number()),
 });

@@ -11,7 +11,11 @@ import {
 } from "@testing-library/react";
 import { useMutation } from "convex/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BrokerPortalPricingCard } from "#/components/admin/settings/AdminSettingsPage";
+import {
+	BrokerPortalPricingCard,
+	FairLendMicPortalCard,
+} from "#/components/admin/settings/AdminSettingsPage";
+import { toast } from "sonner";
 
 vi.mock("convex/react", () => ({
 	useAction: vi.fn(),
@@ -98,5 +102,27 @@ describe("admin settings page", () => {
 		);
 
 		expect(saveBrokerPricing).not.toHaveBeenCalled();
+	});
+
+	it("runs the FairLend MIC portal repair mutation", async () => {
+		const repairMicPortal = vi.fn().mockResolvedValue({
+			lenderId: "lender_fairlend_mic",
+			micLenderAuthId: "seed_fairlend_mic_lender_fairlend_ca",
+			orgId: "org_mic",
+			portalId: "portal_mic",
+			wasCreated: false,
+		});
+		vi.mocked(useMutation).mockReturnValue(repairMicPortal);
+
+		render(<FairLendMicPortalCard />);
+
+		fireEvent.click(screen.getByRole("button", { name: "Repair MIC portal" }));
+
+		await waitFor(() => {
+			expect(repairMicPortal).toHaveBeenCalledWith({});
+		});
+		expect(toast.success).toHaveBeenCalledWith(
+			"MIC portal ready at mic.localhost:3000 with lender mapping seed_fairlend_mic_lender_fairlend_ca."
+		);
 	});
 });

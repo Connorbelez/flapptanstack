@@ -226,7 +226,7 @@ export function AdminRecordDetailSurface({
 		<div
 			className={cn(
 				"min-h-0 flex-1 overflow-y-auto",
-				variant === "page" && "rounded-2xl border border-border/70 bg-card"
+				variant === "page" && "border-border/70 border-t"
 			)}
 		>
 			<Tabs className="min-h-0 flex-1" defaultValue="details">
@@ -370,10 +370,10 @@ export function AdminRecordDetailSurface({
 
 	const content = (
 		<div className="flex min-h-0 flex-1 flex-col">
-			<SheetHeader className="gap-4 border-b pb-5">
+			<SheetHeader className="gap-5 border-b pb-5">
 				<div className="flex items-start justify-between gap-3">
 					<div className="flex items-start gap-3">
-						<div className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+						<div className="flex h-11 w-11 items-center justify-center border-border/70 border-y text-muted-foreground">
 							<EntityIcon className="h-5 w-5" iconName={iconName} />
 						</div>
 						<div className="space-y-2">
@@ -453,13 +453,13 @@ function RecordMetaRow({
 
 	return (
 		<div className="grid gap-3 sm:grid-cols-2">
-			<div className="rounded-lg border bg-muted/30 px-3 py-2">
+			<div className="border-border/70 border-t py-2">
 				<p className="text-muted-foreground text-xs uppercase tracking-[0.14em]">
 					Created
 				</p>
 				<p className="mt-1 text-sm">{formatTimestamp(record.createdAt)}</p>
 			</div>
-			<div className="rounded-lg border bg-muted/30 px-3 py-2">
+			<div className="border-border/70 border-t py-2">
 				<p className="text-muted-foreground text-xs uppercase tracking-[0.14em]">
 					Updated
 				</p>
@@ -534,7 +534,7 @@ function DetailsTab({
 			<div className="space-y-3">
 				{FIELD_SKELETON_IDS.map((skeletonId) => (
 					<div
-						className="h-24 animate-pulse rounded-lg border bg-muted/40"
+						className="h-24 animate-pulse border-border/70 border-t bg-muted/30"
 						key={skeletonId}
 					/>
 				))}
@@ -560,7 +560,7 @@ function DetailsTab({
 					icon={<FileText className="h-5 w-5" />}
 					title="Live record data unavailable"
 				/>
-				<div className="rounded-lg border bg-muted/20 p-4 text-sm">
+				<div className="border-border/70 border-y py-4 text-sm">
 					<p>
 						<span className="font-medium">Entity:</span>{" "}
 						{entity?.pluralLabel ?? objectDef.pluralLabel}
@@ -617,8 +617,8 @@ function UnavailableTab({
 	readonly title: string;
 }) {
 	return (
-		<div className="rounded-xl border border-dashed bg-muted/20 px-6 py-10 text-center">
-			<div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-background text-muted-foreground">
+		<div className="border-border/70 border-y px-6 py-10 text-center">
+			<div className="mx-auto flex h-11 w-11 items-center justify-center text-muted-foreground">
 				{icon}
 			</div>
 			<p className="mt-4 font-medium text-sm">{title}</p>
@@ -723,7 +723,7 @@ function PageSummarySection({
 	readonly title: string;
 }) {
 	return (
-		<section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
+		<section className="border-border/70 border-t pt-4">
 			<h2 className="font-medium text-sm tracking-[0.02em]">{title}</h2>
 			<div className="mt-3">{children}</div>
 		</section>
@@ -738,7 +738,7 @@ function SummaryValueCard({
 	readonly value: ReactNode;
 }) {
 	return (
-		<div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-3">
+		<div className="border-border/60 border-t py-3">
 			<p className="text-muted-foreground text-xs uppercase tracking-[0.08em]">
 				{label}
 			</p>

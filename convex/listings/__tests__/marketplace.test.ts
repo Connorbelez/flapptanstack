@@ -4,13 +4,20 @@ import { describe, expect, it } from "vitest";
 import { seedFromIdentity } from "../../../src/test/auth/helpers";
 import { LENDER } from "../../../src/test/auth/identities";
 import type { Doc } from "../../_generated/dataModel";
+import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
+import { FAIRLEND_MIC_LENDER_EMAIL } from "../../platform/defaultOriginationOwnerContract";
 import schema from "../../schema";
+import { seedAuthIdFromEmail } from "../../seed/seedHelpers";
 import { convexModules } from "../../test/moduleMaps";
 import { deriveMarketplacePropertyType } from "../marketplaceShared";
 
 const modules = convexModules;
 const listingApi = anyApi.listings.marketplace;
+const mortgageOwnershipApi = anyApi.admin.mortgages.ownership;
 const publicDocumentsApi = anyApi.listings.publicDocuments;
+const CANONICAL_MIC_LENDER_AUTH_ID = seedAuthIdFromEmail(
+	FAIRLEND_MIC_LENDER_EMAIL
+);
 
 function createHarness() {
 	return convexTest(schema, modules);
@@ -27,6 +34,20 @@ function listingViewer(t: ReturnType<typeof createHarness>) {
 		user_email: "listing-viewer@fairlend.ca",
 		user_first_name: "Listing",
 		user_last_name: "Viewer",
+	});
+}
+
+function fairlendAdmin(t: ReturnType<typeof createHarness>) {
+	return t.withIdentity({
+		subject: "marketplace-admin",
+		issuer: "https://api.workos.com",
+		org_id: FAIRLEND_STAFF_ORG_ID,
+		role: "admin",
+		roles: JSON.stringify(["admin"]),
+		permissions: JSON.stringify(["admin:access", "listing:view"]),
+		user_email: "marketplace-admin@fairlend.ca",
+		user_first_name: "Marketplace",
+		user_last_name: "Admin",
 	});
 }
 
@@ -513,6 +534,250 @@ describe("marketplace listings", () => {
 		expect(result?.listing.interestRate).toBe(7.65);
 		expect(result?.listing.monthlyPayment).toBe(1125);
 		expect(result?.similarListings[0]?.interestRate).toBe(9);
+	});
+
+	it("defaults canonical MIC-owned mortgages to fully available for sale", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+		const { mortgageId, propertyId } = await insertMortgageFixture(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			await ctx.db.insert("ledger_accounts", {
+				createdAt: 1_710_000_000_000,
+				cumulativeCredits: 0n,
+				cumulativeDebits: 10_000n,
+				lenderId: CANONICAL_MIC_LENDER_AUTH_ID,
+				mortgageId: String(mortgageId),
+				pendingCredits: 0n,
+				pendingDebits: 0n,
+				type: "POSITION",
+			});
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					mortgageId,
+					propertyId,
+					title: "Canonical MIC Held Opportunity",
+				})
+			);
+		});
+
+		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(result?.investment.availableFractions).toBe(10_000);
+		expect(result?.investment.soldPercent).toBe(0);
+	});
+
+	it("caps canonical MIC sale availability with the mortgage override", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+		const admin = fairlendAdmin(t);
+		const { mortgageId, propertyId } = await insertMortgageFixture(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			await ctx.db.insert("ledger_accounts", {
+				createdAt: 1_710_000_000_000,
+				cumulativeCredits: 0n,
+				cumulativeDebits: 10_000n,
+				lenderId: CANONICAL_MIC_LENDER_AUTH_ID,
+				mortgageId: String(mortgageId),
+				pendingCredits: 0n,
+				pendingDebits: 0n,
+				type: "POSITION",
+			});
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					mortgageId,
+					propertyId,
+					title: "Capped MIC Held Opportunity",
+				})
+			);
+		});
+
+		await admin.mutation(mortgageOwnershipApi.setMicSaleAvailabilityOverride, {
+			availableLedgerUnits: 6000,
+			mortgageId,
+			reason: "Limit MIC sale allocation for staged marketplace release.",
+		});
+
+		const capped = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(capped?.investment.availableFractions).toBe(6000);
+
+		await admin.mutation(
+			mortgageOwnershipApi.clearMicSaleAvailabilityOverride,
+			{
+				mortgageId,
+				reason: "Restore full MIC availability after staged release.",
+			}
+		);
+
+		const cleared = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(cleared?.investment.availableFractions).toBe(10_000);
+	});
+
+	it("includes live mortgage payment history and next upcoming payment on marketplace detail", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+		const { mortgageId, propertyId } = await insertMortgageFixture(t);
+
+		const now = Date.now();
+		const lastPaymentDate = now - 30 * 24 * 60 * 60 * 1000;
+		const nextPaymentDate = now + 14 * 24 * 60 * 60 * 1000;
+		const nextCollectionDate = nextPaymentDate - 5 * 24 * 60 * 60 * 1000;
+		let listingId!: Doc<"listings">["_id"];
+
+		await t.run(async (ctx) => {
+			const borrowerUser = await ctx.db.query("users").first();
+			if (!borrowerUser) {
+				throw new Error("Expected mortgage fixture to seed a user.");
+			}
+			const borrowerId = await ctx.db.insert("borrowers", {
+				createdAt: now,
+				orgId: "org_listing_viewer",
+				status: "active",
+				userId: borrowerUser._id,
+			});
+
+			await ctx.db.insert("obligations", {
+				amount: 125_000,
+				amountSettled: 125_000,
+				borrowerId,
+				createdAt: lastPaymentDate,
+				dueDate: lastPaymentDate,
+				gracePeriodEnd: lastPaymentDate,
+				lastTransitionAt: lastPaymentDate,
+				machineContext: undefined,
+				mortgageId,
+				orgId: "org_listing_viewer",
+				paymentNumber: 1,
+				settledAt: lastPaymentDate,
+				status: "settled",
+				type: "regular_interest",
+			});
+
+			const upcomingObligationId = await ctx.db.insert("obligations", {
+				amount: 125_000,
+				amountSettled: 0,
+				borrowerId,
+				createdAt: now,
+				dueDate: nextPaymentDate,
+				gracePeriodEnd: nextPaymentDate + 5 * 24 * 60 * 60 * 1000,
+				lastTransitionAt: now,
+				machineContext: undefined,
+				mortgageId,
+				orgId: "org_listing_viewer",
+				paymentNumber: 2,
+				settledAt: undefined,
+				status: "upcoming",
+				type: "regular_interest",
+			});
+
+			await ctx.db.insert("collectionPlanEntries", {
+				amount: 125_000,
+				createdAt: now,
+				method: "manual",
+				mortgageId,
+				obligationIds: [upcomingObligationId],
+				scheduledDate: nextCollectionDate,
+				source: "default_schedule",
+				status: "planned",
+			});
+
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					mortgageId,
+					paymentHistory: {
+						byStatus: { settled: 1, upcoming: 1 },
+						months: [{ label: "Mar", status: "settled" }],
+						totalObligations: 2,
+					},
+					propertyId,
+					title: "Payment Snapshot Listing",
+				})
+			);
+		});
+
+		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(result?.listing.paymentHistory).toEqual({
+			byStatus: { settled: 1, upcoming: 1 },
+			months: [{ label: "Mar", status: "settled" }],
+			totalObligations: 2,
+		});
+		expect(result?.listing.paymentSnapshot).toMatchObject({
+			mostRecentPaymentAmount: 125_000,
+			mostRecentPaymentDate: lastPaymentDate,
+			mostRecentPaymentStatus: "settled",
+			nextUpcomingPaymentAmount: 125_000,
+			nextUpcomingPaymentDate: nextCollectionDate,
+			nextUpcomingPaymentStatus: "planned",
+		});
+		expect(result?.listing.nextPaymentDue).toEqual({
+			amount: 125_000,
+			date: nextPaymentDate,
+			status: "planned",
+		});
+	});
+
+	it("falls back to other published listings when no same-property similar listings exist", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					marketplacePropertyType: "Detached Home",
+					propertyType: "residential",
+					title: "Detached Detail Listing",
+				})
+			);
+			await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					marketplacePropertyType: "Condo",
+					propertyType: "condo",
+					title: "Fallback Condo Opportunity",
+				})
+			);
+		});
+
+		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(result?.similarListings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					propertyTypeLabel: "Condo",
+					title: "Fallback Condo Opportunity",
+				}),
+			])
+		);
 	});
 
 	it("returns null for unpublished marketplace detail", async () => {

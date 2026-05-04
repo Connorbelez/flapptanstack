@@ -12,7 +12,9 @@ import {
 } from "../../../../../convex/engine/effects/workosProvisioning";
 import { activateMortgageAggregate } from "../../../../../convex/mortgages/activateMortgageAggregate";
 import { buildAdminDirectMortgageActivationSource } from "../../../../../convex/mortgages/provenance";
+import { FAIRLEND_MIC_LENDER_EMAIL } from "../../../../../convex/platform/defaultOriginationOwnerContract";
 import { buildPortalHosts } from "../../../../../convex/portals/helpers";
+import { seedAuthIdFromEmail } from "../../../../../convex/seed/seedHelpers";
 import { createMockViewer, createTestConvex, ensureSeededIdentity } from "../../../auth/helpers";
 import { FAIRLEND_ADMIN } from "../../../auth/identities";
 
@@ -810,7 +812,7 @@ describe("admin origination commit", () => {
 			artifacts.ledgerAccounts.some(
 				(account) =>
 					account.type === "POSITION" &&
-					account.lenderId === String(defaultOwner.defaultOriginationLenderId)
+					account.lenderId === seedAuthIdFromEmail(FAIRLEND_MIC_LENDER_EMAIL)
 			)
 		).toBe(true);
 		expect(

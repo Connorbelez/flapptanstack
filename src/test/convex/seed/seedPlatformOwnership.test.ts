@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { api } from "../../../../convex/_generated/api";
 import { getRequiredDefaultOriginationOwner } from "../../../../convex/platform/defaultOriginationOwner";
+import {
+	MIC_PORTAL_DEFAULT_POST_AUTH_PATH,
+	MIC_PORTAL_LOCAL_HOST,
+	MIC_PORTAL_PRODUCTION_HOST,
+	MIC_PORTAL_SLUG,
+} from "../../../../convex/portals/helpers";
+import { FAIRLEND_MIC_LENDER_EMAIL } from "../../../../convex/platform/defaultOriginationOwnerContract";
+import { seedAuthIdFromEmail } from "../../../../convex/seed/seedHelpers";
 import { createTestConvex, ensureSeededIdentity } from "../../auth/helpers";
 import { FAIRLEND_ADMIN } from "../../auth/identities";
 
@@ -110,5 +118,56 @@ describe("seedPlatformOwnership", () => {
 		expect(snapshot.resolved.trustBankAccount?._id).toBe(
 			first.defaultFairlendTrustBankAccountId
 		);
+	});
+
+	it("repairs the canonical MIC portal host with the FairLend MIC lender mapping", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+
+		const now = Date.now();
+		const brokenPortalId = await t.run(async (ctx) => {
+			return await ctx.db.insert("portals", {
+				createdAt: now,
+				defaultPostAuthPath: MIC_PORTAL_DEFAULT_POST_AUTH_PATH,
+				isPublished: true,
+				localHost: MIC_PORTAL_LOCAL_HOST,
+				orgId: "org_mic_investors",
+				portalType: "mic",
+				productionHost: "mic-e2e.fairlend.test",
+				publicTeaserEnabled: false,
+				slug: MIC_PORTAL_SLUG,
+				status: "active",
+				teaserListingLimit: 0,
+				updatedAt: now,
+			});
+		});
+
+		const before = await t.query(api.portals.queries.resolvePortalByHost, {
+			host: MIC_PORTAL_LOCAL_HOST,
+		});
+		expect(before?.availability).toBe("misconfigured");
+
+		const repaired = await t.withIdentity(FAIRLEND_ADMIN).mutation(
+			api.seed.seedPlatformOwnership.ensureFairLendMicPortal,
+			{
+				orgId: "org_fairlend_mic",
+			}
+		);
+		const after = await t.query(api.portals.queries.resolvePortalByHost, {
+			host: MIC_PORTAL_LOCAL_HOST,
+		});
+		const portal = await t.run(async (ctx) => {
+			return await ctx.db.get(repaired.portalId);
+		});
+
+		expect(repaired.wasCreated).toBe(false);
+		expect(repaired.portalId).toBe(brokenPortalId);
+		expect(repaired.micLenderAuthId).toBe(
+			seedAuthIdFromEmail(FAIRLEND_MIC_LENDER_EMAIL)
+		);
+		expect(after?.availability).toBe("active");
+		expect(after?.portal.productionHost).toBe(MIC_PORTAL_PRODUCTION_HOST);
+		expect(portal?.micLenderAuthId).toBe(repaired.micLenderAuthId);
+		expect(portal?.orgId).toBe("org_fairlend_mic");
 	});
 });

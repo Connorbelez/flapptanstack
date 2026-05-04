@@ -48,6 +48,7 @@ import { Route as DemoStorybookRouteImport } from './routes/demo/storybook'
 import { Route as DemoSimulationRouteImport } from './routes/demo/simulation'
 import { Route as DemoProdLedgerRouteImport } from './routes/demo/prod-ledger'
 import { Route as DemoListingsRouteImport } from './routes/demo.listings'
+import { Route as DemoDealClosingPipelineRouteImport } from './routes/demo/deal-closing-pipeline'
 import { Route as DemoConvexWorkflowRouteImport } from './routes/demo/convex-workflow'
 import { Route as DemoConvexTriggersRouteImport } from './routes/demo/convex-triggers'
 import { Route as DemoConvexTracerRouteImport } from './routes/demo/convex-tracer'
@@ -144,6 +145,9 @@ import { Route as AdminMortgagesRecordidRouteImport } from './routes/admin/mortg
 import { Route as AdminListingsRecordidRouteImport } from './routes/admin/listings/$recordid'
 import { Route as AdminDocumentEngineVariablesRouteImport } from './routes/admin.document-engine.variables'
 import { Route as AdminDocumentEngineTemplatesRouteImport } from './routes/admin.document-engine.templates'
+import { Route as AdminDocumentEnginePublishedTemplatesRouteImport } from './routes/admin.document-engine.published-templates'
+import { Route as AdminDocumentEnginePublishedDealDocumentsRouteImport } from './routes/admin.document-engine.published-deal-documents'
+import { Route as AdminDocumentEnginePackagesRouteImport } from './routes/admin.document-engine.packages'
 import { Route as AdminDocumentEngineLibraryRouteImport } from './routes/admin.document-engine.library'
 import { Route as AdminDocumentEngineGroupsRouteImport } from './routes/admin.document-engine.groups'
 import { Route as AdminDealsRecordidRouteImport } from './routes/admin/deals/$recordid'
@@ -358,6 +362,11 @@ const DemoProdLedgerRoute = DemoProdLedgerRouteImport.update({
 const DemoListingsRoute = DemoListingsRouteImport.update({
   id: '/demo/listings',
   path: '/demo/listings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoDealClosingPipelineRoute = DemoDealClosingPipelineRouteImport.update({
+  id: '/demo/deal-closing-pipeline',
+  path: '/demo/deal-closing-pipeline',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoConvexWorkflowRoute = DemoConvexWorkflowRouteImport.update({
@@ -873,6 +882,24 @@ const AdminDocumentEngineTemplatesRoute =
     path: '/templates',
     getParentRoute: () => AdminDocumentEngineRoute,
   } as any)
+const AdminDocumentEnginePublishedTemplatesRoute =
+  AdminDocumentEnginePublishedTemplatesRouteImport.update({
+    id: '/published-templates',
+    path: '/published-templates',
+    getParentRoute: () => AdminDocumentEngineRoute,
+  } as any)
+const AdminDocumentEnginePublishedDealDocumentsRoute =
+  AdminDocumentEnginePublishedDealDocumentsRouteImport.update({
+    id: '/published-deal-documents',
+    path: '/published-deal-documents',
+    getParentRoute: () => AdminDocumentEngineRoute,
+  } as any)
+const AdminDocumentEnginePackagesRoute =
+  AdminDocumentEnginePackagesRouteImport.update({
+    id: '/packages',
+    path: '/packages',
+    getParentRoute: () => AdminDocumentEngineRoute,
+  } as any)
 const AdminDocumentEngineLibraryRoute =
   AdminDocumentEngineLibraryRouteImport.update({
     id: '/library',
@@ -1043,6 +1070,7 @@ export interface FileRoutesByFullPath {
   '/demo/convex-tracer': typeof DemoConvexTracerRoute
   '/demo/convex-triggers': typeof DemoConvexTriggersRoute
   '/demo/convex-workflow': typeof DemoConvexWorkflowRoute
+  '/demo/deal-closing-pipeline': typeof DemoDealClosingPipelineRoute
   '/demo/listings': typeof DemoListingsRouteWithChildren
   '/demo/prod-ledger': typeof DemoProdLedgerRoute
   '/demo/simulation': typeof DemoSimulationRoute
@@ -1075,6 +1103,9 @@ export interface FileRoutesByFullPath {
   '/admin/deals/$recordid': typeof AdminDealsRecordidRoute
   '/admin/document-engine/groups': typeof AdminDocumentEngineGroupsRoute
   '/admin/document-engine/library': typeof AdminDocumentEngineLibraryRoute
+  '/admin/document-engine/packages': typeof AdminDocumentEnginePackagesRoute
+  '/admin/document-engine/published-deal-documents': typeof AdminDocumentEnginePublishedDealDocumentsRoute
+  '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
@@ -1186,6 +1217,7 @@ export interface FileRoutesByTo {
   '/demo/convex-tracer': typeof DemoConvexTracerRoute
   '/demo/convex-triggers': typeof DemoConvexTriggersRoute
   '/demo/convex-workflow': typeof DemoConvexWorkflowRoute
+  '/demo/deal-closing-pipeline': typeof DemoDealClosingPipelineRoute
   '/demo/prod-ledger': typeof DemoProdLedgerRoute
   '/demo/simulation': typeof DemoSimulationRoute
   '/demo/storybook': typeof DemoStorybookRoute
@@ -1216,6 +1248,9 @@ export interface FileRoutesByTo {
   '/admin/deals/$recordid': typeof AdminDealsRecordidRoute
   '/admin/document-engine/groups': typeof AdminDocumentEngineGroupsRoute
   '/admin/document-engine/library': typeof AdminDocumentEngineLibraryRoute
+  '/admin/document-engine/packages': typeof AdminDocumentEnginePackagesRoute
+  '/admin/document-engine/published-deal-documents': typeof AdminDocumentEnginePublishedDealDocumentsRoute
+  '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
@@ -1341,6 +1376,7 @@ export interface FileRoutesById {
   '/demo/convex-tracer': typeof DemoConvexTracerRoute
   '/demo/convex-triggers': typeof DemoConvexTriggersRoute
   '/demo/convex-workflow': typeof DemoConvexWorkflowRoute
+  '/demo/deal-closing-pipeline': typeof DemoDealClosingPipelineRoute
   '/demo/listings': typeof DemoListingsRouteWithChildren
   '/demo/prod-ledger': typeof DemoProdLedgerRoute
   '/demo/simulation': typeof DemoSimulationRoute
@@ -1373,6 +1409,9 @@ export interface FileRoutesById {
   '/admin/deals/$recordid': typeof AdminDealsRecordidRoute
   '/admin/document-engine/groups': typeof AdminDocumentEngineGroupsRoute
   '/admin/document-engine/library': typeof AdminDocumentEngineLibraryRoute
+  '/admin/document-engine/packages': typeof AdminDocumentEnginePackagesRoute
+  '/admin/document-engine/published-deal-documents': typeof AdminDocumentEnginePublishedDealDocumentsRoute
+  '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
@@ -1499,6 +1538,7 @@ export interface FileRouteTypes {
     | '/demo/convex-tracer'
     | '/demo/convex-triggers'
     | '/demo/convex-workflow'
+    | '/demo/deal-closing-pipeline'
     | '/demo/listings'
     | '/demo/prod-ledger'
     | '/demo/simulation'
@@ -1531,6 +1571,9 @@ export interface FileRouteTypes {
     | '/admin/deals/$recordid'
     | '/admin/document-engine/groups'
     | '/admin/document-engine/library'
+    | '/admin/document-engine/packages'
+    | '/admin/document-engine/published-deal-documents'
+    | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
     | '/admin/listings/$recordid'
@@ -1642,6 +1685,7 @@ export interface FileRouteTypes {
     | '/demo/convex-tracer'
     | '/demo/convex-triggers'
     | '/demo/convex-workflow'
+    | '/demo/deal-closing-pipeline'
     | '/demo/prod-ledger'
     | '/demo/simulation'
     | '/demo/storybook'
@@ -1672,6 +1716,9 @@ export interface FileRouteTypes {
     | '/admin/deals/$recordid'
     | '/admin/document-engine/groups'
     | '/admin/document-engine/library'
+    | '/admin/document-engine/packages'
+    | '/admin/document-engine/published-deal-documents'
+    | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
     | '/admin/listings/$recordid'
@@ -1796,6 +1843,7 @@ export interface FileRouteTypes {
     | '/demo/convex-tracer'
     | '/demo/convex-triggers'
     | '/demo/convex-workflow'
+    | '/demo/deal-closing-pipeline'
     | '/demo/listings'
     | '/demo/prod-ledger'
     | '/demo/simulation'
@@ -1828,6 +1876,9 @@ export interface FileRouteTypes {
     | '/admin/deals/$recordid'
     | '/admin/document-engine/groups'
     | '/admin/document-engine/library'
+    | '/admin/document-engine/packages'
+    | '/admin/document-engine/published-deal-documents'
+    | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
     | '/admin/listings/$recordid'
@@ -1937,6 +1988,7 @@ export interface RootRouteChildren {
   DemoConvexTracerRoute: typeof DemoConvexTracerRoute
   DemoConvexTriggersRoute: typeof DemoConvexTriggersRoute
   DemoConvexWorkflowRoute: typeof DemoConvexWorkflowRoute
+  DemoDealClosingPipelineRoute: typeof DemoDealClosingPipelineRoute
   DemoListingsRoute: typeof DemoListingsRouteWithChildren
   DemoProdLedgerRoute: typeof DemoProdLedgerRoute
   DemoSimulationRoute: typeof DemoSimulationRoute
@@ -2226,6 +2278,13 @@ declare module '@tanstack/react-router' {
       path: '/demo/listings'
       fullPath: '/demo/listings'
       preLoaderRoute: typeof DemoListingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/deal-closing-pipeline': {
+      id: '/demo/deal-closing-pipeline'
+      path: '/demo/deal-closing-pipeline'
+      fullPath: '/demo/deal-closing-pipeline'
+      preLoaderRoute: typeof DemoDealClosingPipelineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/convex-workflow': {
@@ -2900,6 +2959,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDocumentEngineTemplatesRouteImport
       parentRoute: typeof AdminDocumentEngineRoute
     }
+    '/admin/document-engine/published-templates': {
+      id: '/admin/document-engine/published-templates'
+      path: '/published-templates'
+      fullPath: '/admin/document-engine/published-templates'
+      preLoaderRoute: typeof AdminDocumentEnginePublishedTemplatesRouteImport
+      parentRoute: typeof AdminDocumentEngineRoute
+    }
+    '/admin/document-engine/published-deal-documents': {
+      id: '/admin/document-engine/published-deal-documents'
+      path: '/published-deal-documents'
+      fullPath: '/admin/document-engine/published-deal-documents'
+      preLoaderRoute: typeof AdminDocumentEnginePublishedDealDocumentsRouteImport
+      parentRoute: typeof AdminDocumentEngineRoute
+    }
+    '/admin/document-engine/packages': {
+      id: '/admin/document-engine/packages'
+      path: '/packages'
+      fullPath: '/admin/document-engine/packages'
+      preLoaderRoute: typeof AdminDocumentEnginePackagesRouteImport
+      parentRoute: typeof AdminDocumentEngineRoute
+    }
     '/admin/document-engine/library': {
       id: '/admin/document-engine/library'
       path: '/library'
@@ -3120,6 +3200,9 @@ const AdminEntitytypeRouteWithChildren = AdminEntitytypeRoute._addFileChildren(
 interface AdminDocumentEngineRouteChildren {
   AdminDocumentEngineGroupsRoute: typeof AdminDocumentEngineGroupsRoute
   AdminDocumentEngineLibraryRoute: typeof AdminDocumentEngineLibraryRoute
+  AdminDocumentEnginePackagesRoute: typeof AdminDocumentEnginePackagesRoute
+  AdminDocumentEnginePublishedDealDocumentsRoute: typeof AdminDocumentEnginePublishedDealDocumentsRoute
+  AdminDocumentEnginePublishedTemplatesRoute: typeof AdminDocumentEnginePublishedTemplatesRoute
   AdminDocumentEngineTemplatesRoute: typeof AdminDocumentEngineTemplatesRoute
   AdminDocumentEngineVariablesRoute: typeof AdminDocumentEngineVariablesRoute
   AdminDocumentEngineIndexRoute: typeof AdminDocumentEngineIndexRoute
@@ -3129,6 +3212,11 @@ interface AdminDocumentEngineRouteChildren {
 const AdminDocumentEngineRouteChildren: AdminDocumentEngineRouteChildren = {
   AdminDocumentEngineGroupsRoute: AdminDocumentEngineGroupsRoute,
   AdminDocumentEngineLibraryRoute: AdminDocumentEngineLibraryRoute,
+  AdminDocumentEnginePackagesRoute: AdminDocumentEnginePackagesRoute,
+  AdminDocumentEnginePublishedDealDocumentsRoute:
+    AdminDocumentEnginePublishedDealDocumentsRoute,
+  AdminDocumentEnginePublishedTemplatesRoute:
+    AdminDocumentEnginePublishedTemplatesRoute,
   AdminDocumentEngineTemplatesRoute: AdminDocumentEngineTemplatesRoute,
   AdminDocumentEngineVariablesRoute: AdminDocumentEngineVariablesRoute,
   AdminDocumentEngineIndexRoute: AdminDocumentEngineIndexRoute,
@@ -3599,6 +3687,7 @@ const rootRouteChildren: RootRouteChildren = {
   DemoConvexTracerRoute: DemoConvexTracerRoute,
   DemoConvexTriggersRoute: DemoConvexTriggersRoute,
   DemoConvexWorkflowRoute: DemoConvexWorkflowRoute,
+  DemoDealClosingPipelineRoute: DemoDealClosingPipelineRoute,
   DemoListingsRoute: DemoListingsRouteWithChildren,
   DemoProdLedgerRoute: DemoProdLedgerRoute,
   DemoSimulationRoute: DemoSimulationRoute,

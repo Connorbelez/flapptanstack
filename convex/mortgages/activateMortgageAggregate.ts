@@ -536,17 +536,26 @@ export async function activateMortgageAggregate(
 		},
 	});
 	const defaultOriginationOwner = await getRequiredDefaultOriginationOwner(ctx);
+	const defaultOriginationLenderUser = await ctx.db.get(
+		defaultOriginationOwner.lender.userId
+	);
+	if (!defaultOriginationLenderUser?.authId) {
+		throw new ConvexError(
+			"Default origination owner lender user is missing an auth id"
+		);
+	}
 
 	await issueSharesHandler(ctx, {
 		amount: Number(TOTAL_SUPPLY),
 		effectiveDate,
 		idempotencyKey: `${args.source.workflowSourceKey}:initial-owner-issue`,
-		lenderId: String(defaultOriginationOwner.lender._id),
+		lenderId: defaultOriginationLenderUser.authId,
 		metadata: {
 			caseId: args.source.originatingWorkflowId,
 			investmentVehicleId: String(
 				defaultOriginationOwner.investmentVehicle._id
 			),
+			lenderId: String(defaultOriginationOwner.lender._id),
 			orgId: args.orgId,
 			platformSettingsId: String(defaultOriginationOwner.settings._id),
 			stagedCollectionMode: args.collectionsDraft?.mode,

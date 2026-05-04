@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { api, internal } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../../../../convex/constants";
+import { CANONICAL_DOCUMENT_VARIABLES } from "../../../../convex/documentEngine/variableRegistry";
 import { getSignatureProvider } from "../../../../convex/documents/signature/provider";
 import {
 	createMockViewer,
@@ -308,21 +309,7 @@ afterEach(() => {
 async function seedPublishedTemplate(
 	t: ReturnType<typeof createTestConvex>,
 	args: {
-		fields: Array<{
-			id: string;
-			position: {
-				height: number;
-				page: number;
-				width: number;
-				x: number;
-				y: number;
-			};
-			required?: boolean;
-			signableType?: "SIGNATURE";
-			signatoryPlatformRole?: string;
-			type: "interpolable" | "signable";
-			variableKey?: string;
-		}>;
+		fields: PublishedTemplateField[];
 		name: string;
 		signatories?: Array<{
 			order: number;
@@ -407,6 +394,37 @@ async function seedSystemVariable(
 	});
 }
 
+type PublishedTemplateField = {
+	id: string;
+	position: {
+		height: number;
+		page: number;
+		width: number;
+		x: number;
+		y: number;
+	};
+	required?: boolean;
+	signableType?: "SIGNATURE";
+	signatoryPlatformRole?: string;
+	type: "interpolable" | "signable";
+	variableKey?: string;
+};
+
+function buildCanonicalInterpolableFields(): PublishedTemplateField[] {
+	return CANONICAL_DOCUMENT_VARIABLES.map((variable, index) => ({
+		id: `canonical_${variable.key}`,
+		position: {
+			height: 8,
+			page: 0,
+			width: 220,
+			x: index < 20 ? 72 : 320,
+			y: 72 + (index % 20) * 14,
+		},
+		type: "interpolable",
+		variableKey: variable.key,
+	}));
+}
+
 async function insertListing(
 	t: ReturnType<typeof createTestConvex>,
 	args: {
@@ -464,6 +482,7 @@ async function insertListing(
 async function seedDealPackageFixture(
 	t: ReturnType<typeof createTestConvex>,
 	args?: {
+		includeFullVariableData?: boolean;
 		includeListing?: boolean;
 		omitSignableSignatories?: boolean;
 		requireLawyerSignatory?: boolean;
@@ -518,13 +537,40 @@ async function seedDealPackageFixture(
 		roles: ["member"],
 		subject: "user_phase7_lawyer",
 	});
+	const coBorrowerOneIdentity = createMockViewer({
+		email: "co1.phase7@test.fairlend.ca",
+		firstName: "Cora",
+		lastName: "Coborrower",
+		orgId: FAIRLEND_STAFF_ORG_ID,
+		orgName: "FairLend Staff",
+		roles: ["member"],
+		subject: "user_phase7_coborrower_1",
+	});
+	const coBorrowerTwoIdentity = createMockViewer({
+		email: "co2.phase7@test.fairlend.ca",
+		firstName: "Chris",
+		lastName: "Coborrower",
+		orgId: FAIRLEND_STAFF_ORG_ID,
+		orgName: "FairLend Staff",
+		roles: ["member"],
+		subject: "user_phase7_coborrower_2",
+	});
 
-	const [lenderUserId, sellerUserId, brokerUserId, borrowerUserId] =
+	const [
+		lenderUserId,
+		sellerUserId,
+		brokerUserId,
+		borrowerUserId,
+		coBorrowerOneUserId,
+		coBorrowerTwoUserId,
+	] =
 		await Promise.all([
 			ensureSeededIdentity(t, lenderIdentity),
 			ensureSeededIdentity(t, sellerIdentity),
 			ensureSeededIdentity(t, brokerIdentity),
 			ensureSeededIdentity(t, borrowerIdentity),
+			ensureSeededIdentity(t, coBorrowerOneIdentity),
+			ensureSeededIdentity(t, coBorrowerTwoIdentity),
 		]);
 	await ensureSeededIdentity(t, lawyerIdentity);
 
@@ -539,15 +585,17 @@ async function seedDealPackageFixture(
 		name: "Private Static Package Doc",
 	});
 	const nonSignableTemplateId = await seedPublishedTemplate(t, {
-		fields: [
-			{
-				id: "field_non_signable_1",
-				position: { height: 18, page: 0, width: 220, x: 72, y: 120 },
-				type: "interpolable",
-				variableKey:
-					args?.templatedVariableKey ?? "borrower_primary_full_name",
-			},
-		],
+		fields: args?.includeFullVariableData
+			? buildCanonicalInterpolableFields()
+			: [
+					{
+						id: "field_non_signable_1",
+						position: { height: 18, page: 0, width: 220, x: 72, y: 120 },
+						type: "interpolable",
+						variableKey:
+							args?.templatedVariableKey ?? "borrower_primary_full_name",
+					},
+				],
 		name: "Mortgage Counsel Memo",
 		signatories: args?.requireLawyerSignatory
 			? [
@@ -617,6 +665,22 @@ async function seedDealPackageFixture(
 			status: "active",
 			userId: borrowerUserId,
 		});
+		const coBorrowerOneId = await ctx.db.insert("borrowers", {
+			createdAt: Date.now(),
+			lastTransitionAt: Date.now(),
+			onboardedAt: Date.now(),
+			orgId: FAIRLEND_STAFF_ORG_ID,
+			status: "active",
+			userId: coBorrowerOneUserId,
+		});
+		const coBorrowerTwoId = await ctx.db.insert("borrowers", {
+			createdAt: Date.now(),
+			lastTransitionAt: Date.now(),
+			onboardedAt: Date.now(),
+			orgId: FAIRLEND_STAFF_ORG_ID,
+			status: "active",
+			userId: coBorrowerTwoUserId,
+		});
 		const propertyId = await ctx.db.insert("properties", {
 			city: "Toronto",
 			createdAt: Date.now(),
@@ -624,9 +688,11 @@ async function seedDealPackageFixture(
 			propertyType: "residential",
 			province: "ON",
 			streetAddress: "123 King St W",
+			unit: args?.includeFullVariableData ? "Suite 1201" : undefined,
 		});
 		const mortgageId = await ctx.db.insert("mortgages", {
 			amortizationMonths: 300,
+			assignedBrokerId: args?.includeFullVariableData ? brokerId : undefined,
 			brokerOfRecordId: brokerId,
 			collectionExecutionMode: "app_owned",
 			collectionExecutionUpdatedAt: Date.now(),
@@ -670,12 +736,29 @@ async function seedDealPackageFixture(
 			mortgageId,
 			role: "primary",
 		});
+		if (args?.includeFullVariableData) {
+			await ctx.db.insert("mortgageBorrowers", {
+				addedAt: Date.now(),
+				borrowerId: coBorrowerOneId,
+				mortgageId,
+				role: "co_borrower",
+			});
+			await ctx.db.insert("mortgageBorrowers", {
+				addedAt: Date.now(),
+				borrowerId: coBorrowerTwoId,
+				mortgageId,
+				role: "co_borrower",
+			});
+		}
 		const dealId = await ctx.db.insert("deals", {
 			buyerId: lenderIdentity.subject,
 			closingDate: new Date("2026-05-15T12:00:00.000Z").getTime(),
 			createdAt: Date.now(),
 			createdBy: FAIRLEND_ADMIN.subject,
 			fractionalShare: 2_500,
+			lawyerId: args?.includeFullVariableData
+				? lawyerIdentity.subject
+				: undefined,
 			lawyerType: args?.requireLawyerSignatory ? "platform_lawyer" : undefined,
 			lockingFeeAmount: 7_500,
 			lenderId,
@@ -802,6 +885,7 @@ async function seedDealPackageFixture(
 			borrowerIdentity,
 			dealId,
 			lenderIdentity,
+			lenderUserId,
 			lawyerIdentity,
 			mortgageId,
 			propertyId,
@@ -810,6 +894,106 @@ async function seedDealPackageFixture(
 }
 
 describe("documents/dealPackages", () => {
+	it("materializes every canonical system variable when a locked deal package is generated", async () => {
+		installMockDocumensoFetch();
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeFullVariableData: true,
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "mortgage_principal",
+		});
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const variables = await t.query(
+			internal.documents.dealPackages.resolveDealDocumentVariablesInternal,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const generatedDocuments = await t.run((ctx) =>
+			ctx.db.query("generatedDocuments").collect()
+		);
+		const signatureEnvelopes = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+		const staticInstances = await t.run((ctx) =>
+			ctx.db
+				.query("dealDocumentInstances")
+				.filter((query) => query.eq(query.field("kind"), "static_reference"))
+				.collect()
+		);
+
+		expect(staticInstances).toHaveLength(1);
+		expect(generatedDocuments).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "Counsel memo",
+					signingStatus: "not_applicable",
+				}),
+				expect.objectContaining({
+					name: "Borrower signature packet",
+					signingStatus: "sent",
+				}),
+			])
+		);
+		expect(signatureEnvelopes).toEqual([
+			expect.objectContaining({
+				providerCode: "documenso",
+				status: "sent",
+			}),
+		]);
+		expect(variables).toMatchObject({
+			assigned_broker_email: "broker.phase7@test.fairlend.ca",
+			assigned_broker_full_name: "Brooke Broker",
+			borrower_co_1_email: "co1.phase7@test.fairlend.ca",
+			borrower_co_1_full_name: "Cora Coborrower",
+			borrower_co_2_email: "co2.phase7@test.fairlend.ca",
+			borrower_co_2_full_name: "Chris Coborrower",
+			borrower_primary_email: "seller.phase7@test.fairlend.ca",
+			borrower_primary_full_name: "Sam Seller",
+			broker_of_record_email: "broker.phase7@test.fairlend.ca",
+			broker_of_record_full_name: "Brooke Broker",
+			deal_investment_amount: "62500",
+			deal_selected_fraction_units: "2500",
+			lawyer_primary_email: "lawyer.phase7@test.fairlend.ca",
+			lawyer_primary_full_name: "Layla Lawyer",
+			listing_description: "Deal listing projection",
+			listing_marketplace_copy: "Marketplace copy",
+			listing_title: "King West bridge opportunity",
+			lender_primary_email: "lender.phase7@test.fairlend.ca",
+			lender_primary_full_name: "Lena Lender",
+			lender_primary_system_id: String(fixture.lenderUserId),
+			mortgage_amortization_months: "300",
+			mortgage_amount: "250000",
+			mortgage_first_payment_date: "2026-06-01",
+			mortgage_interest_rate: "9.5",
+			mortgage_lien_position: "1",
+			mortgage_maturity_date: "2027-04-30",
+			mortgage_payment_amount: "2450",
+			mortgage_payment_frequency: "monthly",
+			mortgage_principal: "250000",
+			mortgage_rate_type: "fixed",
+			mortgage_term_months: "12",
+			mortgage_term_start_date: "2026-05-01",
+			property_city: "Toronto",
+			property_postal_code: "M5H 1J9",
+			property_province: "ON",
+			property_street_address: "123 King St W",
+			property_type: "residential",
+			property_unit: "Suite 1201",
+			valuation_date: "2026-05-01",
+			valuation_value_as_is: "425000",
+		});
+		for (const { key } of CANONICAL_DOCUMENT_VARIABLES) {
+			expect(variables[key], key).toBeTruthy();
+		}
+	});
+
 	it("materializes immutable deal packages from active private mortgage blueprints", async () => {
 		installMockDocumensoFetch();
 		const t = createTestConvex({ includeWorkflowComponents: false });

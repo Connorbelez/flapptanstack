@@ -36,7 +36,7 @@ export const Route = createFileRoute(LENDER_PORTFOLIO_ROUTE_PATH)({
 		parseLenderPortfolioSearch(search),
 });
 
-export function LenderPortfolioRouteComponent() {
+function LenderPortfolioRouteComponent() {
 	return (
 		<>
 			<Authenticated>

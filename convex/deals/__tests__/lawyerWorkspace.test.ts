@@ -4,6 +4,7 @@ import aggregateSchema from "../../../node_modules/@convex-dev/aggregate/dist/co
 import auditLogSchema from "../../../node_modules/convex-audit-log/dist/component/schema.js";
 import { api } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
+import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
 import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
 
@@ -123,6 +124,21 @@ function memberIdentity(authId: string) {
 		user_email: `${authId}@test.fairlend.ca`,
 		user_first_name: "Unauth",
 		user_last_name: "Member",
+	};
+}
+
+function fairLendAdminIdentity(authId: string) {
+	return {
+		subject: authId,
+		issuer: "https://api.workos.com",
+		org_id: FAIRLEND_STAFF_ORG_ID,
+		organization_name: "FairLend Staff",
+		role: "admin",
+		roles: JSON.stringify(["admin"]),
+		permissions: JSON.stringify(["admin:access"]),
+		user_email: `${authId}@fairlend.ca`,
+		user_first_name: "Admin",
+		user_last_name: "User",
 	};
 }
 
@@ -417,6 +433,23 @@ describe("lawyer workspace projections", () => {
 			accessRole: "guest_lawyer",
 			accessState: "completed_read_only",
 		});
+		expect(result?.readOnly).toBe(true);
+	});
+
+	it("returns read-only workspace data to FairLend admins without lawyer assignment", async () => {
+		const { dealId, t } = await seedLawyerWorkspaceFixture({
+			lawyerAuthId: "assigned-lawyer-auth",
+		});
+
+		const result = await t
+			.withIdentity(fairLendAdminIdentity("admin-auth"))
+			.query(api.deals.lawyerQueries.getLawyerDealWorkspace, { dealId });
+
+		expect(result?.access).toMatchObject({
+			accessRole: "platform_lawyer",
+			accessState: "completed_read_only",
+		});
+		expect(result?.deal.dealId).toBe(dealId);
 		expect(result?.readOnly).toBe(true);
 	});
 

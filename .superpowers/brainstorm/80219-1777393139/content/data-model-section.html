@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; padding: 32px; background: #f8fafc; color: #0f172a; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    h2 { margin: 24px 0 8px; font-size: 16px; }
+    p { margin: 0 0 16px; color: #475569; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .card { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06); }
+    .label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; margin-bottom: 6px; }
+    .title { font-weight: 700; margin-bottom: 8px; }
+    ul { margin: 8px 0 0 18px; padding: 0; color: #334155; }
+    li { margin: 4px 0; }
+    .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; align-items: stretch; margin-top: 14px; }
+    .step { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; min-height: 88px; }
+    .arrow { text-align: center; color: #64748b; font-weight: 700; align-self: center; }
+    code { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Data Model Section</h1>
+  <p>New package definitions sit above existing templates, template versions, groups, mortgage blueprints, deal document packages, and generated documents.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">New</div>
+      <div class="title">documentPackageDefinitions</div>
+      <ul>
+        <li>Draft package metadata</li>
+        <li>Draft contents: group refs + standalone doc refs</li>
+        <li>Draft variable mappings and validation summary</li>
+        <li>Current published version pointer</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="label">New</div>
+      <div class="title">documentPackageVersions</div>
+      <ul>
+        <li>Immutable package snapshot</li>
+        <li>Pinned group and template versions</li>
+        <li>Package-wide variable requirements</li>
+        <li>Published by/at audit fields</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="label">New or Extended</div>
+      <div class="title">mortgagePackageApplications</div>
+      <ul>
+        <li>Mortgage id + published package version</li>
+        <li>Future-only status</li>
+        <li>Mortgage-scoped override metadata</li>
+        <li>Supersede/archive audit fields</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="flow">
+    <div class="step"><div class="label">Author</div><code>documentPackageDefinitions</code><br>draft package</div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="label">Publish</div><code>documentPackageVersions</code><br>immutable standard</div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="label">Apply</div><code>mortgagePackageApplications</code><br>future locks</div>
+  </div>
+
+  <h2>Existing Tables Stay Central</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="title">documentTemplateGroups</div>
+      <p>Remain envelope definitions. Package versions reference published group state rather than treating groups as packages.</p>
+    </div>
+    <div class="card">
+      <div class="title">dealDocumentPackages</div>
+      <p>Extend snapshot to include package version metadata, group boundaries, standalone document boundaries, and variable availability at lock time.</p>
+    </div>
+    <div class="card">
+      <div class="title">dealDocumentInstances</div>
+      <p>Rows point back to package item snapshots and deal detail. Group-generated documents share an envelope boundary; standalone signable docs get their own envelope.</p>
+    </div>
+  </div>
+</body>
+</html>
