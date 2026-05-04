@@ -381,6 +381,58 @@ describe("portal home route", () => {
 		).toBeTruthy();
 	});
 
+	it("can hand borrower actions and inline prefill to the production financing route family", () => {
+		arrangePortalLandingQuery(
+			buildLandingContract({
+				financingStrip: {
+					...buildLandingContract().financingStrip,
+					submitAction: { href: "/financing/start", label: "Continue" },
+				},
+				switchboard: {
+					...buildLandingContract().switchboard,
+					borrower: {
+						...buildLandingContract().switchboard.borrower,
+						nestedActions: [
+							{ href: "/financing/start", label: "Borrower intake" },
+							{
+								href: "/financing/pre-approval",
+								label: "Jump to pre-approval",
+							},
+						],
+						primaryAction: {
+							href: "/financing/start",
+							label: "Start financing intake",
+						},
+					},
+				},
+			})
+		);
+
+		render(<HomeContent />);
+
+		expect(
+			screen
+				.getByRole("link", { name: /Start financing intake/ })
+				.getAttribute("href")
+		).toBe("/financing/start");
+		expect(
+			screen
+				.getByRole("link", { name: /Jump to pre-approval/ })
+				.getAttribute("href")
+		).toBe("/financing/pre-approval");
+		expect(
+			screen.getByRole("button", { name: /Continue/ }).closest("form")
+				?.getAttribute("action")
+		).toBe("/financing/start");
+		expect(screen.getByLabelText("Full name").getAttribute("name")).toBe(
+			"fullName"
+		);
+		expect(screen.getByLabelText("Email").getAttribute("name")).toBe("email");
+		expect(screen.getByLabelText("Amount needed").getAttribute("name")).toBe(
+			"amountNeeded"
+		);
+	});
+
 	it("renders the featured-listings disabled state from the landing contract", () => {
 		arrangePortalLandingQuery(
 			buildLandingContract({
