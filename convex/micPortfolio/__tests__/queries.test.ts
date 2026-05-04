@@ -16,6 +16,11 @@ const micPortfolioApi = anyApi.micPortfolio.queries;
 
 const FIXTURE_TIME = Date.UTC(2026, 0, 15, 12, 0, 0);
 const SYS_SOURCE = { type: "system" as const, channel: "test" };
+const TRANSFER_FIXTURE_SOURCE = {
+	actorId: "mic_portal_fixture",
+	actorType: "admin" as const,
+	channel: "admin_dashboard" as const,
+};
 
 const MIC_INVESTOR: MockIdentity = createMockViewer({
 	email: "mic.investor@test.fairlend.ca",
@@ -139,10 +144,14 @@ function buildListingDoc(
 async function createMicFixture(
 	t: ReturnType<typeof createHarness>,
 	options?: {
+		firstPaymentDate?: string;
 		includeMicPosition?: boolean;
 		isPublished?: boolean;
 		micLenderAuthId?: string;
+		obligationDueDateMs?: number;
 		portalStatus?: Doc<"portals">["status"];
+		settledInterestCents?: number;
+		termStartDate?: string;
 	}
 ) {
 	await seedFromIdentity(t, MIC_INVESTOR);
@@ -238,7 +247,7 @@ async function createMicFixture(
 			assignedBrokerId: brokerId,
 			brokerOfRecordId: brokerId,
 			createdAt: FIXTURE_TIME,
-			firstPaymentDate: "2026-02-01",
+			firstPaymentDate: options?.firstPaymentDate ?? "2026-02-01",
 			fundedAt: undefined,
 			interestAdjustmentDate: "2026-01-01",
 			interestRate: 8.5,
@@ -258,7 +267,7 @@ async function createMicFixture(
 			simulationId: undefined,
 			status: "active",
 			termMonths: 12,
-			termStartDate: "2026-01-01",
+			termStartDate: options?.termStartDate ?? "2026-01-01",
 		});
 		await ctx.db.insert("mortgageBorrowers", {
 			addedAt: FIXTURE_TIME,
@@ -274,12 +283,14 @@ async function createMicFixture(
 				title: "Mapped MIC Mortgage",
 			})
 		);
+		const settledInterestCents = options?.settledInterestCents ?? 0;
+		const hasSettledInterest = settledInterestCents > 0;
 		const overdueObligationId = await ctx.db.insert("obligations", {
 			amount: 125_000,
-			amountSettled: 0,
+			amountSettled: settledInterestCents,
 			borrowerId,
 			createdAt: FIXTURE_TIME + 100,
-			dueDate: Date.UTC(2026, 1, 1),
+			dueDate: options?.obligationDueDateMs ?? Date.UTC(2026, 1, 1),
 			feeCode: undefined,
 			gracePeriodEnd: Date.UTC(2026, 1, 5),
 			lastTransitionAt: undefined,
@@ -289,9 +300,9 @@ async function createMicFixture(
 			orgId: "org_mic_investors",
 			paymentNumber: 1,
 			postingGroupId: undefined,
-			settledAt: undefined,
+			settledAt: hasSettledInterest ? FIXTURE_TIME + 140 : undefined,
 			sourceObligationId: undefined,
-			status: "overdue",
+			status: settledInterestCents >= 125_000 ? "settled" : "overdue",
 			type: "regular_interest",
 		});
 		const planEntryId = await ctx.db.insert("collectionPlanEntries", {
@@ -308,12 +319,12 @@ async function createMicFixture(
 		await ctx.db.insert("collectionAttempts", {
 			amount: 125_000,
 			cancelledAt: undefined,
-			confirmedAt: undefined,
+			confirmedAt: hasSettledInterest ? FIXTURE_TIME + 135 : undefined,
 			executionIdempotencyKey: undefined,
 			executionReason: undefined,
 			executionRequestedAt: undefined,
-			failedAt: FIXTURE_TIME + 130,
-			failureReason: "NSF",
+			failedAt: hasSettledInterest ? undefined : FIXTURE_TIME + 130,
+			failureReason: hasSettledInterest ? undefined : "NSF",
 			initiatedAt: FIXTURE_TIME + 120,
 			lastTransitionAt: FIXTURE_TIME + 130,
 			machineContext: undefined,
@@ -329,8 +340,8 @@ async function createMicFixture(
 			requestedByActorId: undefined,
 			requestedByActorType: undefined,
 			reversedAt: undefined,
-			settledAt: undefined,
-			status: "failed",
+			settledAt: hasSettledInterest ? FIXTURE_TIME + 140 : undefined,
+			status: hasSettledInterest ? "settled" : "failed",
 			transferRequestId: undefined,
 			triggerSource: "admin_manual",
 		});
@@ -383,22 +394,53 @@ describe("MIC portfolio queries", () => {
 		expect(dashboard.warnings.join(" ")).toContain("cash-on-hand");
 		expect(dashboard.metrics).toMatchObject({
 			activePositionCount: 1,
-			arrearsExposure: 150_000,
-			delinquencyExposure: 150_000,
-			outstandingPrincipal: 150_000,
+			arrearsExposure: 1500,
+			delinquencyExposure: 1500,
+			inferredLendingFeeIncome: 25,
+			lendingFeeIncomeSharePercent: 58.53,
+			outstandingPrincipal: 1500,
+			totalReturnIncome: 42.71,
 			weightedAverageLtv: 0.65,
 			weightedAverageYield: 8.5,
+		});
+		expect(dashboard.returnSeries).toEqual([
+			{
+				cumulativeFeeIncome: 25,
+				cumulativeInterestIncome: 17.71,
+				cumulativeTotalReturn: 42.71,
+				feeIncome: 25,
+				feeIncomeSharePercent: 58.53,
+				interestIncome: 17.71,
+				originatedPrincipal: 2500,
+				period: "2026-01",
+				totalReturn: 42.71,
+			},
+		]);
+		expect(dashboard.lendingFeeMetrics).toEqual({
+			feeBasisPoints: 100,
+			inferredLendingFeeIncome: 25,
+			lendingFeeIncomeSharePercent: 58.53,
+			mortgageOriginatedCount: 1,
+			originatedPrincipal: 2500,
+			totalInterestIncome: 17.71,
+			totalReturnIncome: 42.71,
 		});
 		expect(dashboard.positions).toHaveLength(1);
 		expect(dashboard.positions[0]).toMatchObject({
 			borrowerLabel: "Bailey Borrower",
+			currentPayment: {
+				amount: 750,
+				dueDate: "2026-02-01",
+				status: "exception",
+			},
 			ltv: 0.65,
 			mortgageId: String(mortgageId),
-			outstandingPrincipal: 150_000,
+			outstandingPrincipal: 1500,
 			positionUnits: 6000,
 			propertyLabel: "123 King St W, Toronto",
 			rateYield: 8.5,
 			status: "active",
+			thumbnailUrl: null,
 		});
 		expect(dashboard.positions[0]?.arrearsSignal).toMatchObject({
 			overdueAmount: 750,
@@ -410,13 +452,70 @@ describe("MIC portfolio queries", () => {
 				count: 1,
 				key: "Bailey Borrower",
 				label: "Bailey Borrower",
-				outstandingPrincipal: 150_000,
+				outstandingPrincipal: 1500,
 				sharePercent: 100,
 			},
 		]);
 		expect(collectObjectKeys(dashboard).join(" ")).not.toMatch(
 			UNSUPPORTED_METRIC_KEY_PATTERN
 		);
+	});
+
+	it("keeps return projection independent of settlement state", async () => {
+		const t = createHarness();
+		const micInvestor = t.withIdentity(MIC_INVESTOR);
+		const { portalId } = await createMicFixture(t, {
+			settledInterestCents: 125_000,
+		});
+
+		const dashboard = await micInvestor.query(
+			micPortfolioApi.getMicDashboardSnapshot,
+			{ portalId }
+		);
+
+		expect(dashboard.lendingFeeMetrics).toMatchObject({
+			inferredLendingFeeIncome: 25,
+			lendingFeeIncomeSharePercent: 58.53,
+			totalInterestIncome: 17.71,
+			totalReturnIncome: 42.71,
+		});
+		expect(dashboard.returnSeries).toEqual([
+			expect.objectContaining({
+				cumulativeInterestIncome: 17.71,
+				cumulativeTotalReturn: 42.71,
+				feeIncome: 25,
+				feeIncomeSharePercent: 58.53,
+				interestIncome: 17.71,
+				totalReturn: 42.71,
+			}),
+		]);
+	});
+
+	it("projects each period from originated fees plus monthly interest on active mortgages", async () => {
+		const t = createHarness();
+		const micInvestor = t.withIdentity(MIC_INVESTOR);
+		const { portalId } = await createMicFixture(t, {
+			firstPaymentDate: "2026-04-01",
+			obligationDueDateMs: Date.UTC(2026, 3, 1),
+			termStartDate: "2026-04-01",
+		});
+
+		const dashboard = await micInvestor.query(
+			micPortfolioApi.getMicDashboardSnapshot,
+			{ portalId }
+		);
+
+		expect(dashboard.returnSeries).toEqual([
+			expect.objectContaining({
+				cumulativeFeeIncome: 25,
+				cumulativeInterestIncome: 17.71,
+				cumulativeTotalReturn: 42.71,
+				feeIncome: 25,
+				interestIncome: 17.71,
+				period: "2026-04",
+				totalReturn: 42.71,
+			}),
+		]);
 	});
 
 	it("returns empty position contracts without fabricating cash metrics", async () => {
@@ -474,6 +573,7 @@ describe("MIC portfolio queries", () => {
 		expect(payments.rows).toHaveLength(1);
 		expect(payments.rows[0]).toMatchObject({
 			micShareAmount: 750,
+			micSharePercentOfGross: 60,
 			obligationId: String(overdueObligationId),
 			rowStatus: "exception",
 		});
@@ -487,7 +587,7 @@ describe("MIC portfolio queries", () => {
 				count: 1,
 				key: "active",
 				label: "active",
-				outstandingPrincipal: 150_000,
+				outstandingPrincipal: 1500,
 				sharePercent: 100,
 			},
 		]);
@@ -518,6 +618,112 @@ describe("MIC portfolio queries", () => {
 				portalId: inactive.portalId,
 			})
 		).rejects.toThrow();
+	});
+
+	it("enriches position detail with ownership, histories, and redacted audit rows", async () => {
+		const t = createHarness();
+		const micInvestor = t.withIdentity(MIC_INVESTOR);
+		const { mortgageId, portalId } = await createMicFixture(t);
+
+		await t.run(async (ctx) => {
+			await ctx.db.insert("deals", {
+				buyerId: "buyer_fixture",
+				closingDate: undefined,
+				createdAt: FIXTURE_TIME + 500,
+				createdBy: "test_actor",
+				fractionalShare: 2500,
+				mortgageId,
+				orgId: "org_mic_investors",
+				sellerId: "seller_fixture",
+				status: "lawyerOnboarding.pending",
+			});
+			await ctx.db.insert("deals", {
+				buyerId: "buyer_fixture_2",
+				closingDate: undefined,
+				createdAt: FIXTURE_TIME + 600,
+				createdBy: "test_actor",
+				fractionalShare: 500,
+				mortgageId,
+				orgId: "org_mic_investors",
+				sellerId: "seller_fixture_2",
+				status: "confirmed",
+			});
+			await ctx.db.insert("transferRequests", {
+				amount: 9900,
+				counterpartyId: "cp_fixture",
+				counterpartyType: "borrower",
+				createdAt: FIXTURE_TIME + 700,
+				currency: "CAD",
+				direction: "inbound",
+				idempotencyKey: "mic-portal-detail-transfer-fixture",
+				lastTransitionAt: FIXTURE_TIME + 700,
+				mortgageId,
+				obligationId: undefined,
+				providerCode: "manual",
+				source: TRANSFER_FIXTURE_SOURCE,
+				status: "initiated",
+				transferType: "borrower_interest_collection",
+			});
+			await ctx.db.insert("auditJournal", {
+				actorId: "test_actor",
+				channel: "admin_dashboard",
+				effectiveDate: "2026-01-15",
+				entityId: String(mortgageId),
+				entityType: "mortgage",
+				eventCategory: "mic_portal_test",
+				eventId: "mic-portal-audit-fixture",
+				eventType: "MIC_PORTAL_TEST_EVENT",
+				mortgageId: String(mortgageId),
+				newState: "active",
+				originSystem: "test",
+				outcome: "transitioned",
+				payload: { sensitive: "must-not-leak" },
+				previousState: "draft",
+				reason: undefined,
+				sequenceNumber: 42n,
+				timestamp: FIXTURE_TIME + 800,
+			});
+		});
+
+		const detail = await micInvestor.query(
+			micPortfolioApi.getMicPositionDetail,
+			{
+				mortgageId,
+				portalId,
+			}
+		);
+
+		expect(detail.position?.micOwnership).toEqual({
+			percent: 60,
+			totalUnits: 10_000,
+			units: 6000,
+		});
+		expect(detail.position?.dealHistory.length).toBe(2);
+		expect(detail.position?.ongoingDeals).toEqual([
+			expect.objectContaining({
+				isTerminal: false,
+				status: "lawyerOnboarding.pending",
+			}),
+		]);
+		expect(detail.position?.transferHistory).toEqual([
+			expect.objectContaining({
+				amount: 99,
+				status: "initiated",
+			}),
+		]);
+		expect(detail.position?.auditHistory).toEqual([
+			expect.objectContaining({
+				eventType: "MIC_PORTAL_TEST_EVENT",
+				newState: "active",
+				outcome: "transitioned",
+				previousState: "draft",
+				sequenceNumber: "42",
+			}),
+		]);
+		const keys = collectObjectKeys(detail.position);
+		expect(keys.join(" ")).not.toContain("payload");
+		expect(keys.join(" ")).not.toContain("beforeState");
+		expect(keys.join(" ")).not.toContain("afterState");
 	});
 
 	it("fails closed when the mapped MIC lender account cannot be resolved", async () => {

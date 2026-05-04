@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { listingQuery } from "../fluent";
-import { listPlatformLawyerOptions } from "../legalRepresentation/profiles";
+import { listPlatformLawyerCheckoutOptions } from "../legalRepresentation/platformLawyers";
 import { loadMortgagePaymentSnapshots } from "../payments/mortgagePaymentSnapshot";
 import type { PortalPricingPolicyDoc } from "../portals/pricing";
 import { projectListingForPortal } from "../portals/pricing";
@@ -381,10 +381,14 @@ async function getSimilarMarketplaceListings(
 }
 
 async function getMarketplacePlatformLawyers(ctx: Pick<QueryCtx, "db">) {
-	const options = await listPlatformLawyerOptions(ctx);
+	const options = await listPlatformLawyerCheckoutOptions(ctx);
 	return options.map((option) => ({
 		authId: option.lawyerId,
+		activeDealCount: option.activeDealCount,
+		availability: option.availability,
 		barNumber: option.barNumber ?? null,
+		capacityLimit: option.capacityLimit,
+		capacityWarning: option.capacityWarning,
 		displayName: option.name,
 		email: option.email,
 		eligibilityStatus: option.eligibilityStatus,
@@ -393,6 +397,8 @@ async function getMarketplacePlatformLawyers(ctx: Pick<QueryCtx, "db">) {
 		latestVerificationId: option.latestVerificationId ?? null,
 		lawyerProfileId: option.lawyerProfileId,
 		platformStatus: option.platformStatus,
+		role: "platform_lawyer",
+		slaTier: option.slaTier ?? null,
 	}));
 }
 

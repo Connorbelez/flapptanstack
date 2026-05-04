@@ -9,6 +9,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
+import { MIC_MORTGAGE_UNIT_SUPPLY } from "#/lib/mic-ownership";
 import type { MicPositionRow } from "../../../convex/micPortfolio/contracts";
 
 interface MicPositionsTableProps {
@@ -42,6 +43,36 @@ function arrearsBadgeVariant(
 		default:
 			return "default";
 	}
+}
+
+function MicOwnershipLines({ positionUnits }: { positionUnits: number }) {
+	const pct = (positionUnits / MIC_MORTGAGE_UNIT_SUPPLY) * 100;
+	return (
+		<div className="flex flex-col gap-0.5">
+			<span className="text-muted-foreground tabular-nums tracking-tight">
+				{positionUnits.toLocaleString("en-CA")} /{" "}
+				{MIC_MORTGAGE_UNIT_SUPPLY.toLocaleString("en-CA")}
+			</span>
+			<span className="font-medium text-foreground text-xs tabular-nums tracking-tight">
+				{pct.toFixed(2)}%
+			</span>
+		</div>
+	);
+}
+
+function paymentBadgeVariant(
+	status: string
+): React.ComponentProps<typeof Badge>["variant"] {
+	if (status === "settled") {
+		return "default";
+	}
+	if (status === "due" || status === "upcoming") {
+		return "secondary";
+	}
+	if (status === "overdue" || status === "exception") {
+		return "destructive";
+	}
+	return "outline";
 }
 
 export function MicPositionsTable({
@@ -92,18 +123,18 @@ export function MicPositionsTable({
 	}, [positions, searchQuery, sortKey, sortDir]);
 
 	return (
-		<div className="space-y-4">
+		<div className="space-y-4" data-testid="mic-positions-table">
 			<Input
 				onChange={(e) => setSearchQuery(e.target.value)}
 				placeholder="Search by property, borrower, or status..."
 				value={searchQuery}
 			/>
 
-			<div className="rounded-md border">
-				<Table>
+			<div className="overflow-x-auto rounded-md border">
+				<Table className="min-w-[72rem] table-fixed">
 					<TableHeader>
 						<TableRow>
-							<TableHead>
+							<TableHead className="w-[30%] min-w-[14rem] whitespace-normal">
 								<button
 									className="flex items-center gap-1 font-medium"
 									onClick={() => handleSort("propertyLabel")}
@@ -115,9 +146,10 @@ export function MicPositionsTable({
 									)}
 								</button>
 							</TableHead>
-							<TableHead>Borrower</TableHead>
-							<TableHead>Status</TableHead>
-							<TableHead>
+							<TableHead className="w-[12%]">Borrower</TableHead>
+							<TableHead className="w-[6rem]">Status</TableHead>
+							<TableHead className="w-[11rem]">Current payment</TableHead>
+							<TableHead className="w-[7rem]">
 								<button
 									className="flex items-center gap-1 font-medium"
 									onClick={() => handleSort("outstandingPrincipal")}
@@ -129,9 +161,12 @@ export function MicPositionsTable({
 									)}
 								</button>
 							</TableHead>
-							<TableHead>Yield</TableHead>
-							<TableHead>LTV</TableHead>
-							<TableHead>
+							<TableHead className="w-[8.5rem] whitespace-normal">
+								MIC ownership
+							</TableHead>
+							<TableHead className="w-[5.5rem] min-w-[5rem]">Yield</TableHead>
+							<TableHead className="w-[5.5rem] min-w-[5rem]">LTV</TableHead>
+							<TableHead className="w-[6.5rem]">
 								<button
 									className="flex items-center gap-1 font-medium"
 									onClick={() => handleSort("maturityDate")}
@@ -143,7 +178,7 @@ export function MicPositionsTable({
 									)}
 								</button>
 							</TableHead>
-							<TableHead>Arrears</TableHead>
+							<TableHead className="w-[5.5rem]">Arrears</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -151,7 +186,7 @@ export function MicPositionsTable({
 							<TableRow>
 								<TableCell
 									className="text-center text-muted-foreground"
-									colSpan={8}
+									colSpan={10}
 								>
 									No active MIC positions found.
 								</TableCell>
@@ -163,19 +198,83 @@ export function MicPositionsTable({
 									key={position.positionAccountId}
 									onClick={() => onRowClick?.(position)}
 								>
-									<TableCell className="font-medium">
-										{position.propertyLabel}
+									<TableCell className="min-w-[240px] whitespace-normal font-medium">
+										<div className="flex items-center gap-3">
+											<div className="size-14 overflow-hidden rounded-md border bg-muted">
+												{position.thumbnailUrl ? (
+													<img
+														alt={position.propertyLabel}
+														className="h-full w-full object-cover"
+														height={56}
+														src={position.thumbnailUrl}
+														width={56}
+													/>
+												) : (
+													<div className="flex h-full items-center justify-center text-[10px] text-muted-foreground uppercase tracking-[0.14em]">
+														Property
+													</div>
+												)}
+											</div>
+											<div className="space-y-1">
+												<p>{position.propertyLabel}</p>
+												<p className="font-normal text-muted-foreground text-xs capitalize">
+													{position.propertySummary.propertyType.replaceAll(
+														"_",
+														" "
+													)}{" "}
+													· {position.propertySummary.city},{" "}
+													{position.propertySummary.province}
+												</p>
+											</div>
+										</div>
 									</TableCell>
-									<TableCell>{position.borrowerLabel}</TableCell>
-									<TableCell>
+									<TableCell className="whitespace-normal break-words align-middle">
+										{position.borrowerLabel}
+									</TableCell>
+									<TableCell className="align-middle">
 										<Badge variant="secondary">{position.status}</Badge>
 									</TableCell>
-									<TableCell>
+									<TableCell className="whitespace-normal align-middle">
+										{position.currentPayment ? (
+											<div className="rounded-md border border-border/80 bg-muted/25 px-2 py-1.5">
+												<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+													<Badge
+														className="px-1.5 py-0 font-medium text-[10px] uppercase tracking-wide"
+														variant={paymentBadgeVariant(
+															position.currentPayment.status
+														)}
+													>
+														{position.currentPayment.status}
+													</Badge>
+													<span className="font-semibold text-sm tabular-nums tracking-tight">
+														{formatCurrency(position.currentPayment.amount)}
+													</span>
+												</div>
+												<p className="mt-1 text-[11px] text-muted-foreground tabular-nums leading-none">
+													Due {position.currentPayment.dueDate}
+												</p>
+											</div>
+										) : (
+											<span className="text-muted-foreground text-sm">
+												No scheduled payment
+											</span>
+										)}
+									</TableCell>
+									<TableCell className="align-middle tabular-nums">
 										{formatCurrency(position.outstandingPrincipal)}
 									</TableCell>
-									<TableCell>{formatPercent(position.rateYield)}</TableCell>
-									<TableCell>{formatPercent(position.ltv)}</TableCell>
-									<TableCell>{position.maturityDate}</TableCell>
+									<TableCell className="whitespace-normal align-middle text-xs leading-snug">
+										<MicOwnershipLines positionUnits={position.positionUnits} />
+									</TableCell>
+									<TableCell className="align-middle tabular-nums">
+										{formatPercent(position.rateYield)}
+									</TableCell>
+									<TableCell className="align-middle tabular-nums">
+										{formatPercent(position.ltv)}
+									</TableCell>
+									<TableCell className="align-middle tabular-nums">
+										{position.maturityDate}
+									</TableCell>
 									<TableCell>
 										<Badge
 											variant={arrearsBadgeVariant(

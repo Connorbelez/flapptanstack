@@ -6,18 +6,26 @@ import { authedQuery, requirePermission } from "../fluent";
 import { getPostedBalance } from "../ledger/accounts";
 import { TOTAL_SUPPLY } from "../ledger/constants";
 import { unixMsToBusinessDate } from "../lib/businessDates";
+import { getHeroImageUrl } from "../listings/marketplaceShared";
 import { resolveMicPortalConfig } from "../portals/micConfig";
 import {
+	type MicAuditHistoryRow,
 	type MicConcentrationExposureData,
 	type MicDashboardSnapshot,
+	type MicDealHistoryRow,
+	type MicLendingFeeMetrics,
+	type MicListingHeroImage,
 	type MicMaturityLadderBucket,
 	type MicPaymentHistoryRow,
 	type MicPortfolioDataCompleteness,
 	type MicPortfolioMetrics,
 	type MicPortfolioSourceOfTruth,
+	type MicPositionCurrentPayment,
 	type MicPositionDetailData,
 	type MicPositionFilters,
 	type MicPositionRow,
+	type MicReturnSeriesRow,
+	type MicTransferHistoryRow,
 	micConcentrationExposureResultValidator,
 	micDashboardSnapshotValidator,
 	micPaymentsHistoryResultValidator,
@@ -30,6 +38,12 @@ const MIC_SOURCE_OF_TRUTH: MicPortfolioSourceOfTruth =
 	"mortgage_ledger_lender_participation";
 const CASH_LEDGER_WARNING =
 	"MIC treasury, reserve, cash-on-hand, NAV, and personalized investor metrics are intentionally omitted until complete cash-ledger coverage exists.";
+const DEAL_TERMINAL_STATUSES = new Set<string>(["confirmed", "failed"]);
+const MIC_DEAL_HISTORY_CAP = 50;
+const MIC_TRANSFER_HISTORY_CAP = 50;
+const MIC_AUDIT_HISTORY_CAP = 50;
+const MIC_ONGOING_DEALS_CAP = 20;
+const INFERRED_LENDING_FEE_BASIS_POINTS = 100;
 
 interface MicPositionAccount {
 	accountId: Id<"ledger_accounts">;
@@ -38,6 +52,7 @@ interface MicPositionAccount {
 }
 
 interface MicPositionProjection {
+	listing: Doc<"listings"> | null;
 	mortgage: Doc<"mortgages">;
 	payments: MicPaymentHistoryRow[];
 	position: MicPositionAccount;
@@ -49,13 +64,15 @@ interface MicPortfolioProjection {
 	concentration: MicConcentrationExposureData;
 	dataCompleteness: MicPortfolioDataCompleteness;
 	generatedAt: number;
+	lendingFeeMetrics: MicLendingFeeMetrics;
 	maturityLadder: MicMaturityLadderBucket[];
 	metrics: MicPortfolioMetrics;
 	positions: MicPositionProjection[];
+	returnSeries: MicReturnSeriesRow[];
 	warnings: string[];
 }
 
-type MicPortfolioCtx = Pick<QueryCtx, "db">;
+type MicPortfolioCtx = Pick<QueryCtx, "db" | "storage">;
 
 function centsToDollars(value: number) {
 	return roundCurrency(value / 100);
@@ -67,6 +84,10 @@ function roundCurrency(value: number) {
 
 function roundPercent(value: number) {
 	return Math.round(value * 100) / 100;
+}
+
+function calculateSharePercent(part: number, whole: number) {
+	return whole <= 0 ? null : roundPercent((part / whole) * 100);
 }
 
 function safeNumberFromBigInt(value: bigint, label: string) {
@@ -90,6 +111,10 @@ function buildPropertyLabel(property: Doc<"properties">) {
 
 function toNullableString(value: string | undefined) {
 	return value ?? null;
+}
+
+function monthPeriodFromBusinessDate(date: string) {
+	return date.slice(0, 7);
 }
 
 function maturityBucket(
@@ -335,13 +360,22 @@ async function loadPaymentsForMortgage(
 			const latestTransfer =
 				latestTransferByObligationId.get(String(obligation._id)) ?? null;
 			const grossAmount = centsToDollars(obligation.amount);
+			const micShareAmount = calculateMicShareAmount(
+				args.balanceUnits,
+				grossAmount
+			);
+			const micSharePercentOfGross =
+				grossAmount === 0
+					? null
+					: roundPercent((micShareAmount / grossAmount) * 100);
 			return {
 				amountSettled: centsToDollars(obligation.amountSettled),
 				dueDate: unixMsToBusinessDate(obligation.dueDate),
 				grossAmount,
 				latestCollectionStatus: latestAttempt?.status ?? null,
 				latestTransferStatus: latestTransfer?.status ?? null,
-				micShareAmount: calculateMicShareAmount(args.balanceUnits, grossAmount),
+				micShareAmount,
+				micSharePercentOfGross,
 				mortgageId: String(args.mortgage._id),
 				obligationId: String(obligation._id),
 				paymentNumber: obligation.paymentNumber,
@@ -396,6 +430,25 @@ function summarizeArrears(payments: readonly MicPaymentHistoryRow[]) {
 		overdueAmount: 0,
 		overdueCount: 0,
 		status: "current" as const,
+	};
+}
+
+function resolveCurrentPayment(
+	payments: readonly MicPaymentHistoryRow[]
+): MicPositionCurrentPayment | null {
+	const openPayment = [...payments]
+		.filter((payment) => payment.rowStatus !== "settled")
+		.sort((left, right) => left.dueDate.localeCompare(right.dueDate))[0];
+	const fallbackPayment = payments[0];
+	const payment = openPayment ?? fallbackPayment;
+	if (!payment) {
+		return null;
+	}
+
+	return {
+		amount: payment.micShareAmount,
+		dueDate: payment.dueDate,
+		status: payment.rowStatus,
 	};
 }
 
@@ -486,8 +539,130 @@ function buildMaturityLadder(
 	return rows;
 }
 
-function buildMetrics(
+function emptyReturnBucket(period: string) {
+	return {
+		feeIncome: 0,
+		interestIncome: 0,
+		originatedPrincipal: 0,
+		period,
+	};
+}
+
+function calculateProjectedMonthlyInterest(position: MicPositionProjection) {
+	const principal = centsToDollars(position.mortgage.principal);
+	return roundCurrency(
+		(principal * (position.mortgage.interestRate / 100)) / 12
+	);
+}
+
+function buildReturnSeries(
 	positions: readonly MicPositionProjection[]
+): MicReturnSeriesRow[] {
+	const buckets = new Map<string, ReturnType<typeof emptyReturnBucket>>();
+
+	function bucketFor(period: string) {
+		const existing = buckets.get(period);
+		if (existing) {
+			return existing;
+		}
+		const next = emptyReturnBucket(period);
+		buckets.set(period, next);
+		return next;
+	}
+
+	for (const position of positions) {
+		const originatedPrincipal = centsToDollars(position.mortgage.principal);
+		const feeIncome = roundCurrency(
+			(originatedPrincipal * INFERRED_LENDING_FEE_BASIS_POINTS) / 10_000
+		);
+		const originatedPeriod = monthPeriodFromBusinessDate(
+			position.mortgage.termStartDate
+		);
+		const originationBucket = bucketFor(originatedPeriod);
+		originationBucket.originatedPrincipal = roundCurrency(
+			originationBucket.originatedPrincipal + originatedPrincipal
+		);
+		originationBucket.feeIncome = roundCurrency(
+			originationBucket.feeIncome + feeIncome
+		);
+	}
+
+	let cumulativeFeeIncome = 0;
+	let cumulativeInterestIncome = 0;
+
+	return [...buckets.values()]
+		.sort((left, right) => left.period.localeCompare(right.period))
+		.map((bucket) => {
+			const feeIncome = roundCurrency(bucket.feeIncome);
+			const interestIncome = roundCurrency(
+				positions.reduce((sum, position) => {
+					const originatedPeriod = monthPeriodFromBusinessDate(
+						position.mortgage.termStartDate
+					);
+					if (originatedPeriod > bucket.period) {
+						return sum;
+					}
+					return sum + calculateProjectedMonthlyInterest(position);
+				}, 0)
+			);
+			const totalReturn = roundCurrency(feeIncome + interestIncome);
+			cumulativeFeeIncome = roundCurrency(cumulativeFeeIncome + feeIncome);
+			cumulativeInterestIncome = roundCurrency(
+				cumulativeInterestIncome + interestIncome
+			);
+			const cumulativeTotalReturn = roundCurrency(
+				cumulativeFeeIncome + cumulativeInterestIncome
+			);
+			return {
+				cumulativeFeeIncome,
+				cumulativeInterestIncome,
+				cumulativeTotalReturn,
+				feeIncome,
+				feeIncomeSharePercent: calculateSharePercent(
+					cumulativeFeeIncome,
+					cumulativeTotalReturn
+				),
+				interestIncome,
+				originatedPrincipal: roundCurrency(bucket.originatedPrincipal),
+				period: bucket.period,
+				totalReturn,
+			};
+		});
+}
+
+function buildLendingFeeMetrics(
+	returnSeries: readonly MicReturnSeriesRow[],
+	mortgageOriginatedCount: number
+): MicLendingFeeMetrics {
+	const originatedPrincipal = roundCurrency(
+		returnSeries.reduce((sum, row) => sum + row.originatedPrincipal, 0)
+	);
+	const inferredLendingFeeIncome = roundCurrency(
+		returnSeries.reduce((sum, row) => sum + row.feeIncome, 0)
+	);
+	const totalInterestIncome = roundCurrency(
+		returnSeries.reduce((sum, row) => sum + row.interestIncome, 0)
+	);
+	const totalReturnIncome = roundCurrency(
+		inferredLendingFeeIncome + totalInterestIncome
+	);
+	return {
+		feeBasisPoints: INFERRED_LENDING_FEE_BASIS_POINTS,
+		inferredLendingFeeIncome,
+		lendingFeeIncomeSharePercent: calculateSharePercent(
+			inferredLendingFeeIncome,
+			totalReturnIncome
+		),
+		mortgageOriginatedCount,
+		originatedPrincipal,
+		totalInterestIncome,
+		totalReturnIncome,
+	};
+}
+
+function buildMetrics(
+	positions: readonly MicPositionProjection[],
+	lendingFeeMetrics: MicLendingFeeMetrics
 ): MicPortfolioMetrics {
 	const outstandingPrincipal = roundCurrency(
 		positions.reduce(
@@ -531,7 +706,11 @@ function buildMetrics(
 				.filter((position) => position.row.arrearsSignal.status === "exception")
 				.reduce((sum, position) => sum + position.row.outstandingPrincipal, 0)
 		),
+		inferredLendingFeeIncome: lendingFeeMetrics.inferredLendingFeeIncome,
+		lendingFeeIncomeSharePercent:
+			lendingFeeMetrics.lendingFeeIncomeSharePercent,
 		outstandingPrincipal,
+		totalReturnIncome: lendingFeeMetrics.totalReturnIncome,
 		weightedAverageLtv,
 		weightedAverageYield,
 	};
@@ -569,9 +748,12 @@ async function buildMicPortfolioProjection(
 				});
 				const arrearsSignal = summarizeArrears(payments);
 				const listing = listingByMortgage.get(String(mortgage._id)) ?? null;
+				const thumbnailUrl = listing
+					? await getHeroImageUrl(ctx, listing.heroImages[0])
+					: null;
 				const outstandingPrincipal = calculateMicShareAmount(
 					position.balanceUnits,
-					mortgage.principal
+					centsToDollars(mortgage.principal)
 				);
 				const borrowerLabel =
 					borrowerLabelByMortgage.get(String(mortgage._id)) ??
@@ -591,7 +773,7 @@ async function buildMicPortfolioProjection(
 					outstandingPrincipal,
 					positionAccountId: String(position.accountId),
 					positionUnits: position.balanceUnits,
-					principal: mortgage.principal,
+					principal: centsToDollars(mortgage.principal),
 					propertyLabel,
 					propertySummary: {
 						city: property.city,
@@ -602,15 +784,22 @@ async function buildMicPortfolioProjection(
 					},
 					rateYield: mortgage.interestRate,
 					status: mortgage.status,
+					currentPayment: resolveCurrentPayment(payments),
+					thumbnailUrl,
 				};
-				return { mortgage, payments, position, property, row };
+				return { listing, mortgage, payments, position, property, row };
 			})
 		)
 	).sort((left, right) =>
 		left.row.propertyLabel.localeCompare(right.row.propertyLabel)
 	);
 
-	const metrics = buildMetrics(projectedPositions);
+	const returnSeries = buildReturnSeries(projectedPositions);
+	const lendingFeeMetrics = buildLendingFeeMetrics(
+		returnSeries,
+		projectedPositions.length
+	);
+	const metrics = buildMetrics(projectedPositions, lendingFeeMetrics);
 	return {
 		concentration: buildConcentration(
 			projectedPositions,
@@ -618,9 +807,11 @@ async function buildMicPortfolioProjection(
 		),
 		dataCompleteness: "partial",
 		generatedAt,
+		lendingFeeMetrics,
 		maturityLadder: buildMaturityLadder(projectedPositions, generatedAt),
 		metrics,
 		positions: projectedPositions,
+		returnSeries,
 		warnings: [CASH_LEDGER_WARNING],
 	};
 }
@@ -634,10 +825,111 @@ function buildEnvelope(projection: MicPortfolioProjection) {
 	};
 }
 
-function buildPositionDetail(
-	position: MicPositionProjection
-): MicPositionDetailData {
+function buildMicOwnership(balanceUnits: number) {
+	const totalUnits = Number(TOTAL_SUPPLY);
 	return {
+		percent: roundPercent((balanceUnits / totalUnits) * 100),
+		totalUnits,
+		units: balanceUnits,
+	};
+}
+
+function dealFractionalSharePercent(units: number) {
+	return roundPercent((units / Number(TOTAL_SUPPLY)) * 100);
+}
+
+async function buildPositionDetail(
+	ctx: MicPortfolioCtx,
+	position: MicPositionProjection
+): Promise<MicPositionDetailData> {
+	const listing = position.listing;
+	const heroImages: MicListingHeroImage[] = listing
+		? await Promise.all(
+				listing.heroImages.map(async (image, index) => ({
+					caption: image.caption ?? null,
+					id: `${String(listing._id)}:${String(index)}`,
+					url: await getHeroImageUrl(ctx, image),
+				}))
+			)
+		: [];
+
+	const [deals, transfers, auditEntries] = await Promise.all([
+		ctx.db
+			.query("deals")
+			.withIndex("by_mortgage", (q) =>
+				q.eq("mortgageId", position.mortgage._id)
+			)
+			.collect(),
+		ctx.db
+			.query("transferRequests")
+			.withIndex("by_mortgage", (q) =>
+				q.eq("mortgageId", position.mortgage._id)
+			)
+			.collect(),
+		ctx.db
+			.query("auditJournal")
+			.withIndex("by_mortgage", (q) =>
+				q.eq("mortgageId", String(position.mortgage._id))
+			)
+			.collect(),
+	]);
+
+	const dealHistory: MicDealHistoryRow[] = [...deals]
+		.sort((left, right) => right.createdAt - left.createdAt)
+		.slice(0, MIC_DEAL_HISTORY_CAP)
+		.map((deal) => {
+			const isTerminal = DEAL_TERMINAL_STATUSES.has(deal.status);
+			return {
+				closingDate: deal.closingDate ?? null,
+				createdAt: deal.createdAt,
+				dealId: String(deal._id),
+				fractionalSharePercent: dealFractionalSharePercent(
+					deal.fractionalShare
+				),
+				fractionalShareUnits: deal.fractionalShare,
+				isTerminal,
+				status: deal.status,
+			};
+		});
+
+	const ongoingDeals = dealHistory
+		.filter((row) => !row.isTerminal)
+		.slice(0, MIC_ONGOING_DEALS_CAP);
+
+	const transferHistory: MicTransferHistoryRow[] = [...transfers]
+		.sort((left, right) => right.createdAt - left.createdAt)
+		.slice(0, MIC_TRANSFER_HISTORY_CAP)
+		.map((transfer) => ({
+			amount: centsToDollars(transfer.amount),
+			createdAt: transfer.createdAt,
+			currency: transfer.currency,
+			direction: transfer.direction,
+			hasObligationLink: transfer.obligationId !== undefined,
+			status: transfer.status,
+			transferId: String(transfer._id),
+			transferType: transfer.transferType,
+		}));
+
+	const auditHistory: MicAuditHistoryRow[] = [...auditEntries]
+		.sort((left, right) => right.timestamp - left.timestamp)
+		.slice(0, MIC_AUDIT_HISTORY_CAP)
+		.map((entry) => ({
+			entityType: entry.entityType,
+			eventId: entry.eventId,
+			eventType: entry.eventType,
+			newState: entry.newState,
+			outcome: entry.outcome,
+			previousState: entry.previousState,
+			reason: entry.reason ?? null,
+			sequenceNumber: String(entry.sequenceNumber),
+			timestamp: entry.timestamp,
+		}));
+
+	return {
+		auditHistory,
+		dealHistory,
+		heroImages,
+		micOwnership: buildMicOwnership(position.position.balanceUnits),
 		mortgage: {
 			amortizationMonths: position.mortgage.amortizationMonths,
 			firstPaymentDate: position.mortgage.firstPaymentDate,
@@ -646,14 +938,15 @@ function buildPositionDetail(
 			loanType: position.mortgage.loanType,
 			maturityDate: position.mortgage.maturityDate,
 			mortgageId: String(position.mortgage._id),
-			paymentAmount: position.mortgage.paymentAmount,
+			paymentAmount: centsToDollars(position.mortgage.paymentAmount),
 			paymentFrequency: position.mortgage.paymentFrequency,
-			principal: position.mortgage.principal,
+			principal: centsToDollars(position.mortgage.principal),
 			rateType: position.mortgage.rateType,
 			status: position.mortgage.status,
 			termMonths: position.mortgage.termMonths,
 			termStartDate: position.mortgage.termStartDate,
 		},
+		ongoingDeals,
 		payments: position.payments,
 		position: position.row,
 		property: {
@@ -665,6 +958,7 @@ function buildPositionDetail(
 			streetAddress: position.property.streetAddress,
 			unit: toNullableString(position.property.unit),
 		},
+		transferHistory,
 	};
 }
 
@@ -677,9 +971,11 @@ export const getMicDashboardSnapshot = authedQuery
 		return {
 			...buildEnvelope(projection),
 			concentration: projection.concentration,
+			lendingFeeMetrics: projection.lendingFeeMetrics,
 			maturityLadder: projection.maturityLadder,
 			metrics: projection.metrics,
 			positions: projection.positions.map((position) => position.row),
+			returnSeries: projection.returnSeries,
 		};
 	})
 	.public();
@@ -722,7 +1018,7 @@ export const getMicPositionDetail = authedQuery
 		}
 		return {
 			...buildEnvelope(projection),
-			position: buildPositionDetail(position),
+			position: await buildPositionDetail(ctx, position),
 		};
 	})
 	.public();

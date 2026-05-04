@@ -259,6 +259,34 @@ async function generatePdfWithPdfLib(
 
 // ── Documenso config builder ────────────────────────────────────
 
+const SIGNATORY_ROLE_EQUIVALENTS: Record<string, string[]> = {
+	borrower: ["borrower_primary"],
+	borrower_lawyer: ["lawyer_primary"],
+	borrower_primary: ["borrower"],
+	broker_of_record: ["fairlend_broker"],
+	fairlend_broker: ["broker_of_record"],
+	lawyer_primary: ["borrower_lawyer", "lender_lawyer", "seller_lawyer"],
+	lender: ["lender_primary"],
+	lender_lawyer: ["lawyer_primary"],
+	lender_primary: ["lender"],
+	seller_lawyer: ["lawyer_primary"],
+};
+
+function getFieldsForSignatoryRole(
+	fieldsByRole: Map<string, DocumensoFieldForRecipient[]>,
+	platformRole: string
+) {
+	const fields = [...(fieldsByRole.get(platformRole) ?? [])];
+	for (const equivalentRole of SIGNATORY_ROLE_EQUIVALENTS[platformRole] ?? []) {
+		for (const field of fieldsByRole.get(equivalentRole) ?? []) {
+			if (!fields.includes(field)) {
+				fields.push(field);
+			}
+		}
+	}
+	return fields;
+}
+
 function buildDocumensoConfig(
 	snapshot: { fields: FieldConfig[]; signatories: SignatoryConfig[] },
 	signatoryRoleMap: Map<
@@ -317,8 +345,8 @@ function buildDocumensoConfig(
 				email: mapping?.email ?? "",
 				platformRole: sig.platformRole,
 				role: docRole,
-				signingOrder: sig.order,
-				fields: fieldsByRole.get(sig.platformRole) ?? [],
+				signingOrder: sig.order + 1,
+				fields: getFieldsForSignatoryRole(fieldsByRole, sig.platformRole),
 			};
 		}
 	);

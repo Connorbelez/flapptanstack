@@ -1,38 +1,77 @@
 "use client";
 
+import { EmbedSignDocument } from "@documenso/embed-react";
+import type { FunctionReturnType } from "convex/server";
 import {
 	ArrowLeft,
-	ArrowRight,
 	Check,
 	Circle,
-	Clock3,
 	FileSignature,
 	FileText,
-	Send,
+	RefreshCw,
 	ShieldCheck,
+	UserRound,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-} from "#/components/ui/dialog";
 import { cn } from "#/lib/utils";
-import type {
-	ClosingEnvelopeFixture,
-	ClosingQuickActionFixture,
-	ClosingStage,
-	DealClosingPipelineFixture,
-	EnvelopeTone,
-} from "./fixtures";
+import type { api } from "../../../../convex/_generated/api";
+
+type BackendPipelineState = FunctionReturnType<
+	typeof api.demo.dealClosingPipeline.getState
+>;
+type PortalDocumentPackageState = FunctionReturnType<
+	typeof api.documents.dealPackages.getPortalDocumentPackage
+>;
+type PortalPackageInstance = PortalDocumentPackageState["instances"][number];
+type PortalPackageParticipants = NonNullable<
+	PortalDocumentPackageState["participants"]
+>;
+type Recipient = NonNullable<
+	PortalPackageInstance["signing"]
+>["recipients"][number];
+
+export type DealClosingPipelineState = BackendPipelineState & {
+	portalDocumentPackage?: PortalDocumentPackageState | null;
+};
+
+export interface DealClosingPipelineSigningSession {
+	error: string | null;
+	expiresAt: number | null;
+	host: string | null;
+	instanceId: string;
+	isPending: boolean;
+	token: string | null;
+	url: string | null;
+}
+
+export interface DealClosingPipelineCreateSigningSessionArgs {
+	dealId: string;
+	instanceId: string;
+}
 
 interface DealClosingPipelineDemoProps {
-	data: DealClosingPipelineFixture;
+	approvalError?: string | null;
+	approvalPending?: boolean;
+	data?: unknown;
+	onApproveAdminGate?: () => Promise<void> | void;
+	onCreateSigningSession?: (
+		args: DealClosingPipelineCreateSigningSessionArgs
+	) => Promise<void>;
+	onReset?: () => Promise<void> | void;
+	resetPending?: boolean;
+	signingSession?: DealClosingPipelineSigningSession | null;
+	state?: DealClosingPipelineState | undefined;
 }
+
+type ClosingStage =
+	| "locked"
+	| "lawyer"
+	| "documents"
+	| "transfer"
+	| "review"
+	| "completed";
 
 const stages: Array<{ id: ClosingStage; label: string }> = [
 	{ id: "locked", label: "Locked" },
@@ -43,69 +82,222 @@ const stages: Array<{ id: ClosingStage; label: string }> = [
 	{ id: "completed", label: "Completed" },
 ];
 
-const toneClasses: Record<
-	EnvelopeTone,
-	{
-		bar: string;
-		border: string;
-		icon: string;
-		text: string;
-	}
-> = {
-	blue: {
-		bar: "bg-[var(--lagoon-deep)]",
-		border:
-			"border-[color-mix(in_oklab,var(--lagoon-deep)_22%,var(--line))] bg-[var(--surface-strong)]/76",
-		icon: "text-[color-mix(in_oklab,var(--lagoon-deep)_76%,black)] dark:text-[var(--lagoon-deep)]",
-		text: "text-[color-mix(in_oklab,var(--lagoon-deep)_76%,black)] dark:text-[var(--lagoon-deep)]",
-	},
-	green: {
-		bar: "bg-[var(--palm)]",
-		border:
-			"border-[color-mix(in_oklab,var(--palm)_24%,var(--line))] bg-[var(--surface-strong)]/76",
-		icon: "text-[var(--palm)]",
-		text: "text-[var(--palm)]",
-	},
-	orange: {
-		bar: "bg-amber-700",
-		border: "border-amber-700/25 bg-[var(--surface-strong)]/76",
-		icon: "text-amber-700 dark:text-amber-400",
-		text: "text-amber-800 dark:text-amber-300",
-	},
-	purple: {
-		bar: "bg-violet-700",
-		border: "border-violet-700/22 bg-[var(--surface-strong)]/76",
-		icon: "text-violet-700 dark:text-violet-300",
-		text: "text-violet-800 dark:text-violet-300",
-	},
-};
-
 const panelClassName = "island-shell rounded-xl p-6";
 const panelHeadingClassName =
 	"font-semibold text-[var(--sea-ink)] text-sm uppercase tracking-[0.04em]";
 const mutedTextClassName = "text-[var(--sea-ink-soft)]";
+const embeddedSigningOpenDealStatus = "documentReview.pending";
+const enumLabelSplitPattern = /[_.]/;
+
+function formatEnumLabel(value: string | null | undefined) {
+	if (!value) {
+		return "Unavailable";
+	}
+
+	return value
+		.split(enumLabelSplitPattern)
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+		.join(" ");
+}
+
+function formatDate(value: number | null | undefined) {
+	if (typeof value !== "number") {
+		return "Unavailable";
+	}
+
+	return new Date(value).toLocaleDateString();
+}
+
+function formatDateTime(value: number | null | undefined) {
+	if (typeof value !== "number") {
+		return "Unavailable";
+	}
+
+	return new Date(value).toLocaleString();
+}
+
+function formatCurrency(value: number | null | undefined) {
+	if (typeof value !== "number") {
+		return "Unavailable";
+	}
+
+	return new Intl.NumberFormat("en-CA", {
+		currency: "CAD",
+		maximumFractionDigits: 0,
+		style: "currency",
+	}).format(value);
+}
+
+function getStatusTone(status: string | null | undefined) {
+	switch (status) {
+		case "ready":
+		case "active":
+		case "sent":
+		case "partially_signed":
+		case "completed":
+		case "signed":
+			return "green";
+		case "provider_error":
+		case "failed":
+		case "generation_failed":
+		case "declined":
+			return "red";
+		case "draft":
+		case "pending":
+		case "available":
+			return "blue";
+		default:
+			return "gray";
+	}
+}
+
+function getDocumensoEmbedErrorMessage(error: unknown) {
+	if (error instanceof Error) {
+		return error.message;
+	}
+
+	if (typeof error === "string" && error.trim().length > 0) {
+		return error.trim();
+	}
+
+	return "Documenso embedded signing failed.";
+}
+
+function currentStageForState(state: DealClosingPipelineState): ClosingStage {
+	const packageStatus = state.portalDocumentPackage?.package?.status;
+	if (packageStatus === "archived") {
+		return "completed";
+	}
+	if (state.deal?.status !== embeddedSigningOpenDealStatus) {
+		return state.deal ? "locked" : "lawyer";
+	}
+	if (state.portalDocumentPackage?.package) {
+		return "documents";
+	}
+	if (state.deal) {
+		return "locked";
+	}
+	return "lawyer";
+}
+
+function isSignableInstance(instance: PortalPackageInstance) {
+	return instance.class === "private_templated_signable";
+}
+
+function canDealLaunchEmbeddedSigning(state: DealClosingPipelineState) {
+	return state.deal?.status === embeddedSigningOpenDealStatus;
+}
+
+function canDemoAdminLaunchEmbeddedSigning(
+	state: DealClosingPipelineState,
+	instance: PortalPackageInstance
+) {
+	if (!canDealLaunchEmbeddedSigning(state)) {
+		return false;
+	}
+	const signing = instance.signing;
+	if (!(signing?.status === "sent" || signing?.status === "partially_signed")) {
+		return false;
+	}
+
+	return signing.recipients.some((recipient) => {
+		if (
+			!recipient.providerRecipientId ||
+			recipient.status === "signed" ||
+			recipient.status === "declined"
+		) {
+			return false;
+		}
+
+		return !signing.recipients.some(
+			(previousRecipient) =>
+				previousRecipient.signingOrder < recipient.signingOrder &&
+				previousRecipient.status !== "signed"
+		);
+	});
+}
+
+function isAdminApprovalGateActive(state: DealClosingPipelineState) {
+	return Boolean(
+		state.deal &&
+			state.portalDocumentPackage?.package &&
+			!canDealLaunchEmbeddedSigning(state)
+	);
+}
+
+function findCurrentRecipient(
+	instance: PortalPackageInstance
+): Recipient | null {
+	return (
+		instance.signing?.recipients.find(
+			(recipient) => recipient.isCurrentViewer
+		) ?? null
+	);
+}
 
 export function DealClosingPipelineDemo({
-	data,
+	approvalError = null,
+	approvalPending = false,
+	onApproveAdminGate = () => undefined,
+	onCreateSigningSession = async () => undefined,
+	onReset = () => undefined,
+	resetPending = false,
+	signingSession = null,
+	state,
 }: DealClosingPipelineDemoProps) {
-	const [openEnvelopeId, setOpenEnvelopeId] = useState<string | null>(null);
-	const [remindedActionId, setRemindedActionId] = useState<string | null>(null);
-	const selectedEnvelope = useMemo(
-		() => data.envelopes.find((envelope) => envelope.id === openEnvelopeId),
-		[data.envelopes, openEnvelopeId]
+	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(
+		null
 	);
-	const activeEnvelope =
-		data.envelopes.find((envelope) => envelope.id === data.activeEnvelopeId) ??
-		data.envelopes[0];
-	const handleQuickAction = (action: ClosingQuickActionFixture) => {
-		if (action.destination.type === "embeddedSigning") {
-			setOpenEnvelopeId(action.destination.envelopeId);
+	const [dismissedSigningInstanceId, setDismissedSigningInstanceId] = useState<
+		string | null
+	>(null);
+	const [embedMessage, setEmbedMessage] = useState<string | null>(null);
+	const [embedError, setEmbedError] = useState<string | null>(null);
+	const instances = useMemo(
+		() =>
+			state?.portalDocumentPackage?.instances.filter(
+				(instance) => !(instance.archivedAt || instance.status === "archived")
+			) ?? [],
+		[state?.portalDocumentPackage?.instances]
+	);
+	const effectiveSelectedInstanceId =
+		selectedInstanceId ??
+		(signingSession?.instanceId !== dismissedSigningInstanceId
+			? (signingSession?.instanceId ?? null)
+			: null);
+	const selectedInstance = useMemo(
+		() =>
+			instances.find(
+				(instance) => instance.instanceId === effectiveSelectedInstanceId
+			) ?? null,
+		[effectiveSelectedInstanceId, instances]
+	);
+	const activeSigningSession =
+		signingSession?.instanceId === effectiveSelectedInstanceId
+			? signingSession
+			: null;
+	const activeSignableInstance =
+		state && canDealLaunchEmbeddedSigning(state)
+			? (instances.find(
+					(instance) =>
+						isSignableInstance(instance) &&
+						canDemoAdminLaunchEmbeddedSigning(state, instance)
+				) ?? null)
+			: null;
+
+	const launchSigning = (instance: PortalPackageInstance) => {
+		if (!state?.deal) {
 			return;
 		}
 
-		document
-			.getElementById(action.destination.sectionId)
-			?.scrollIntoView({ behavior: "smooth", block: "start" });
+		setEmbedMessage(null);
+		setEmbedError(null);
+		setDismissedSigningInstanceId(null);
+		setSelectedInstanceId(instance.instanceId);
+		void onCreateSigningSession({
+			dealId: state.deal.id,
+			instanceId: instance.instanceId,
+		});
 	};
 
 	return (
@@ -118,124 +310,310 @@ export function DealClosingPipelineDemo({
 					<ArrowLeft className="size-4" />
 					Back to Pipeline
 				</a>
-				<div className="flex items-center gap-3">
-					<Button className="border-red-900/50" size="sm" variant="outline">
-						Cancel Deal
-					</Button>
-					<Button size="sm" variant="outline">
-						Archive
-					</Button>
-				</div>
+				<Button
+					disabled={resetPending || !state?.canReset}
+					onClick={() => void onReset()}
+					size="sm"
+					variant="outline"
+				>
+					<RefreshCw
+						className={cn("mr-2 size-4", resetPending && "animate-spin")}
+					/>
+					{resetPending ? "Regenerating..." : "Reset and regenerate"}
+				</Button>
 			</header>
 
 			<main className="mx-auto max-w-[1440px] px-4 py-8 sm:px-8 lg:px-16">
-				<section className="flex flex-col gap-6">
-					<DealHeader data={data} />
-					<Lifecycle currentStage={data.deal.stage} />
-
-					<div className="grid gap-6 xl:grid-cols-[minmax(0,948px)_340px]">
-						<div className="space-y-6">
+				{state ? (
+					<section className="flex flex-col gap-6">
+						<DealHeader state={state} />
+						<Lifecycle currentStage={currentStageForState(state)} />
+						{embedMessage ? (
+							<div className="rounded-lg border border-[color-mix(in_oklab,var(--palm)_26%,var(--line))] bg-[color-mix(in_oklab,var(--palm)_8%,var(--surface-strong))] px-4 py-3 text-[var(--palm)] text-sm">
+								{embedMessage}
+							</div>
+						) : null}
+						{activeSignableInstance ? (
 							<DocumentsActionCard
-								envelope={activeEnvelope}
-								onOpen={() => {
-									setOpenEnvelopeId(activeEnvelope.id);
-								}}
+								instance={activeSignableInstance}
+								onOpen={() => launchSigning(activeSignableInstance)}
 							/>
-							<PropertyAndParties data={data} />
-							<DocumentEnvelopes
-								envelopes={data.envelopes}
-								onOpenEnvelope={(envelope) => {
-									setOpenEnvelopeId(envelope.id);
-								}}
-							/>
+						) : null}
+
+						<div className="grid gap-6 xl:grid-cols-[minmax(0,948px)_340px]">
+							<div className="space-y-6">
+								<SetupAndPackage state={state} />
+								<DealContext
+									onReset={onReset}
+									resetPending={resetPending}
+									state={state}
+								/>
+								{isAdminApprovalGateActive(state) ? (
+									<AdminApprovalGate
+										approvalError={approvalError}
+										approvalPending={approvalPending}
+										documents={instances}
+										onApprove={onApproveAdminGate}
+										state={state}
+									/>
+								) : null}
+								<PackageInstances
+									instances={instances}
+									onLaunchSigning={launchSigning}
+									state={state}
+								/>
+							</div>
+							<aside className="space-y-5">
+								<SummaryRail state={state} />
+								<AuditRail state={state} />
+							</aside>
 						</div>
-						<aside className="space-y-5">
-							<SummaryRail data={data} />
-							<AuditRail data={data} />
-							<QuickActionsPanel
-								actions={data.quickActions}
-								onActionSelect={handleQuickAction}
-								onSendReminder={(action) => {
-									setRemindedActionId(action.id);
-								}}
-								remindedActionId={remindedActionId}
-								viewer={data.viewer}
-							/>
-						</aside>
+					</section>
+				) : (
+					<div className="grid min-h-[420px] place-items-center">
+						<div className="text-center">
+							<FileText className="mx-auto size-8 text-[var(--sea-ink-soft)]" />
+							<p className="mt-3 font-semibold">Loading deal closing state</p>
+							<p className={cn(mutedTextClassName, "mt-1 text-sm")}>
+								Convex is preparing the live demo package state.
+							</p>
+						</div>
 					</div>
-				</section>
+				)}
 			</main>
 
-			<Dialog
+			<SigningDialog
+				error={embedError}
+				onCompleted={() => {
+					setSelectedInstanceId(null);
+					setDismissedSigningInstanceId(signingSession?.instanceId ?? null);
+					setEmbedError(null);
+					setEmbedMessage(
+						"Signing completed. Refresh status after Task 6 webhook sync is available."
+					);
+				}}
+				onError={(error) => {
+					setEmbedError(getDocumensoEmbedErrorMessage(error));
+				}}
 				onOpenChange={(isOpen) => {
 					if (!isOpen) {
-						setOpenEnvelopeId(null);
+						setSelectedInstanceId(null);
+						setDismissedSigningInstanceId(signingSession?.instanceId ?? null);
+						setEmbedError(null);
 					}
 				}}
-				open={Boolean(selectedEnvelope)}
-			>
-				<DialogContent className="!inset-3 !h-auto !max-h-none !w-auto !max-w-none !translate-x-0 !translate-y-0 sm:!inset-4 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden border-[var(--line)] bg-[var(--surface-strong)] p-0 text-[var(--sea-ink)] shadow-[0_24px_80px_rgba(10,32,34,0.22)]">
-					<DialogHeader className="border-[var(--line)] border-b px-5 py-4">
-						<DialogTitle>
-							{selectedEnvelope?.name ?? "Embedded signing"}
-						</DialogTitle>
-						<DialogDescription>
-							Embedded Documenso signing surface for envelope{" "}
-							{selectedEnvelope?.envelopeId}.
-						</DialogDescription>
-					</DialogHeader>
-					{selectedEnvelope?.signingHtml ? (
-						<iframe
-							className="h-full min-h-0 w-full rounded-b-lg"
-							sandbox="allow-forms allow-scripts allow-same-origin"
-							srcDoc={selectedEnvelope.signingHtml}
-							title={`Embedded Documenso signing for ${selectedEnvelope.name}`}
-						/>
-					) : (
-						<div className="grid h-full place-items-center px-6 text-center">
-							<div>
-								<FileText className="mx-auto size-8 text-muted-foreground" />
-								<p className="mt-3 font-semibold">No active signing session</p>
-								<p className="mt-1 text-muted-foreground text-sm">
-									This mock envelope is visible for sequencing only.
-								</p>
-							</div>
-						</div>
-					)}
-				</DialogContent>
-			</Dialog>
+				selectedInstance={selectedInstance}
+				session={activeSigningSession}
+			/>
 		</div>
 	);
 }
 
-function DealHeader({ data }: { data: DealClosingPipelineFixture }) {
+function participantRows(participants: PortalPackageParticipants | null) {
+	if (!participants) {
+		return [];
+	}
+
+	return [
+		{
+			email: participants.buyer.email,
+			label: "Buyer",
+			name: participants.buyer.displayName,
+			status: participants.buyer.accessRole,
+		},
+		{
+			email: participants.seller.email,
+			label: "Seller",
+			name: participants.seller.displayName,
+			status: participants.seller.accessRole,
+		},
+		{
+			email: participants.lawyer.email,
+			label: "Lawyer",
+			name: participants.lawyer.displayName ?? "Unassigned",
+			status: participants.lawyer.hasActiveDealAccess
+				? "active_access"
+				: (participants.lawyer.lawyerType ?? "awaiting_access"),
+		},
+	];
+}
+
+function AdminApprovalGate({
+	approvalError,
+	approvalPending,
+	documents,
+	onApprove,
+	state,
+}: {
+	approvalError: string | null;
+	approvalPending: boolean;
+	documents: PortalPackageInstance[];
+	onApprove: () => Promise<void> | void;
+	state: DealClosingPipelineState;
+}) {
+	const participants = state.portalDocumentPackage?.participants ?? null;
+	const lawyer = participants?.lawyer ?? null;
+
+	return (
+		<section className={panelClassName}>
+			<div className="flex flex-wrap items-start justify-between gap-4">
+				<div>
+					<h2 className={panelHeadingClassName}>Admin Approval Gate</h2>
+					<p className={cn(mutedTextClassName, "mt-2 max-w-3xl text-sm")}>
+						Documents are prepared for review. Signing unlocks after lawyer
+						representation is confirmed.
+					</p>
+					{approvalError ? (
+						<p className="mt-2 max-w-3xl text-red-600 text-sm">
+							{approvalError}
+						</p>
+					) : null}
+				</div>
+				<div className="flex flex-wrap items-center justify-end gap-2">
+					<StatusBadge status={state.deal?.status} />
+					<Button
+						disabled={approvalPending}
+						onClick={() => {
+							void onApprove();
+						}}
+						size="sm"
+						type="button"
+					>
+						<ShieldCheck className="mr-2 size-4" />
+						{approvalPending ? "Approving..." : "Approve and open signing"}
+					</Button>
+				</div>
+			</div>
+
+			<div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+				<div className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/72 p-4">
+					<div className="flex items-start gap-3">
+						<div className="grid size-10 shrink-0 place-items-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--palm)]">
+							<ShieldCheck className="size-5" />
+						</div>
+						<div className="min-w-0">
+							<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
+								Selected lawyer
+							</p>
+							<p className="mt-1 truncate font-semibold text-sm">
+								{lawyer?.displayName ?? "Awaiting lawyer selection"}
+							</p>
+							<p className={cn(mutedTextClassName, "mt-1 truncate text-xs")}>
+								{lawyer?.email ?? "No lawyer email available"}
+							</p>
+						</div>
+					</div>
+					<div className="mt-4 flex flex-wrap gap-2">
+						<StatusBadge
+							status={
+								lawyer?.hasActiveDealAccess
+									? "active_access"
+									: (lawyer?.lawyerType ?? "awaiting_access")
+							}
+						/>
+					</div>
+				</div>
+
+				<div className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/72 p-4">
+					<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
+						Participants
+					</p>
+					<div className="mt-3 grid gap-2 sm:grid-cols-3">
+						{participantRows(participants).map((participant) => (
+							<div
+								className="min-w-0 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/64 px-3 py-2"
+								key={participant.label}
+							>
+								<p className={cn(mutedTextClassName, "text-xs")}>
+									{participant.label}
+								</p>
+								<p className="mt-1 truncate font-semibold text-sm">
+									{participant.name}
+								</p>
+								<p className={cn(mutedTextClassName, "mt-1 truncate text-xs")}>
+									{participant.email ?? "No email available"}
+								</p>
+								<p className={cn(mutedTextClassName, "mt-1 truncate text-xs")}>
+									{formatEnumLabel(participant.status)}
+								</p>
+							</div>
+						))}
+					</div>
+				</div>
+			</div>
+
+			<div className="mt-6">
+				<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
+					Documents
+				</p>
+				<div className="mt-3 divide-y divide-[var(--line)] rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/72">
+					{documents.map((document) => (
+						<div
+							className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"
+							key={document.instanceId}
+						>
+							<div className="flex min-w-0 items-center gap-3">
+								<div className="grid size-9 shrink-0 place-items-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--lagoon-deep)]">
+									<FileText className="size-4" />
+								</div>
+								<div className="min-w-0">
+									<p className="truncate font-semibold text-sm">
+										{document.displayName}
+									</p>
+									<p className={cn(mutedTextClassName, "truncate text-xs")}>
+										{formatEnumLabel(document.class)}
+									</p>
+								</div>
+							</div>
+							<div className="flex shrink-0 flex-wrap items-center gap-2">
+								<StatusBadge status={document.status} />
+								{document.url ? (
+									<a
+										className="inline-flex h-8 items-center rounded-md border border-[var(--line)] px-3 font-semibold text-[var(--sea-ink)] text-xs no-underline hover:bg-[var(--surface-strong)]"
+										href={document.url}
+										rel="noreferrer"
+										target="_blank"
+									>
+										View PDF
+									</a>
+								) : null}
+							</div>
+						</div>
+					))}
+				</div>
+			</div>
+		</section>
+	);
+}
+
+function DealHeader({ state }: { state: DealClosingPipelineState }) {
+	const property = state.deal?.property;
+	const title = property
+		? `${property.streetAddress}, ${property.city}`
+		: state.packageDefinition.expectedTitle;
+
 	return (
 		<div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
 			<div className="space-y-2">
 				<div className="flex flex-wrap items-center gap-3">
 					<h1 className="font-semibold text-3xl tracking-normal sm:text-[32px] sm:leading-[38px]">
-						{data.deal.title}
+						{title}
 					</h1>
-					<Badge
-						className={cn(
-							"rounded-[4px] px-3 py-1.5 font-semibold text-white uppercase",
-							data.deal.statusTone === "green" && "bg-[var(--palm)]",
-							data.deal.statusTone === "orange" && "bg-amber-700",
-							data.deal.statusTone === "purple" && "bg-violet-700"
-						)}
-					>
-						{data.deal.statusLabel}
-					</Badge>
+					<StatusBadge status={state.setup.status} />
 				</div>
 				<p className={cn(mutedTextClassName, "text-sm")}>
-					Deal #{data.deal.id} - {data.deal.createdLabel}
+					Fixed package {state.packageDefinition.expectedTitle} -{" "}
+					{state.packageDefinition.id}
 				</p>
 			</div>
 			<div className="text-left lg:text-right">
 				<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.1em]">
-					Current action
+					Lender
 				</p>
-				<p className="mt-2 font-semibold text-lg">{data.deal.currentAction}</p>
+				<p className="mt-2 font-semibold text-lg">{state.lender.name}</p>
+				<p className={cn(mutedTextClassName, "text-sm")}>
+					{state.lender.email}
+				</p>
 			</div>
 		</div>
 	);
@@ -254,6 +632,7 @@ function Lifecycle({ currentStage }: { currentStage: ClosingStage }) {
 						<div className="contents" key={stage.id}>
 							<div className="flex w-[90px] shrink-0 flex-col items-center gap-2">
 								<div
+									aria-current={isCurrent ? "step" : undefined}
 									className={cn(
 										"grid size-8 place-items-center rounded-full",
 										isComplete && "bg-[var(--palm)] text-white",
@@ -262,6 +641,7 @@ function Lifecycle({ currentStage }: { currentStage: ClosingStage }) {
 										!(isComplete || isCurrent) &&
 											"bg-[color-mix(in_oklab,var(--sea-ink-soft)_18%,transparent)] text-[var(--sea-ink-soft)]"
 									)}
+									data-testid={`closing-stage-${stage.id}`}
 								>
 									{isComplete ? (
 										<Check className="size-4" />
@@ -304,12 +684,14 @@ function Lifecycle({ currentStage }: { currentStage: ClosingStage }) {
 }
 
 function DocumentsActionCard({
-	envelope,
+	instance,
 	onOpen,
 }: {
-	envelope: ClosingEnvelopeFixture;
+	instance: PortalPackageInstance;
 	onOpen: () => void;
 }) {
+	const recipient = findCurrentRecipient(instance);
+
 	return (
 		<section className="island-shell rounded-xl p-6 ring-1 ring-[color-mix(in_oklab,var(--palm)_14%,transparent)]">
 			<div className="flex flex-col justify-between gap-5 md:flex-row">
@@ -318,21 +700,25 @@ function DocumentsActionCard({
 						Ready for signature
 					</p>
 					<h2 className="font-semibold text-2xl leading-tight">
-						{envelope.name} needs Sarah Chen&apos;s signature
+						{instance.displayName} needs{" "}
+						{recipient?.name ?? "the current signer"}&apos;s signature
 					</h2>
 					<p className={cn(mutedTextClassName, "text-sm leading-6")}>
-						The lawyer package is complete. Documents are now moving through
-						ordered participant signing before funds transfer can open.
+						Convex resolved this package instance as eligible for embedded
+						Documenso signing for the current viewer.
 					</p>
 				</div>
 				<div className="shrink-0 md:text-right">
 					<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.1em]">
-						Waiting
+						Envelope
 					</p>
-					<p className="mt-2 font-semibold text-2xl">18h 12m</p>
-					<Badge className="mt-2 rounded-md border border-[color-mix(in_oklab,var(--palm)_24%,var(--line))] bg-[var(--surface-strong)]/70 text-[var(--palm)]">
-						On schedule
-					</Badge>
+					<p
+						className="mt-2 font-semibold text-sm"
+						data-testid="active-provider-envelope-id"
+					>
+						{instance.signing?.providerEnvelopeId ?? "Pending"}
+					</p>
+					<StatusBadge status={instance.signing?.status ?? instance.status} />
 				</div>
 			</div>
 
@@ -343,82 +729,167 @@ function DocumentsActionCard({
 					</div>
 					<div className="min-w-0">
 						<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
-							Current required signer / action
+							Current required signer
 						</p>
 						<p className="mt-1 truncate font-semibold text-sm">
-							Sarah Chen - investor signature on {envelope.envelopeId}
+							{recipient?.name ?? "Current viewer"} -{" "}
+							{formatEnumLabel(recipient?.platformRole)}
 						</p>
 						<p className={cn(mutedTextClassName, "mt-1 text-xs")}>
-							Reminder sent 2 hours ago - automatic escalation in 30 hours
+							Last provider sync:{" "}
+							{formatDateTime(instance.signing?.lastProviderSyncAt)}
 						</p>
 					</div>
 				</div>
 				<Button
+					aria-label={`Sign ${instance.displayName}`}
 					className="bg-[var(--sea-ink)] text-white hover:bg-[color-mix(in_oklab,var(--sea-ink)_88%,white)] dark:bg-[var(--lagoon)] dark:text-slate-950 dark:hover:bg-[var(--lagoon-deep)]"
 					onClick={onOpen}
 				>
-					Open signing
+					Sign in portal
 				</Button>
 			</div>
 		</section>
 	);
 }
 
-function PropertyAndParties({ data }: { data: DealClosingPipelineFixture }) {
+function SetupAndPackage({ state }: { state: DealClosingPipelineState }) {
+	const packageState = state.portalDocumentPackage?.package;
+
 	return (
 		<section className={panelClassName}>
-			<h2 className={panelHeadingClassName}>Deal Context</h2>
-			<div className="mt-6 grid gap-x-12 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
-				{data.property.map((item) => (
-					<div
-						className={cn(
-							"min-w-0",
-							item.label === "Address" && "sm:col-span-2"
-						)}
-						key={item.label}
-					>
-						<p className={cn(mutedTextClassName, "text-sm")}>{item.label}</p>
-						<p className="mt-1 truncate font-semibold text-base">
-							{item.value}
-						</p>
-					</div>
-				))}
+			<div className="flex flex-wrap items-start justify-between gap-4">
+				<div>
+					<h2 className={panelHeadingClassName}>Package Setup</h2>
+					<p className={cn(mutedTextClassName, "mt-2 text-sm")}>
+						Fixed package title and id are read from the demo reset backend.
+					</p>
+				</div>
+				<StatusBadge status={state.setup.status} />
 			</div>
-			<h3 className={cn(panelHeadingClassName, "mt-7")}>Parties</h3>
-			<div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-				{data.parties.map((party) => (
-					<div
-						className={cn(
-							"rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/70 p-4",
-							toneClasses[party.tone].border
-						)}
-						key={party.role}
-					>
-						<p
-							className={cn(
-								"font-semibold text-[11px] uppercase tracking-[0.08em]",
-								toneClasses[party.tone].text
-							)}
-						>
-							{party.role}
-						</p>
-						<p className="mt-2 font-semibold text-sm">{party.name}</p>
-						<p className={cn(mutedTextClassName, "mt-1 text-xs")}>
-							{party.detail}
-						</p>
-					</div>
-				))}
+			<div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+				<InfoTile
+					label="Expected title"
+					value={state.packageDefinition.expectedTitle}
+				/>
+				<InfoTile label="Fixed package id" value={state.packageDefinition.id} />
+				<InfoTile
+					label="Published version"
+					value={
+						state.packageDefinition.currentPublishedVersion?.toString() ??
+						"Unavailable"
+					}
+				/>
+				<InfoTile
+					label="Generated package"
+					value={
+						packageState?.packageId ??
+						state.package?.packageDefinitionId ??
+						"None"
+					}
+				/>
+				<InfoTile
+					label="Package status"
+					value={formatEnumLabel(packageState?.status)}
+				/>
+				<InfoTile
+					label="Package updated"
+					value={formatDateTime(packageState?.updatedAt)}
+				/>
+				<InfoTile
+					label="Package version id"
+					value={state.package?.packageVersionId ?? "Unavailable"}
+				/>
+				<InfoTile
+					label="Mortgage id"
+					value={state.package?.mortgageId ?? "Unavailable"}
+				/>
 			</div>
 		</section>
 	);
 }
 
-function DocumentEnvelopes({
-	envelopes,
-	onOpenEnvelope,
+function DealContext({
+	onReset,
+	resetPending,
+	state,
 }: {
-	envelopes: ClosingEnvelopeFixture[];
-	onOpenEnvelope: (envelope: ClosingEnvelopeFixture) => void;
+	onReset: () => Promise<void> | void;
+	resetPending: boolean;
+	state: DealClosingPipelineState;
+}) {
+	const property = state.deal?.property;
+
+	return (
+		<section className={panelClassName}>
+			<div className="flex flex-wrap items-start justify-between gap-4">
+				<div>
+					<h2 className={panelHeadingClassName}>Deal Context</h2>
+					{state.deal ? null : (
+						<p className={cn(mutedTextClassName, "mt-2 text-sm")}>
+							The fixed package is ready. Initialize the demo deal to generate
+							the package documents and signing envelopes.
+						</p>
+					)}
+				</div>
+				{state.deal ? null : (
+					<Button
+						disabled={resetPending || !state.canReset}
+						onClick={() => void onReset()}
+						size="sm"
+						variant="outline"
+					>
+						<RefreshCw
+							className={cn("mr-2 size-4", resetPending && "animate-spin")}
+						/>
+						{resetPending ? "Initializing..." : "Initialize demo deal"}
+					</Button>
+				)}
+			</div>
+			<div className="mt-6 grid gap-x-12 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
+				<InfoTile label="Deal id" value={state.deal?.id ?? "No demo deal"} />
+				<InfoTile
+					label="Deal status"
+					value={formatEnumLabel(state.deal?.status)}
+				/>
+				<InfoTile
+					label="Fractional share"
+					value={formatCurrency(state.deal?.fractionalShare)}
+				/>
+				<InfoTile
+					label="Closing date"
+					value={formatDate(state.deal?.closingDate)}
+				/>
+				<InfoTile
+					label="Address"
+					value={
+						property
+							? `${property.streetAddress}${property.unit ? ` ${property.unit}` : ""}`
+							: "Unavailable"
+					}
+				/>
+				<InfoTile label="City" value={property?.city ?? "Unavailable"} />
+				<InfoTile
+					label="Province"
+					value={property?.province ?? "Unavailable"}
+				/>
+				<InfoTile
+					label="Postal code"
+					value={property?.postalCode ?? "Unavailable"}
+				/>
+			</div>
+		</section>
+	);
+}
+
+function PackageInstances({
+	instances,
+	onLaunchSigning,
+	state,
+}: {
+	instances: PortalPackageInstance[];
+	onLaunchSigning: (instance: PortalPackageInstance) => void;
+	state: DealClosingPipelineState;
 }) {
 	return (
 		<section
@@ -427,340 +898,381 @@ function DocumentEnvelopes({
 		>
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div>
-					<h2 className={panelHeadingClassName}>Document Envelopes</h2>
+					<h2 className={panelHeadingClassName}>Package Instances</h2>
 					<p className={cn(mutedTextClassName, "mt-2 text-sm")}>
-						Documenso signing packages tracked by ordered participant actions.
+						Generated package documents, signing envelopes, and recipients from
+						Convex.
 					</p>
 				</div>
-				<div className="flex gap-2">
-					<Badge className="rounded-md border border-[color-mix(in_oklab,var(--palm)_24%,var(--line))] bg-[var(--surface-strong)]/70 text-[var(--palm)]">
-						3 active
-					</Badge>
-					<Badge className="rounded-md border border-amber-700/24 bg-[var(--surface-strong)]/70 text-amber-800 dark:text-amber-300">
-						1 aging
-					</Badge>
+				<Badge className="rounded-md border border-[var(--line)] bg-[var(--surface-strong)]/70 text-[var(--sea-ink)]">
+					{instances.length} instances
+				</Badge>
+			</div>
+
+			{instances.length > 0 ? (
+				<div className="mt-5 space-y-3">
+					{instances.map((instance) => (
+						<InstanceRow
+							canLaunch={Boolean(
+								state.deal &&
+									canDealLaunchEmbeddedSigning(state) &&
+									canDemoAdminLaunchEmbeddedSigning(state, instance)
+							)}
+							instance={instance}
+							key={instance.instanceId}
+							onLaunch={() => onLaunchSigning(instance)}
+						/>
+					))}
 				</div>
-			</div>
-			<div className="mt-5 space-y-3">
-				{envelopes.map((envelope) => (
-					<EnvelopeRow
-						envelope={envelope}
-						key={envelope.id}
-						onOpen={() => {
-							onOpenEnvelope(envelope);
-						}}
-					/>
-				))}
-			</div>
+			) : (
+				<p className="mt-5 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/60 p-4 text-[var(--sea-ink-soft)] text-sm">
+					No generated package instances are available for this demo deal yet.
+				</p>
+			)}
 		</section>
 	);
 }
 
-function EnvelopeRow({
-	envelope,
-	onOpen,
+function InstanceRow({
+	canLaunch,
+	instance,
+	onLaunch,
 }: {
-	envelope: ClosingEnvelopeFixture;
-	onOpen: () => void;
+	canLaunch: boolean;
+	instance: PortalPackageInstance;
+	onLaunch: () => void;
 }) {
-	return (
-		<button
-			className={cn(
-				"grid w-full grid-cols-[minmax(0,1fr)] items-center gap-4 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/72 p-3 text-left transition hover:border-[color-mix(in_oklab,var(--lagoon-deep)_42%,var(--line))] hover:bg-[var(--surface-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--lagoon)]/40 lg:grid-cols-[318px_210px_100px_126px]",
-				envelope.status === "aging" &&
-					"border-amber-700/30 bg-[var(--surface-strong)]/76"
-			)}
-			onClick={onOpen}
-			type="button"
-		>
-			<div className="flex min-w-0 items-center gap-3">
-				<div
-					className={cn(
-						"grid size-10 shrink-0 place-items-center rounded-lg border",
-						toneClasses[envelope.tone].border
-					)}
-				>
-					<FileText className={cn("size-5", toneClasses[envelope.tone].icon)} />
-				</div>
-				<div className="min-w-0">
-					<div className="flex items-center gap-2">
-						<p className="truncate font-semibold text-sm">{envelope.name}</p>
-						{envelope.isSignableTemplateSource ? (
-							<Badge className="hidden rounded-md border border-[color-mix(in_oklab,var(--palm)_24%,var(--line))] bg-[var(--surface-strong)]/72 text-[var(--palm)] sm:inline-flex">
-								published template
-							</Badge>
-						) : null}
-					</div>
-					<p className={cn(mutedTextClassName, "truncate text-xs")}>
-						Envelope {envelope.envelopeId}
-					</p>
-				</div>
-			</div>
-			<Lane label="Next required" value={envelope.nextRequired} />
-			<Lane label="Waiting" value={envelope.waitingFor} />
-			<div className="flex items-center gap-3">
-				<div className="h-2 w-20 shrink-0 overflow-hidden rounded-full bg-[color-mix(in_oklab,var(--sea-ink-soft)_18%,transparent)]">
-					<div
-						className={cn(
-							"h-full rounded-full",
-							toneClasses[envelope.tone].bar
-						)}
-						style={{ width: `${envelope.progress}%` }}
-					/>
-				</div>
-				<p
-					className={cn(
-						"w-10 shrink-0 text-right font-semibold text-xs",
-						toneClasses[envelope.tone].text
-					)}
-				>
-					{envelope.progress}%
-				</p>
-			</div>
-		</button>
-	);
-}
+	const recipientCount = instance.signing?.recipients.length ?? 0;
 
-function Lane({ label, value }: { label: string; value: string }) {
 	return (
-		<div className="min-w-0">
-			<p className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
-				{label}
-			</p>
-			<p className="mt-1 truncate font-semibold text-sm">{value}</p>
+		<div
+			className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/72 p-4"
+			data-testid={`package-instance-${instance.instanceId}`}
+		>
+			<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+				<div className="min-w-0">
+					<div className="flex flex-wrap items-center gap-2">
+						<div className="grid size-10 shrink-0 place-items-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]">
+							{isSignableInstance(instance) ? (
+								<FileSignature className="size-5 text-[var(--palm)]" />
+							) : (
+								<FileText className="size-5 text-[var(--lagoon-deep)]" />
+							)}
+						</div>
+						<div className="min-w-0">
+							<p className="truncate font-semibold text-sm">
+								{instance.displayName}
+							</p>
+							<p className={cn(mutedTextClassName, "truncate text-xs")}>
+								Instance {instance.instanceId}
+							</p>
+							{instance.signing?.providerEnvelopeId ? (
+								<p className="sr-only" data-testid="provider-envelope-id">
+									{instance.signing.providerEnvelopeId}
+								</p>
+							) : null}
+						</div>
+					</div>
+					<div className="mt-3 flex flex-wrap gap-2">
+						<StatusBadge status={instance.status} />
+						<StatusBadge status={instance.signing?.status ?? null} />
+						{instance.signing?.generatedDocumentSigningStatus ? (
+							<StatusBadge
+								status={instance.signing.generatedDocumentSigningStatus}
+							/>
+						) : null}
+						<Badge className="rounded-md border border-[var(--line)] bg-[var(--surface-strong)]/70 text-[var(--sea-ink)]">
+							{formatEnumLabel(instance.class)}
+						</Badge>
+						<Badge className="rounded-md border border-[var(--line)] bg-[var(--surface-strong)]/70 text-[var(--sea-ink)]">
+							{recipientCount} recipients
+						</Badge>
+					</div>
+				</div>
+				{canLaunch ? (
+					<Button
+						aria-label={`Sign ${instance.displayName}`}
+						onClick={onLaunch}
+						size="sm"
+					>
+						<FileSignature className="mr-2 size-4" />
+						Sign in portal
+					</Button>
+				) : null}
+			</div>
+
+			{instance.signing?.recipients.length ? (
+				<div className="mt-4 grid gap-2 md:grid-cols-2">
+					{instance.signing.recipients.map((recipient) => (
+						<RecipientPill
+							key={`${instance.instanceId}-${recipient.platformRole}-${recipient.email}`}
+							recipient={recipient}
+						/>
+					))}
+				</div>
+			) : (
+				<p className={cn(mutedTextClassName, "mt-4 text-sm")}>
+					No signing recipients are attached to this instance.
+				</p>
+			)}
+
+			{instance.lastError || instance.signing?.lastError ? (
+				<p className="mt-3 text-destructive text-sm">
+					{instance.signing?.lastError ?? instance.lastError}
+				</p>
+			) : null}
 		</div>
 	);
 }
 
-function SummaryRail({ data }: { data: DealClosingPipelineFixture }) {
+function RecipientPill({ recipient }: { recipient: Recipient }) {
+	return (
+		<div className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/64 px-3 py-2 text-sm">
+			<div className="grid size-8 shrink-0 place-items-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--sea-ink-soft)]">
+				<UserRound className="size-4" />
+			</div>
+			<div className="min-w-0">
+				<p className="truncate font-semibold">
+					{recipient.name}
+					{recipient.isCurrentViewer ? " (you)" : ""}
+				</p>
+				<p className={cn(mutedTextClassName, "truncate text-xs")}>
+					{recipient.email} - {formatEnumLabel(recipient.status)} - order{" "}
+					{recipient.signingOrder}
+				</p>
+			</div>
+		</div>
+	);
+}
+
+function SummaryRail({ state }: { state: DealClosingPipelineState }) {
 	return (
 		<section className={panelClassName}>
 			<h2 className={panelHeadingClassName}>Deal Summary</h2>
 			<div className="mt-4 divide-y divide-[var(--line)]">
-				{data.summary.map((item) => (
-					<div className="flex justify-between gap-4 py-3" key={item.label}>
-						<p className={cn(mutedTextClassName, "text-sm")}>{item.label}</p>
-						<p className="font-semibold text-sm">{item.value}</p>
-					</div>
-				))}
+				<SummaryRow label="Setup" value={formatEnumLabel(state.setup.status)} />
+				<SummaryRow
+					label="Can reset"
+					value={state.canReset ? "Available" : "Unavailable"}
+				/>
+				<SummaryRow
+					label="Lender user"
+					value={state.lender.userId ?? "Unlinked"}
+				/>
+				<SummaryRow
+					label="Expected lender id"
+					value={state.lender.expectedUserId}
+				/>
+				<SummaryRow
+					label="User id match"
+					value={state.lender.fixedUserIdMatches ? "Yes" : "No"}
+				/>
+				<SummaryRow
+					label="Instances"
+					value={`${state.portalDocumentPackage?.instances.length ?? 0}`}
+				/>
 			</div>
 		</section>
 	);
 }
 
-function AuditRail({ data }: { data: DealClosingPipelineFixture }) {
+function SummaryRow({ label, value }: { label: string; value: string }) {
+	return (
+		<div className="flex justify-between gap-4 py-3">
+			<p className={cn(mutedTextClassName, "text-sm")}>{label}</p>
+			<p className="truncate text-right font-semibold text-sm">{value}</p>
+		</div>
+	);
+}
+
+function AuditRail({ state }: { state: DealClosingPipelineState }) {
 	return (
 		<section className={panelClassName}>
 			<h2 className={panelHeadingClassName}>Audit Trail</h2>
 			<div className="mt-5">
-				{data.auditTrail.map((entry, index) => (
-					<div className="flex gap-3" key={`${entry.label}-${entry.when}`}>
-						<div className="flex w-3 shrink-0 flex-col items-center">
-							<div
-								className={cn(
-									"size-2 rounded-full",
-									entry.state === "future"
-										? "bg-[color-mix(in_oklab,var(--sea-ink-soft)_24%,transparent)]"
-										: "bg-[var(--palm)]"
-								)}
-							/>
-							{index < data.auditTrail.length - 1 ? (
-								<div className="h-12 w-px bg-[var(--line)]" />
-							) : null}
+				{state.auditTrail.length > 0 ? (
+					state.auditTrail.map((entry, index) => (
+						<div className="flex gap-3" key={entry.id}>
+							<div className="flex w-3 shrink-0 flex-col items-center">
+								<div className="size-2 rounded-full bg-[var(--palm)]" />
+								{index < state.auditTrail.length - 1 ? (
+									<div className="h-12 w-px bg-[var(--line)]" />
+								) : null}
+							</div>
+							<div>
+								<p className="font-semibold text-sm">{entry.message}</p>
+								<p className={cn(mutedTextClassName, "mt-1 text-xs")}>
+									{formatDateTime(entry.timestamp)} - {entry.actorId}
+								</p>
+							</div>
 						</div>
-						<div className={cn(entry.state === "future" && "opacity-55")}>
-							<p className="font-semibold text-sm">{entry.label}</p>
-							<p className={cn(mutedTextClassName, "mt-1 text-xs")}>
-								{entry.when ? `${entry.when} - ${entry.actor}` : entry.actor}
-							</p>
-						</div>
-					</div>
-				))}
+					))
+				) : (
+					<p className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/60 p-3 text-[var(--sea-ink-soft)] text-sm">
+						No demo audit events recorded yet.
+					</p>
+				)}
 			</div>
 		</section>
 	);
 }
 
-function QuickActionsPanel({
-	actions,
-	onActionSelect,
-	onSendReminder,
-	remindedActionId,
-	viewer,
+function SigningDialog({
+	error,
+	onCompleted,
+	onError,
+	onOpenChange,
+	selectedInstance,
+	session,
 }: {
-	actions: ClosingQuickActionFixture[];
-	onActionSelect: (action: ClosingQuickActionFixture) => void;
-	onSendReminder: (action: ClosingQuickActionFixture) => void;
-	remindedActionId: string | null;
-	viewer: DealClosingPipelineFixture["viewer"];
+	error: string | null;
+	onCompleted: () => void;
+	onError: (error: unknown) => void;
+	onOpenChange: (isOpen: boolean) => void;
+	selectedInstance: PortalPackageInstance | null;
+	session: DealClosingPipelineSigningSession | null;
 }) {
-	const currentUserActions = actions.filter(
-		(action) => action.assigneeUserId === viewer.userId
-	);
-	const otherUserActions = actions.filter(
-		(action) => action.assigneeUserId !== viewer.userId
-	);
+	const recipient = selectedInstance
+		? findCurrentRecipient(selectedInstance)
+		: null;
 
-	return (
-		<section className="island-shell rounded-xl p-5">
-			<div>
-				<h2 className={panelHeadingClassName}>Quick Actions</h2>
-				<p className={cn(mutedTextClassName, "mt-1 text-xs")}>
-					Acting as {viewer.name} - {viewer.role}
-				</p>
-			</div>
-
-			<div className="mt-5 space-y-5">
-				<div>
-					<div className="flex items-center justify-between gap-3">
-						<h3 className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
-							Assigned to you
-						</h3>
-						<Badge className="rounded-md border border-[color-mix(in_oklab,var(--palm)_24%,var(--line))] bg-[var(--surface-strong)]/70 text-[var(--palm)]">
-							{currentUserActions.length}
-						</Badge>
-					</div>
-					<div className="mt-3 grid gap-3">
-						{currentUserActions.length > 0 ? (
-							currentUserActions.map((action) => (
-								<button
-									className="group w-full rounded-lg border border-[color-mix(in_oklab,var(--palm)_24%,var(--line))] bg-[var(--surface-strong)]/74 p-3 text-left text-[var(--sea-ink)] shadow-[0_8px_20px_rgba(23,58,64,0.08)] transition hover:border-[var(--palm)] hover:bg-[var(--surface-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--lagoon)]/45"
-									key={action.id}
-									onClick={() => {
-										onActionSelect(action);
-									}}
-									type="button"
-								>
-									<div className="flex items-start gap-3">
-										<div className="grid size-9 shrink-0 place-items-center rounded-lg border border-[color-mix(in_oklab,var(--palm)_22%,var(--line))] bg-[var(--surface-strong)] text-[var(--palm)]">
-											<QuickActionIcon action={action} />
-										</div>
-										<div className="min-w-0 flex-1">
-											<div className="flex items-start justify-between gap-3">
-												<p className="font-semibold text-sm leading-5">
-													{action.label}
-												</p>
-												<span className="shrink-0 rounded-md border border-[color-mix(in_oklab,var(--palm)_22%,var(--line))] bg-[var(--surface-strong)]/70 px-2 py-0.5 font-semibold text-[11px] text-[var(--palm)]">
-													{action.dueLabel}
-												</span>
-											</div>
-											<p
-												className={cn(
-													mutedTextClassName,
-													"mt-1 text-xs leading-5"
-												)}
-											>
-												{action.description}
-											</p>
-											<p className="mt-2 inline-flex items-center gap-1 font-semibold text-[var(--palm)] text-xs">
-												Open action
-												<ArrowRight className="size-3 transition group-hover:translate-x-0.5" />
-											</p>
-										</div>
-									</div>
-								</button>
-							))
-						) : (
-							<p className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/60 p-3 text-[var(--sea-ink-soft)] text-sm">
-								No actions are assigned to you.
-							</p>
-						)}
-					</div>
-				</div>
-
-				<div className="border-[var(--line)] border-t pt-5">
-					<div className="flex items-center justify-between gap-3">
-						<h3 className="font-semibold text-[11px] text-[var(--sea-ink-soft)] uppercase tracking-[0.08em]">
-							Assigned to others
-						</h3>
-						<Badge className="rounded-md border border-[var(--line)] bg-[var(--surface-strong)]/70 text-[var(--sea-ink)]">
-							{otherUserActions.length}
-						</Badge>
-					</div>
-					<div className="mt-3 grid gap-3">
-						{otherUserActions.map((action) => {
-							const reminderSent = remindedActionId === action.id;
-
-							return (
-								<div
-									className={cn(
-										"rounded-lg border border-[var(--line)] bg-[var(--surface-strong)]/58 p-3",
-										action.priority === "aging" &&
-											"border-amber-700/30 bg-[var(--surface-strong)]/76"
-									)}
-									key={action.id}
-								>
-									<div className="flex items-start gap-3">
-										<div className="grid size-8 shrink-0 place-items-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--sea-ink-soft)]">
-											<QuickActionIcon action={action} />
-										</div>
-										<div className="min-w-0 flex-1">
-											<p className="font-semibold text-sm leading-5">
-												{action.label}
-											</p>
-											<p className={cn(mutedTextClassName, "mt-1 text-xs")}>
-												{action.assigneeName} - {action.assigneeRole}
-											</p>
-											<div className="mt-2 flex flex-wrap items-center gap-2">
-												<span className="rounded-md border border-[var(--line)] bg-[var(--surface-strong)]/70 px-2 py-0.5 font-semibold text-[11px] text-[var(--sea-ink-soft)]">
-													{action.dueLabel}
-												</span>
-												{action.envelopeId ? (
-													<span className="rounded-md border border-[var(--line)] bg-[var(--surface-strong)]/70 px-2 py-0.5 font-semibold text-[11px] text-[var(--sea-ink-soft)]">
-														{action.envelopeId}
-													</span>
-												) : null}
-											</div>
-										</div>
-									</div>
-									<Button
-										className={cn(
-											"mt-3 w-full border-[var(--line)] text-[var(--sea-ink)] hover:bg-[var(--link-bg-hover)]",
-											reminderSent &&
-												"bg-[color-mix(in_oklab,var(--palm)_10%,var(--surface-strong))] text-[var(--palm)]"
-										)}
-										onClick={() => {
-											onSendReminder(action);
-										}}
-										variant="outline"
-									>
-										<Send className="mr-2 size-4" />
-										{reminderSent ? "Reminder sent" : "Send reminder"}
-									</Button>
-								</div>
-							);
-						})}
-					</div>
-				</div>
-			</div>
-		</section>
-	);
-}
-
-function QuickActionIcon({ action }: { action: ClosingQuickActionFixture }) {
-	if (action.destination.type === "embeddedSigning") {
-		return <FileSignature className="size-4" />;
+	if (!selectedInstance) {
+		return null;
 	}
 
-	return <ShieldCheck className="size-4" />;
+	return (
+		<div
+			aria-labelledby="deal-closing-signing-title"
+			aria-modal="true"
+			className="fixed inset-3 z-50 grid grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-[0_24px_80px_rgba(10,32,34,0.22)] sm:inset-4"
+			role="dialog"
+		>
+			<div className="flex items-start justify-between gap-4 border-[var(--line)] border-b px-5 py-4">
+				<div>
+					<h2 className="font-semibold text-lg" id="deal-closing-signing-title">
+						{selectedInstance.displayName}
+					</h2>
+					<p className="mt-1 text-[var(--sea-ink-soft)] text-sm">
+						Documenso recipient signing token issued by Convex for this package
+						instance.
+					</p>
+				</div>
+				<Button
+					onClick={() => onOpenChange(false)}
+					size="sm"
+					type="button"
+					variant="outline"
+				>
+					Close
+				</Button>
+			</div>
+			<SigningSessionBody
+				error={error}
+				onCompleted={onCompleted}
+				onError={onError}
+				recipient={recipient}
+				session={session}
+			/>
+		</div>
+	);
 }
 
-export function DealClosingTemplateEvidence({
-	data,
+function SigningSessionBody({
+	error,
+	onCompleted,
+	onError,
+	recipient,
+	session,
 }: {
-	data: DealClosingPipelineFixture;
+	error: string | null;
+	onCompleted: () => void;
+	onError: (error: unknown) => void;
+	recipient: Recipient | null;
+	session: DealClosingPipelineSigningSession | null;
 }) {
-	return (
-		<div className="island-shell rounded-xl p-4 text-sm">
-			<div className="flex items-center gap-2 font-semibold text-[var(--sea-ink)]">
-				<Clock3 className="size-4" />
-				Published signable template in use
+	if (session?.isPending) {
+		return (
+			<div className="grid h-full min-h-[70vh] place-items-center px-6 text-center">
+				<div>
+					<RefreshCw className="mx-auto size-8 animate-spin text-[var(--sea-ink-soft)]" />
+					<p className="mt-3 font-semibold">
+						Creating embedded signing session
+					</p>
+					<p className={cn(mutedTextClassName, "mt-1 text-sm")}>
+						Convex is requesting a Documenso recipient signing token.
+					</p>
+				</div>
 			</div>
-			<p className={cn(mutedTextClassName, "mt-2")}>
-				Version {data.template.version} ({data.template.templateId}) provides{" "}
-				{data.template.signatureFieldCount} signature fields for{" "}
-				{data.template.signableRoles.join(" and ")}.
-			</p>
+		);
+	}
+
+	const visibleError = error ?? session?.error;
+	if (visibleError) {
+		return (
+			<div className="grid h-full min-h-[70vh] place-items-center px-6 text-center">
+				<div>
+					<ShieldCheck className="mx-auto size-8 text-destructive" />
+					<p className="mt-3 font-semibold">Embedded signing unavailable</p>
+					<p className="mt-1 text-destructive text-sm">{visibleError}</p>
+				</div>
+			</div>
+		);
+	}
+
+	if (session?.token) {
+		return (
+			<EmbedSignDocument
+				className="h-[70vh] w-full rounded-b-lg border-0"
+				host={session.host ?? undefined}
+				language="en"
+				lockName={Boolean(recipient?.name)}
+				name={recipient?.name ?? undefined}
+				onDocumentCompleted={onCompleted}
+				onDocumentError={onError}
+				onDocumentReady={() => undefined}
+				token={session.token}
+			/>
+		);
+	}
+
+	return (
+		<div className="grid h-full min-h-[70vh] place-items-center px-6 text-center">
+			<div>
+				<FileText className="mx-auto size-8 text-[var(--sea-ink-soft)]" />
+				<p className="mt-3 font-semibold">No active signing session</p>
+				<p className={cn(mutedTextClassName, "mt-1 text-sm")}>
+					Choose an eligible signable package instance to start signing.
+				</p>
+			</div>
 		</div>
+	);
+}
+
+function InfoTile({ label, value }: { label: string; value: string }) {
+	return (
+		<div className="min-w-0">
+			<p className={cn(mutedTextClassName, "text-sm")}>{label}</p>
+			<p className="mt-1 truncate font-semibold text-base">{value}</p>
+		</div>
+	);
+}
+
+function StatusBadge({ status }: { status: string | null | undefined }) {
+	const tone = getStatusTone(status);
+
+	return (
+		<Badge
+			className={cn(
+				"rounded-md border bg-[var(--surface-strong)]/70 px-2.5 py-1 font-semibold",
+				tone === "green" &&
+					"border-[color-mix(in_oklab,var(--palm)_24%,var(--line))] text-[var(--palm)]",
+				tone === "blue" &&
+					"border-[color-mix(in_oklab,var(--lagoon-deep)_24%,var(--line))] text-[color-mix(in_oklab,var(--lagoon-deep)_76%,black)] dark:text-[var(--lagoon-deep)]",
+				tone === "red" && "border-destructive/30 text-destructive",
+				tone === "gray" && "border-[var(--line)] text-[var(--sea-ink)]"
+			)}
+		>
+			{formatEnumLabel(status)}
+		</Badge>
 	);
 }

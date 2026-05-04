@@ -227,6 +227,43 @@ describe("listing detail hosted checkout launcher", () => {
 		expect(screen.queryByLabelText("Email")).toBeNull();
 	});
 
+	it("shows platform lawyer SLA, availability, active count, and capacity warning", () => {
+		const listing = getListing({
+			checkout: {
+				...getListing().checkout!,
+				lawyers: [
+					{
+						...getListing().checkout!.lawyers[0]!,
+						activeDealCount: 4,
+						availability: [
+							{
+								businessDate: "2026-05-04",
+								hasAvailability: true,
+								isOnHold: false,
+								label: "2026-05-04: 09:00-12:00",
+								windows: ["09:00-12:00"],
+							},
+						],
+						capacityLimit: 4,
+						capacityWarning: "full",
+						slaTier: { name: "24h review", reviewHours: 24 },
+					},
+				],
+			},
+		});
+		renderInteractiveListing({ listing });
+
+		expect(screen.getAllByText("24h SLA").length).toBeGreaterThan(0);
+		expect(
+			screen.getAllByText("2026-05-04: 09:00-12:00").length
+		).toBeGreaterThan(0);
+		expect(screen.getAllByText("4 active / 4 capacity").length).toBeGreaterThan(
+			0
+		);
+		expect(screen.getAllByText("Fully booked").length).toBeGreaterThan(0);
+		expect(firstCheckoutButton().disabled).toBe(false);
+	});
+
 	it("rejects non-positive fraction input instead of submitting the default", () => {
 		const onStartCheckout = vi.fn();
 		renderInteractiveListing({ onStartCheckout });

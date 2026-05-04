@@ -9,27 +9,11 @@ import { Route as RootRoute } from "../__root";
 
 export const Route = createFileRoute("/portal/positions/$mortgageId")({
 	component: MicPositionDetailRoutePage,
-	loader: async ({ context, params }) => {
-		const portalId = assertActivePortalId(
-			context.portalContext,
-			"MIC portal requires an active portal host."
-		);
-		const detail = await context.queryClient.ensureQueryData(
-			micPositionDetailQueryOptions(
-				portalId,
-				params.mortgageId as Id<"mortgages">
-			)
-		);
-		if (!detail.position) {
-			throw notFound();
-		}
-		return { mortgageId: params.mortgageId };
-	},
 	notFoundComponent: MicPositionNotFoundComponent,
 });
 
 function MicPositionDetailRoutePage() {
-	const { mortgageId } = Route.useLoaderData();
+	const { mortgageId } = Route.useParams();
 	const { portalContext } = RootRoute.useRouteContext();
 	const portalId = assertActivePortalId(
 		portalContext,

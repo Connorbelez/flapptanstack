@@ -45,6 +45,15 @@ export const micArrearsSignalValidator = v.object({
 });
 export type MicArrearsSignal = Infer<typeof micArrearsSignalValidator>;
 
+export const micPositionCurrentPaymentValidator = v.object({
+	amount: v.number(),
+	dueDate: v.string(),
+	status: v.string(),
+});
+export type MicPositionCurrentPayment = Infer<
+	typeof micPositionCurrentPaymentValidator
+>;
+
 export const micPositionDrilldownIdsValidator = v.object({
 	listingId: nullableStringValidator,
 	mortgageId: v.string(),
@@ -76,6 +85,8 @@ export const micPositionRowValidator = v.object({
 	}),
 	rateYield: nullableNumberValidator,
 	status: v.string(),
+	currentPayment: v.union(micPositionCurrentPaymentValidator, v.null()),
+	thumbnailUrl: nullableStringValidator,
 });
 export type MicPositionRow = Infer<typeof micPositionRowValidator>;
 
@@ -99,11 +110,38 @@ export const micPortfolioMetricsValidator = v.object({
 	activePositionCount: v.number(),
 	arrearsExposure: v.number(),
 	delinquencyExposure: v.number(),
+	inferredLendingFeeIncome: v.number(),
+	lendingFeeIncomeSharePercent: nullableNumberValidator,
 	outstandingPrincipal: v.number(),
+	totalReturnIncome: v.number(),
 	weightedAverageLtv: nullableNumberValidator,
 	weightedAverageYield: nullableNumberValidator,
 });
 export type MicPortfolioMetrics = Infer<typeof micPortfolioMetricsValidator>;
+
+export const micLendingFeeMetricsValidator = v.object({
+	feeBasisPoints: v.number(),
+	inferredLendingFeeIncome: v.number(),
+	lendingFeeIncomeSharePercent: nullableNumberValidator,
+	mortgageOriginatedCount: v.number(),
+	originatedPrincipal: v.number(),
+	totalInterestIncome: v.number(),
+	totalReturnIncome: v.number(),
+});
+export type MicLendingFeeMetrics = Infer<typeof micLendingFeeMetricsValidator>;
+
+export const micReturnSeriesRowValidator = v.object({
+	cumulativeFeeIncome: v.number(),
+	cumulativeInterestIncome: v.number(),
+	cumulativeTotalReturn: v.number(),
+	feeIncome: v.number(),
+	feeIncomeSharePercent: nullableNumberValidator,
+	interestIncome: v.number(),
+	originatedPrincipal: v.number(),
+	period: v.string(),
+	totalReturn: v.number(),
+});
+export type MicReturnSeriesRow = Infer<typeof micReturnSeriesRowValidator>;
 
 export const micConcentrationEntryValidator = v.object({
 	count: v.number(),
@@ -133,6 +171,7 @@ export const micPaymentHistoryRowValidator = v.object({
 	latestCollectionStatus: nullableStringValidator,
 	latestTransferStatus: nullableStringValidator,
 	micShareAmount: v.number(),
+	micSharePercentOfGross: nullableNumberValidator,
 	mortgageId: v.string(),
 	obligationId: v.string(),
 	paymentNumber: v.number(),
@@ -142,12 +181,66 @@ export const micPaymentHistoryRowValidator = v.object({
 });
 export type MicPaymentHistoryRow = Infer<typeof micPaymentHistoryRowValidator>;
 
+export const micListingHeroImageValidator = v.object({
+	caption: nullableStringValidator,
+	id: v.string(),
+	url: nullableStringValidator,
+});
+export type MicListingHeroImage = Infer<typeof micListingHeroImageValidator>;
+
+export const micOwnershipValidator = v.object({
+	percent: v.number(),
+	totalUnits: v.number(),
+	units: v.number(),
+});
+export type MicOwnership = Infer<typeof micOwnershipValidator>;
+
+export const micDealHistoryRowValidator = v.object({
+	closingDate: nullableNumberValidator,
+	createdAt: v.number(),
+	dealId: v.string(),
+	fractionalSharePercent: v.number(),
+	fractionalShareUnits: v.number(),
+	isTerminal: v.boolean(),
+	status: v.string(),
+});
+export type MicDealHistoryRow = Infer<typeof micDealHistoryRowValidator>;
+
+export const micTransferHistoryRowValidator = v.object({
+	amount: v.number(),
+	createdAt: v.number(),
+	currency: v.string(),
+	direction: v.string(),
+	hasObligationLink: v.boolean(),
+	status: v.string(),
+	transferId: v.string(),
+	transferType: v.string(),
+});
+export type MicTransferHistoryRow = Infer<
+	typeof micTransferHistoryRowValidator
+>;
+
+export const micAuditHistoryRowValidator = v.object({
+	entityType: v.string(),
+	eventId: v.string(),
+	eventType: v.string(),
+	newState: v.string(),
+	outcome: v.union(v.literal("transitioned"), v.literal("rejected")),
+	previousState: v.string(),
+	reason: nullableStringValidator,
+	sequenceNumber: v.string(),
+	timestamp: v.number(),
+});
+export type MicAuditHistoryRow = Infer<typeof micAuditHistoryRowValidator>;
+
 export const micDashboardSnapshotValidator = v.object({
 	...micPortfolioEnvelopeFields,
 	concentration: micConcentrationExposureDataValidator,
+	lendingFeeMetrics: micLendingFeeMetricsValidator,
 	maturityLadder: v.array(micMaturityLadderBucketValidator),
 	metrics: micPortfolioMetricsValidator,
 	positions: v.array(micPositionRowValidator),
+	returnSeries: v.array(micReturnSeriesRowValidator),
 });
 export type MicDashboardSnapshot = Infer<typeof micDashboardSnapshotValidator>;
 
@@ -159,6 +252,10 @@ export const micPositionsResultValidator = v.object({
 export type MicPositionsResult = Infer<typeof micPositionsResultValidator>;
 
 export const micPositionDetailDataValidator = v.object({
+	auditHistory: v.array(micAuditHistoryRowValidator),
+	dealHistory: v.array(micDealHistoryRowValidator),
+	heroImages: v.array(micListingHeroImageValidator),
+	micOwnership: micOwnershipValidator,
 	mortgage: v.object({
 		amortizationMonths: v.number(),
 		firstPaymentDate: v.string(),
@@ -175,6 +272,7 @@ export const micPositionDetailDataValidator = v.object({
 		termMonths: v.number(),
 		termStartDate: v.string(),
 	}),
+	ongoingDeals: v.array(micDealHistoryRowValidator),
 	payments: v.array(micPaymentHistoryRowValidator),
 	position: micPositionRowValidator,
 	property: v.object({
@@ -186,6 +284,7 @@ export const micPositionDetailDataValidator = v.object({
 		streetAddress: v.string(),
 		unit: nullableStringValidator,
 	}),
+	transferHistory: v.array(micTransferHistoryRowValidator),
 });
 export type MicPositionDetailData = Infer<
 	typeof micPositionDetailDataValidator

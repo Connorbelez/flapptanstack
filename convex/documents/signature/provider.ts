@@ -78,6 +78,12 @@ export interface SignatureProviderDeleteEnvelopeInput {
 	providerEnvelopeId: string;
 }
 
+export interface SignatureProviderCleanupEnvelopeResult {
+	error?: string;
+	providerEnvelopeId: string;
+	status: "deleted" | "not_deletable" | "provider_error";
+}
+
 export interface SignatureProviderSyncEnvelopeInput {
 	providerEnvelopeId: string;
 }

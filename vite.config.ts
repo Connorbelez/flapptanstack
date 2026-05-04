@@ -47,59 +47,66 @@ function skipPdfmeBabelTransform(): Plugin {
 	};
 }
 
-const config = defineConfig(({ mode }) => ({
-	resolve: {
-		dedupe: ["react", "react-dom"],
-	},
-	server: {
-		allowedHosts: ["localhost", ".localhost"],
-	},
-	test: {
-		exclude: [...configDefaults.exclude, "e2e/**"],
-		coverage: {
-			provider: "v8",
-			reporter: ["text", "json-summary", "html"],
-			include: [
-				"convex/onboarding/mutations.ts",
-				"convex/onboarding/queries.ts",
-				"convex/onboarding/internal.ts",
-				"convex/engine/transition.ts",
-				"convex/engine/transitionMutation.ts",
-				"convex/engine/effects/onboarding.ts",
-				"convex/engine/auditJournal.ts",
-				"convex/engine/hashChain.ts",
-				"convex/engine/reconciliation.ts",
-			],
-			thresholds: {
-				lines: 80,
-				functions: 80,
-				statements: 80,
-				branches: 75,
-			},
+const config = defineConfig(({ mode }) => {
+	// Vitest normally sets `process.env.VITEST`, but some runners resolve config
+	// before that is visible — `mode === "test"` matches Vitest's Vite server mode.
+	const isVitest = Boolean(process.env.VITEST) || mode === "test";
+	return {
+		resolve: {
+			dedupe: ["react", "react-dom"],
 		},
 		server: {
-			deps: {
-				// fluent-convex uses extensionless ESM imports internally
-				// which fail under Node strict ESM resolution in convex-test.
-				// @convex-dev/aggregate exports src/test.ts with import.meta.glob
-				// that needs Vite transformation.
-				inline: ["fluent-convex", "@convex-dev/aggregate"],
+			allowedHosts: ["localhost", ".localhost"],
+		},
+		test: {
+			exclude: [...configDefaults.exclude, "e2e/**"],
+			coverage: {
+				provider: "v8",
+				reporter: ["text", "json-summary", "html"],
+				include: [
+					"convex/onboarding/mutations.ts",
+					"convex/onboarding/queries.ts",
+					"convex/onboarding/internal.ts",
+					"convex/engine/transition.ts",
+					"convex/engine/transitionMutation.ts",
+					"convex/engine/effects/onboarding.ts",
+					"convex/engine/auditJournal.ts",
+					"convex/engine/hashChain.ts",
+					"convex/engine/reconciliation.ts",
+				],
+				thresholds: {
+					lines: 80,
+					functions: 80,
+					statements: 80,
+					branches: 75,
+				},
+			},
+			server: {
+				deps: {
+					// fluent-convex uses extensionless ESM imports internally
+					// which fail under Node strict ESM resolution in convex-test.
+					// @convex-dev/aggregate exports src/test.ts with import.meta.glob
+					// that needs Vite transformation.
+					inline: ["fluent-convex", "@convex-dev/aggregate"],
+				},
 			},
 		},
-	},
-	plugins: [
-		skipPdfmeBabelTransform(),
-		devtools(),
-		nitro({ rollupConfig: { external: [SENTRY_EXTERNAL_PATTERN] } }),
-		tsconfigPaths({ projects: ["./tsconfig.json"] }),
-		tailwindcss(),
-		tanstackStart(),
-		viteReact({
-			babel: {
-				plugins: mode === "test" ? [] : ["babel-plugin-react-compiler"],
-			},
-		}),
-	],
-}));
+		plugins: [
+			skipPdfmeBabelTransform(),
+			...(isVitest ? [] : [devtools()]),
+			...(isVitest
+				? []
+				: [nitro({ rollupConfig: { external: [SENTRY_EXTERNAL_PATTERN] } })]),
+			tsconfigPaths({ projects: ["./tsconfig.json"] }),
+			tailwindcss(),
+			...(isVitest ? [] : [tanstackStart()]),
+			viteReact({
+				babel: {
+					plugins: mode === "test" ? [] : ["babel-plugin-react-compiler"],
+				},
+			}),
+		],
+	};
+});
 
 export default config;

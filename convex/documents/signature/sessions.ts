@@ -2,6 +2,10 @@ import { ConvexError, v } from "convex/values";
 import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { authedAction } from "../../fluent";
+import {
+	EMBEDDED_SIGNING_LOCKED_BY_DEAL_STATUS_MESSAGE,
+	isDealStatusOpenForEmbeddedSigning,
+} from "./gates";
 import { getSignatureProvider } from "./provider";
 
 interface SignableEnvelopeRecipient {
@@ -11,6 +15,7 @@ interface SignableEnvelopeRecipient {
 }
 
 interface SignableEnvelopeDocument {
+	dealStatus: string | null;
 	envelope: {
 		providerCode: "documenso";
 		providerEnvelopeId: string;
@@ -62,6 +67,9 @@ export const createEmbeddedSigningSession = authedAction
 		}
 		if (!signableDocument) {
 			throw new ConvexError("Signable document envelope not found");
+		}
+		if (!isDealStatusOpenForEmbeddedSigning(signableDocument.dealStatus)) {
+			throw new ConvexError(EMBEDDED_SIGNING_LOCKED_BY_DEAL_STATUS_MESSAGE);
 		}
 
 		const recipient = signableDocument.recipients.find(

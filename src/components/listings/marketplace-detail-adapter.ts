@@ -530,10 +530,15 @@ function buildCheckoutContract(
 			availableFractions > 0 ? null : "No fractions are currently available.",
 		isEligible: availableFractions > 0,
 		lawyers: detail.lawyers.map((lawyer) => ({
+			activeDealCount: lawyer.activeDealCount ?? 0,
+			availability: [...(lawyer.availability ?? [])],
 			barNumber: lawyer.barNumber,
-			detail: lawyer.jurisdiction
-				? `Platform counsel - ${lawyer.jurisdiction}`
-				: "Platform counsel",
+			capacityLimit: lawyer.capacityLimit ?? 0,
+			capacityWarning: lawyer.capacityWarning ?? "none",
+			detail:
+				lawyer.slaTier == null
+					? titleCase(lawyer.role)
+					: `${lawyer.slaTier.name} SLA`,
 			email: lawyer.email,
 			firm: lawyer.firmName,
 			id: lawyer.authId,
@@ -543,6 +548,7 @@ function buildCheckoutContract(
 			latestVerificationId: lawyer.latestVerificationId
 				? String(lawyer.latestVerificationId)
 				: null,
+			slaTier: lawyer.slaTier ?? null,
 			type: "platform_lawyer",
 		})),
 		lockFee: {

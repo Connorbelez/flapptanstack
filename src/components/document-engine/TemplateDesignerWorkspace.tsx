@@ -378,8 +378,8 @@ export function TemplateDesignerWorkspace({
 				</div>
 			) : null}
 
-			<div className="flex min-w-0 max-w-full flex-col gap-3 overflow-hidden xl:flex-row xl:items-start">
-				<div className="min-w-0 max-w-full flex-1 overflow-hidden">
+			<div className="grid min-w-0 max-w-full grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+				<div className="min-w-0 max-w-full overflow-hidden">
 					{pdfUrl && template.basePdf ? (
 						<PdfDesigner
 							className="h-[calc(100vh-8.5rem)] min-h-[720px] w-full min-w-0 max-w-full rounded-xl border-border/70 shadow-[0_24px_80px_rgba(8,12,20,0.22)]"
