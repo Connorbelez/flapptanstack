@@ -128,6 +128,105 @@ const mockSnapshot = {
 	],
 };
 
+const realisticMicSnapshot = {
+	...mockSnapshot,
+	warnings: [
+		"MIC treasury, reserve, cash-on-hand, NAV, and personalized investor metrics are intentionally omitted until complete cash-ledger coverage exists.",
+	],
+	metrics: {
+		activePositionCount: 2,
+		arrearsExposure: 320000,
+		delinquencyExposure: 320000,
+		outstandingPrincipal: 470000,
+		weightedAverageLtv: 66.09,
+		weightedAverageYield: 11.01,
+	},
+	positions: [
+		{
+			...mockPosition,
+			arrearsSignal: {
+				overdueAmount: 800,
+				overdueCount: 1,
+				status: "exception" as const,
+			},
+			borrowerLabel: "Riley River",
+			drilldownIds: {
+				listingId: "listing_riverfront",
+				mortgageId: "mortgage_riverfront",
+				positionAccountId: "position_riverfront",
+				propertyId: "property_riverfront",
+			},
+			ltv: 68,
+			maturityDate: "2027-03-31",
+			mortgageId: "mortgage_riverfront",
+			outstandingPrincipal: 320000,
+			positionAccountId: "position_riverfront",
+			positionUnits: 4000,
+			principal: 800000,
+			propertyLabel: "101 Riverfront Ave, Ottawa",
+			propertySummary: {
+				city: "Ottawa",
+				propertyType: "multi_unit",
+				province: "ON",
+				streetAddress: "101 Riverfront Ave",
+				unit: null,
+			},
+			rateYield: 11.25,
+			status: "active",
+		},
+		{
+			...mockPosition,
+			borrowerLabel: "Casey Maple",
+			drilldownIds: {
+				listingId: "listing_maple",
+				mortgageId: "mortgage_maple",
+				positionAccountId: "position_maple",
+				propertyId: "property_maple",
+			},
+			ltv: 62,
+			maturityDate: "2028-06-30",
+			mortgageId: "mortgage_maple",
+			outstandingPrincipal: 150000,
+			positionAccountId: "position_maple",
+			positionUnits: 2500,
+			principal: 600000,
+			propertyLabel: "88 Maple Ridge Rd, Kingston",
+			propertySummary: {
+				city: "Kingston",
+				propertyType: "residential",
+				province: "ON",
+				streetAddress: "88 Maple Ridge Rd",
+				unit: null,
+			},
+			rateYield: 10.5,
+			status: "funded",
+		},
+	],
+	concentration: {
+		...mockSnapshot.concentration,
+		byPropertyType: [
+			{
+				count: 1,
+				key: "multi_unit",
+				label: "multi_unit",
+				outstandingPrincipal: 320000,
+				sharePercent: 68.09,
+			},
+			{
+				count: 1,
+				key: "residential",
+				label: "residential",
+				outstandingPrincipal: 150000,
+				sharePercent: 31.91,
+			},
+		],
+	},
+	maturityLadder: [
+		{ bucket: "12_24_months" as const, count: 1, outstandingPrincipal: 320000 },
+		{ bucket: "24_plus_months" as const, count: 1, outstandingPrincipal: 150000 },
+	],
+};
+
 const MIC_PORTAL_CONTEXT = {
 	portalContext: {
 		availability: "active",
@@ -198,6 +297,24 @@ describe("MIC dashboard", () => {
 		expect(screen.getByText("8.50%")).toBeTruthy();
 		expect(screen.getByText("70.00%")).toBeTruthy();
 		expect(screen.getByText("2027-06-15")).toBeTruthy();
+	});
+
+	it("renders realistic MIC scenario rows without unsupported investor metrics", () => {
+		vi.mocked(useSuspenseQuery).mockReturnValue({
+			data: realisticMicSnapshot,
+		} as never);
+
+		render(<MicPortalIndexRoutePage />);
+
+		expect(screen.getByText("$470,000.00")).toBeTruthy();
+		expect(screen.getByText("101 Riverfront Ave, Ottawa")).toBeTruthy();
+		expect(screen.getByText("88 Maple Ridge Rd, Kingston")).toBeTruthy();
+		expect(screen.getByText("Riley River")).toBeTruthy();
+		expect(screen.getByText("Casey Maple")).toBeTruthy();
+		expect(screen.queryByText("5 Oak Lane, London")).toBeNull();
+		expect(screen.queryByText(/NAV/i)).toBeNull();
+		expect(screen.queryByText(/Cap table/i)).toBeNull();
+		expect(screen.queryByText(/Personalized holdings/i)).toBeNull();
 	});
 
 	it("renders warnings banner when data completeness is partial", () => {
