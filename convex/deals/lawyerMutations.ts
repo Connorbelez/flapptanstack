@@ -5,6 +5,10 @@ import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { executeTransition } from "../engine/transition";
 import type { CommandSource, TransitionResult } from "../engine/types";
 import { lawyerMutation, type Viewer } from "../fluent";
+import {
+	evaluateDealLegalGate,
+	type LegalGateResult,
+} from "../legalRepresentation/gates";
 
 type LawyerMutationCtx = MutationCtx & { viewer: Viewer };
 type PackageSurface = Awaited<
@@ -61,6 +65,14 @@ function requireDealStatus(deal: Doc<"deals">, expectedStatus: string) {
 			`Invalid deal state: expected ${expectedStatus}, found ${deal.status}`
 		);
 	}
+}
+
+function throwLegalGateBlocked(gate: LegalGateResult): never {
+	throw new ConvexError({
+		code: "LEGAL_REPRESENTATION_GATE_BLOCKED",
+		message: gate.message,
+		reasonCodes: [...gate.reasonCodes],
+	});
 }
 
 function packageApprovalBlockers(
@@ -135,6 +147,17 @@ export const confirmRepresentation = lawyerMutation
 	.handler(async (ctx, args) => {
 		const deal = await requireActiveLawyerDeal(ctx, args.dealId);
 		requireDealStatus(deal, "lawyerOnboarding.verified");
+		const gate = await evaluateDealLegalGate(ctx, {
+			access: {
+				requireActiveAccess: true,
+				sourceActorId: ctx.viewer.authId,
+			},
+			checkpoint: "REPRESENTATION_CONFIRMED",
+			deal,
+		});
+		if (gate.decision !== "allow") {
+			throwLegalGateBlocked(gate);
+		}
 		return transitionDealFromLawyerPortal(
 			ctx,
 			args.dealId,

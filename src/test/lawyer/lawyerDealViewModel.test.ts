@@ -83,6 +83,28 @@ describe("lawyer deal view model", () => {
 		});
 	});
 
+	it("uses legal gate reasons for representation confirmation blockers", () => {
+		const actions = buildLawyerActionStates({
+			accessState: "active",
+			status: "lawyerOnboarding.verified",
+			packageReview: {
+				instances: [],
+				openExceptions: [],
+				packageStatus: null,
+			},
+			representationGate: {
+				decision: "block",
+				message: "Signed representation engagement evidence is required.",
+				reasonCodes: ["engagement_missing"],
+			},
+		});
+
+		expect(actions.confirmRepresentation).toMatchObject({
+			enabled: false,
+			disabledReason: "Signed representation engagement evidence is required.",
+		});
+	});
+
 	it("blocks package approval until package, signatory, and pre-send requirements pass", () => {
 		const blockers = packageApprovalBlockers({
 			packageStatus: "ready",
