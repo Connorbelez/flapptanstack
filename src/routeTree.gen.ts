@@ -105,6 +105,7 @@ import { Route as DemoAmpsIndexRouteImport } from './routes/demo/amps/index'
 import { Route as AdminDocumentEngineIndexRouteImport } from './routes/admin.document-engine.index'
 import { Route as PortalPositionsMortgageIdRouteImport } from './routes/portal/positions.$mortgageId'
 import { Route as LenderDealsDealIdRouteImport } from './routes/lender.deals.$dealId'
+import { Route as LawyerVerifyTokenRouteImport } from './routes/lawyer/verify.$token'
 import { Route as LawyerDealsDealIdRouteImport } from './routes/lawyer/deals.$dealId'
 import { Route as DemoRbacAuthRolesRouteImport } from './routes/demo/rbac-auth/roles'
 import { Route as DemoRbacAuthOnboardingRouteImport } from './routes/demo/rbac-auth/onboarding'
@@ -662,6 +663,11 @@ const LenderDealsDealIdRoute = LenderDealsDealIdRouteImport.update({
   path: '/$dealId',
   getParentRoute: () => LenderDealsRoute,
 } as any)
+const LawyerVerifyTokenRoute = LawyerVerifyTokenRouteImport.update({
+  id: '/verify/$token',
+  path: '/verify/$token',
+  getParentRoute: () => LawyerRouteRoute,
+} as any)
 const LawyerDealsDealIdRoute = LawyerDealsDealIdRouteImport.update({
   id: '/deals/$dealId',
   path: '/deals/$dealId',
@@ -1146,6 +1152,7 @@ export interface FileRoutesByFullPath {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
+  '/lawyer/verify/$token': typeof LawyerVerifyTokenRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/portal/positions/$mortgageId': typeof PortalPositionsMortgageIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
@@ -1291,6 +1298,7 @@ export interface FileRoutesByTo {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
+  '/lawyer/verify/$token': typeof LawyerVerifyTokenRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/portal/positions/$mortgageId': typeof PortalPositionsMortgageIdRoute
   '/admin/document-engine': typeof AdminDocumentEngineIndexRoute
@@ -1452,6 +1460,7 @@ export interface FileRoutesById {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
+  '/lawyer/verify/$token': typeof LawyerVerifyTokenRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/portal/positions/$mortgageId': typeof PortalPositionsMortgageIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
@@ -1614,6 +1623,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lawyer/deals/$dealId'
+    | '/lawyer/verify/$token'
     | '/lender/deals/$dealId'
     | '/portal/positions/$mortgageId'
     | '/admin/document-engine/'
@@ -1759,6 +1769,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lawyer/deals/$dealId'
+    | '/lawyer/verify/$token'
     | '/lender/deals/$dealId'
     | '/portal/positions/$mortgageId'
     | '/admin/document-engine'
@@ -1919,6 +1930,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lawyer/deals/$dealId'
+    | '/lawyer/verify/$token'
     | '/lender/deals/$dealId'
     | '/portal/positions/$mortgageId'
     | '/admin/document-engine/'
@@ -2679,6 +2691,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LenderDealsDealIdRouteImport
       parentRoute: typeof LenderDealsRoute
     }
+    '/lawyer/verify/$token': {
+      id: '/lawyer/verify/$token'
+      path: '/verify/$token'
+      fullPath: '/lawyer/verify/$token'
+      preLoaderRoute: typeof LawyerVerifyTokenRouteImport
+      parentRoute: typeof LawyerRouteRoute
+    }
     '/lawyer/deals/$dealId': {
       id: '/lawyer/deals/$dealId'
       path: '/deals/$dealId'
@@ -3337,11 +3356,13 @@ const BrokerRouteRouteWithChildren = BrokerRouteRoute._addFileChildren(
 interface LawyerRouteRouteChildren {
   LawyerIndexRoute: typeof LawyerIndexRoute
   LawyerDealsDealIdRoute: typeof LawyerDealsDealIdRoute
+  LawyerVerifyTokenRoute: typeof LawyerVerifyTokenRoute
 }
 
 const LawyerRouteRouteChildren: LawyerRouteRouteChildren = {
   LawyerIndexRoute: LawyerIndexRoute,
   LawyerDealsDealIdRoute: LawyerDealsDealIdRoute,
+  LawyerVerifyTokenRoute: LawyerVerifyTokenRoute,
 }
 
 const LawyerRouteRouteWithChildren = LawyerRouteRoute._addFileChildren(
