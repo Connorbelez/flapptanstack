@@ -17,20 +17,24 @@ import {
 	reconcileAttemptLinkedInboundSettlement,
 } from "../../payments/transfers/collectionAttemptReconciliation";
 import { extractLeg1Metadata } from "../../payments/transfers/pipeline.types";
-import type { ProviderCode } from "../../payments/transfers/types";
-import { PROVIDER_CODES } from "../../payments/transfers/types";
+import type { NonCheckoutTransferProviderCode } from "../../payments/transfers/types";
+import { NON_CHECKOUT_TRANSFER_PROVIDER_CODES } from "../../payments/transfers/types";
 import { appendAuditJournalEntry } from "../auditJournal";
 import type { CommandSource } from "../types";
 import { effectPayloadValidator } from "../validators";
 import { runPaymentReversalCascadeForPlanEntry } from "./collectionAttempt";
 
-function assertProviderCode(value: string): ProviderCode {
-	if ((PROVIDER_CODES as readonly string[]).includes(value)) {
-		return value as ProviderCode;
+function assertNonCheckoutProviderCode(
+	value: string
+): NonCheckoutTransferProviderCode {
+	if (
+		(NON_CHECKOUT_TRANSFER_PROVIDER_CODES as readonly string[]).includes(value)
+	) {
+		return value as NonCheckoutTransferProviderCode;
 	}
 	throw new Error(
-		`[transfer-effects] Unknown provider code: "${value}". ` +
-			`Expected one of: ${PROVIDER_CODES.join(", ")}`
+		`[transfer-effects] Provider code "${value}" is not supported for deal-closing pipeline transfers. ` +
+			`Expected one of: ${NON_CHECKOUT_TRANSFER_PROVIDER_CODES.join(", ")}`
 	);
 }
 
@@ -539,7 +543,7 @@ async function handlePipelineLegConfirmed(
 				lenderId: leg1Meta.lenderId as Id<"lenders"> | undefined,
 				mortgageId: transfer.mortgageId,
 				leg2Amount: leg1Meta.leg2Amount,
-				providerCode: assertProviderCode(transfer.providerCode),
+				providerCode: assertNonCheckoutProviderCode(transfer.providerCode),
 			}
 		);
 	} else if (

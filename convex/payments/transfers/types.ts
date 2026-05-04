@@ -107,7 +107,7 @@ export function toDomainEntityId(
 }
 
 // ── Provider Codes ───────────────────────────────────────────────────
-export const PROVIDER_CODES = [
+export const NON_CHECKOUT_TRANSFER_PROVIDER_CODES = [
 	"manual",
 	"manual_review",
 	"mock_pad",
@@ -120,7 +120,53 @@ export const PROVIDER_CODES = [
 	"plaid_transfer",
 ] as const;
 
+export const CHECKOUT_LOCK_FEE_PROVIDER_CODES = ["stripe"] as const;
+
+export const PROVIDER_CODES = [
+	...NON_CHECKOUT_TRANSFER_PROVIDER_CODES,
+	...CHECKOUT_LOCK_FEE_PROVIDER_CODES,
+] as const;
+
 export type ProviderCode = (typeof PROVIDER_CODES)[number];
+export type NonCheckoutTransferProviderCode =
+	(typeof NON_CHECKOUT_TRANSFER_PROVIDER_CODES)[number];
+export type CheckoutLockFeeProviderCode =
+	(typeof CHECKOUT_LOCK_FEE_PROVIDER_CODES)[number];
+
+export function isCheckoutLockFeeProviderCode(
+	providerCode: ProviderCode
+): providerCode is CheckoutLockFeeProviderCode {
+	return (CHECKOUT_LOCK_FEE_PROVIDER_CODES as readonly string[]).includes(
+		providerCode
+	);
+}
+
+export function hasCheckoutLockFeeProviderMetadata(
+	metadata: Record<string, unknown> | undefined
+): boolean {
+	return (
+		typeof metadata?.checkoutSessionId === "string" &&
+		metadata.checkoutSessionId.trim().length > 0 &&
+		typeof metadata.reservationId === "string" &&
+		metadata.reservationId.trim().length > 0 &&
+		typeof metadata.idempotencyKey === "string" &&
+		metadata.idempotencyKey.trim().length > 0
+	);
+}
+
+export function isCheckoutLockFeeProviderUse(args: {
+	readonly direction: TransferDirection;
+	readonly metadata?: Record<string, unknown>;
+	readonly providerCode: ProviderCode;
+	readonly transferType: TransferType;
+}): boolean {
+	return (
+		isCheckoutLockFeeProviderCode(args.providerCode) &&
+		args.direction === "inbound" &&
+		args.transferType === "locking_fee_collection" &&
+		hasCheckoutLockFeeProviderMetadata(args.metadata)
+	);
+}
 
 // ── Transfer Statuses ────────────────────────────────────────────────
 export const TRANSFER_STATUSES = [

@@ -50,6 +50,7 @@ describe("Provider registry — resolution", () => {
 			"e_transfer",
 			"wire",
 			"plaid_transfer",
+			"stripe",
 		] as const;
 
 		for (const code of unimplementedCodes) {

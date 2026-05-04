@@ -54,7 +54,7 @@ export const counterpartyTypeValidator = v.union(
 );
 
 // ── Provider Codes ───────────────────────────────────────────────────
-export const providerCodeValidator = v.union(
+export const nonCheckoutProviderCodeValidator = v.union(
 	v.literal("manual"),
 	v.literal("manual_review"),
 	v.literal("mock_pad"),
@@ -65,6 +65,13 @@ export const providerCodeValidator = v.union(
 	v.literal("e_transfer"),
 	v.literal("wire"),
 	v.literal("plaid_transfer")
+);
+
+export const checkoutLockFeeProviderCodeValidator = v.literal("stripe");
+
+export const providerCodeValidator = v.union(
+	nonCheckoutProviderCodeValidator,
+	checkoutLockFeeProviderCodeValidator
 );
 
 export const manualSettlementInstrumentValidator = v.union(

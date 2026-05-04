@@ -3,7 +3,7 @@
  * and from Convex actions/mutations without pulling in `internalAction` wiring.
  */
 
-import type { ProviderCode } from "./types";
+import type { NonCheckoutTransferProviderCode } from "./types";
 
 /**
  * Builds a deterministic idempotency key. When both deal and application are
@@ -49,7 +49,7 @@ export function buildCommitmentDepositMetadata(
 }
 
 export function resolveCommitmentDepositProviderCode(
-	providerCode: ProviderCode | undefined
-): ProviderCode {
+	providerCode: NonCheckoutTransferProviderCode | undefined
+): NonCheckoutTransferProviderCode {
 	return providerCode ?? "manual";
 }
