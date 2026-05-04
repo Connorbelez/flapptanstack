@@ -151,6 +151,7 @@ import {
 } from "./payments/transfers/validators";
 import { normalizedEventTypeValidator } from "./payments/webhooks/types";
 import {
+	portalLandingPageContentValidator,
 	portalPricingPolicyStatusValidator,
 	portalStatusValidator,
 	portalTypeValidator,
@@ -240,10 +241,11 @@ export default defineSchema({
 	// ══════════════════════════════════════════════════════════
 
 	portalLandingPages: defineTable({
-		// Placeholder attachment point only.
-		// Full landing-page CMS/editor ownership stays with ENG-301 and the
-		// downstream landing-page goal.
+		// Thin v1 presentation-copy attachment only. This is intentionally not a
+		// CMS/editor/theme surface; structural portal, broker, and listing data
+		// continue to live on their canonical rows.
 		portalId: v.id("portals"),
+		v1LandingContent: v.optional(portalLandingPageContentValidator),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	}).index("by_portal", ["portalId"]),

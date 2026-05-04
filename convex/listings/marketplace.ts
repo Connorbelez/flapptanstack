@@ -442,6 +442,7 @@ export async function listMarketplaceListingsSnapshot(
 					propertyTypeLabel:
 						projectedListing.marketplacePropertyType ??
 						deriveMarketplacePropertyType(projectedListing.propertyType),
+					termMonths: projectedListing.termMonths,
 					title: projectedListing.title ?? "Mortgage Listing",
 				};
 			})
