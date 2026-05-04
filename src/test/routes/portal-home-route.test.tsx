@@ -69,6 +69,10 @@ function buildLandingContract(
 	overrides: Partial<PublicPortalLandingPageContract> = {}
 ): PublicPortalLandingPageContract {
 	const base: PublicPortalLandingPageContract = {
+		brand: {
+			logoAlt: "Meridian Capital logo",
+			logoUrl: null,
+		},
 		broker: {
 			brokerageName: "Meridian Capital",
 			license: {
@@ -209,6 +213,16 @@ function buildLandingContract(
 				{ label: "180+ Investors" },
 			],
 		},
+		theme: {
+			accentColor: "#047857",
+			backgroundColor: "#f7f5ef",
+			borderColor: "#e7e5e4",
+			mutedTextColor: "#57534e",
+			primaryColor: "#064e3b",
+			primaryHoverColor: "#065f46",
+			surfaceColor: "#ffffff",
+			textColor: "#1c1917",
+		},
 	};
 
 	return { ...base, ...overrides };
@@ -295,6 +309,55 @@ describe("portal home route", () => {
 		expect(screen.getByTestId("featured-listings-continuation")).toBeTruthy();
 		expect(screen.queryByText("Resolved host context")).toBeNull();
 		expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+	});
+
+	it("applies constrained brand and theme tokens without changing the IA", () => {
+		arrangePortalLandingQuery(
+			buildLandingContract({
+				brand: {
+					logoAlt: "Meridian crest",
+					logoUrl: "/logos/meridian.svg",
+				},
+				theme: {
+					accentColor: "#0f766e",
+					backgroundColor: "#f8fafc",
+					borderColor: "#cbd5e1",
+					mutedTextColor: "#334155",
+					primaryColor: "#1d4ed8",
+					primaryHoverColor: "#1e40af",
+					surfaceColor: "#ffffff",
+					textColor: "#111827",
+				},
+			})
+		);
+
+		render(<HomeContent />);
+
+		const page = screen.getByTestId("portal-landing-page");
+		expect(page.style.getPropertyValue("--portal-landing-bg")).toBe(
+			"#f8fafc"
+		);
+		expect(page.style.getPropertyValue("--portal-landing-primary")).toBe(
+			"#1d4ed8"
+		);
+		expect(screen.getByAltText("Meridian crest").getAttribute("src")).toBe(
+			"/logos/meridian.svg"
+		);
+		expect(
+			screen.getByRole("heading", { name: "Two clear ways in." })
+		).toBeTruthy();
+		expect(
+			screen.getByRole("link", { name: /Browse current listings/ })
+		).toBeTruthy();
+		expect(
+			screen.getByRole("link", { name: /Start financing intake/ })
+		).toBeTruthy();
+		expect(
+			screen.getByRole("link", { name: /Jump to pre-approval/ })
+		).toBeTruthy();
+		expect(
+			screen.getByRole("heading", { name: "Featured Listings" })
+		).toBeTruthy();
 	});
 
 	it("renders the featured-listings disabled state from the landing contract", () => {

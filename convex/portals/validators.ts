@@ -87,7 +87,24 @@ export const portalLandingInlineFieldValidator = v.object({
 	label: v.string(),
 });
 
+export const portalLandingBrandValidator = v.object({
+	logoAlt: v.optional(v.string()),
+	logoUrl: v.optional(v.string()),
+});
+
+export const portalLandingThemeValidator = v.object({
+	accentColor: v.optional(v.string()),
+	backgroundColor: v.optional(v.string()),
+	borderColor: v.optional(v.string()),
+	mutedTextColor: v.optional(v.string()),
+	primaryColor: v.optional(v.string()),
+	primaryHoverColor: v.optional(v.string()),
+	surfaceColor: v.optional(v.string()),
+	textColor: v.optional(v.string()),
+});
+
 export const portalLandingPageContentValidator = v.object({
+	brand: v.optional(portalLandingBrandValidator),
 	featuredListings: v.optional(
 		v.object({
 			label: v.optional(v.string()),
@@ -148,10 +165,15 @@ export const portalLandingPageContentValidator = v.object({
 			),
 		})
 	),
+	theme: v.optional(portalLandingThemeValidator),
 	trustStrip: v.optional(v.array(portalLandingTrustItemValidator)),
 });
 
 export const publicPortalLandingPageValidator = v.object({
+	brand: v.object({
+		logoAlt: v.string(),
+		logoUrl: v.union(v.string(), v.null()),
+	}),
 	broker: v.object({
 		brokerageName: v.union(v.string(), v.null()),
 		license: v.union(
@@ -232,6 +254,16 @@ export const publicPortalLandingPageValidator = v.object({
 			label: v.string(),
 			primaryAction: portalLandingActionValidator,
 		}),
+	}),
+	theme: v.object({
+		accentColor: v.string(),
+		backgroundColor: v.string(),
+		borderColor: v.string(),
+		mutedTextColor: v.string(),
+		primaryColor: v.string(),
+		primaryHoverColor: v.string(),
+		surfaceColor: v.string(),
+		textColor: v.string(),
 	}),
 	trustStrip: v.object({
 		items: v.array(portalLandingTrustItemValidator),
@@ -322,6 +354,10 @@ export type PublicPortalLandingPage = Infer<
 >;
 
 const SAFE_PORTAL_LANDING_HREF_PATTERN = /^(#[^\s#/?][^\s]*|\/(?!\/)[^\s]*)$/;
+const SAFE_PORTAL_LANDING_IMAGE_URL_PATTERN =
+	/^(\/(?!\/)[^\s]*|https:\/\/[^\s]+)$/;
+const SAFE_PORTAL_LANDING_HEX_COLOR_PATTERN =
+	/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 function assertSafePortalLandingHref(href: string, fieldPath: string): void {
 	if (!SAFE_PORTAL_LANDING_HREF_PATTERN.test(href)) {
@@ -353,9 +389,57 @@ function assertSafePortalLandingActions(
 	}
 }
 
+function assertSafePortalLandingImageUrl(
+	url: string | undefined,
+	fieldPath: string
+): void {
+	if (url === undefined) {
+		return;
+	}
+	if (!SAFE_PORTAL_LANDING_IMAGE_URL_PATTERN.test(url)) {
+		throw new ConvexError(
+			`Unsafe portal landing image URL at ${fieldPath}: ${url}`
+		);
+	}
+}
+
+function assertSafePortalLandingColor(
+	color: string | undefined,
+	fieldPath: string
+): void {
+	if (color === undefined) {
+		return;
+	}
+	if (!SAFE_PORTAL_LANDING_HEX_COLOR_PATTERN.test(color)) {
+		throw new ConvexError(
+			`Unsafe portal landing color token at ${fieldPath}: ${color}`
+		);
+	}
+}
+
+function assertSafePortalLandingTheme(
+	theme: PortalLandingPageContent["theme"] | undefined
+): void {
+	if (!theme) {
+		return;
+	}
+	assertSafePortalLandingColor(theme.accentColor, "theme.accentColor");
+	assertSafePortalLandingColor(theme.backgroundColor, "theme.backgroundColor");
+	assertSafePortalLandingColor(theme.borderColor, "theme.borderColor");
+	assertSafePortalLandingColor(theme.mutedTextColor, "theme.mutedTextColor");
+	assertSafePortalLandingColor(theme.primaryColor, "theme.primaryColor");
+	assertSafePortalLandingColor(
+		theme.primaryHoverColor,
+		"theme.primaryHoverColor"
+	);
+	assertSafePortalLandingColor(theme.surfaceColor, "theme.surfaceColor");
+	assertSafePortalLandingColor(theme.textColor, "theme.textColor");
+}
+
 export function validatePortalLandingPageContentSafety(
 	content: PortalLandingPageContent
 ): PortalLandingPageContent {
+	assertSafePortalLandingImageUrl(content.brand?.logoUrl, "brand.logoUrl");
 	assertSafePortalLandingAction(
 		content.featuredListings?.viewAllAction,
 		"featuredListings.viewAllAction"
@@ -385,6 +469,7 @@ export function validatePortalLandingPageContentSafety(
 		content.switchboard?.lender?.primaryAction,
 		"switchboard.lender.primaryAction"
 	);
+	assertSafePortalLandingTheme(content.theme);
 
 	return content;
 }

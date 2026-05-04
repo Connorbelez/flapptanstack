@@ -1,15 +1,15 @@
-import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
-import { api } from "../../_generated/api";
+import { createTestConvex } from "../../../src/test/auth/helpers";
+import {
+	EXTERNAL_ORG_ADMIN,
+	FAIRLEND_ADMIN,
+} from "../../../src/test/auth/identities";
+import { api, components } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import { deriveMarketplacePropertyType } from "../../listings/marketplaceShared";
-import schema from "../../schema";
-import { convexModules } from "../../test/moduleMaps";
-
-const modules = convexModules;
 
 function createHarness() {
-	return convexTest(schema, modules);
+	return createTestConvex();
 }
 
 async function insertBroker(t: ReturnType<typeof createHarness>) {
@@ -91,6 +91,7 @@ async function insertLandingContent(
 			portalId,
 			updatedAt: now,
 			v1LandingContent: {
+				brand: overrides.brand,
 				featuredListings: {
 					subcopy: "Curated mortgage opportunities",
 					...overrides.featuredListings,
@@ -113,6 +114,7 @@ async function insertLandingContent(
 					intro: overrides.switchboard?.intro,
 					lender: overrides.switchboard?.lender,
 				},
+				theme: overrides.theme,
 				trustStrip: overrides.trustStrip ?? [
 					{ label: "FSRA Licensed #12847" },
 					{ label: "12 Years Experience" },
@@ -243,6 +245,47 @@ describe("public portal landing contract", () => {
 		});
 	});
 
+	it("projects constrained brand and theme overrides with deterministic fallbacks", async () => {
+		const t = createHarness();
+		const brokerId = await insertBroker(t);
+		const portalId = await insertPortal(t, { brokerId });
+		await insertLandingContent(t, portalId, {
+			brand: {
+				logoAlt: "Meridian crest",
+				logoUrl: "/logos/meridian.svg",
+			},
+			theme: {
+				accentColor: "#0f766e",
+				backgroundColor: "#f8fafc",
+				primaryColor: "#1d4ed8",
+				primaryHoverColor: "#1e40af",
+				textColor: "#111827",
+			},
+		});
+
+		const landing = await t.query(
+			api.portals.queries.getPublicPortalLandingPage,
+			{
+				portalId,
+			}
+		);
+
+		expect(landing?.brand).toEqual({
+			logoAlt: "Meridian crest",
+			logoUrl: "/logos/meridian.svg",
+		});
+		expect(landing?.theme).toMatchObject({
+			accentColor: "#0f766e",
+			backgroundColor: "#f8fafc",
+			borderColor: "#e7e5e4",
+			mutedTextColor: "#57534e",
+			primaryColor: "#1d4ed8",
+			primaryHoverColor: "#1e40af",
+			surfaceColor: "#ffffff",
+			textColor: "#111827",
+		});
+	});
+
 	it("uses the same contract shape for the FairLend app portal", async () => {
 		const t = createHarness();
 		const portalId = await insertPortal(t, {
@@ -370,6 +413,200 @@ describe("public portal landing contract", () => {
 				portalId,
 			})
 		).rejects.toThrow("Unsafe portal landing href");
+	});
+
+	it("rejects unsafe stored landing theme and brand values", async () => {
+		const t = createHarness();
+		const portalId = await insertPortal(t);
+		await insertLandingContent(t, portalId, {
+			brand: {
+				logoUrl: "javascript:alert(1)",
+			},
+			theme: {
+				primaryColor: "url(javascript:alert(1))",
+			},
+		});
+
+		await expect(
+			t.query(api.portals.queries.getPublicPortalLandingPage, {
+				portalId,
+			})
+		).rejects.toThrow("Unsafe portal landing image URL");
+	});
+
+	it("rejects unsafe stored landing color tokens", async () => {
+		const t = createHarness();
+		const portalId = await insertPortal(t);
+		await insertLandingContent(t, portalId, {
+			theme: {
+				primaryColor: "url(javascript:alert(1))",
+			},
+		});
+
+		await expect(
+			t.query(api.portals.queries.getPublicPortalLandingPage, {
+				portalId,
+			})
+		).rejects.toThrow("Unsafe portal landing color token");
+	});
+
+	it("lets FairLend staff upsert constrained landing customization", async () => {
+		const t = createHarness();
+		const portalId = await insertPortal(t);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+
+		const landingPageId = await asAdmin.mutation(
+			api.portals.landingMutations.upsertPortalLandingPageContent,
+			{
+				content: {
+					brand: {
+						logoAlt: "Meridian mark",
+						logoUrl: "https://cdn.fairlend.ca/meridian.svg",
+					},
+					hero: {
+						headline: "Meridian private mortgage access.",
+					},
+					theme: {
+						primaryColor: "#0f766e",
+					},
+					trustStrip: [{ label: "FSRA Licensed #12847" }],
+				},
+				portalId,
+			}
+		);
+
+		const landing = await t.query(
+			api.portals.queries.getPublicPortalLandingPage,
+			{
+				portalId,
+			}
+		);
+
+		expect(landingPageId).toBeDefined();
+		expect(landing?.brand.logoUrl).toBe("https://cdn.fairlend.ca/meridian.svg");
+		expect(landing?.hero.headline).toBe("Meridian private mortgage access.");
+		expect(landing?.theme.primaryColor).toBe("#0f766e");
+		expect(landing?.trustStrip.items).toEqual([
+			{ label: "FSRA Licensed #12847" },
+		]);
+
+		const auditEntries = await t.query(
+			components.auditLog.lib.queryByResource,
+			{
+				resourceId: landingPageId,
+				resourceType: "portalLandingPages",
+			}
+		);
+		const createEntry = auditEntries.find(
+			(entry: { action: string }) =>
+				entry.action === "portal.landing_page_content.created"
+		);
+		expect(createEntry).toBeDefined();
+		expect(createEntry?.actorId).toBe(FAIRLEND_ADMIN.subject);
+		expect(createEntry?.metadata).toMatchObject({
+			portalId,
+			portalSlug: "meridian",
+			providedSections: ["brand", "hero", "theme", "trustStrip"],
+			relinkedPortalLandingPage: true,
+		});
+	});
+
+	it("merges staff landing customization updates without erasing omitted groups", async () => {
+		const t = createHarness();
+		const portalId = await insertPortal(t);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+		const landingPageId = await insertLandingContent(t, portalId, {
+			brand: {
+				logoAlt: "Original mark",
+				logoUrl: "/logos/original.svg",
+			},
+			hero: {
+				body: "Existing body",
+				headline: "Existing headline",
+			},
+			theme: {
+				accentColor: "#0f766e",
+				primaryColor: "#134e4a",
+			},
+			trustStrip: [{ label: "Existing trust" }],
+		});
+
+		const returnedId = await asAdmin.mutation(
+			api.portals.landingMutations.upsertPortalLandingPageContent,
+			{
+				content: {
+					hero: {
+						headline: "Updated headline",
+					},
+					theme: {
+						primaryColor: "#1d4ed8",
+					},
+				},
+				portalId,
+			}
+		);
+
+		const rows = await t.run(async (ctx) =>
+			ctx.db
+				.query("portalLandingPages")
+				.withIndex("by_portal", (query) => query.eq("portalId", portalId))
+				.collect()
+		);
+		const landing = await t.query(
+			api.portals.queries.getPublicPortalLandingPage,
+			{
+				portalId,
+			}
+		);
+		const auditEntries = await t.query(
+			components.auditLog.lib.queryByResource,
+			{
+				resourceId: landingPageId,
+				resourceType: "portalLandingPages",
+			}
+		);
+		const updateEntry = auditEntries.find(
+			(entry: { action: string }) =>
+				entry.action === "portal.landing_page_content.updated"
+		);
+
+		expect(returnedId).toBe(landingPageId);
+		expect(rows).toHaveLength(1);
+		expect(landing?.brand).toEqual({
+			logoAlt: "Original mark",
+			logoUrl: "/logos/original.svg",
+		});
+		expect(landing?.hero.body).toBe("Existing body");
+		expect(landing?.hero.headline).toBe("Updated headline");
+		expect(landing?.theme.accentColor).toBe("#0f766e");
+		expect(landing?.theme.primaryColor).toBe("#1d4ed8");
+		expect(landing?.trustStrip.items).toEqual([{ label: "Existing trust" }]);
+		expect(updateEntry).toBeDefined();
+		expect(updateEntry?.actorId).toBe(FAIRLEND_ADMIN.subject);
+		expect(updateEntry?.metadata).toMatchObject({
+			portalId,
+			portalSlug: "meridian",
+			providedSections: ["hero", "theme"],
+			relinkedPortalLandingPage: false,
+		});
+	});
+
+	it("blocks non-FairLend admins from staff landing customization", async () => {
+		const t = createHarness();
+		const portalId = await insertPortal(t);
+
+		await expect(
+			t
+				.withIdentity(EXTERNAL_ORG_ADMIN)
+				.mutation(api.portals.landingMutations.upsertPortalLandingPageContent, {
+					content: {
+						hero: {
+							headline: "External edit",
+						},
+					},
+					portalId,
+				})
+		).rejects.toThrow("Forbidden: fair lend admin role required");
 	});
 
 	it("projects featured teaser listings through portal pricing", async () => {
