@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { DatabaseWriter } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
@@ -6,6 +6,12 @@ import { buildSource, transitionCommandArgs } from "../engine/commands";
 import { executeTransition } from "../engine/transition";
 import type { CommandSource } from "../engine/types";
 import { adminMutation } from "../fluent";
+import {
+	type FundsReceiptSource,
+	normalizeEvidenceNote,
+	parseFundsReceiptSource,
+	recordFundsReceiptRow,
+} from "./closeEvidence";
 
 export type DealAccessRole =
 	| "platform_lawyer"
@@ -106,6 +112,22 @@ export const revokeAccess = internalMutation({
 
 // ── Deal Transition Mutations ──────────────────────────────────────────
 
+function extractFundsReceiptSource(
+	payload: Record<string, unknown> | undefined
+): FundsReceiptSource | null {
+	return parseFundsReceiptSource(payload?.fundsReceiptSource);
+}
+
+function assertFundsEvidenceAccepted(
+	status: "recorded" | "replayed" | "blocked"
+) {
+	if (status === "blocked") {
+		throw new ConvexError(
+			"FUNDS_RECEIVED funds evidence is incompatible with existing evidence"
+		);
+	}
+}
+
 /**
  * Admin-gated transition for deals.
  * Requires FairLend admin role (enforced by adminMutation).
@@ -125,11 +147,104 @@ export const transitionDeal = adminMutation
 		const source =
 			(args.source as CommandSource | undefined) ??
 			buildSource(ctx.viewer, "admin_dashboard");
+		const payload = args.payload as Record<string, unknown> | undefined;
+
+		if (args.eventType === "FUNDS_RECEIVED") {
+			const fundsReceiptSource = extractFundsReceiptSource(payload);
+			if (!fundsReceiptSource) {
+				throw new ConvexError(
+					"FUNDS_RECEIVED requires fundsReceiptSource evidence"
+				);
+			}
+			const deal = await ctx.db.get(args.entityId);
+			if (!deal) {
+				throw new ConvexError("Deal not found");
+			}
+			if (deal.status !== "fundsTransfer.pending") {
+				throw new ConvexError(
+					`Deal must be in fundsTransfer.pending to confirm funds, currently: ${deal.status}`
+				);
+			}
+			const evidenceResult = await recordFundsReceiptRow(ctx, {
+				dealId: args.entityId,
+				source: fundsReceiptSource,
+				recordedBy: ctx.viewer.authId,
+			});
+			assertFundsEvidenceAccepted(evidenceResult.status);
+		}
+
 		return executeTransition(ctx, {
 			entityType: "deal",
 			entityId: args.entityId,
 			eventType: args.eventType,
-			payload: args.payload as Record<string, unknown> | undefined,
+			payload,
+			source,
+		});
+	})
+	.public();
+
+export const confirmManualFundsReceipt = adminMutation
+	.input({
+		dealId: v.id("deals"),
+		evidenceNote: v.string(),
+		receivedAt: v.number(),
+		attachmentIds: v.optional(v.array(v.id("documentAssets"))),
+	})
+	.handler(async (ctx, args) => {
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal) {
+			throw new ConvexError("Deal not found");
+		}
+		if (deal.status !== "fundsTransfer.pending") {
+			throw new ConvexError(
+				`Deal must be in fundsTransfer.pending to confirm funds, currently: ${deal.status}`
+			);
+		}
+
+		const evidenceNote = normalizeEvidenceNote(args.evidenceNote);
+		if (!evidenceNote) {
+			throw new ConvexError(
+				"Manual funds confirmation requires an evidence note"
+			);
+		}
+		if (args.receivedAt <= 0) {
+			throw new ConvexError(
+				`Manual funds confirmation requires a positive receivedAt timestamp, got ${args.receivedAt}`
+			);
+		}
+
+		for (const attachmentId of args.attachmentIds ?? []) {
+			const attachment = await ctx.db.get(attachmentId);
+			if (!attachment) {
+				throw new ConvexError(
+					`Manual evidence attachment not found: ${attachmentId}`
+				);
+			}
+		}
+
+		const fundsReceiptSource: FundsReceiptSource = {
+			kind: "manual_admin",
+			confirmedBy: ctx.viewer.authId,
+			evidenceNote,
+			receivedAt: args.receivedAt,
+			attachmentIds: args.attachmentIds,
+		};
+		const evidenceResult = await recordFundsReceiptRow(ctx, {
+			dealId: args.dealId,
+			source: fundsReceiptSource,
+			recordedBy: ctx.viewer.authId,
+		});
+		assertFundsEvidenceAccepted(evidenceResult.status);
+
+		const source = buildSource(ctx.viewer, "admin_dashboard");
+		return executeTransition(ctx, {
+			entityType: "deal",
+			entityId: args.dealId,
+			eventType: "FUNDS_RECEIVED",
+			payload: {
+				method: "manual",
+				fundsReceiptSource,
+			},
 			source,
 		});
 	})

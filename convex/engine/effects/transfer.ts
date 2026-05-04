@@ -17,7 +17,10 @@ import {
 	reconcileAttemptLinkedInboundSettlement,
 } from "../../payments/transfers/collectionAttemptReconciliation";
 import { extractLeg1Metadata } from "../../payments/transfers/pipeline.types";
-import type { NonCheckoutTransferProviderCode } from "../../payments/transfers/types";
+import type {
+	NonCheckoutTransferProviderCode,
+	ProviderCode,
+} from "../../payments/transfers/types";
 import { NON_CHECKOUT_TRANSFER_PROVIDER_CODES } from "../../payments/transfers/types";
 import { appendAuditJournalEntry } from "../auditJournal";
 import type { CommandSource } from "../types";
@@ -571,7 +574,15 @@ async function handlePipelineLegConfirmed(
 			{
 				dealId: transfer.dealId,
 				eventType: "FUNDS_RECEIVED",
-				payload: { method: mapProviderToFundsMethod(transfer.providerCode) },
+				payload: {
+					method: mapProviderToFundsMethod(transfer.providerCode),
+					fundsReceiptSource: {
+						kind: "transfer_pipeline",
+						pipelineId: transfer.pipelineId,
+						leg2TransferId: transfer._id,
+						providerCode: transfer.providerCode as ProviderCode,
+					},
+				},
 			}
 		);
 	}

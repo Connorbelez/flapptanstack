@@ -1,9 +1,17 @@
 import { ConvexError, v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
-import { internalMutation, internalQuery } from "../_generated/server";
+import {
+	internalMutation,
+	internalQuery,
+	type QueryCtx,
+} from "../_generated/server";
 import { assertDealAccess } from "../authz/resourceAccess";
 import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { adminQuery, authedQuery, dealQuery } from "../fluent";
+import {
+	projectFundsSourceForAdmin,
+	type projectFundsSourceForParticipant,
+} from "./closeEvidence";
 import {
 	buildDealParticipantProjection,
 	type DealParticipantProjection,
@@ -102,6 +110,7 @@ export interface PortalDealDocumentPackage {
 }
 
 export interface PortalDealDetail {
+	closeReceipt: ParticipantCloseReceiptSummary;
 	deal: {
 		closingDate: number | null;
 		dealId: Id<"deals">;
@@ -143,6 +152,35 @@ export interface PortalDealDetail {
 	} | null;
 }
 
+export interface CloseEffectOutcomeProjection {
+	effectName: string;
+	exceptionKind: string | null;
+	message: string | null;
+	status: string;
+	updatedAt: number;
+}
+
+export interface AdminCloseEvidenceProjection {
+	archives: Array<{
+		archiveId: Id<"dealSignedArchives">;
+		status: string;
+		assetIds: Id<"documentAssets">[];
+		storageIds: Id<"_storage">[];
+		blockerKind: string | null;
+		blockerMessage: string | null;
+		archivedAt: number | null;
+		updatedAt: number;
+	}>;
+	effectOutcomes: CloseEffectOutcomeProjection[];
+	funds: ReturnType<typeof projectFundsSourceForAdmin> | null;
+}
+
+export interface ParticipantCloseReceiptSummary {
+	closedAt: number | null;
+	funds: ReturnType<typeof projectFundsSourceForParticipant> | null;
+	signedArchiveStatus: string | null;
+}
+
 function projectPortalDealDocumentInstance(
 	instance: DealDocumentPackageSurfaceInstance
 ): PortalDealDocumentInstance {
@@ -164,6 +202,85 @@ function projectPortalDealDocumentInstance(
 			instance.archivedSigning?.finalPdfUrl
 				? instance.url
 				: null,
+	};
+}
+
+async function readCloseEvidenceProjection(
+	ctx: Pick<QueryCtx, "db">,
+	dealId: Id<"deals">
+): Promise<AdminCloseEvidenceProjection> {
+	const [fundsEvidence, archives, effectOutcomes] = await Promise.all([
+		ctx.db
+			.query("dealFundsEvidence")
+			.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+			.collect(),
+		ctx.db
+			.query("dealSignedArchives")
+			.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+			.collect(),
+		ctx.db
+			.query("dealCloseEffectOutcomes")
+			.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+			.collect(),
+	]);
+
+	const latestFunds =
+		fundsEvidence.sort(
+			(left, right) => right.recordedAt - left.recordedAt
+		)[0] ?? null;
+
+	return {
+		funds: latestFunds
+			? projectFundsSourceForAdmin({
+					source: latestFunds.source,
+					receivedAt: latestFunds.receivedAt,
+					recordedAt: latestFunds.recordedAt,
+				})
+			: null,
+		archives: archives
+			.sort((left, right) => right.updatedAt - left.updatedAt)
+			.map((archive) => ({
+				archiveId: archive._id,
+				status: archive.status,
+				assetIds: archive.assetIds,
+				storageIds: archive.storageIds,
+				blockerKind: archive.blockerKind ?? null,
+				blockerMessage: archive.blockerMessage ?? null,
+				archivedAt: archive.archivedAt ?? null,
+				updatedAt: archive.updatedAt,
+			})),
+		effectOutcomes: effectOutcomes
+			.sort((left, right) => right.updatedAt - left.updatedAt)
+			.map((outcome) => ({
+				effectName: outcome.effectName,
+				status: outcome.status,
+				exceptionKind: outcome.exceptionKind ?? null,
+				message: outcome.message ?? null,
+				updatedAt: outcome.updatedAt,
+			})),
+	};
+}
+
+function toParticipantCloseReceipt(
+	deal: { lastTransitionAt?: number; status: string },
+	closeEvidence: AdminCloseEvidenceProjection
+): ParticipantCloseReceiptSummary {
+	const latestArchive = closeEvidence.archives[0] ?? null;
+	return {
+		closedAt:
+			deal.status === "confirmed" ? (deal.lastTransitionAt ?? null) : null,
+		funds: closeEvidence.funds
+			? {
+					sourceKind: closeEvidence.funds.sourceKind,
+					receivedAt: closeEvidence.funds.receivedAt,
+					recordedAt: closeEvidence.funds.recordedAt,
+					providerCode:
+						"providerCode" in closeEvidence.funds
+							? closeEvidence.funds.providerCode
+							: undefined,
+				}
+			: null,
+		signedArchiveStatus: latestArchive?.status ?? null,
 	};
 }
 
@@ -322,14 +439,16 @@ export const getPortalDealDetail = dealQuery
 			return null;
 		}
 
-		const [property, participants, viewerUser] = await Promise.all([
-			ctx.db.get(mortgage.propertyId),
-			buildDealParticipantProjection(ctx, deal),
-			ctx.db
-				.query("users")
-				.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
-				.unique(),
-		]);
+		const [property, participants, viewerUser, closeEvidence] =
+			await Promise.all([
+				ctx.db.get(mortgage.propertyId),
+				buildDealParticipantProjection(ctx, deal),
+				ctx.db
+					.query("users")
+					.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+					.unique(),
+				readCloseEvidenceProjection(ctx, args.dealId),
+			]);
 
 		const packageSurfaceWithViewer = await readDealDocumentPackageSurface(
 			ctx,
@@ -340,6 +459,7 @@ export const getPortalDealDetail = dealQuery
 			}
 		);
 		return {
+			closeReceipt: toParticipantCloseReceipt(deal, closeEvidence),
 			deal: {
 				closingDate: deal.closingDate ?? null,
 				dealId: deal._id,
@@ -398,4 +518,30 @@ export const getPortalDealDetail = dealQuery
 				: null,
 		};
 	})
+	.public();
+
+export const getAdminCloseEvidence = adminQuery
+	.input({ dealId: v.id("deals") })
+	.handler(async (ctx, args): Promise<AdminCloseEvidenceProjection | null> => {
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal) {
+			return null;
+		}
+		return readCloseEvidenceProjection(ctx, args.dealId);
+	})
+	.public();
+
+export const getParticipantCloseReceipt = dealQuery
+	.input({ dealId: v.id("deals") })
+	.handler(
+		async (ctx, args): Promise<ParticipantCloseReceiptSummary | null> => {
+			await assertDealAccess(ctx, args.dealId);
+			const deal = await ctx.db.get(args.dealId);
+			if (!deal) {
+				return null;
+			}
+			const closeEvidence = await readCloseEvidenceProjection(ctx, args.dealId);
+			return toParticipantCloseReceipt(deal, closeEvidence);
+		}
+	)
 	.public();
