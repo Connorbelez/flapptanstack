@@ -265,6 +265,7 @@ export function LenderPortfolioPage({
 										})
 									)
 								}
+								portalId={portalId}
 								selectedPrefillContext={
 									selectedBrokerPrefillEntry?.source === "action"
 										? selectedBrokerPrefillContext
