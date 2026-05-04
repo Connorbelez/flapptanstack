@@ -24,7 +24,8 @@ import type { UsePortfolioRenewalActionsResult } from "#/components/lender/portf
 const usePortfolioRenewalActionsMock = vi.fn();
 
 vi.mock("#/components/lender/portfolio/renewals/use-renewal-actions", () => ({
-	usePortfolioRenewalActions: () => usePortfolioRenewalActionsMock(),
+	useAdminPortfolioRenewalActions: () => usePortfolioRenewalActionsMock(),
+	usePortalPortfolioRenewalActions: () => usePortfolioRenewalActionsMock(),
 }));
 
 type RenewalActionSurfaceComponent = typeof import("#/components/lender/portfolio/renewals/renewal-actions").RenewalActionSurface;

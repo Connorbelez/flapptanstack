@@ -12,6 +12,7 @@ import {
 	PanelRightClose,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { AdminLenderPortfolioTab } from "#/components/admin/lenders/AdminLenderPortfolioTab";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Sheet, SheetContent, SheetHeader } from "#/components/ui/sheet";
@@ -220,6 +221,7 @@ export function AdminRecordDetailSurface({
 		fields: detailFields ?? [],
 		record,
 	});
+	const shouldRenderPortfolioTab = resolvedEntityType === "lenders";
 	useAdminBreadcrumbLabel(variant === "page" ? title : undefined);
 
 	const tabsContent = (
@@ -236,6 +238,9 @@ export function AdminRecordDetailSurface({
 						<TabsTrigger value="relations">Relations</TabsTrigger>
 						<TabsTrigger value="notes">Notes</TabsTrigger>
 						<TabsTrigger value="files">Files</TabsTrigger>
+						{shouldRenderPortfolioTab ? (
+							<TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+						) : null}
 						<TabsTrigger value="history">History</TabsTrigger>
 					</TabsList>
 				</div>
@@ -291,6 +296,15 @@ export function AdminRecordDetailSurface({
 						/>
 					)}
 				</TabsContent>
+
+				{shouldRenderPortfolioTab ? (
+					<TabsContent className="p-4 sm:p-6" value="portfolio">
+						<AdminLenderPortfolioTab
+							record={record}
+							recordId={reference.recordId}
+						/>
+					</TabsContent>
+				) : null}
 
 				<TabsContent className="p-4 sm:p-6" value="history">
 					{record ? (

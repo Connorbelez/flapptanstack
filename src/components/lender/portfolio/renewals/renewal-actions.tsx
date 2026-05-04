@@ -8,6 +8,7 @@ import { Skeleton } from "#/components/ui/skeleton";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { formatPortfolioDate } from "../portfolio-formatters";
 import type { PortfolioLenderRenewalIntentChoice } from "../portfolio-types";
+import type { PortfolioQueryAccess } from "../query-options";
 import { PartialExitForm } from "./partial-exit-form";
 import { RenewalStatus, type RenewalSurfaceVariant } from "./renewal-status";
 import {
@@ -19,12 +20,14 @@ import {
 import {
 	type SubmitRenewalIntentArgs,
 	type UsePortfolioRenewalActionsResult,
-	usePortfolioRenewalActions,
+	useAdminPortfolioRenewalActions,
+	usePortalPortfolioRenewalActions,
 } from "./use-renewal-actions";
 
 interface RenewalActionSurfaceProps {
+	access?: PortfolioQueryAccess;
 	mortgageId: string;
-	portalId: Id<"portals">;
+	portalId?: Id<"portals">;
 	variant?: RenewalSurfaceVariant;
 }
 
@@ -43,13 +46,76 @@ interface RenewalActionSurfaceViewState {
 }
 
 export function RenewalActionSurface({
+	access,
 	mortgageId,
 	portalId,
 	variant = "full",
 }: RenewalActionSurfaceProps) {
-	const renewalActions = usePortfolioRenewalActions({
+	const effectiveAccess =
+		access ??
+		({
+			mode: "portal",
+			portalId: portalId as Id<"portals">,
+		} satisfies PortfolioQueryAccess);
+
+	if (effectiveAccess.mode === "admin") {
+		return (
+			<AdminRenewalActionSurface
+				mortgageId={mortgageId}
+				renewalActionReason={effectiveAccess.renewalActionReason}
+				targetLenderId={effectiveAccess.targetLenderId}
+				variant={variant}
+			/>
+		);
+	}
+
+	return (
+		<PortalRenewalActionSurface
+			mortgageId={mortgageId}
+			portalId={effectiveAccess.portalId}
+			variant={variant}
+		/>
+	);
+}
+
+function PortalRenewalActionSurface({
+	mortgageId,
+	portalId,
+	variant,
+}: {
+	mortgageId: string;
+	portalId: Id<"portals">;
+	variant: RenewalSurfaceVariant;
+}) {
+	const renewalActions = usePortalPortfolioRenewalActions({
 		mortgageId,
 		portalId,
+	});
+
+	return (
+		<RenewalActionSurfaceView
+			mortgageId={mortgageId}
+			renewalActions={renewalActions}
+			variant={variant}
+		/>
+	);
+}
+
+function AdminRenewalActionSurface({
+	mortgageId,
+	renewalActionReason,
+	targetLenderId,
+	variant,
+}: {
+	mortgageId: string;
+	renewalActionReason: string;
+	targetLenderId: Id<"lenders">;
+	variant: RenewalSurfaceVariant;
+}) {
+	const renewalActions = useAdminPortfolioRenewalActions({
+		mortgageId,
+		renewalActionReason,
+		targetLenderId,
 	});
 
 	return (

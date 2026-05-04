@@ -1,8 +1,8 @@
 import { CheckCircle2, ListTodo } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
-import type { Id } from "../../../../convex/_generated/dataModel";
 import { ActionItemHost } from "./action-item-host";
 import type { PortfolioCommandCenterSnapshot } from "./portfolio-types";
+import type { PortfolioQueryAccess } from "./query-options";
 
 type PortfolioActionItem =
 	PortfolioCommandCenterSnapshot["actionsRequired"]["items"][number];
@@ -11,10 +11,10 @@ type PortfolioActionsSection =
 type PortfolioBrokerPrefillContext = PortfolioActionItem["prefillContext"];
 
 export interface ActionsRailProps {
+	access: PortfolioQueryAccess;
 	actionsRequired: PortfolioActionsSection;
 	onOpenDetails?: (action: PortfolioActionItem) => void;
 	onPrefill: (context: PortfolioBrokerPrefillContext) => void;
-	portalId: Id<"portals">;
 	selectedPrefillContext?: PortfolioBrokerPrefillContext | null;
 }
 
@@ -30,9 +30,9 @@ function hasSamePrefillContext(
 
 export function ActionsRail({
 	actionsRequired,
+	access,
 	onOpenDetails,
 	onPrefill,
-	portalId,
 	selectedPrefillContext,
 }: ActionsRailProps) {
 	const hasItems =
@@ -66,6 +66,7 @@ export function ActionsRail({
 					<div className="space-y-3">
 						{actionsRequired.items.map((action) => (
 							<ActionItemHost
+								access={access}
 								action={action}
 								isSelected={hasSamePrefillContext(
 									selectedPrefillContext,
@@ -74,7 +75,6 @@ export function ActionsRail({
 								key={action.id}
 								onOpenDetails={onOpenDetails}
 								onPrefill={onPrefill}
-								portalId={portalId}
 							/>
 						))}
 					</div>
