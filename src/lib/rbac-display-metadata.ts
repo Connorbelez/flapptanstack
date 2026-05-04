@@ -57,6 +57,12 @@ export const ROLE_DISPLAY_METADATA: Record<string, RoleDisplayMeta> = {
 		icon: "Scale",
 		color: "amber",
 	},
+	micinvestor: {
+		label: "MIC Investor",
+		description: "Accesses the invite-only MIC investor portal",
+		icon: "Building2",
+		color: "emerald",
+	},
 	jr_underwriter: {
 		label: "Junior Underwriter",
 		description:
@@ -169,6 +175,11 @@ export const ROLE_COLOR_CLASSES: Record<
 		badge: "bg-amber-100 text-amber-700 border-amber-200",
 		bg: "bg-amber-50",
 		border: "border-amber-200",
+	},
+	emerald: {
+		badge: "bg-emerald-100 text-emerald-700 border-emerald-200",
+		bg: "bg-emerald-50",
+		border: "border-emerald-200",
 	},
 	sky: {
 		badge: "bg-sky-100 text-sky-700 border-sky-200",

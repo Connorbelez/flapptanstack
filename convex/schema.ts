@@ -316,6 +316,7 @@ export default defineSchema({
 		publicTeaserEnabled: v.boolean(),
 		teaserListingLimit: v.optional(v.number()),
 		defaultPostAuthPath: v.optional(v.string()),
+		micLenderAuthId: v.optional(v.string()),
 		landingPageId: v.optional(v.id("portalLandingPages")),
 		pricingPolicyId: v.optional(v.id("portalPricingPolicies")),
 		createdAt: v.number(),

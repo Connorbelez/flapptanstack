@@ -27,6 +27,7 @@
   "listing:invest",
   "listing:manage",
   "listing:view",
+  "mic:access",
   "mortgage:originate",
   "mortgage:service",
   "mortgage:view_own",

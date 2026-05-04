@@ -109,6 +109,7 @@ function toPortalSummary(portal: Doc<"portals">): PortalSummary {
 		publicTeaserEnabled: portal.publicTeaserEnabled,
 		teaserListingLimit: portal.teaserListingLimit,
 		defaultPostAuthPath: portal.defaultPostAuthPath,
+		micLenderAuthId: portal.micLenderAuthId,
 		landingPageId: portal.landingPageId,
 		pricingPolicyId: portal.pricingPolicyId,
 	};
@@ -535,6 +536,7 @@ async function resolvePortalAvailability(
 
 	return resolvePublishedPortalAvailability({
 		isPublished: portal.isPublished,
+		portalType: portal.portalType,
 		portalStatus: portal.status,
 		pricingSelection,
 	});

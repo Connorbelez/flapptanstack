@@ -57,6 +57,12 @@ const PERMISSIONS: PermissionDefinition[] = [
 		pathPattern: "/lawyer/*",
 	},
 	{
+		slug: "mic:access",
+		name: "MIC Access",
+		description: "Access MIC investor portal routes",
+		pathPattern: "/portal/*",
+	},
+	{
 		slug: "onboarding:access",
 		name: "Onboarding Access",
 		description: "Access onboarding routes",

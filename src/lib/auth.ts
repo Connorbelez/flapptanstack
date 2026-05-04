@@ -16,6 +16,7 @@ export const ISLAND_PERMISSIONS = {
 	lender: "lender:access",
 	underwriter: "underwriter:access",
 	lawyer: "lawyer:access",
+	mic: "mic:access",
 	onboarding: "onboarding:access",
 } as const;
 
@@ -150,6 +151,10 @@ export const ROUTE_AUTHORIZATION_RULES = {
 	lenderPortfolio: {
 		kind: "permission",
 		permission: "portfolio:view",
+	},
+	micPortal: {
+		kind: "permission",
+		permission: "mic:access",
 	},
 	onboarding: {
 		kind: "permission",

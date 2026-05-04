@@ -20,6 +20,7 @@ describe("ROLE_PERMISSIONS truth table", () => {
 		"lender",
 		"borrower",
 		"lawyer",
+		"micinvestor",
 		"jr_underwriter",
 		"underwriter",
 		"sr_underwriter",
@@ -54,6 +55,7 @@ describe("ROLE_PERMISSIONS truth table", () => {
 					"lender:access": "lender",
 					"borrower:access": "borrower",
 					"lawyer:access": "lawyer",
+					"mic:access": "micinvestor",
 					"underwriter:access": "underwriter",
 				};
 
@@ -72,6 +74,10 @@ describe("ROLE_PERMISSIONS truth table", () => {
 			});
 		});
 	}
+
+	it("micinvestor has exactly the MIC portal access permission", () => {
+		expect(ROLE_PERMISSIONS.micinvestor).toEqual(["mic:access"]);
+	});
 });
 
 // ── T-012: Underwriter hierarchy ─────────────────────────────────────
