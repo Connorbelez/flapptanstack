@@ -610,6 +610,8 @@ export const VELOCITY_PACKAGE_AUDIT_EVENT_TYPES = [
 	"velocity_activation_stage_changed",
 	"velocity_activation_failed",
 	"velocity_activation_succeeded",
+	"velocity_activation_provider_artifact_recorded",
+	"velocity_activation_provider_artifact_reused",
 	"velocity_post_live_drift_detected",
 ] as const;
 
