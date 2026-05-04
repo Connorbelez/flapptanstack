@@ -4,7 +4,10 @@ import { useAction } from "convex/react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import { buildVerifiedLawyerReturnPath } from "./verify.$token";
+import {
+	buildLawyerOnboardingSessionPath,
+	buildVerifiedLawyerReturnPath,
+} from "./verify.$token";
 
 type CompletionPhase = "idle" | "completing" | "complete";
 
@@ -106,6 +109,17 @@ export function LawyerWorkosInvitationRouteContent({
 		setPhase("completing");
 		void completeInvitation({ invitationToken })
 			.then(async (nextResult) => {
+				if (
+					"onboardingSessionId" in nextResult &&
+					typeof nextResult.onboardingSessionId === "string"
+				) {
+					await navigate({
+						href: buildLawyerOnboardingSessionPath(
+							nextResult.onboardingSessionId
+						),
+					});
+					return;
+				}
 				if (
 					nextResult.status === "verified" &&
 					"dealId" in nextResult &&

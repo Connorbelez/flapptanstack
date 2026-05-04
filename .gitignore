@@ -1,3 +1,4 @@
+
 node_modules
 .DS_Store
 review.md
@@ -32,3 +33,5 @@ src/routeTree.gen.ts
 .superpowers/*
 docs/superpowers/plans/*
 rotessaPaymentSchedulePayload.json
+CLAUDE.md
+.impeccable.md

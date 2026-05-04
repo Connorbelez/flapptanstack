@@ -4,11 +4,16 @@ import { useMutation, useQuery } from "convex/react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 
 type AcceptResult =
 	| {
 			readonly status: "verified";
 			readonly dealId?: string;
+	  }
+	| {
+			readonly onboardingSessionId: string;
+			readonly status: "onboarding_required";
 	  }
 	| {
 			readonly dealId?: string;
@@ -73,12 +78,8 @@ export function buildVerifiedLawyerReturnPath(dealId: string): string {
 	return `/deals/${encodeURIComponent(dealId)}`;
 }
 
-export function buildLawyerOnboardingPath(dealId: string): string {
-	const search = new URLSearchParams({
-		context: "deal-representation",
-		redirect: buildVerifiedLawyerReturnPath(dealId),
-	});
-	return `/onboard?${search.toString()}`;
+export function buildLawyerOnboardingSessionPath(sessionId: string): string {
+	return `/lawyer/onboarding/${encodeURIComponent(sessionId)}`;
 }
 
 export function getLawyerVerifyTerminalCopy(
@@ -124,6 +125,9 @@ export function LawyerVerifyRouteContent({
 	const acceptInvitation = useMutation(
 		api.legalRepresentation.invitations.acceptGuestInvitation
 	);
+	const startOrResumeForDeal = useMutation(
+		api.legalRepresentation.onboarding.startOrResumeForDeal
+	);
 	const [phase, setPhase] = useState<AcceptPhase>("idle");
 	const [result, setResult] = useState<AcceptResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -146,16 +150,22 @@ export function LawyerVerifyRouteContent({
 			return;
 		}
 		setPhase("redirectingOnboard");
-		void navigate({ href: buildLawyerOnboardingPath(dealId) }).catch(
-			(unknownError: unknown) => {
+		void startOrResumeForDeal({ dealId: dealId as Id<"deals"> })
+			.then(async (nextResult) => {
+				await navigate({
+					href: buildLawyerOnboardingSessionPath(
+						String(nextResult.session._id)
+					),
+				});
+			})
+			.catch((unknownError: unknown) => {
 				setError(
 					unknownError instanceof Error
 						? unknownError.message
 						: "Lawyer onboarding could not be opened."
 				);
 				setPhase("complete");
-			}
-		);
+			});
 	}, [
 		auth.loading,
 		auth.user,
@@ -164,6 +174,7 @@ export function LawyerVerifyRouteContent({
 		invitationStatus?.status,
 		navigate,
 		phase,
+		startOrResumeForDeal,
 	]);
 
 	useEffect(() => {
@@ -179,6 +190,17 @@ export function LawyerVerifyRouteContent({
 		setPhase("accepting");
 		void acceptInvitation({ token })
 			.then(async (nextResult) => {
+				if (
+					"onboardingSessionId" in nextResult &&
+					typeof nextResult.onboardingSessionId === "string"
+				) {
+					await navigate({
+						href: buildLawyerOnboardingSessionPath(
+							nextResult.onboardingSessionId
+						),
+					});
+					return;
+				}
 				if (
 					nextResult.status === "verified" &&
 					"dealId" in nextResult &&
@@ -309,6 +331,15 @@ export function LawyerVerifyRouteContent({
 				}
 				body="Your WorkOS lawyer identity is linked to the invited deal."
 				title="Invitation verified"
+			/>
+		);
+	}
+
+	if (result?.status === "onboarding_required") {
+		return (
+			<LawyerVerifyShell
+				body="Opening the lawyer onboarding session for this representation."
+				title="Preparing lawyer onboarding"
 			/>
 		);
 	}

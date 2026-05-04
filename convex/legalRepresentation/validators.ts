@@ -14,6 +14,29 @@ export const legalRepresentationPlatformStatusValidator = v.union(
 	v.literal("offboarded")
 );
 
+export const lsoLicenseeTypeValidator = v.union(
+	v.literal("lawyer"),
+	v.literal("paralegal")
+);
+
+export const lsoRegistrySourceValidator = v.union(
+	v.literal("lso_import"),
+	v.literal("lso_live_refresh"),
+	v.literal("manual_admin")
+);
+
+export const lsoImportBatchStatusValidator = v.union(
+	v.literal("pending"),
+	v.literal("completed"),
+	v.literal("failed")
+);
+
+export const lsoRefreshRequestStatusValidator = v.union(
+	v.literal("pending"),
+	v.literal("completed"),
+	v.literal("failed")
+);
+
 export const lsoLicensingStatusValidator = v.union(
 	v.literal("licensed"),
 	v.literal("administratively_suspended"),
@@ -64,6 +87,7 @@ export const lawyerVerificationReasonCodeValidator = v.union(
 	v.literal("provider_unavailable"),
 	v.literal("manual_override"),
 	v.literal("requires_admin_review"),
+	v.literal("identity_confirmed"),
 	v.literal("engagement_missing"),
 	v.literal("engagement_signed"),
 	v.literal("profile_suspended"),
@@ -78,6 +102,23 @@ export const lawyerInvitationStatusValidator = v.union(
 	v.literal("expired"),
 	v.literal("revoked"),
 	v.literal("failed")
+);
+
+export const lawyerOnboardingPathValidator = v.union(
+	v.literal("guest_invited"),
+	v.literal("platform_assigned"),
+	v.literal("platform_application")
+);
+
+export const lawyerOnboardingStatusValidator = v.union(
+	v.literal("auth_pending"),
+	v.literal("identity_pending"),
+	v.literal("lso_pending"),
+	v.literal("idv_pending"),
+	v.literal("engagement_pending"),
+	v.literal("complete"),
+	v.literal("blocked"),
+	v.literal("expired")
 );
 
 export const representationEngagementStatusValidator = v.union(
@@ -181,6 +222,12 @@ export type LegalRepresentationProfileKind = Infer<
 export type LegalRepresentationPlatformStatus = Infer<
 	typeof legalRepresentationPlatformStatusValidator
 >;
+export type LsoLicenseeType = Infer<typeof lsoLicenseeTypeValidator>;
+export type LsoRegistrySource = Infer<typeof lsoRegistrySourceValidator>;
+export type LsoImportBatchStatus = Infer<typeof lsoImportBatchStatusValidator>;
+export type LsoRefreshRequestStatus = Infer<
+	typeof lsoRefreshRequestStatusValidator
+>;
 export type LsoLicensingStatus = Infer<typeof lsoLicensingStatusValidator>;
 export type LsoRestrictionStatus = Infer<typeof lsoRestrictionStatusValidator>;
 export type LawyerVerificationCheckType = Infer<
@@ -197,6 +244,10 @@ export type LawyerVerificationReasonCode = Infer<
 >;
 export type LawyerInvitationStatus = Infer<
 	typeof lawyerInvitationStatusValidator
+>;
+export type LawyerOnboardingPath = Infer<typeof lawyerOnboardingPathValidator>;
+export type LawyerOnboardingStatus = Infer<
+	typeof lawyerOnboardingStatusValidator
 >;
 export type RepresentationEngagementStatus = Infer<
 	typeof representationEngagementStatusValidator

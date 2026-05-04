@@ -164,6 +164,17 @@ function readOptionalLsoMetadata(
 	return value as LsoLawyerMetadata;
 }
 
+function assertLsoSearchIdentity(lso: LsoLawyerMetadata | undefined): void {
+	if (lso === undefined) {
+		throw new Error("LSO-backed guest lawyer snapshots must include lso");
+	}
+	if (!(lso.lsoLawyerId && lso.barNumber && lso.jurisdiction)) {
+		throw new Error(
+			"LSO-backed guest lawyer snapshots must include lsoLawyerId, barNumber, and jurisdiction"
+		);
+	}
+}
+
 export function isCheckoutStatusValue(value: string): value is CheckoutStatus {
 	return (CHECKOUT_STATUSES as readonly string[]).includes(value);
 }
@@ -207,8 +218,8 @@ export function parseSelectedLawyerSnapshot(
 	if (source !== "lso_search" && source !== "manual") {
 		throw new Error("selectedLawyer.source must be lso_search or manual");
 	}
-	if (source === "lso_search" && lso === undefined) {
-		throw new Error("LSO-backed guest lawyer snapshots must include lso");
+	if (source === "lso_search") {
+		assertLsoSearchIdentity(lso);
 	}
 	if (source === "manual" && lso !== undefined) {
 		throw new Error("manual guest lawyer snapshots must not include lso");

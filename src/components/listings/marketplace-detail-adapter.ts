@@ -551,6 +551,7 @@ function buildCheckoutContract(
 			slaTier: lawyer.slaTier ?? null,
 			type: "platform_lawyer",
 		})),
+		lsoLawyerSearchResults: [],
 		lockFee: {
 			amountCents: 25_000,
 			currency: "CAD",

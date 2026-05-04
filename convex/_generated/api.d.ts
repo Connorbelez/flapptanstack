@@ -238,8 +238,10 @@ import type * as legalRepresentation_engagements from "../legalRepresentation/en
 import type * as legalRepresentation_fixtures from "../legalRepresentation/fixtures.js";
 import type * as legalRepresentation_gates from "../legalRepresentation/gates.js";
 import type * as legalRepresentation_invitations from "../legalRepresentation/invitations.js";
+import type * as legalRepresentation_lsoRegistry from "../legalRepresentation/lsoRegistry.js";
 import type * as legalRepresentation_management from "../legalRepresentation/management.js";
 import type * as legalRepresentation_normalization from "../legalRepresentation/normalization.js";
+import type * as legalRepresentation_onboarding from "../legalRepresentation/onboarding.js";
 import type * as legalRepresentation_platformLawyers from "../legalRepresentation/platformLawyers.js";
 import type * as legalRepresentation_profiles from "../legalRepresentation/profiles.js";
 import type * as legalRepresentation_providers from "../legalRepresentation/providers.js";
@@ -729,8 +731,10 @@ declare const fullApi: ApiFromModules<{
   "legalRepresentation/fixtures": typeof legalRepresentation_fixtures;
   "legalRepresentation/gates": typeof legalRepresentation_gates;
   "legalRepresentation/invitations": typeof legalRepresentation_invitations;
+  "legalRepresentation/lsoRegistry": typeof legalRepresentation_lsoRegistry;
   "legalRepresentation/management": typeof legalRepresentation_management;
   "legalRepresentation/normalization": typeof legalRepresentation_normalization;
+  "legalRepresentation/onboarding": typeof legalRepresentation_onboarding;
   "legalRepresentation/platformLawyers": typeof legalRepresentation_platformLawyers;
   "legalRepresentation/profiles": typeof legalRepresentation_profiles;
   "legalRepresentation/providers": typeof legalRepresentation_providers;

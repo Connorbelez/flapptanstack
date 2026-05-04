@@ -1,7 +1,7 @@
 import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
-import type { Id } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
 import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
@@ -88,9 +88,11 @@ async function seedPortalDeal(
 	t: ReturnType<typeof createHarness>,
 	args?: {
 		dealStatus?: string;
+		closingTeamAccessUserId?: string;
 		lawyerAuthId?: string;
 		lawyerEmail?: string;
 		lawyerAccessUserId?: string;
+		lawyerOnboardingSessionStatus?: Doc<"lawyerOnboardingSessions">["status"];
 		withPaymentProof?: boolean;
 		withRepresentationInvitation?: boolean;
 	}
@@ -162,6 +164,15 @@ async function seedPortalDeal(
 			termMonths: 60,
 			termStartDate: "2026-01-01",
 		});
+		if (args?.closingTeamAccessUserId) {
+			await ctx.db.insert("closingTeamAssignments", {
+				assignedAt: NOW,
+				assignedBy: ADMIN_AUTH_ID,
+				mortgageId,
+				role: "closing_lawyer",
+				userId: args.closingTeamAccessUserId,
+			});
+		}
 		const lawyerEmail = args?.lawyerEmail ?? "guest-lawyer@example.test";
 		const lawyerAuthId = args?.lawyerAuthId;
 		if (lawyerAuthId) {
@@ -226,6 +237,22 @@ async function seedPortalDeal(
 				status: "pending",
 				targetEmail: lawyerEmail,
 				tokenHash: `token:${dealId}`,
+				updatedAt: NOW,
+			});
+		}
+		if (args?.lawyerOnboardingSessionStatus) {
+			await ctx.db.insert("lawyerOnboardingSessions", {
+				createdAt: NOW,
+				currentStep:
+					args.lawyerOnboardingSessionStatus === "complete"
+						? "complete"
+						: "auth",
+				dealId,
+				nextRoute: "/lawyer/onboarding/test",
+				normalizedTargetEmail: lawyerEmail.toLowerCase(),
+				path: "guest_invited",
+				returnPath: `/deals/${String(dealId)}`,
+				status: args.lawyerOnboardingSessionStatus,
 				updatedAt: NOW,
 			});
 		}
@@ -299,7 +326,7 @@ describe("deal portal shared projection", () => {
 		expect(result.payment.adminReview).toBeNull();
 	});
 
-	it("resolves selected lawyer persona from guest lawyer email deal access", async () => {
+	it("treats guest lawyer email deal access as onboarding-required until completion", async () => {
 		const t = createHarness();
 		const guestEmail = "guest-lawyer@example.test";
 		const { dealId } = await seedPortalDeal(t, {
@@ -320,7 +347,175 @@ describe("deal portal shared projection", () => {
 
 		expect(result.viewer).toMatchObject({
 			authId: "workos-guest-lawyer-auth",
+			persona: "selected_lawyer_onboarding_required",
+		});
+		expect(result.capabilities).toEqual(["representation.onboarding.resume"]);
+		expect(result.onboarding.required).toBe(true);
+	});
+
+	it("resolves selected lawyer persona from completed onboarding session", async () => {
+		const t = createHarness();
+		const guestEmail = "completed-guest-lawyer@example.test";
+		const { dealId } = await seedPortalDeal(t, {
+			closingTeamAccessUserId: "workos-completed-guest-lawyer-auth",
+			lawyerEmail: guestEmail,
+			lawyerOnboardingSessionStatus: "complete",
+		});
+
+		const result = await getWorkspace(
+			t,
+			identity({
+				authId: "workos-completed-guest-lawyer-auth",
+				email: guestEmail,
+				role: "lawyer",
+				roles: ["lawyer"],
+			}),
+			dealId
+		);
+
+		expect(result.viewer).toMatchObject({
+			authId: "workos-completed-guest-lawyer-auth",
 			persona: "selected_lawyer",
+		});
+		expect(result.onboarding.required).toBe(false);
+	});
+
+	it("uses the latest onboarding session when older complete and newer pending sessions both match", async () => {
+		const t = createHarness();
+		const guestEmail = "stale-complete-guest-lawyer@example.test";
+		const { dealId } = await seedPortalDeal(t, {
+			closingTeamAccessUserId: "workos-stale-complete-guest-lawyer-auth",
+			lawyerEmail: guestEmail,
+			lawyerOnboardingSessionStatus: "complete",
+		});
+		const pendingSessionId = await t.run((ctx) =>
+			ctx.db.insert("lawyerOnboardingSessions", {
+				createdAt: NOW + 1,
+				currentStep: "auth",
+				dealId,
+				nextRoute: "/lawyer/onboarding/latest",
+				normalizedTargetEmail: guestEmail,
+				path: "guest_invited",
+				returnPath: `/deals/${String(dealId)}`,
+				status: "auth_pending",
+				updatedAt: NOW + 1,
+			})
+		);
+
+		const result = await getWorkspace(
+			t,
+			identity({
+				authId: "workos-stale-complete-guest-lawyer-auth",
+				email: guestEmail,
+				role: "lawyer",
+				roles: ["lawyer"],
+			}),
+			dealId
+		);
+
+		expect(result.viewer.persona).toBe("selected_lawyer_onboarding_required");
+		expect(result.onboarding).toMatchObject({
+			nextRoute: "/lawyer/onboarding/latest",
+			required: true,
+			sessionId: pendingSessionId,
+		});
+	});
+
+	it("downgrades selected-lawyer email match until onboarding is complete", async () => {
+		const t = createHarness();
+		const guestEmail = "guest@example.test";
+		const { dealId } = await seedPortalDeal(t, {
+			closingTeamAccessUserId: "user_guest",
+			lawyerEmail: guestEmail,
+			lawyerOnboardingSessionStatus: "auth_pending",
+		});
+
+		const workspace = await getWorkspace(
+			t,
+			identity({
+				authId: "user_guest",
+				email: guestEmail,
+				role: "lawyer",
+				roles: ["lawyer"],
+			}),
+			dealId
+		);
+
+		expect(workspace.viewer.persona).toBe(
+			"selected_lawyer_onboarding_required"
+		);
+		expect(workspace.capabilities).toEqual([
+			"representation.onboarding.resume",
+		]);
+		expect(workspace.capabilities).not.toContain("representation.confirm");
+		expect(workspace.onboarding.sessionId).toBeTruthy();
+		expect(workspace.onboarding).toMatchObject({
+			nextRoute: "/lawyer/onboarding/test",
+			required: true,
+		});
+	});
+
+	it("does not expose payment upload blockers for onboarding-required selected lawyers", async () => {
+		const t = createHarness();
+		const guestEmail = "funds-pending-guest@example.test";
+		const { dealId } = await seedPortalDeal(t, {
+			closingTeamAccessUserId: "user_funds_pending_guest",
+			dealStatus: "fundsTransfer.pending",
+			lawyerEmail: guestEmail,
+			lawyerOnboardingSessionStatus: "auth_pending",
+		});
+
+		const workspace = await getWorkspace(
+			t,
+			identity({
+				authId: "user_funds_pending_guest",
+				email: guestEmail,
+				role: "lawyer",
+				roles: ["lawyer"],
+			}),
+			dealId
+		);
+
+		expect(workspace.viewer.persona).toBe(
+			"selected_lawyer_onboarding_required"
+		);
+		expect(workspace.capabilities).toEqual([
+			"representation.onboarding.resume",
+		]);
+		expect(
+			workspace.blockers.map((blocker) => blocker.recoverableAction)
+		).not.toContain("payment.proof.upload");
+	});
+
+	it("fails closed for selected-lawyer email match without onboarding session", async () => {
+		const t = createHarness();
+		const guestEmail = "guest-without-session@example.test";
+		const { dealId } = await seedPortalDeal(t, {
+			closingTeamAccessUserId: "user_guest_without_session",
+			lawyerEmail: guestEmail,
+		});
+
+		const workspace = await getWorkspace(
+			t,
+			identity({
+				authId: "user_guest_without_session",
+				email: guestEmail,
+				role: "lawyer",
+				roles: ["lawyer"],
+			}),
+			dealId
+		);
+
+		expect(workspace.viewer.persona).toBe(
+			"selected_lawyer_onboarding_required"
+		);
+		expect(workspace.capabilities).toEqual([
+			"representation.onboarding.resume",
+		]);
+		expect(workspace.onboarding).toEqual({
+			nextRoute: null,
+			required: true,
+			sessionId: null,
 		});
 	});
 

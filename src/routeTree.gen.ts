@@ -109,6 +109,7 @@ import { Route as AdminDocumentEngineIndexRouteImport } from './routes/admin.doc
 import { Route as PortalPositionsMortgageIdRouteImport } from './routes/portal/positions.$mortgageId'
 import { Route as LenderDealsDealIdRouteImport } from './routes/lender.deals.$dealId'
 import { Route as LawyerVerifyTokenRouteImport } from './routes/lawyer/verify.$token'
+import { Route as LawyerOnboardingSessionIdRouteImport } from './routes/lawyer/onboarding.$sessionId'
 import { Route as LawyerDealsDealIdRouteImport } from './routes/lawyer/deals.$dealId'
 import { Route as DemoRbacAuthRolesRouteImport } from './routes/demo/rbac-auth/roles'
 import { Route as DemoRbacAuthOnboardingRouteImport } from './routes/demo/rbac-auth/onboarding'
@@ -147,6 +148,7 @@ import { Route as AdminOriginationsCaseIdRouteImport } from './routes/admin/orig
 import { Route as AdminObligationsRecordidRouteImport } from './routes/admin/obligations/$recordid'
 import { Route as AdminMortgagesRecordidRouteImport } from './routes/admin/mortgages/$recordid'
 import { Route as AdminListingsRecordidRouteImport } from './routes/admin/listings/$recordid'
+import { Route as AdminLegalLsoRouteImport } from './routes/admin/legal/lso'
 import { Route as AdminDocumentEngineVariablesRouteImport } from './routes/admin.document-engine.variables'
 import { Route as AdminDocumentEngineTemplatesRouteImport } from './routes/admin.document-engine.templates'
 import { Route as AdminDocumentEnginePublishedTemplatesRouteImport } from './routes/admin.document-engine.published-templates'
@@ -686,6 +688,12 @@ const LawyerVerifyTokenRoute = LawyerVerifyTokenRouteImport.update({
   path: '/verify/$token',
   getParentRoute: () => LawyerRouteRoute,
 } as any)
+const LawyerOnboardingSessionIdRoute =
+  LawyerOnboardingSessionIdRouteImport.update({
+    id: '/onboarding/$sessionId',
+    path: '/onboarding/$sessionId',
+    getParentRoute: () => LawyerRouteRoute,
+  } as any)
 const LawyerDealsDealIdRoute = LawyerDealsDealIdRouteImport.update({
   id: '/deals/$dealId',
   path: '/deals/$dealId',
@@ -893,6 +901,11 @@ const AdminListingsRecordidRoute = AdminListingsRecordidRouteImport.update({
   id: '/$recordid',
   path: '/$recordid',
   getParentRoute: () => AdminListingsRouteRoute,
+} as any)
+const AdminLegalLsoRoute = AdminLegalLsoRouteImport.update({
+  id: '/legal/lso',
+  path: '/legal/lso',
+  getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminDocumentEngineVariablesRoute =
   AdminDocumentEngineVariablesRouteImport.update({
@@ -1135,6 +1148,7 @@ export interface FileRoutesByFullPath {
   '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
+  '/admin/legal/lso': typeof AdminLegalLsoRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
   '/admin/mortgages/$recordid': typeof AdminMortgagesRecordidRoute
   '/admin/obligations/$recordid': typeof AdminObligationsRecordidRoute
@@ -1173,6 +1187,7 @@ export interface FileRoutesByFullPath {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
+  '/lawyer/onboarding/$sessionId': typeof LawyerOnboardingSessionIdRoute
   '/lawyer/verify/$token': typeof LawyerVerifyTokenRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/portal/positions/$mortgageId': typeof PortalPositionsMortgageIdRoute
@@ -1284,6 +1299,7 @@ export interface FileRoutesByTo {
   '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
+  '/admin/legal/lso': typeof AdminLegalLsoRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
   '/admin/mortgages/$recordid': typeof AdminMortgagesRecordidRoute
   '/admin/obligations/$recordid': typeof AdminObligationsRecordidRoute
@@ -1322,6 +1338,7 @@ export interface FileRoutesByTo {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
+  '/lawyer/onboarding/$sessionId': typeof LawyerOnboardingSessionIdRoute
   '/lawyer/verify/$token': typeof LawyerVerifyTokenRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/portal/positions/$mortgageId': typeof PortalPositionsMortgageIdRoute
@@ -1449,6 +1466,7 @@ export interface FileRoutesById {
   '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
+  '/admin/legal/lso': typeof AdminLegalLsoRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
   '/admin/mortgages/$recordid': typeof AdminMortgagesRecordidRoute
   '/admin/obligations/$recordid': typeof AdminObligationsRecordidRoute
@@ -1487,6 +1505,7 @@ export interface FileRoutesById {
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
   '/lawyer/deals/$dealId': typeof LawyerDealsDealIdRoute
+  '/lawyer/onboarding/$sessionId': typeof LawyerOnboardingSessionIdRoute
   '/lawyer/verify/$token': typeof LawyerVerifyTokenRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/portal/positions/$mortgageId': typeof PortalPositionsMortgageIdRoute
@@ -1615,6 +1634,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
+    | '/admin/legal/lso'
     | '/admin/listings/$recordid'
     | '/admin/mortgages/$recordid'
     | '/admin/obligations/$recordid'
@@ -1653,6 +1673,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lawyer/deals/$dealId'
+    | '/lawyer/onboarding/$sessionId'
     | '/lawyer/verify/$token'
     | '/lender/deals/$dealId'
     | '/portal/positions/$mortgageId'
@@ -1764,6 +1785,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
+    | '/admin/legal/lso'
     | '/admin/listings/$recordid'
     | '/admin/mortgages/$recordid'
     | '/admin/obligations/$recordid'
@@ -1802,6 +1824,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lawyer/deals/$dealId'
+    | '/lawyer/onboarding/$sessionId'
     | '/lawyer/verify/$token'
     | '/lender/deals/$dealId'
     | '/portal/positions/$mortgageId'
@@ -1928,6 +1951,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
+    | '/admin/legal/lso'
     | '/admin/listings/$recordid'
     | '/admin/mortgages/$recordid'
     | '/admin/obligations/$recordid'
@@ -1966,6 +1990,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
     | '/lawyer/deals/$dealId'
+    | '/lawyer/onboarding/$sessionId'
     | '/lawyer/verify/$token'
     | '/lender/deals/$dealId'
     | '/portal/positions/$mortgageId'
@@ -2757,6 +2782,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LawyerVerifyTokenRouteImport
       parentRoute: typeof LawyerRouteRoute
     }
+    '/lawyer/onboarding/$sessionId': {
+      id: '/lawyer/onboarding/$sessionId'
+      path: '/onboarding/$sessionId'
+      fullPath: '/lawyer/onboarding/$sessionId'
+      preLoaderRoute: typeof LawyerOnboardingSessionIdRouteImport
+      parentRoute: typeof LawyerRouteRoute
+    }
     '/lawyer/deals/$dealId': {
       id: '/lawyer/deals/$dealId'
       path: '/deals/$dealId'
@@ -3022,6 +3054,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/listings/$recordid'
       preLoaderRoute: typeof AdminListingsRecordidRouteImport
       parentRoute: typeof AdminListingsRouteRoute
+    }
+    '/admin/legal/lso': {
+      id: '/admin/legal/lso'
+      path: '/legal/lso'
+      fullPath: '/admin/legal/lso'
+      preLoaderRoute: typeof AdminLegalLsoRouteImport
+      parentRoute: typeof AdminRouteRoute
     }
     '/admin/document-engine/variables': {
       id: '/admin/document-engine/variables'
@@ -3333,6 +3372,7 @@ interface AdminRouteRouteChildren {
   AdminPaymentOperationsRoute: typeof AdminPaymentOperationsRoute
   AdminRotessaReconciliationRoute: typeof AdminRotessaReconciliationRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminLegalLsoRoute: typeof AdminLegalLsoRoute
   AdminVelocityWorkspaceIdReviewRoute: typeof AdminVelocityWorkspaceIdReviewRoute
 }
 
@@ -3351,6 +3391,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminPaymentOperationsRoute: AdminPaymentOperationsRoute,
   AdminRotessaReconciliationRoute: AdminRotessaReconciliationRoute,
   AdminSettingsRoute: AdminSettingsRoute,
+  AdminLegalLsoRoute: AdminLegalLsoRoute,
   AdminVelocityWorkspaceIdReviewRoute: AdminVelocityWorkspaceIdReviewRoute,
 }
 
@@ -3416,6 +3457,7 @@ interface LawyerRouteRouteChildren {
   LawyerInvitationRoute: typeof LawyerInvitationRoute
   LawyerIndexRoute: typeof LawyerIndexRoute
   LawyerDealsDealIdRoute: typeof LawyerDealsDealIdRoute
+  LawyerOnboardingSessionIdRoute: typeof LawyerOnboardingSessionIdRoute
   LawyerVerifyTokenRoute: typeof LawyerVerifyTokenRoute
 }
 
@@ -3423,6 +3465,7 @@ const LawyerRouteRouteChildren: LawyerRouteRouteChildren = {
   LawyerInvitationRoute: LawyerInvitationRoute,
   LawyerIndexRoute: LawyerIndexRoute,
   LawyerDealsDealIdRoute: LawyerDealsDealIdRoute,
+  LawyerOnboardingSessionIdRoute: LawyerOnboardingSessionIdRoute,
   LawyerVerifyTokenRoute: LawyerVerifyTokenRoute,
 }
 

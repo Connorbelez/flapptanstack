@@ -3,20 +3,14 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { SelectedLawyerSnapshot } from "../checkout/validators";
-import { grantDealAccess } from "../deals/mutations";
 import { adminMutation, authedMutation, convex } from "../fluent";
 import {
-	normalizeBarNumber,
-	normalizeJurisdiction,
 	normalizeLawyerEmail,
 	normalizeLegalSourceSnapshot,
 	normalizeLegalWhitespace,
 } from "./normalization";
-import {
-	buildManualLawyerVerificationResult,
-	DeterministicLawyerVerificationProvider,
-	normalizeLawyerIdentity,
-} from "./providers";
+import { startOrResumeForInvitationInMutation } from "./onboarding";
+import { buildManualLawyerVerificationResult } from "./providers";
 import {
 	calculateInvitationExpiry,
 	generateInvitationToken,
@@ -64,6 +58,15 @@ export type InvitationAcceptResult =
 			readonly invitationId?: Id<"lawyerInvitations">;
 			readonly reason: string;
 			readonly verificationId?: Id<"lawyerVerifications">;
+	  }
+	| {
+			readonly status: "onboarding_required";
+			readonly dealId: Id<"deals">;
+			readonly invitationId: Id<"lawyerInvitations">;
+			readonly nextRoute?: string;
+			readonly onboardingSessionId: Id<"lawyerOnboardingSessions">;
+			readonly returnPath: string;
+			readonly targetEmail: string;
 	  };
 
 function requiredText(value: string, fieldName: string): string {
@@ -72,18 +75,6 @@ function requiredText(value: string, fieldName: string): string {
 		throw new ConvexError(`${fieldName} is required`);
 	}
 	return normalized;
-}
-
-function optionalText(value: string | undefined): string | undefined {
-	if (value === undefined) {
-		return undefined;
-	}
-	const normalized = normalizeLegalWhitespace(value);
-	return normalized.length > 0 ? normalized : undefined;
-}
-
-function normalizeAuthId(authId: string | undefined): string | undefined {
-	return optionalText(authId);
 }
 
 function isActiveInvitationStatus(status: Doc<"lawyerInvitations">["status"]) {
@@ -209,22 +200,16 @@ async function getInvitationByWorkosInvitationId(
 	ctx: LegalRepresentationQueryCtx,
 	workosInvitationId: string
 ): Promise<Doc<"lawyerInvitations"> | null> {
-	return await ctx.db
+	const rows = await ctx.db
 		.query("lawyerInvitations")
 		.withIndex("by_workos_invitation", (query) =>
 			query.eq("workosInvitationId", workosInvitationId)
 		)
-		.filter((query) => query.eq(query.field("status"), "pending"))
-		.first();
-}
-
-function selectedLawyerFromInvitation(
-	invitation: Doc<"lawyerInvitations">
-): GuestSelectedLawyerSnapshot {
-	if (invitation.selectedLawyerSnapshot.type !== "guest_lawyer") {
-		throw new ConvexError("Invitation is not for a guest lawyer");
-	}
-	return invitation.selectedLawyerSnapshot;
+		.collect();
+	return (
+		rows.find((row) => row.status === "pending" || row.status === "accepted") ??
+		null
+	);
 }
 
 export async function getLatestGuestInvitationForDeal(
@@ -243,224 +228,6 @@ export async function getLatestGuestInvitationForDeal(
 			return right.createdAt - left.createdAt;
 		})[0] ?? null
 	);
-}
-
-async function findProfileByAuthId(
-	ctx: LegalRepresentationQueryCtx,
-	authId: string | undefined
-) {
-	if (!authId) {
-		return null;
-	}
-	return await ctx.db
-		.query("lawyerProfiles")
-		.withIndex("by_auth_id", (query) => query.eq("authId", authId))
-		.unique();
-}
-
-async function findProfileByEmail(
-	ctx: LegalRepresentationQueryCtx,
-	normalizedEmail: string
-) {
-	return await ctx.db
-		.query("lawyerProfiles")
-		.withIndex("by_normalized_email", (query) =>
-			query.eq("normalizedEmail", normalizedEmail)
-		)
-		.unique();
-}
-
-async function findProfileByBar(
-	ctx: LegalRepresentationQueryCtx,
-	args: {
-		readonly barNumber?: string;
-		readonly jurisdiction?: string;
-	}
-) {
-	if (!(args.barNumber && args.jurisdiction)) {
-		return null;
-	}
-	return await ctx.db
-		.query("lawyerProfiles")
-		.withIndex("by_bar_jurisdiction", (query) =>
-			query
-				.eq("barNumber", args.barNumber)
-				.eq("jurisdiction", args.jurisdiction)
-		)
-		.unique();
-}
-
-function mergeGuestProfileKind(
-	profileKind: Doc<"lawyerProfiles">["profileKind"]
-): Doc<"lawyerProfiles">["profileKind"] {
-	return profileKind === "platform" ? "both" : "guest";
-}
-
-function assertSameProfile(
-	left: Doc<"lawyerProfiles"> | null,
-	right: Doc<"lawyerProfiles"> | null,
-	message: string
-) {
-	if (left && right && left._id !== right._id) {
-		throw new ConvexError(message);
-	}
-}
-
-async function assertSyncedWorkosLawyerUser(
-	ctx: LegalRepresentationQueryCtx,
-	args: { readonly authId: string; readonly normalizedEmail: string }
-) {
-	const user = await ctx.db
-		.query("users")
-		.withIndex("authId", (query) => query.eq("authId", args.authId))
-		.unique();
-	if (!user) {
-		throw new ConvexError(
-			"Resolved lawyer auth ID must have a synced WorkOS user"
-		);
-	}
-	if (normalizeLawyerEmail(user.email) !== args.normalizedEmail) {
-		throw new ConvexError(
-			"Resolved lawyer auth ID email does not match invite"
-		);
-	}
-}
-
-async function resolveOrProvisionGuestLawyerProfile(
-	ctx: LegalRepresentationMutationCtx,
-	args: {
-		readonly authId: string;
-		readonly email: string;
-		readonly selectedLawyer: GuestSelectedLawyerSnapshot;
-		readonly now: number;
-	}
-): Promise<Id<"lawyerProfiles">> {
-	const normalizedEmail = normalizeLawyerEmail(args.email);
-	const barNumber =
-		args.selectedLawyer.lso?.barNumber === undefined
-			? undefined
-			: normalizeBarNumber(args.selectedLawyer.lso.barNumber);
-	const jurisdiction =
-		args.selectedLawyer.lso?.jurisdiction === undefined
-			? undefined
-			: normalizeJurisdiction(args.selectedLawyer.lso.jurisdiction);
-	await assertSyncedWorkosLawyerUser(ctx, {
-		authId: args.authId,
-		normalizedEmail,
-	});
-	const existingByAuth = await findProfileByAuthId(ctx, args.authId);
-	const existingByEmail = await findProfileByEmail(ctx, normalizedEmail);
-	const existingByBar = await findProfileByBar(ctx, {
-		barNumber,
-		jurisdiction,
-	});
-	assertSameProfile(
-		existingByAuth,
-		existingByEmail,
-		"Guest lawyer auth ID and email resolve to different profiles"
-	);
-	assertSameProfile(
-		existingByAuth ?? existingByEmail,
-		existingByBar,
-		"Guest lawyer identity and bar evidence resolve to different profiles"
-	);
-	const existing = existingByAuth ?? existingByEmail ?? existingByBar;
-	const patch = {
-		authId: args.authId,
-		barNumber,
-		displayName: requiredText(args.selectedLawyer.name, "selectedLawyer.name"),
-		email: args.email,
-		firmName: optionalText(args.selectedLawyer.firm),
-		jurisdiction,
-		normalizedEmail,
-		updatedAt: args.now,
-	};
-	if (!existing) {
-		return await ctx.db.insert("lawyerProfiles", {
-			...patch,
-			createdAt: args.now,
-			profileKind: "guest",
-		});
-	}
-	await ctx.db.patch(existing._id, {
-		...patch,
-		profileKind: mergeGuestProfileKind(existing.profileKind),
-	});
-	return existing._id;
-}
-
-async function loadLsoReference(
-	ctx: LegalRepresentationQueryCtx,
-	invitation: Doc<"lawyerInvitations">
-) {
-	if (invitation.lsoLawyerId) {
-		const row = await ctx.db.get(invitation.lsoLawyerId);
-		if (row) {
-			return row;
-		}
-	}
-	return null;
-}
-
-function lsoReferenceFromInvitation(
-	invitation: Doc<"lawyerInvitations">,
-	lsoRow: Doc<"lsoLawyers"> | null
-) {
-	const snapshot = invitation.selectedLawyerSnapshot.lso;
-	return {
-		barNumber: lsoRow?.barNumber ?? snapshot?.barNumber,
-		displayName: lsoRow?.displayName ?? invitation.selectedLawyerSnapshot.name,
-		jurisdiction: lsoRow?.jurisdiction ?? snapshot?.jurisdiction,
-		licensingStatus: lsoRow?.licensingStatus ?? snapshot?.licensingStatus,
-		lsoLawyerId: lsoRow?._id ?? snapshot?.lsoLawyerId,
-		restrictionStatus: lsoRow?.restrictionStatus ?? snapshot?.restrictionStatus,
-		restrictionSummary: lsoRow?.restrictionSummary,
-		source: lsoRow?.source ?? snapshot?.source,
-		sourceSnapshot: lsoRow?.sourceSnapshot,
-	};
-}
-
-async function recordInvitationVerification(
-	ctx: LegalRepresentationMutationCtx,
-	args: {
-		readonly authId: string;
-		readonly invitation: Doc<"lawyerInvitations">;
-		readonly lawyerProfileId?: Id<"lawyerProfiles">;
-		readonly now: number;
-	}
-) {
-	const lsoRow = await loadLsoReference(ctx, args.invitation);
-	const provider = new DeterministicLawyerVerificationProvider("test");
-	const providerResult = await provider.verify({
-		checkType: "initial_lso",
-		dealContext: {
-			dealId: args.invitation.dealId,
-			lawyerProfileId: args.lawyerProfileId,
-		},
-		identity: normalizeLawyerIdentity({
-			authId: args.authId,
-			barNumber: args.invitation.selectedLawyerSnapshot.lso?.barNumber,
-			displayName: args.invitation.selectedLawyerSnapshot.name,
-			email: args.invitation.targetEmail,
-			jurisdiction: args.invitation.selectedLawyerSnapshot.lso?.jurisdiction,
-		}),
-		lsoReference: lsoReferenceFromInvitation(args.invitation, lsoRow),
-		requestedAt: args.now,
-		requestedBy: `lawyer-invitation:${String(args.invitation._id)}`,
-	});
-	return await recordLawyerVerificationRow(ctx, {
-		authId: args.authId,
-		barNumber: args.invitation.selectedLawyerSnapshot.lso?.barNumber,
-		checkType: "initial_lso",
-		createdAt: args.now,
-		createdBy: `lawyer-invitation:${String(args.invitation._id)}`,
-		dealId: args.invitation.dealId,
-		jurisdiction: args.invitation.selectedLawyerSnapshot.lso?.jurisdiction,
-		lawyerProfileId: args.lawyerProfileId,
-		lsoLawyerId: args.invitation.lsoLawyerId,
-		normalizedEmail: args.invitation.normalizedTargetEmail,
-		providerResult,
-	});
 }
 
 async function recordInvitationFailure(
@@ -494,28 +261,33 @@ async function recordInvitationFailure(
 	});
 }
 
-async function revokeProvisionalEmailAccess(
+async function acceptInvitationForOnboarding(
 	ctx: LegalRepresentationMutationCtx,
 	args: {
-		readonly dealId: Id<"deals">;
-		readonly normalizedEmail: string;
+		readonly authId: string;
+		readonly invitation: Doc<"lawyerInvitations">;
 		readonly now: number;
 	}
-) {
-	const rows = await ctx.db
-		.query("dealAccess")
-		.withIndex("by_user_and_deal", (query) =>
-			query.eq("userId", args.normalizedEmail).eq("dealId", args.dealId)
-		)
-		.collect();
-	for (const row of rows) {
-		if (row.status === "active" && row.role === "guest_lawyer") {
-			await ctx.db.patch(row._id, {
-				revokedAt: args.now,
-				status: "revoked",
-			});
-		}
-	}
+): Promise<Extract<InvitationAcceptResult, { status: "onboarding_required" }>> {
+	const session = await startOrResumeForInvitationInMutation(ctx, {
+		invitationId: args.invitation._id,
+		now: args.now,
+	});
+	await ctx.db.patch(args.invitation._id, {
+		acceptedAt: args.invitation.acceptedAt ?? args.now,
+		resolvedAuthId: args.authId,
+		status: "accepted",
+		updatedAt: args.now,
+	});
+	return {
+		dealId: args.invitation.dealId,
+		invitationId: args.invitation._id,
+		nextRoute: session.nextRoute,
+		onboardingSessionId: session._id,
+		returnPath: session.returnPath,
+		status: "onboarding_required",
+		targetEmail: args.invitation.targetEmail,
+	};
 }
 
 export async function createGuestInvitationDelivery(
@@ -832,82 +604,11 @@ export const acceptGuestInvitation = authedMutation
 				verificationId,
 			};
 		}
-		const lawyerProfileId = await resolveOrProvisionGuestLawyerProfile(ctx, {
-			authId: normalizeAuthId(ctx.viewer.authId) ?? ctx.viewer.authId,
-			email: verifiedEmail,
-			now,
-			selectedLawyer: selectedLawyerFromInvitation(invitation),
-		});
-		const verificationId = await recordInvitationVerification(ctx, {
+		return await acceptInvitationForOnboarding(ctx, {
 			authId: ctx.viewer.authId,
 			invitation,
-			lawyerProfileId,
 			now,
 		});
-		const verification = await ctx.db.get(verificationId);
-		if (!verification || verification.outcome !== "eligible") {
-			await ctx.db.patch(invitation._id, {
-				acceptedAt: now,
-				resolvedAuthId: ctx.viewer.authId,
-				status: "failed",
-				updatedAt: now,
-				verificationId,
-			});
-			return {
-				dealId: invitation.dealId,
-				invitationId: invitation._id,
-				reason:
-					verification?.outcome === "requires_review"
-						? "Lawyer verification requires review"
-						: "Lawyer verification failed",
-				status:
-					verification?.outcome === "requires_review"
-						? "requires_review"
-						: "failed",
-				verificationId,
-			};
-		}
-		const accessId = await grantDealAccess(ctx.db, {
-			dealId: invitation.dealId,
-			grantedBy: `lawyer-invitation:${String(invitation._id)}`,
-			role: "guest_lawyer",
-			userId: ctx.viewer.authId,
-		});
-		await revokeProvisionalEmailAccess(ctx, {
-			dealId: invitation.dealId,
-			normalizedEmail: invitation.normalizedTargetEmail,
-			now,
-		});
-		const deal = await ctx.db.get(invitation.dealId);
-		if (
-			deal &&
-			deal.lawyerType === "guest_lawyer" &&
-			deal.lawyerId === invitation.normalizedTargetEmail
-		) {
-			await ctx.db.patch(deal._id, {
-				lawyerId: ctx.viewer.authId,
-			});
-		}
-		await ctx.db.patch(lawyerProfileId, {
-			latestVerificationId: verificationId,
-			updatedAt: now,
-		});
-		await ctx.db.patch(invitation._id, {
-			acceptedAt: now,
-			resolvedAuthId: ctx.viewer.authId,
-			status: "verified",
-			updatedAt: now,
-			verificationId,
-			verifiedAt: now,
-		});
-		return {
-			accessId,
-			dealId: invitation.dealId,
-			invitationId: invitation._id,
-			lawyerProfileId,
-			status: "verified",
-			verificationId,
-		};
 	})
 	.public();
 
@@ -928,6 +629,101 @@ export const getPendingInvitationByWorkosInvitationIdInternal = convex
 			ctx,
 			args.workosInvitationId
 		);
+	})
+	.internal();
+
+export const acceptWorkosInvitationForOnboardingInternal = convex
+	.mutation()
+	.input({
+		invitationEmail: v.string(),
+		now: v.optional(v.number()),
+		viewer: workosInvitationViewerValidator,
+		workosInvitationId: v.string(),
+	})
+	.handler(async (ctx, args): Promise<InvitationAcceptResult> => {
+		const viewer = {
+			...args.viewer,
+			permissions: new Set(args.viewer.permissions),
+			roles: new Set(args.viewer.roles),
+		};
+		assertCanonicalLawyerViewer(viewer);
+		const now = args.now ?? Date.now();
+		const invitation = await getInvitationByWorkosInvitationId(
+			ctx,
+			args.workosInvitationId
+		);
+		if (!invitation) {
+			throw new ConvexError("FairLend lawyer invitation was not found");
+		}
+		if (
+			normalizeLawyerEmail(args.invitationEmail) !==
+			invitation.normalizedTargetEmail
+		) {
+			throw new ConvexError("WorkOS invitation email does not match");
+		}
+		if (
+			invitation.status === "expired" ||
+			isInvitationExpired({ expiresAt: invitation.expiresAt, now })
+		) {
+			await ctx.db.patch(invitation._id, {
+				status: "expired",
+				updatedAt: now,
+			});
+			return {
+				dealId: invitation.dealId,
+				invitationId: invitation._id,
+				reason: "Invitation expired",
+				status: "expired",
+			};
+		}
+		const verifiedEmail = viewer.verifiedEmail ?? viewer.email;
+		if (!verifiedEmail) {
+			const verificationId = await recordInvitationFailure(ctx, {
+				authId: viewer.authId,
+				invitation,
+				now,
+				reason: "missing_verified_email",
+			});
+			await ctx.db.patch(invitation._id, {
+				status: "failed",
+				updatedAt: now,
+				verificationId,
+			});
+			return {
+				dealId: invitation.dealId,
+				invitationId: invitation._id,
+				reason: "Verified WorkOS email is required",
+				status: "failed",
+				verificationId,
+			};
+		}
+		if (
+			normalizeLawyerEmail(verifiedEmail) !== invitation.normalizedTargetEmail
+		) {
+			const verificationId = await recordInvitationFailure(ctx, {
+				authId: viewer.authId,
+				invitation,
+				now,
+				reason: "email_mismatch",
+			});
+			await ctx.db.patch(invitation._id, {
+				status: "failed",
+				updatedAt: now,
+				verificationId,
+			});
+			return {
+				dealId: invitation.dealId,
+				invitationId: invitation._id,
+				reason: "Signed-in lawyer email does not match invitation",
+				status: "failed",
+				verificationId,
+			};
+		}
+		return await acceptInvitationForOnboarding(ctx, {
+			authId: viewer.authId,
+			invitation,
+			now,
+		});
 	})
 	.internal();
 
@@ -1034,81 +830,10 @@ export const acceptGuestInvitationByWorkosInvitationInternal = convex
 				verificationId,
 			};
 		}
-		const lawyerProfileId = await resolveOrProvisionGuestLawyerProfile(ctx, {
-			authId: normalizeAuthId(viewer.authId) ?? viewer.authId,
-			email: verifiedEmail,
-			now,
-			selectedLawyer: selectedLawyerFromInvitation(invitation),
-		});
-		const verificationId = await recordInvitationVerification(ctx, {
+		return await acceptInvitationForOnboarding(ctx, {
 			authId: viewer.authId,
 			invitation,
-			lawyerProfileId,
 			now,
 		});
-		const verification = await ctx.db.get(verificationId);
-		if (!verification || verification.outcome !== "eligible") {
-			await ctx.db.patch(invitation._id, {
-				acceptedAt: now,
-				resolvedAuthId: viewer.authId,
-				status: "failed",
-				updatedAt: now,
-				verificationId,
-			});
-			return {
-				dealId: invitation.dealId,
-				invitationId: invitation._id,
-				reason:
-					verification?.outcome === "requires_review"
-						? "Lawyer verification requires review"
-						: "Lawyer verification failed",
-				status:
-					verification?.outcome === "requires_review"
-						? "requires_review"
-						: "failed",
-				verificationId,
-			};
-		}
-		const accessId = await grantDealAccess(ctx.db, {
-			dealId: invitation.dealId,
-			grantedBy: `lawyer-invitation:${String(invitation._id)}`,
-			role: "guest_lawyer",
-			userId: viewer.authId,
-		});
-		await revokeProvisionalEmailAccess(ctx, {
-			dealId: invitation.dealId,
-			normalizedEmail: invitation.normalizedTargetEmail,
-			now,
-		});
-		const deal = await ctx.db.get(invitation.dealId);
-		if (
-			deal &&
-			deal.lawyerType === "guest_lawyer" &&
-			deal.lawyerId === invitation.normalizedTargetEmail
-		) {
-			await ctx.db.patch(deal._id, {
-				lawyerId: viewer.authId,
-			});
-		}
-		await ctx.db.patch(lawyerProfileId, {
-			latestVerificationId: verificationId,
-			updatedAt: now,
-		});
-		await ctx.db.patch(invitation._id, {
-			acceptedAt: now,
-			resolvedAuthId: viewer.authId,
-			status: "verified",
-			updatedAt: now,
-			verificationId,
-			verifiedAt: now,
-		});
-		return {
-			accessId,
-			dealId: invitation.dealId,
-			invitationId: invitation._id,
-			lawyerProfileId,
-			status: "verified",
-			verificationId,
-		};
 	})
 	.internal();

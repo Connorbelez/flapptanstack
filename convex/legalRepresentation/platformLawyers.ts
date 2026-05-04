@@ -16,7 +16,7 @@ import { legalRepresentationPlatformStatusValidator } from "./validators";
 type PlatformLawyerQueryCtx = Pick<QueryCtx, "db">;
 type PlatformLawyerMutationCtx = Pick<MutationCtx, "db">;
 
-const PLATFORM_LAWYER_ROLE_SLUG = "platform_lawyer";
+const CANONICAL_LAWYER_ROLE_SLUG = "lawyer";
 const DEFAULT_CAPACITY_LIMIT = 3;
 
 const ACTIVE_DEAL_STATUSES = [
@@ -119,15 +119,15 @@ async function ensureSeedLawyerIdentity(
 		!memberships.some(
 			(membership) =>
 				membership.status === "active" &&
-				(membership.roleSlug === PLATFORM_LAWYER_ROLE_SLUG ||
-					membership.roleSlugs?.includes(PLATFORM_LAWYER_ROLE_SLUG) === true)
+				(membership.roleSlug === CANONICAL_LAWYER_ROLE_SLUG ||
+					membership.roleSlugs?.includes(CANONICAL_LAWYER_ROLE_SLUG) === true)
 		)
 	) {
 		await ctx.db.insert("organizationMemberships", {
 			organizationName: "Seed Law Firm",
 			organizationWorkosId: "org_seed_lawfirm",
-			roleSlug: PLATFORM_LAWYER_ROLE_SLUG,
-			roleSlugs: [PLATFORM_LAWYER_ROLE_SLUG],
+			roleSlug: CANONICAL_LAWYER_ROLE_SLUG,
+			roleSlugs: [CANONICAL_LAWYER_ROLE_SLUG],
 			status: "active",
 			userWorkosId: args.authId,
 			workosId: `om_seed_${args.authId}`,

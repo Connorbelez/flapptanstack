@@ -10,10 +10,12 @@ export type DealPortalPersona =
 	| "admin"
 	| "lender"
 	| "selected_lawyer"
+	| "selected_lawyer_onboarding_required"
 	| "broker"
 	| "seller";
 
 export type DealPortalCapability =
+	| "representation.onboarding.resume"
 	| "representation.invitation.resend"
 	| "representation.invitation.revoke"
 	| "representation.lawyer.replace"

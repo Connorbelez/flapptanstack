@@ -23,6 +23,7 @@ async function insertCanonicalLawyerIdentity(
 		readonly authId: string;
 		readonly email: string;
 		readonly roleSlug?: string;
+		readonly roleSlugs?: readonly string[];
 		readonly status?: string;
 	}
 ) {
@@ -36,8 +37,8 @@ async function insertCanonicalLawyerIdentity(
 		await ctx.db.insert("organizationMemberships", {
 			organizationName: "Test Law Firm",
 			organizationWorkosId: "org_test_lawfirm",
-			roleSlug: args.roleSlug ?? "platform_lawyer",
-			roleSlugs: [args.roleSlug ?? "platform_lawyer"],
+			roleSlug: args.roleSlug ?? "lawyer",
+			roleSlugs: [...(args.roleSlugs ?? [args.roleSlug ?? "lawyer"])],
 			status: args.status ?? "active",
 			userWorkosId: args.authId,
 			workosId: `om_${args.authId}`,
@@ -46,6 +47,51 @@ async function insertCanonicalLawyerIdentity(
 }
 
 describe("platform lawyer management", () => {
+	it("activates a platform lawyer with canonical WorkOS lawyer role", async () => {
+		const t = createHarness();
+		const auth = t.withIdentity(FAIRLEND_ADMIN);
+		await insertCanonicalLawyerIdentity(t, {
+			authId: "user_platform_lawyer_active",
+			email: "platform-lawyer@example.test",
+			roleSlug: "lawyer",
+			roleSlugs: ["lawyer"],
+		});
+
+		const result = await auth.mutation(
+			platformLawyersApi.createOrDesignatePlatformLawyer,
+			{
+				authId: "user_platform_lawyer_active",
+				displayName: "Pat Platform",
+				email: "platform-lawyer@example.test",
+				platformStatus: "active",
+			}
+		);
+
+		const profile = await t.run(async (ctx) => await ctx.db.get(result));
+		expect(profile?.platformStatus).toBe("active");
+	});
+
+	it("rejects active platform lawyers with only legacy WorkOS platform_lawyer role", async () => {
+		const t = createHarness();
+		await insertCanonicalLawyerIdentity(t, {
+			authId: "user_legacy_platform_lawyer_only",
+			email: "legacy-platform-lawyer@example.test",
+			roleSlug: "platform_lawyer",
+			roleSlugs: ["platform_lawyer"],
+		});
+
+		await expect(
+			t
+				.withIdentity(FAIRLEND_ADMIN)
+				.mutation(platformLawyersApi.createOrDesignatePlatformLawyer, {
+					authId: "user_legacy_platform_lawyer_only",
+					displayName: "Legacy Platform",
+					email: "legacy-platform-lawyer@example.test",
+					platformStatus: "active",
+				})
+		).rejects.toThrow("active WorkOS lawyer role");
+	});
+
 	it("allows FairLend admins to create active eligible platform lawyers for checkout", async () => {
 		const t = createHarness();
 		await insertCanonicalLawyerIdentity(t, {
@@ -122,7 +168,7 @@ describe("platform lawyer management", () => {
 					email: "broker-not-lawyer@example.test",
 					platformStatus: "active",
 				})
-		).rejects.toThrow("active WorkOS platform lawyer role");
+		).rejects.toThrow("active WorkOS lawyer role");
 	});
 
 	it("removes active platform lawyers from checkout options when WorkOS role sync drifts", async () => {
