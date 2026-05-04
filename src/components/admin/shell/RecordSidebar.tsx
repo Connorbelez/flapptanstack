@@ -11,7 +11,7 @@ import {
 	Link2,
 	PanelRightClose,
 } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import type { ReactNode } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Sheet, SheetContent, SheetHeader } from "#/components/ui/sheet";
@@ -133,10 +133,7 @@ export function AdminRecordDetailSurface({
 }: RecordDetailSurfaceProps) {
 	const objectDefs = useQuery(api.crm.objectDefs.listObjects);
 
-	const fallbackObjectDef = useMemo(
-		() => resolveObjectDef(reference, objectDefs),
-		[reference, objectDefs]
-	);
+	const fallbackObjectDef = resolveObjectDef(reference, objectDefs);
 	const recordKind =
 		reference.recordKind ?? (fallbackObjectDef?.isSystem ? "native" : "record");
 	const shouldLoadLiveRecord =
@@ -155,36 +152,24 @@ export function AdminRecordDetailSurface({
 	const adapterContract = detailSurface?.adapterContract;
 	const detailFields = detailSurface?.fields;
 	const record = detailSurface?.record;
-	const entity = useMemo(
-		() =>
-			resolveAdminEntity(
-				adapterContract?.entityType ?? reference.entityType,
-				objectDef ?? undefined
-			),
-		[adapterContract?.entityType, objectDef, reference.entityType]
+	const entity = resolveAdminEntity(
+		adapterContract?.entityType ?? reference.entityType,
+		objectDef ?? undefined
 	);
 	const resolvedEntityType =
 		adapterContract?.entityType ?? entity?.entityType ?? reference.entityType;
-	const adapter = useMemo(
-		() =>
-			resolveRecordSidebarEntityAdapter({
-				detailSurfaceKey: adapterContract?.detailSurfaceKey,
+	const adapter = resolveRecordSidebarEntityAdapter({
+		detailSurfaceKey: adapterContract?.detailSurfaceKey,
+		entityType: resolvedEntityType,
+		objectDef,
+		overrides: adapters,
+	});
+	const fullPageTarget = resolvedEntityType
+		? resolveAdminRecordRouteTarget({
 				entityType: resolvedEntityType,
-				objectDef,
-				overrides: adapters,
-			}),
-		[adapters, adapterContract?.detailSurfaceKey, objectDef, resolvedEntityType]
-	);
-	const fullPageTarget = useMemo(
-		() =>
-			resolvedEntityType
-				? resolveAdminRecordRouteTarget({
-						entityType: resolvedEntityType,
-						recordId: reference.recordId,
-					})
-				: null,
-		[reference.recordId, resolvedEntityType]
-	);
+				recordId: reference.recordId,
+			})
+		: null;
 	const navigateRelation = useAdminRelationNavigation({
 		presentation: variant === "sheet" ? "sheet" : "page",
 	});
@@ -230,15 +215,11 @@ export function AdminRecordDetailSurface({
 					record,
 				})
 			: undefined;
-	const summaryFields = useMemo(
-		() =>
-			resolveSummaryFields({
-				adapter,
-				fields: detailFields ?? [],
-				record,
-			}),
-		[adapter, detailFields, record]
-	);
+	const summaryFields = resolveSummaryFields({
+		adapter,
+		fields: detailFields ?? [],
+		record,
+	});
 	useAdminBreadcrumbLabel(variant === "page" ? title : undefined);
 
 	const tabsContent = (
@@ -513,18 +494,15 @@ function DetailsTab({
 	readonly record: RecordDetailRecord | undefined;
 	readonly recordId: string;
 }) {
-	const fallbackAdapterRecord = useMemo<RecordDetailRecord>(
-		() => ({
-			_id: recordId,
-			_kind: "native",
-			createdAt: 0,
-			fields: {},
-			nativeTable: null,
-			objectDefId: "fallback" as Id<"objectDefs">,
-			updatedAt: 0,
-		}),
-		[recordId]
-	);
+	const fallbackAdapterRecord: RecordDetailRecord = {
+		_id: recordId,
+		_kind: "native",
+		createdAt: 0,
+		fields: {},
+		nativeTable: null,
+		objectDefId: "fallback" as Id<"objectDefs">,
+		updatedAt: 0,
+	};
 	const adapterRecord = record ?? fallbackAdapterRecord;
 	const adapterDetails = adapter?.renderDetailsTab?.({
 		adapterContract,

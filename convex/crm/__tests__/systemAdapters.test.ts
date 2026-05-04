@@ -536,6 +536,7 @@ describe("queryNativeTable", () => {
 				loanType: "conventional",
 				lienPosition: 1,
 				propertyType: "condo",
+				marketplacePropertyType: "Condo",
 				city: "Toronto",
 				province: "ON",
 				latestAppraisalValueAsIs: 795_000,

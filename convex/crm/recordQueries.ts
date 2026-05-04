@@ -640,6 +640,19 @@ function hasFiltersOrSort(args: QueryRecordsArgs): boolean {
 	return (args.filters?.length ?? 0) > 0 || args.sort !== undefined;
 }
 
+function requireNativeTableReadPolicy(
+	viewer: { isFairLendAdmin: boolean },
+	objectDef: Doc<"objectDefs">
+) {
+	if (
+		(objectDef.nativeTable === "listings" ||
+			objectDef.nativeTable === "properties") &&
+		!viewer.isFairLendAdmin
+	) {
+		throw new ConvexError("Forbidden: fair lend admin role required");
+	}
+}
+
 function stripTaggedCursor(
 	cursor: string | null,
 	tag: "native" | "offset"
@@ -870,6 +883,7 @@ export const queryRecords = crmQuery
 				"System object queries not yet implemented (see ENG-255)"
 			);
 		}
+		requireNativeTableReadPolicy(ctx.viewer, objectDef);
 
 		const activeFieldDefs = await loadActiveFieldDefs(ctx, args.objectDefId);
 

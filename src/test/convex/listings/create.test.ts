@@ -41,6 +41,7 @@ function buildListingInput(
 		loanType: "conventional",
 		lienPosition: 1,
 		propertyType: "residential",
+		marketplacePropertyType: "Detached Home",
 		city: "Toronto",
 		province: "ON",
 		approximateLatitude: undefined,

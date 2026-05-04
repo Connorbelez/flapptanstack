@@ -1,5 +1,4 @@
 import { Link } from "@tanstack/react-router";
-import { useMemo } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { MarketplaceFilterBar } from "./filter-bar";
@@ -66,15 +65,9 @@ export function MarketplaceListingsPage({
 	eyebrow = "Lender Marketplace",
 	heading = "Browse fractional mortgage opportunities",
 }: MarketplaceListingsPageProps) {
-	const filterState = useMemo(() => searchStateToFilterState(search), [search]);
-	const filterMetrics = useMemo(
-		() => buildFilterMetricItems(snapshot.page),
-		[snapshot.page]
-	);
-	const items = useMemo(
-		() => buildMarketplaceListingCardItems(snapshot.page),
-		[snapshot.page]
-	);
+	const filterState = searchStateToFilterState(search);
+	const filterMetrics = buildFilterMetricItems(snapshot.page);
+	const items = buildMarketplaceListingCardItems(snapshot.page);
 
 	const toolbar = (
 		<div className="space-y-3">

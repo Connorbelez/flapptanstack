@@ -709,6 +709,7 @@ async function seedDealPackageFixture(
 				ltvRatio: 58,
 				machineContext: undefined,
 				marketplaceCopy: "Marketplace copy",
+				marketplacePropertyType: "Condo",
 				maturityDate: "2027-04-30",
 				monthlyPayment: 2_450,
 				mortgageId,
@@ -836,6 +837,18 @@ describe("documents/dealPackages", () => {
 				dealId: fixture.dealId,
 			}
 		);
+		const variables = await t.query(
+			internal.documents.dealPackages.resolveDealDocumentVariablesInternal,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const signatories = await t.query(
+			internal.documents.dealPackages.resolveDealDocumentSignatoriesInternal,
+			{
+				dealId: fixture.dealId,
+			}
+		);
 		const generatedDocuments = await t.run((ctx) =>
 			ctx.db.query("generatedDocuments").collect()
 		);
@@ -854,6 +867,30 @@ describe("documents/dealPackages", () => {
 			status: "ready",
 		});
 		expect(packageSurface.instances).toHaveLength(3);
+		expect(packageSurface.participants?.fractionalShareDisplayPercent).toBe(25);
+		expect(packageSurface.participants?.buyer.authId).toBe(
+			fixture.lenderIdentity.subject
+		);
+		expect(variables).toMatchObject({
+			borrower_primary_email: "seller.phase7@test.fairlend.ca",
+			borrower_primary_full_name: "Sam Seller",
+			lender_primary_email: "lender.phase7@test.fairlend.ca",
+			lender_primary_full_name: "Lena Lender",
+		});
+		expect(signatories).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					email: "lender.phase7@test.fairlend.ca",
+					name: "Lena Lender",
+					platformRole: "lender_primary",
+				}),
+				expect.objectContaining({
+					email: "seller.phase7@test.fairlend.ca",
+					name: "Sam Seller",
+					platformRole: "borrower_primary",
+				}),
+			])
+		);
 		expect(
 			packageSurface.instances.map((instance) => instance.displayName)
 		).toEqual([
@@ -917,13 +954,21 @@ describe("documents/dealPackages", () => {
 		]);
 		expect(signatureRecipients).toEqual([
 			expect.objectContaining({
-				email: "borrower.phase7@test.fairlend.ca",
+				email: "seller.phase7@test.fairlend.ca",
+				name: "Sam Seller",
 				platformRole: "borrower_primary",
-				providerRecipientId: "doc_rcpt_1",
 				status: "pending",
 			}),
 		]);
 		expect(dealDetail.documentPackage?.status).toBe("ready");
+		expect(dealDetail.deal.fractionalShareUnits).toBe(2500);
+		expect(dealDetail.deal.fractionalShareDisplayPercent).toBe(25);
+		expect(dealDetail.participants.fractionalShareStatus.isValid).toBe(true);
+		expect(dealDetail.participants.lawyer).toMatchObject({
+			authId: null,
+			hasActiveDealAccess: false,
+			lawyerType: null,
+		});
 		expect(
 			dealDetail.documentInstances.filter(
 				(instance) =>
@@ -998,6 +1043,12 @@ describe("documents/dealPackages", () => {
 				.withIndex("by_deal", (query) => query.eq("dealId", fixture.dealId))
 				.collect()
 		);
+		const retrySignatories = await t.query(
+			internal.documents.dealPackages.resolveDealDocumentSignatoriesInternal,
+			{
+				dealId: fixture.dealId,
+			}
+		);
 
 		expect(retryResult.status).toBe("ready");
 		expect(packageAfterRetry.package).toMatchObject({
@@ -1019,6 +1070,15 @@ describe("documents/dealPackages", () => {
 					instance.archivedAt
 			)
 		).toHaveLength(1);
+		expect(retrySignatories).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					email: "lawyer.phase7@test.fairlend.ca",
+					name: "Layla Lawyer",
+					platformRole: "lawyer_primary",
+				}),
+			])
+		);
 	});
 
 	it("replays missing package members from the frozen blueprint snapshot without adopting later blueprint changes", async () => {

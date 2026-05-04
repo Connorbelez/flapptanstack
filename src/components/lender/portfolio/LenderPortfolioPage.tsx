@@ -2,7 +2,7 @@
 
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { useAuthorization } from "#/lib/auth";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { ActionsRail } from "./actions-rail";
@@ -377,8 +377,10 @@ function ConnectedPortfolioExportStrip({
 	portalId: Id<"portals">;
 	snapshot: PortfolioCommandCenterSnapshot;
 }) {
-	const { loading, permissions } = useAuth();
-	const canExportTax = permissions?.includes("portfolio:export_tax") ?? false;
+	const { allowed: canExportTax, loading } = useAuthorization({
+		kind: "permission",
+		permission: "portfolio:export_tax",
+	});
 	const exportQuery = useQuery({
 		...convexQuery(api.portfolio.queries.getLenderPortfolioTaxExport, {
 			portalId,

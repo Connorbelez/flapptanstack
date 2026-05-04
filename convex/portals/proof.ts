@@ -1,5 +1,5 @@
-import { v } from "convex/values";
-import { canAccessMortgage } from "../auth/resourceChecks";
+import { ConvexError, v } from "convex/values";
+import { assertMortgageAccess } from "../authz/resourceAccess";
 import {
 	portalAuthedQuery,
 	portalBorrowerQuery,
@@ -10,6 +10,21 @@ import {
 	buildPortalFilterBounds,
 	buildPortalPricingProjection,
 } from "./middleware";
+
+async function canReadMortgageProof(
+	ctx: Parameters<typeof assertMortgageAccess>[0],
+	mortgageId: Parameters<typeof assertMortgageAccess>[1]
+) {
+	try {
+		await assertMortgageAccess(ctx, mortgageId);
+		return true;
+	} catch (error) {
+		if (error instanceof ConvexError) {
+			return false;
+		}
+		throw error;
+	}
+}
 
 export const getPortalPublicContextProof = portalPublicQuery()
 	.handler(async (ctx) => {
@@ -24,11 +39,7 @@ export const getPortalMortgageAccessProof = portalAuthedQuery({
 		return {
 			accessMode: ctx.portalAccess.mode,
 			filterBounds: buildPortalFilterBounds(ctx.portal),
-			mortgageAllowed: await canAccessMortgage(
-				ctx,
-				ctx.viewer,
-				args.mortgageId
-			),
+			mortgageAllowed: await canReadMortgageProof(ctx, args.mortgageId),
 			portalId: ctx.portal.portalId,
 			pricingProjection: buildPortalPricingProjection(ctx.portal),
 		};
