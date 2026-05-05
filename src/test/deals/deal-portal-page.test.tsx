@@ -270,6 +270,39 @@ describe("DealPortalShell", () => {
 		expect(screen.getByRole("button", { name: /progress deal/i })).toBeTruthy();
 	});
 
+	it("does not describe missing document instances as unconfirmed representation after progression", () => {
+		render(
+			<DealPortalShell
+				workspace={
+					{
+						...baseWorkspace,
+						activeScreen: "documents",
+						deal: {
+							...baseWorkspace.deal,
+							status: "documentReview.pending",
+						},
+						documents: {
+							...baseWorkspace.documents,
+							instances: [],
+							package: null,
+						},
+						viewer: {
+							...baseWorkspace.viewer,
+							authId: "lawyer-auth",
+							email: "lawyer@example.test",
+							persona: "primary_lawyer",
+						},
+					} as never
+				}
+			/>
+		);
+
+		expect(
+			screen.queryByText(/after legal representation is confirmed/i)
+		).toBeNull();
+		expect(screen.getByText(/document package has not been generated/i)).toBeTruthy();
+	});
+
 	it("renders onboarding-required state without lender or lawyer controls", () => {
 		render(
 			<DealPortalShell

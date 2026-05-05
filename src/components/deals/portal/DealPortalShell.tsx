@@ -187,113 +187,121 @@ export function DealPortalShell({
 	const onboardingOnly = workspace.onboarding.required;
 	return (
 		<main className="min-h-dvh text-slate-950">
-			<div className="mx-auto w-full max-w-5xl px-4 py-8 lg:px-8">
-				<div className="min-w-0 space-y-8">
-					{/* Header */}
-					<header className="flex flex-wrap items-end justify-between gap-4">
-						<div>
-							<p className="island-kicker">Deal Portal</p>
-							<h1
-								className="display-title mt-1 text-3xl tracking-tight"
-								style={{ color: "var(--sea-ink)" }}
-							>
-								Deal {shortDealId(String(workspace.deal.dealId))}
-							</h1>
-							<p
-								className="mt-1 text-sm"
-								style={{ color: "var(--sea-ink-soft)" }}
-							>
-								{onboardingOnly
-									? "Legal onboarding required"
-									: `${formatEnumLabel(workspace.viewer.persona)} view · ${formatEnumLabel(workspace.deal.status)}`}
-							</p>
-						</div>
-
-						{onboardingOnly ? null : (
-							<div className="flex flex-col items-end gap-0.5">
-								<p
-									className="font-semibold text-xs uppercase tracking-widest"
-									style={{ color: "var(--sea-ink-soft)" }}
-								>
-									Share
-								</p>
-								<p
-									className="font-semibold text-2xl"
-									style={{ color: "var(--sea-ink)" }}
-								>
-									{formatPercent(workspace.deal.fractionalShareDisplayPercent)}
-								</p>
-							</div>
-						)}
-					</header>
+			<div className="mx-auto w-full max-w-6xl px-4 py-8 lg:px-8">
+				{/* Header */}
+				<header className="mb-8 flex flex-wrap items-end justify-between gap-4">
+					<div>
+						<p className="island-kicker">Deal Portal</p>
+						<h1
+							className="display-title mt-1 text-3xl tracking-tight"
+							style={{ color: "var(--sea-ink)" }}
+						>
+							Deal {shortDealId(String(workspace.deal.dealId))}
+						</h1>
+						<p
+							className="mt-1 text-sm"
+							style={{ color: "var(--sea-ink-soft)" }}
+						>
+							{onboardingOnly
+								? "Legal onboarding required"
+								: `${formatEnumLabel(workspace.viewer.persona)} view · ${formatEnumLabel(workspace.deal.status)}`}
+						</p>
+					</div>
 
 					{onboardingOnly ? null : (
-						<DealPortalStepRail
-							activeScreen={workspace.activeScreen}
-							dealStatus={workspace.deal.status}
-						/>
+						<div className="flex flex-col items-end gap-0.5">
+							<p
+								className="font-semibold text-xs uppercase tracking-widest"
+								style={{ color: "var(--sea-ink-soft)" }}
+							>
+								Share
+							</p>
+							<p
+								className="font-semibold text-2xl"
+								style={{ color: "var(--sea-ink)" }}
+							>
+								{formatPercent(workspace.deal.fractionalShareDisplayPercent)}
+							</p>
+						</div>
 					)}
+				</header>
 
-					{onboardingOnly ? (
-						<OnboardingRequiredPanel workspace={workspace} />
-					) : (
-						<>
-							{/* Parties — The Closing Assembly */}
-							<section className="island-shell rounded-xl p-6">
-								<div className="mb-1 text-center">
-									<h2 className="island-kicker">Closing Assembly</h2>
-									<p
-										className="mt-1 text-xs"
-										style={{ color: "var(--sea-ink-soft)" }}
-									>
-										Participants and their closing roles
-									</p>
-								</div>
-								<ClosingAssembly
-									parties={workspace.participants.involvedParties}
+				<div className="flex flex-col gap-8 lg:flex-row">
+					{/* Sidebar */}
+					{onboardingOnly ? null : (
+						<aside className="w-full shrink-0 lg:w-60">
+							<div className="lg:sticky lg:top-8">
+								<DealPortalStepRail
+									activeScreen={workspace.activeScreen}
+									dealStatus={workspace.deal.status}
 								/>
-							</section>
-
-							{/* Blockers */}
-							{workspace.blockers.length > 0 ? (
-								<div className="space-y-2">
-									{workspace.blockers.map((blocker) => (
-										<div
-											className="flex items-start gap-3 rounded-xl p-4"
-											key={`${blocker.code}:${blocker.message}`}
-											style={{
-												background:
-													"color-mix(in oklab, var(--sand) 60%, #fef3c7)",
-												border:
-													"1px solid color-mix(in oklab, var(--line) 50%, #fcd34d)",
-											}}
-										>
-											<AlertTriangle
-												className="mt-0.5 size-4 shrink-0"
-												style={{ color: "#b45309" }}
-											/>
-											<div>
-												<p
-													className="font-semibold text-sm"
-													style={{ color: "#78350f" }}
-												>
-													{formatEnumLabel(blocker.code)}
-												</p>
-												<p
-													className="mt-0.5 text-sm leading-relaxed"
-													style={{ color: "#92400e" }}
-												>
-													{blocker.message}
-												</p>
-											</div>
-										</div>
-									))}
-								</div>
-							) : null}
-
-							{renderActiveDealPortalContent(workspace)}
-						</>
+							</div>
+						</aside>
 					)}
+
+					{/* Main content */}
+					<div className="min-w-0 flex-1 space-y-8">
+						{onboardingOnly ? (
+							<OnboardingRequiredPanel workspace={workspace} />
+						) : (
+							<>
+								{/* Parties — The Closing Assembly */}
+								<section className="island-shell rounded-xl p-6">
+									<div className="mb-1 text-center">
+										<h2 className="island-kicker">Closing Assembly</h2>
+										<p
+											className="mt-1 text-xs"
+											style={{ color: "var(--sea-ink-soft)" }}
+										>
+											Participants and their closing roles
+										</p>
+									</div>
+									<ClosingAssembly
+										parties={workspace.participants.involvedParties}
+									/>
+								</section>
+
+								{/* Blockers */}
+								{workspace.blockers.length > 0 ? (
+									<div className="space-y-2">
+										{workspace.blockers.map((blocker) => (
+											<div
+												className="flex items-start gap-3 rounded-xl p-4"
+												key={`${blocker.code}:${blocker.message}`}
+												style={{
+													background:
+														"color-mix(in oklab, var(--sand) 60%, #fef3c7)",
+													border:
+														"1px solid color-mix(in oklab, var(--line) 50%, #fcd34d)",
+												}}
+											>
+												<AlertTriangle
+													className="mt-0.5 size-4 shrink-0"
+													style={{ color: "#b45309" }}
+												/>
+												<div>
+													<p
+														className="font-semibold text-sm"
+														style={{ color: "#78350f" }}
+													>
+														{formatEnumLabel(blocker.code)}
+													</p>
+													<p
+														className="mt-0.5 text-sm leading-relaxed"
+														style={{ color: "#92400e" }}
+													>
+														{blocker.message}
+													</p>
+												</div>
+											</div>
+										))}
+									</div>
+								) : null}
+
+								{renderActiveDealPortalContent(workspace)}
+							</>
+						)}
+					</div>
 				</div>
 			</div>
 		</main>

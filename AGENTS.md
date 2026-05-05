@@ -172,6 +172,9 @@ Sample JWT Payload:
 
 Long term maintainability is a core priority. If you add new functionality, first check if there are shared logic that can be extracted to a separate module. Duplicate logic across mulitple files is a code smell and should be avoided. Don't be afraid to change existing code. Don't take shortcuts by just adding local logic to solve a problem.
 
+## DO NOT JUST LOCALLY OPTIMIZE
+The user may report a bug or a feature request that seems to have a simple local fix. But before you implement the local fix, consider the broader context and whether there are underlying issues that need to be addressed. The fix to the bug probobably isn't just recovering from the error state, its preventing the system from reaching the state that the bug was possible. A local fix may solve the immediate problem but could lead to more issues down the line if it doesn't address the root cause. Always strive for a holistic solution that improves the overall codebase and user experience, rather than just patching a specific issue.
+
 ## Context 
 We're building a GREENFIELD project there is not existing prod data or deployment. Feel free to suggest sweeping changes to the schema, architecture etc, but ask your human first. 
 
@@ -202,46 +205,16 @@ We're building a backoffice Loan Management System with an integrated ledger and
 - [Filepath](./docs/convex/convex-dev-action-cache.md)
 - When to use skill: Whenever working on anything related to caching expensive action results, reducing repeated API calls, or adding TTL-based action caches.
 
-
-
-#### convex-dev-migrations
-- Description: Define, run, resume, and observe database migrations with tracked state and batch processing across Convex tables. Use when working with schema evolution, backfills, database migrations.
-- [Filepath](./docs/convex/convex-dev-migrations.md)
-- When to use skill: Whenever working on anything related to data backfills, schema transitions, online migrations, or tracked database migration workflows.
-
-#### convex-dev-aggregate
-- Description: Maintain efficient aggregate counts, sums, rankings, and percentile-style lookups over large datasets with logarithmic-time operations. Use when working with leaderboards, analytics, counts, sums, aggregates.
-- [Filepath](./docs/convex/convex-dev-aggregate.md)
-- When to use skill: Whenever working on anything related to efficient counts, sums, rankings, leaderboards, or aggregate analytics over large datasets.
-
-
-#### convex-dev-crons
-- Description: Register and manage cron jobs dynamically at runtime using interval or cron schedules instead of only static deploy-time definitions. Use when working with scheduling, automation, cron jobs, recurring tasks.
-- [Filepath](./docs/convex/convex-dev-crons.md)
-- When to use skill: Whenever working on anything related to dynamic scheduled tasks, recurring jobs, tenant-specific automation, or runtime cron registration.
-
-
-#### convex-dev-launchdarkly
-- Description: Sync LaunchDarkly flags and segments into Convex for backend feature flags and experimentation. Use when working with feature flags, experimentation, rollout control, LaunchDarkly.
-- [Filepath](./docs/convex/convex-dev-launchdarkly.md)
-- When to use skill: Whenever working on anything related to feature flags, experiments, staged rollouts, or LaunchDarkly-backed configuration.
-
-
 #### convex-timeline
 - Description: Manage undo and redo history with scoped state snapshots and named checkpoints in Convex. Use when working with undo/redo flows, draft history, editor state, or restorable application state.
 - [Filepath](./docs/convex/convex-timeline.md)
 - When to use skill: Whenever working on anything related to undo/redo, scoped draft history, editor checkpoints, or restoreable user state.
-
 
 #### convex-tracer
 - Description: Add tracing and observability to Convex functions with sampled traces, nested spans, error preservation, and cross-function execution visibility. Use when working with observability, debugging, tracing, production diagnostics, or performance analysis.
 - [Filepath](./docs/convex/convex-tracer.md)
 - When to use skill: Whenever working on anything related to tracing backend flows, debugging production issues, inspecting nested operations, or improving Convex observability.
 
-#### convex-audit-log
-- Description: Track user actions, API calls, and system events in Convex with audit trails, change diffs, PII redaction, querying, anomaly detection, and compliance-oriented retention controls. Use when working with audits, compliance, security logging, or destructive/admin actions.
-- [Filepath](./docs/convex/convex-audit-log.md)
-- When to use skill: Whenever working on anything related to audit trails, compliance evidence, security-sensitive event logging, destructive admin actions, or change tracking.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

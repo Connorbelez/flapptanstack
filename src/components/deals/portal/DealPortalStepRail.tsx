@@ -1,11 +1,4 @@
-import {
-	AlertTriangle,
-	CheckCircle2,
-	Circle,
-	FileSignature,
-	Scale,
-	WalletCards,
-} from "lucide-react";
+import { Check } from "lucide-react";
 import { formatEnumLabel } from "./format";
 import type { DealPortalScreen } from "./types";
 
@@ -36,15 +29,6 @@ const steps: ReadonlyArray<{
 	},
 ];
 
-const stepIcon = {
-	complete: CheckCircle2,
-	documents: FileSignature,
-	failed: Circle,
-	payment: WalletCards,
-	representation: Scale,
-	unavailable: AlertTriangle,
-} satisfies Record<DealPortalScreen, typeof Circle>;
-
 export function DealPortalStepRail({
 	activeScreen,
 	dealStatus,
@@ -53,95 +37,124 @@ export function DealPortalStepRail({
 	readonly dealStatus: string;
 }) {
 	const activeIndex = steps.findIndex((s) => s.screen === activeScreen);
+	const completedCount = Math.max(0, activeIndex);
 
 	return (
-		<div>
-			<div className="mb-1 flex items-center justify-between">
-				<p className="island-kicker">Closing Flow</p>
+		<nav aria-label="Closing flow steps">
+			{/* Steps header + counter */}
+			<div className="mb-3 flex items-center justify-between">
+				<p
+					className="font-semibold text-sm"
+					style={{ color: "var(--sea-ink)" }}
+				>
+					Steps
+				</p>
 				<p className="text-xs" style={{ color: "var(--sea-ink-soft)" }}>
-					{formatEnumLabel(dealStatus)}
+					{completedCount} of {steps.length}
 				</p>
 			</div>
 
-			<ol className="relative flex items-start justify-between">
+			{/* Progress bar */}
+			<div
+				className="mb-5 h-2 w-full overflow-hidden rounded-full"
+				style={{ background: "var(--line)" }}
+			>
 				<div
-					aria-hidden="true"
-					className="absolute top-5 right-0 left-0 h-px"
-					style={{ background: "var(--line)" }}
-				/>
-
-				<div
-					aria-hidden="true"
-					className="absolute top-5 left-0 h-px transition-all"
+					className="h-full rounded-full transition-all duration-500"
 					style={{
 						background: "var(--lagoon)",
-						width: `${Math.max(0, (activeIndex / (steps.length - 1)) * 100)}%`,
+						width: `${Math.max(0, (completedCount / steps.length) * 100)}%`,
 					}}
 				/>
+			</div>
 
+			{/* Status label */}
+			<p className="mb-4 text-xs" style={{ color: "var(--sea-ink-soft)" }}>
+				{formatEnumLabel(dealStatus)}
+			</p>
+
+			{/* Step cards */}
+			<ol className="space-y-3">
 				{steps.map((step, index) => {
 					const isActive = activeScreen === step.screen;
 					const isCompleted = index < activeIndex;
-					const Icon = stepIcon[step.screen];
+					const isFuture = index > activeIndex;
+					const stepNumber = index + 1;
+
 					return (
-						<li
-							aria-current={isActive ? "step" : undefined}
-							className="relative z-10 flex flex-col items-center gap-2"
-							key={step.screen}
-						>
+						<li aria-current={isActive ? "step" : undefined} key={step.screen}>
 							<div
-								className="flex size-10 items-center justify-center rounded-full transition-all"
+								className="flex items-start gap-4 rounded-xl p-4 transition-all"
 								style={{
-									background: isCompleted
-										? "var(--palm)"
-										: isActive
-											? "white"
-											: "var(--bg-base)",
+									background: isActive
+										? "var(--surface-strong)"
+										: "var(--surface)",
 									border: isActive
 										? "2px solid var(--lagoon)"
-										: isCompleted
-											? "none"
-											: "1px solid var(--line)",
-									color: isCompleted
-										? "white"
-										: isActive
-											? "var(--lagoon)"
-											: "var(--sea-ink-soft)",
+										: "1px solid var(--line)",
 									boxShadow: isActive
-										? "0 0 0 4px color-mix(in oklab, var(--lagoon) 15%, transparent)"
+										? "0 0 0 1px var(--lagoon), 0 8px 24px rgba(23,58,64,0.08)"
 										: "none",
 								}}
 							>
-								<Icon className="size-4" />
-							</div>
-							<div className="text-center">
-								<p
-									className="font-medium text-xs"
+								{/* Icon / Number circle */}
+								<div
+									className="flex size-10 shrink-0 items-center justify-center rounded-full transition-all"
 									style={{
-										color: isActive
-											? "var(--sea-ink)"
-											: isCompleted
-												? "var(--sea-ink-soft)"
-												: "color-mix(in oklab, var(--sea-ink-soft) 55%, transparent)",
+										background: isCompleted
+											? "var(--palm)"
+											: isActive
+												? "transparent"
+												: "transparent",
+										border: isCompleted
+											? "none"
+											: isActive
+												? "2px solid var(--lagoon)"
+												: "1.5px solid var(--line)",
+										color: isCompleted
+											? "white"
+											: isActive
+												? "var(--lagoon)"
+												: isFuture
+													? "color-mix(in oklab, var(--sea-ink-soft) 50%, transparent)"
+													: "var(--sea-ink-soft)",
 									}}
 								>
-									{step.label}
-								</p>
-								<p
-									className="hidden max-w-[6rem] text-[0.65rem] leading-snug sm:block"
-									style={{
-										color: isActive
-											? "var(--sea-ink-soft)"
-											: "color-mix(in oklab, var(--sea-ink-soft) 50%, transparent)",
-									}}
-								>
-									{step.description}
-								</p>
+									{isCompleted ? (
+										<Check className="size-5" strokeWidth={3} />
+									) : (
+										<span className="font-bold text-sm">{stepNumber}</span>
+									)}
+								</div>
+
+								{/* Text content */}
+								<div className="min-w-0 pt-0.5">
+									<p
+										className="font-semibold text-sm"
+										style={{
+											color: isFuture
+												? "color-mix(in oklab, var(--sea-ink-soft) 60%, transparent)"
+												: "var(--sea-ink)",
+										}}
+									>
+										{step.label}
+									</p>
+									<p
+										className="mt-0.5 text-xs leading-relaxed"
+										style={{
+											color: isFuture
+												? "color-mix(in oklab, var(--sea-ink-soft) 40%, transparent)"
+												: "var(--sea-ink-soft)",
+										}}
+									>
+										{step.description}
+									</p>
+								</div>
 							</div>
 						</li>
 					);
 				})}
 			</ol>
-		</div>
+		</nav>
 	);
 }
