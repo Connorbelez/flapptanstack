@@ -13,7 +13,7 @@ const steps: ReadonlyArray<{
 		screen: "representation",
 	},
 	{
-		description: "Required parties sign closing documents.",
+		description: "Required documents are completed or skipped.",
 		label: "Documents",
 		screen: "documents",
 	},
@@ -37,7 +37,9 @@ export function DealPortalStepRail({
 	readonly dealStatus: string;
 }) {
 	const activeIndex = steps.findIndex((s) => s.screen === activeScreen);
-	const completedCount = Math.max(0, activeIndex);
+	const activeStepNumber = activeIndex >= 0 ? activeIndex + 1 : 0;
+	const progressPercent =
+		activeStepNumber > 0 ? (activeStepNumber / steps.length) * 100 : 0;
 
 	return (
 		<nav aria-label="Closing flow steps">
@@ -50,7 +52,7 @@ export function DealPortalStepRail({
 					Steps
 				</p>
 				<p className="text-xs" style={{ color: "var(--sea-ink-soft)" }}>
-					{completedCount} of {steps.length}
+					{activeStepNumber} of {steps.length}
 				</p>
 			</div>
 
@@ -63,7 +65,7 @@ export function DealPortalStepRail({
 					className="h-full rounded-full transition-all duration-500"
 					style={{
 						background: "var(--lagoon)",
-						width: `${Math.max(0, (completedCount / steps.length) * 100)}%`,
+						width: `${Math.max(0, progressPercent)}%`,
 					}}
 				/>
 			</div>
@@ -105,18 +107,18 @@ export function DealPortalStepRail({
 											? "var(--palm)"
 											: isActive
 												? "transparent"
-												: "transparent",
+												: "color-mix(in oklab, var(--surface-strong) 70%, transparent)",
 										border: isCompleted
 											? "none"
 											: isActive
 												? "2px solid var(--lagoon)"
-												: "1.5px solid var(--line)",
+												: "1.5px solid color-mix(in oklab, var(--line) 70%, var(--lagoon) 30%)",
 										color: isCompleted
 											? "white"
 											: isActive
 												? "var(--lagoon)"
 												: isFuture
-													? "color-mix(in oklab, var(--sea-ink-soft) 50%, transparent)"
+													? "color-mix(in oklab, var(--sea-ink-soft) 72%, transparent)"
 													: "var(--sea-ink-soft)",
 									}}
 								>
@@ -133,7 +135,7 @@ export function DealPortalStepRail({
 										className="font-semibold text-sm"
 										style={{
 											color: isFuture
-												? "color-mix(in oklab, var(--sea-ink-soft) 60%, transparent)"
+												? "color-mix(in oklab, var(--sea-ink-soft) 78%, transparent)"
 												: "var(--sea-ink)",
 										}}
 									>
@@ -143,7 +145,7 @@ export function DealPortalStepRail({
 										className="mt-0.5 text-xs leading-relaxed"
 										style={{
 											color: isFuture
-												? "color-mix(in oklab, var(--sea-ink-soft) 40%, transparent)"
+												? "color-mix(in oklab, var(--sea-ink-soft) 62%, transparent)"
 												: "var(--sea-ink-soft)",
 										}}
 									>

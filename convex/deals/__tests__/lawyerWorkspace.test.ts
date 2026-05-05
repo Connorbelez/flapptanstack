@@ -86,6 +86,8 @@ const NO_ACTIVE_LAWYER_ACCESS_ERROR = /Forbidden: no active lawyer access/;
 const INVALID_STATE_ERROR = /Invalid deal state/;
 const PACKAGE_APPROVAL_BLOCKED_ERROR =
 	/Document package is not ready for lawyer approval/;
+const EMPTY_DOCUMENT_SKIP_BLOCKED_ERROR =
+	/only be skipped when no document instances exist/i;
 const MISSING_ENGAGEMENT_ERROR =
 	/Signed representation engagement evidence is required/;
 const MISSING_VERIFICATION_ERROR =
@@ -159,6 +161,7 @@ async function seedLawyerWorkspaceFixture(args?: {
 	dealStatus?: string;
 	includePreSendException?: boolean;
 	includeEnvelope?: boolean;
+	includeDocumentInstance?: boolean;
 	includeRepresentationEngagement?: boolean;
 	includeVerificationEvidence?: boolean;
 	instanceStatus?: Doc<"dealDocumentInstances">["status"];
@@ -331,94 +334,96 @@ async function seedLawyerWorkspaceFixture(args?: {
 			status: args?.packageStatus ?? "ready",
 			updatedAt: 1,
 		});
-		const instanceId = await ctx.db.insert("dealDocumentInstances", {
-			createdAt: 1,
-			dealId,
-			kind: "generated",
-			mortgageId,
-			packageId,
-			sourceBlueprintSnapshot: {
-				class: "private_templated_signable",
-				displayName: "Closing Signature Package",
-				displayOrder: 1,
-				packageLabel: "Closing",
-			},
-			status:
-				args?.instanceStatus ??
-				(args?.includeEnvelope
-					? "signature_sent"
-					: "signature_pending_recipient_resolution"),
-			updatedAt: 1,
-		});
-
 		let attemptId: Id<"dealEnvelopeAttempts"> | null = null;
-		if (args?.includeEnvelope) {
-			attemptId = await ctx.db.insert("dealEnvelopeAttempts", {
-				active: true,
-				attemptNumber: 1,
-				createdAt: 10,
-				dealDocumentInstanceId: instanceId,
+		if (args?.includeDocumentInstance ?? true) {
+			const instanceId = await ctx.db.insert("dealDocumentInstances", {
+				createdAt: 1,
 				dealId,
-				idempotencyKey: "attempt-1",
+				kind: "generated",
+				mortgageId,
 				packageId,
-				provider: "documenso",
-				providerDocumentId: "doc_1",
-				providerEnvelopeId: "env_1",
-				recipientRoster: [],
-				status: args?.attemptStatus ?? "partially_signed",
-				updatedAt: 10,
+				sourceBlueprintSnapshot: {
+					class: "private_templated_signable",
+					displayName: "Closing Signature Package",
+					displayOrder: 1,
+					packageLabel: "Closing",
+				},
+				status:
+					args?.instanceStatus ??
+					(args?.includeEnvelope
+						? "signature_sent"
+						: "signature_pending_recipient_resolution"),
+				updatedAt: 1,
 			});
-			await ctx.db.insert("dealEnvelopeRecipients", {
-				attemptId,
-				completedAt: 30,
-				createdAt: 11,
-				dealDocumentInstanceId: instanceId,
-				dealId,
-				documensoRole: "SIGNER",
-				email: "buyer@test.fairlend.ca",
-				name: "Bianca Buyer",
-				packageId,
-				platformRole: "lender_primary",
-				readStatus: "opened",
-				required: true,
-				sendStatus: "sent",
-				signingOrder: 1,
-				signingStatus: "completed",
-				updatedAt: 30,
-			});
-			await ctx.db.insert("dealEnvelopeRecipients", {
-				attemptId,
-				createdAt: 12,
-				dealDocumentInstanceId: instanceId,
-				dealId,
-				documensoRole: "APPROVER",
-				email: "lawyer@test.fairlend.ca",
-				embeddedSigningToken: "secret-token",
-				name: "Laura Lawyer",
-				packageId,
-				platformRole: "lawyer_primary",
-				readStatus: "available",
-				required: true,
-				sendStatus: "sent",
-				signingOrder: 2,
-				signingStatus: "not_started",
-				tokenAvailableAt: 12,
-				tokenExpiresAt: 2_000_000_000_000,
-				updatedAt: 12,
-			});
-			if (args.includePreSendException ?? true) {
-				await ctx.db.insert("dealSigningExceptions", {
-					attemptId,
-					createdAt: 13,
+
+			if (args?.includeEnvelope) {
+				attemptId = await ctx.db.insert("dealEnvelopeAttempts", {
+					active: true,
+					attemptNumber: 1,
+					createdAt: 10,
 					dealDocumentInstanceId: instanceId,
 					dealId,
-					kind: "pre_send_configuration_failure",
-					message: "Package configuration is incomplete.",
+					idempotencyKey: "attempt-1",
 					packageId,
-					severity: "blocking",
-					status: "open",
-					updatedAt: 13,
+					provider: "documenso",
+					providerDocumentId: "doc_1",
+					providerEnvelopeId: "env_1",
+					recipientRoster: [],
+					status: args?.attemptStatus ?? "partially_signed",
+					updatedAt: 10,
 				});
+				await ctx.db.insert("dealEnvelopeRecipients", {
+					attemptId,
+					completedAt: 30,
+					createdAt: 11,
+					dealDocumentInstanceId: instanceId,
+					dealId,
+					documensoRole: "SIGNER",
+					email: "buyer@test.fairlend.ca",
+					name: "Bianca Buyer",
+					packageId,
+					platformRole: "lender_primary",
+					readStatus: "opened",
+					required: true,
+					sendStatus: "sent",
+					signingOrder: 1,
+					signingStatus: "completed",
+					updatedAt: 30,
+				});
+				await ctx.db.insert("dealEnvelopeRecipients", {
+					attemptId,
+					createdAt: 12,
+					dealDocumentInstanceId: instanceId,
+					dealId,
+					documensoRole: "APPROVER",
+					email: "lawyer@test.fairlend.ca",
+					embeddedSigningToken: "secret-token",
+					name: "Laura Lawyer",
+					packageId,
+					platformRole: "lawyer_primary",
+					readStatus: "available",
+					required: true,
+					sendStatus: "sent",
+					signingOrder: 2,
+					signingStatus: "not_started",
+					tokenAvailableAt: 12,
+					tokenExpiresAt: 2_000_000_000_000,
+					updatedAt: 12,
+				});
+				if (args.includePreSendException ?? true) {
+					await ctx.db.insert("dealSigningExceptions", {
+						attemptId,
+						createdAt: 13,
+						dealDocumentInstanceId: instanceId,
+						dealId,
+						kind: "pre_send_configuration_failure",
+						message: "Package configuration is incomplete.",
+						packageId,
+						severity: "blocking",
+						status: "open",
+						updatedAt: 13,
+					});
+				}
 			}
 		}
 
@@ -751,6 +756,54 @@ describe("lawyer workspace mutations", () => {
 		});
 		const deal = await t.run((ctx) => ctx.db.get(dealId));
 		expect(deal?.status).toBe("documentReview.signed");
+	});
+
+	it("lets any active deal participant skip document signing when no document instances exist", async () => {
+		const { dealId, t } = await seedLawyerWorkspaceFixture({
+			dealStatus: "documentReview.pending",
+			includeDocumentInstance: false,
+		});
+
+		vi.useFakeTimers();
+		try {
+			const result = await t
+				.withIdentity(memberIdentity("buyer-auth"))
+				.mutation(api.deals.portalMutations.skipEmptyDocumentSigning, {
+					dealId,
+				});
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+			expect(result.transitions).toEqual([
+				expect.objectContaining({
+					newState: "documentReview.signed",
+					previousState: "documentReview.pending",
+					success: true,
+				}),
+				expect.objectContaining({
+					newState: "fundsTransfer.pending",
+					previousState: "documentReview.signed",
+					success: true,
+				}),
+			]);
+		} finally {
+			vi.useRealTimers();
+		}
+		const deal = await t.run((ctx) => ctx.db.get(dealId));
+		expect(deal?.status).toBe("fundsTransfer.pending");
+	});
+
+	it("blocks empty document signing skip when any document instance exists", async () => {
+		const { dealId, t } = await seedLawyerWorkspaceFixture({
+			dealStatus: "documentReview.pending",
+		});
+
+		await expect(
+			t
+				.withIdentity(memberIdentity("buyer-auth"))
+				.mutation(api.deals.portalMutations.skipEmptyDocumentSigning, {
+					dealId,
+				})
+		).rejects.toThrow(EMPTY_DOCUMENT_SKIP_BLOCKED_ERROR);
 	});
 
 	it("blocks document approval when package prerequisites are incomplete", async () => {

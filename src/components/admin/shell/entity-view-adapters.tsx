@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { AdminLenderPortfolioTab } from "#/components/admin/lenders/AdminLenderPortfolioTab";
+import { LenderPageAside } from "#/components/admin/lenders/LenderPageAside";
 import { MortgageFilesDocumentAttachButton } from "#/components/admin/mortgages/MortgageFilesDocumentAttachButton";
 import type { AdminRelationNavigationTarget } from "#/lib/admin-relation-navigation";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
@@ -392,6 +393,7 @@ const ROLLOUT_DETAIL_ADAPTERS: Partial<
 		),
 	},
 	lenders: {
+		pageSummaryFieldNames: [],
 		renderDetailsTab: ({ fields, objectDefs, onNavigateRelation, record }) => (
 			<LendersDedicatedDetails
 				fields={fields}
@@ -399,6 +401,9 @@ const ROLLOUT_DETAIL_ADAPTERS: Partial<
 				onNavigateRelation={onNavigateRelation}
 				record={record}
 			/>
+		),
+		renderPageAside: ({ reference }) => (
+			<LenderPageAside lenderId={reference.recordId} />
 		),
 		renderPortfolioTab: ({ record, reference }) => {
 			const lenderLabel = String(

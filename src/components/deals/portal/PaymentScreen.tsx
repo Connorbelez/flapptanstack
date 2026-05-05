@@ -9,6 +9,13 @@ export function PaymentScreen({
 	readonly workspace: DealPortalWorkspace;
 }) {
 	const canUpload = hasPortalCapability(workspace, "payment.proof.upload");
+	const canApprove = hasPortalCapability(workspace, "payment.proof.approve");
+	const canReject = hasPortalCapability(workspace, "payment.proof.reject");
+	const hasReviewControls = canApprove || canReject;
+	const reviewTitle =
+		workspace.payment.adminReview && canUpload && !hasReviewControls
+			? "FairLend Review Preview"
+			: "Admin Review";
 
 	return (
 		<div className="space-y-5">
@@ -20,7 +27,7 @@ export function PaymentScreen({
 				</p>
 			</div>
 
-			{workspace.payment.proofs.length > 0 ? (
+			{workspace.payment.proofs.length > 0 && !workspace.payment.adminReview ? (
 				<div className="grid gap-3">
 					{workspace.payment.proofs.map((proof) => (
 						<div
@@ -56,7 +63,12 @@ export function PaymentScreen({
 			)}
 
 			{workspace.payment.adminReview ? (
-				<PaymentProofReviewPanel review={workspace.payment.adminReview} />
+				<PaymentProofReviewPanel
+					canApprove={canApprove}
+					canReject={canReject}
+					review={workspace.payment.adminReview}
+					title={reviewTitle}
+				/>
 			) : null}
 		</div>
 	);

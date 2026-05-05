@@ -1,6 +1,7 @@
 import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
+import { FAIRLEND_ADMIN } from "../../../src/test/auth/identities";
 import { registerAuditLogComponent } from "../../../src/test/convex/registerAuditLogComponent";
 import type { Id } from "../../_generated/dataModel";
 import schema from "../../schema";
@@ -9,6 +10,7 @@ import { normalizeLawyerEmail } from "../normalization";
 
 const NOW = 1_777_800_000_000;
 const FUTURE_EXPIRES_AT = 4_102_444_800_000;
+const adminLawyersApi = anyApi.legalRepresentation.adminLawyers;
 const onboardingApi = anyApi.legalRepresentation.onboarding;
 const IDV_CHECKPOINT_REQUIRED_PATTERN = /IDV checkpoint is required/i;
 const INVITATION_EXPIRED_PATTERN = /invitation expired/i;
@@ -676,6 +678,8 @@ describe("lawyer onboarding sessions", () => {
 	});
 
 	it("progresses guest checkpoints to complete and migrates provisional access", async () => {
+		const previousHashchain = process.env.DISABLE_GT_HASHCHAIN;
+		process.env.DISABLE_GT_HASHCHAIN = "true";
 		const t = createHarness();
 		const auth = t.withIdentity(
 			lawyerIdentity({
@@ -686,21 +690,29 @@ describe("lawyer onboarding sessions", () => {
 		const { dealId, normalizedEmail, provisionalAccessId, sessionId } =
 			await seedGuestOnboardingSession(t);
 
-		await auth.mutation(onboardingApi.confirmIdentity, { sessionId });
-		await auth.mutation(onboardingApi.submitLsoLicense, {
-			barNumber: "L12345",
-			jurisdiction: "ON",
-			sessionId,
-		});
-		await auth.mutation(onboardingApi.completeMockIdv, { sessionId });
-		await acceptRepresentationEngagementAndDrain(auth, t, sessionId);
-		const completed = await auth.mutation(onboardingApi.completeSession, {
-			sessionId,
-		});
+		try {
+			await auth.mutation(onboardingApi.confirmIdentity, { sessionId });
+			await auth.mutation(onboardingApi.submitLsoLicense, {
+				barNumber: "L12345",
+				jurisdiction: "ON",
+				sessionId,
+			});
+			await auth.mutation(onboardingApi.completeMockIdv, { sessionId });
+			await acceptRepresentationEngagementAndDrain(auth, t, sessionId);
+			const completed = await auth.mutation(onboardingApi.completeSession, {
+				sessionId,
+			});
 
-		expect(completed.status).toBe("complete");
-		expect(completed.completedAt).toEqual(expect.any(Number));
-		expect(completed.workosUserId).toBe("user_guest_lawyer");
+			expect(completed.status).toBe("complete");
+			expect(completed.completedAt).toEqual(expect.any(Number));
+			expect(completed.workosUserId).toBe("user_guest_lawyer");
+		} finally {
+			if (previousHashchain === undefined) {
+				process.env.DISABLE_GT_HASHCHAIN = undefined;
+			} else {
+				process.env.DISABLE_GT_HASHCHAIN = previousHashchain;
+			}
+		}
 		const access = await t.run((ctx) =>
 			ctx.db
 				.query("dealAccess")
@@ -729,6 +741,8 @@ describe("lawyer onboarding sessions", () => {
 				.filter((entry) => entry.entityId === String(dealId))
 				.map((entry) => entry.eventType),
 			deal: await ctx.db.get(dealId),
+			profiles: await ctx.db.query("lawyerProfiles").collect(),
+			session: await ctx.db.get(sessionId),
 		}));
 
 		expect(access).toMatchObject({
@@ -760,14 +774,53 @@ describe("lawyer onboarding sessions", () => {
 			source: "lawyer_onboarding_identity_confirmation",
 		});
 		expect(engagement).toMatchObject({
+			lawyerProfileId: transitionState.profiles[0]?._id,
 			lawyerAuthId: "user_guest_lawyer",
 			provider: "manual_admin",
 			status: "signed",
 		});
+		expect(transitionState.profiles).toHaveLength(1);
+		expect(transitionState.profiles[0]).toMatchObject({
+			authId: "user_guest_lawyer",
+			barNumber: "L12345",
+			displayName: "Riley Guest",
+			email: "guest@example.test",
+			firmName: "Guest Legal",
+			jurisdiction: "ON",
+			normalizedEmail,
+			profileKind: "guest",
+		});
+		expect(transitionState.session).toMatchObject({
+			lawyerProfileId: transitionState.profiles[0]?._id,
+		});
+		expect(
+			verifications.every(
+				(row) => row.lawyerProfileId === transitionState.profiles[0]?._id
+			)
+		).toBe(true);
 		expect(transitionState.deal?.status).toBe("documentReview.pending");
 		expect(transitionState.auditEvents).toEqual(
 			expect.arrayContaining(["LAWYER_VERIFIED", "REPRESENTATION_CONFIRMED"])
 		);
+		const roster = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.listLawyerRosterPage, {
+				filters: { profileKind: "all", urgency: "all" },
+				pagination: { cursor: null, pageSize: 25 },
+				search: "",
+				sort: "urgency",
+			});
+		expect(roster).toMatchObject({
+			rows: [
+				{
+					activeDealCount: 1,
+					email: normalizedEmail,
+					profileId: transitionState.profiles[0]?._id,
+					profileKind: "guest",
+				},
+			],
+			totalCount: 1,
+		});
 	});
 
 	it("progresses platform checkpoints to complete without a deal and activates the platform lawyer", async () => {
@@ -854,42 +907,56 @@ describe("lawyer onboarding sessions", () => {
 	});
 
 	it("does not rewrite invitation acceptedAt when completing onboarding", async () => {
+		const previousHashchain = process.env.DISABLE_GT_HASHCHAIN;
+		process.env.DISABLE_GT_HASHCHAIN = "true";
 		const t = createHarness();
 		const auth = t.withIdentity(lawyerIdentity());
-		const { invitationId } = await seedPendingGuestInvitation(t, {
-			status: "accepted",
-		});
-		const started = await t.mutation(
-			onboardingApi.startOrResumeForInvitationInternal,
-			{
-				invitationId,
-			}
-		);
-		await t.run((ctx) =>
-			ctx.db.patch(invitationId, {
-				acceptedAt: NOW + 1,
-				resolvedAuthId: "user_guest_lawyer",
-				updatedAt: NOW + 1,
-			})
-		);
-		await auth.mutation(onboardingApi.confirmIdentity, {
-			sessionId: started.session._id,
-		});
-		await auth.mutation(onboardingApi.submitLsoLicense, {
-			barNumber: "L12345",
-			jurisdiction: "ON",
-			sessionId: started.session._id,
-		});
-		await auth.mutation(onboardingApi.completeMockIdv, {
-			sessionId: started.session._id,
-		});
-		await acceptRepresentationEngagementAndDrain(auth, t, started.session._id);
-		const invitation = await t.run((ctx) => ctx.db.get(invitationId));
+		try {
+			const { invitationId } = await seedPendingGuestInvitation(t, {
+				status: "accepted",
+			});
+			const started = await t.mutation(
+				onboardingApi.startOrResumeForInvitationInternal,
+				{
+					invitationId,
+				}
+			);
+			await t.run((ctx) =>
+				ctx.db.patch(invitationId, {
+					acceptedAt: NOW + 1,
+					resolvedAuthId: "user_guest_lawyer",
+					updatedAt: NOW + 1,
+				})
+			);
+			await auth.mutation(onboardingApi.confirmIdentity, {
+				sessionId: started.session._id,
+			});
+			await auth.mutation(onboardingApi.submitLsoLicense, {
+				barNumber: "L12345",
+				jurisdiction: "ON",
+				sessionId: started.session._id,
+			});
+			await auth.mutation(onboardingApi.completeMockIdv, {
+				sessionId: started.session._id,
+			});
+			await acceptRepresentationEngagementAndDrain(
+				auth,
+				t,
+				started.session._id
+			);
+			const invitation = await t.run((ctx) => ctx.db.get(invitationId));
 
-		expect(invitation).toMatchObject({
-			acceptedAt: NOW + 1,
-			status: "verified",
-		});
+			expect(invitation).toMatchObject({
+				acceptedAt: NOW + 1,
+				status: "verified",
+			});
+		} finally {
+			if (previousHashchain === undefined) {
+				process.env.DISABLE_GT_HASHCHAIN = undefined;
+			} else {
+				process.env.DISABLE_GT_HASHCHAIN = previousHashchain;
+			}
+		}
 	});
 
 	it("rejects checkpoint mutations when the authenticated lawyer email mismatches the invitation", async () => {

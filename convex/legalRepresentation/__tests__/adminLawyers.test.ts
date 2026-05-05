@@ -153,6 +153,201 @@ async function seedLawyerRosterRows(t: ReturnType<typeof createHarness>) {
 	});
 }
 
+async function seedOrphanedGuestLawyerEvidence(
+	t: ReturnType<typeof createHarness>
+) {
+	return await t.run(async (ctx) => {
+		const now = Date.UTC(2026, 4, 3);
+		const brokerUserId = await ctx.db.insert("users", {
+			authId: "broker_orphan_seed",
+			email: "broker.orphan@example.test",
+			firstName: "Broker",
+			lastName: "Orphan",
+		});
+		const lenderUserId = await ctx.db.insert("users", {
+			authId: "lender_orphan_seed",
+			email: "lender.orphan@example.test",
+			firstName: "Lender",
+			lastName: "Orphan",
+		});
+		const brokerId = await ctx.db.insert("brokers", {
+			createdAt: now,
+			status: "active",
+			userId: brokerUserId,
+		});
+		const lenderId = await ctx.db.insert("lenders", {
+			accreditationStatus: "accredited",
+			brokerId,
+			createdAt: now,
+			onboardingEntryPath: "test",
+			status: "active",
+			userId: lenderUserId,
+		});
+		const propertyId = await ctx.db.insert("properties", {
+			city: "Toronto",
+			createdAt: now,
+			postalCode: "M5V 1A1",
+			propertyType: "residential",
+			province: "ON",
+			streetAddress: "789 Orphan Ave",
+		});
+		const mortgageId = await ctx.db.insert("mortgages", {
+			amortizationMonths: 300,
+			brokerOfRecordId: brokerId,
+			createdAt: now,
+			firstPaymentDate: "2026-06-01",
+			interestAdjustmentDate: "2026-05-01",
+			interestRate: 9.5,
+			lienPosition: 1,
+			loanType: "conventional",
+			maturityDate: "2031-05-01",
+			paymentAmount: 2500,
+			paymentFrequency: "monthly",
+			principal: 500_000,
+			propertyId,
+			rateType: "fixed",
+			status: "funded",
+			termMonths: 60,
+			termStartDate: "2026-05-01",
+		});
+		const lsoLawyerId = await ctx.db.insert("lsoLawyers", {
+			barNumber: "L44444",
+			displayName: "Olivia Orphan",
+			entitledToPractise: true,
+			jurisdiction: "ON",
+			licenseeType: "lawyer",
+			licensingStatus: "licensed",
+			normalizedName: "olivia orphan",
+			restrictionStatus: "clear",
+			source: "lso_import",
+			sourceFetchedAt: now,
+			sourceSnapshot: { source: "test_fixture" },
+			updatedAt: now,
+		});
+		const dealId = await ctx.db.insert("deals", {
+			buyerId: "lender_orphan_seed",
+			createdAt: now,
+			createdBy: "system:test",
+			fractionalShare: 1000,
+			lawyerId: "user_orphan_guest_lawyer",
+			lawyerType: "guest_lawyer",
+			lenderId,
+			mortgageId,
+			selectedLawyer: {
+				email: "orphan.guest@example.test",
+				firm: "Orphan Law",
+				lso: {
+					barNumber: "L44444",
+					jurisdiction: "ON",
+					licensingStatus: "licensed",
+					lsoLawyerId,
+					restrictionStatus: "clear",
+					source: "test_fixture",
+					sourceFetchedAt: now,
+				},
+				name: "Olivia Orphan",
+				source: "lso_search",
+				type: "guest_lawyer",
+			},
+			sellerId: "seller_orphan_seed",
+			status: "documentReview.pending",
+		});
+		const invitationId = await ctx.db.insert("lawyerInvitations", {
+			acceptedAt: now - 5000,
+			createdAt: now - 9000,
+			createdBy: "system:test",
+			dealId,
+			deliveredAt: now - 8500,
+			deliveryProvider: "workos",
+			deliveryStatus: "sent",
+			expiresAt: now + 86_400_000,
+			lsoLawyerId,
+			normalizedTargetEmail: "orphan.guest@example.test",
+			resolvedAuthId: "user_orphan_guest_lawyer",
+			selectedLawyerSnapshot: {
+				email: "orphan.guest@example.test",
+				firm: "Orphan Law",
+				lso: {
+					barNumber: "L44444",
+					jurisdiction: "ON",
+					licensingStatus: "licensed",
+					lsoLawyerId,
+					restrictionStatus: "clear",
+					source: "test_fixture",
+					sourceFetchedAt: now,
+				},
+				name: "Olivia Orphan",
+				source: "lso_search",
+				type: "guest_lawyer",
+			},
+			status: "verified",
+			targetEmail: "orphan.guest@example.test",
+			tokenHash: "hash_orphan",
+			updatedAt: now - 1000,
+			verifiedAt: now - 1000,
+		});
+		const sessionId = await ctx.db.insert("lawyerOnboardingSessions", {
+			acceptedEngagementAt: now - 2000,
+			authCompletedAt: now - 8000,
+			completedAt: now - 1000,
+			createdAt: now - 9000,
+			currentStep: "complete",
+			dealId,
+			engagementAcceptedAt: now - 2000,
+			identityConfirmedAt: now - 8000,
+			idvCompletedAt: now - 4000,
+			invitationId,
+			lsoSubmittedAt: now - 7000,
+			lsoVerifiedAt: now - 7000,
+			nextRoute: `/deals/${String(dealId)}`,
+			normalizedTargetEmail: "orphan.guest@example.test",
+			path: "guest_invited",
+			returnPath: `/deals/${String(dealId)}`,
+			status: "complete",
+			updatedAt: now - 1000,
+			workosUserId: "user_orphan_guest_lawyer",
+		});
+		const verificationId = await ctx.db.insert("lawyerVerifications", {
+			authId: "user_orphan_guest_lawyer",
+			barNumber: "L44444",
+			checkType: "initial_lso",
+			createdAt: now - 7000,
+			createdBy: `lawyer-onboarding:${String(sessionId)}`,
+			dealId,
+			expiresAt: now + 86_400_000,
+			jurisdiction: "ON",
+			lsoLawyerId,
+			normalizedEmail: "orphan.guest@example.test",
+			outcome: "eligible",
+			provider: "lso",
+			providerCompletedAt: now - 7000,
+			providerReferenceId: "ON:L44444",
+			providerStatus: "completed",
+			reasonCodes: ["active_license"],
+			sourceSnapshot: { source: "test_fixture" },
+		});
+		const engagementId = await ctx.db.insert("representationEngagements", {
+			createdAt: now - 2000,
+			dealId,
+			evidenceHash: "sha256:orphan-engagement",
+			lawyerAuthId: "user_orphan_guest_lawyer",
+			provider: "manual_admin",
+			signedAt: now - 2000,
+			status: "signed",
+			updatedAt: now - 2000,
+		});
+		await ctx.db.insert("dealAccess", {
+			dealId,
+			grantedAt: now - 1000,
+			grantedBy: "lawyer-onboarding:test",
+			role: "guest_lawyer",
+			status: "active",
+			userId: "user_orphan_guest_lawyer",
+		});
+		return { dealId, engagementId, sessionId, verificationId };
+	});
+}
+
 describe("admin lawyer roster projection", () => {
 	it("lists platform and guest lawyers with urgent rows first", async () => {
 		const t = createHarness();
@@ -312,9 +507,327 @@ describe("admin lawyer roster projection", () => {
 				})
 		).rejects.toThrow("Forbidden: fair lend admin role required");
 	});
+
+	it("surfaces and repairs orphaned guest lawyer identity evidence", async () => {
+		const t = createHarness();
+		const orphan = await seedOrphanedGuestLawyerEvidence(t);
+
+		const beforeRoster = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.listLawyerRosterPage, {
+				filters: { profileKind: "all", urgency: "all" },
+				pagination: { cursor: null, pageSize: 25 },
+				search: "",
+				sort: "urgency",
+			});
+		const repairQueue = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.listLawyerProfileRepairQueue, {});
+
+		expect(beforeRoster.rows).toHaveLength(1);
+		expect(beforeRoster.rows[0]).toMatchObject({
+			displayName: "Olivia Orphan",
+			email: "orphan.guest@example.test",
+			identityRepair: {
+				totalEvidenceRecords: 5,
+			},
+			identityStatus: "missing_profile",
+			profileId: null,
+			urgency: "pending_onboarding",
+		});
+		expect(repairQueue.summary).toMatchObject({
+			orphanedCandidates: 1,
+			totalEvidenceRecords: 5,
+		});
+		expect(repairQueue.candidates[0]).toMatchObject({
+			authId: "user_orphan_guest_lawyer",
+			barNumber: "L44444",
+			displayName: "Olivia Orphan",
+			email: "orphan.guest@example.test",
+			firmName: "Orphan Law",
+			jurisdiction: "ON",
+			recordCounts: {
+				deals: 1,
+				engagements: 1,
+				invitations: 1,
+				onboardingSessions: 1,
+				verifications: 1,
+			},
+		});
+
+		const repaired = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(adminLawyersApi.repairLawyerProfileIdentity, {
+				repairKey: repairQueue.candidates[0].repairKey,
+			});
+		const after = await t.run(async (ctx) => ({
+			engagement: await ctx.db.get(orphan.engagementId),
+			session: await ctx.db.get(orphan.sessionId),
+			verification: await ctx.db.get(orphan.verificationId),
+		}));
+		const afterRoster = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.listLawyerRosterPage, {
+				filters: { profileKind: "all", urgency: "all" },
+				pagination: { cursor: null, pageSize: 25 },
+				search: "",
+				sort: "urgency",
+			});
+
+		expect(repaired).toMatchObject({
+			linkedCounts: {
+				engagements: 1,
+				onboardingSessions: 1,
+				verifications: 1,
+			},
+		});
+		expect(typeof repaired.profileId).toBe("string");
+		const repairedProfileId = repaired.profileId;
+		expect(after.session?.lawyerProfileId).toBe(repairedProfileId);
+		expect(after.verification?.lawyerProfileId).toBe(repairedProfileId);
+		expect(after.engagement?.lawyerProfileId).toBe(repairedProfileId);
+		expect(afterRoster.rows).toHaveLength(1);
+		expect(afterRoster.rows[0]).toMatchObject({
+			activeDealCount: 1,
+			email: "orphan.guest@example.test",
+			profileId: repairedProfileId,
+			profileKind: "guest",
+		});
+	});
+
+	it("surfaces deal-scoped guest invitations before a lawyer profile exists", async () => {
+		const t = createHarness();
+		const { guestProfileId } = await seedLawyerRosterRows(t);
+		await t.run(async (ctx) => {
+			await ctx.db.delete(guestProfileId);
+		});
+
+		const roster = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.listLawyerRosterPage, {
+				filters: { profileKind: "all", urgency: "all" },
+				pagination: { cursor: null, pageSize: 25 },
+				search: "guest@example.test",
+				sort: "latest_activity",
+			});
+
+		expect(roster.rows).toHaveLength(1);
+		expect(roster.rows[0]).toMatchObject({
+			activeDealCount: 1,
+			displayName: "Guest Lawyer",
+			email: "guest@example.test",
+			identityStatus: "missing_profile",
+			invitationStatus: "pending",
+			profileId: null,
+		});
+		expect(roster.summary.identityRepairs).toBe(1);
+	});
+
+	it("counts active lawyer deal access separately from accepted deal invitations", async () => {
+		const t = createHarness();
+		const { dealId } = await seedLawyerRosterRows(t);
+		await t.run(async (ctx) => {
+			await ctx.db.insert("users", {
+				authId: "user_guest_accepted_lawyer",
+				email: "guest@example.test",
+				firstName: "Guest",
+				lastName: "Lawyer",
+			});
+			await ctx.db.patch(dealId, {
+				lawyerId: "legacy-invite-target@example.test",
+				status: "fundsTransfer.pending",
+			});
+			const invitation = await ctx.db
+				.query("lawyerInvitations")
+				.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+				.first();
+			if (invitation) {
+				await ctx.db.patch(invitation._id, {
+					acceptedAt: Date.UTC(2026, 4, 3),
+					resolvedAuthId: "user_guest_accepted_lawyer",
+					status: "verified",
+					updatedAt: Date.UTC(2026, 4, 3),
+					verifiedAt: Date.UTC(2026, 4, 3),
+				});
+			}
+			await ctx.db.insert("dealAccess", {
+				dealId,
+				grantedAt: Date.UTC(2026, 4, 3),
+				grantedBy: "test",
+				role: "guest_lawyer",
+				status: "active",
+				userId: "user_guest_accepted_lawyer",
+			});
+		});
+
+		const roster = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.listLawyerRosterPage, {
+				filters: { profileKind: "all", urgency: "all" },
+				pagination: { cursor: null, pageSize: 25 },
+				search: "guest@example.test",
+				sort: "latest_activity",
+			});
+
+		expect(roster.rows[0]).toMatchObject({
+			activeDealCount: 1,
+			displayName: "Guest Lawyer",
+			invitationStatus: "verified",
+			pastDealCount: 0,
+			pendingDealInviteCount: 0,
+		});
+	});
+
+	it("hydrates auth-only repair candidates from synced users", async () => {
+		const t = createHarness();
+		const { dealId } = await seedLawyerRosterRows(t);
+		await t.run(async (ctx) => {
+			await ctx.db.insert("users", {
+				authId: "user_auth_only_lawyer",
+				email: "auth.only@example.test",
+				firstName: "Auth",
+				lastName: "Only",
+			});
+			await ctx.db.insert("representationEngagements", {
+				createdAt: Date.UTC(2026, 4, 4),
+				dealId,
+				lawyerAuthId: "user_auth_only_lawyer",
+				provider: "manual_admin",
+				status: "signed",
+				updatedAt: Date.UTC(2026, 4, 4),
+			});
+		});
+
+		const roster = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.listLawyerRosterPage, {
+				filters: { profileKind: "all", urgency: "all" },
+				pagination: { cursor: null, pageSize: 25 },
+				search: "auth.only@example.test",
+				sort: "latest_activity",
+			});
+
+		expect(roster.rows[0]).toMatchObject({
+			displayName: "Auth Only",
+			email: "auth.only@example.test",
+			identityStatus: "missing_profile",
+		});
+	});
+
+	it("previews and manually repairs missing lawyer identity outcomes", async () => {
+		const t = createHarness();
+		await seedOrphanedGuestLawyerEvidence(t);
+		const repairQueue = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.listLawyerProfileRepairQueue, {});
+
+		const preview = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.getLawyerProfileRepairPreview, {
+				repairKey: repairQueue.candidates[0].repairKey,
+			});
+
+		expect(preview).toMatchObject({
+			canAutoRepair: true,
+			suggestedProfile: {
+				displayName: "Olivia Orphan",
+				email: "orphan.guest@example.test",
+				jurisdiction: "ON",
+			},
+		});
+		expect(preview.evidenceRecords.length).toBeGreaterThan(0);
+
+		const repaired = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(adminLawyersApi.repairLawyerProfileIdentity, {
+				overrides: {
+					displayName: "Olivia Manual",
+					email: "manual.orphan@example.test",
+					firmName: "Manual Law",
+				},
+				repairKey: repairQueue.candidates[0].repairKey,
+			});
+
+		const profile = await t.run(async (ctx) => ctx.db.get(repaired.profileId));
+		expect(profile).toMatchObject({
+			displayName: "Olivia Manual",
+			email: "manual.orphan@example.test",
+			firmName: "Manual Law",
+		});
+	});
 });
 
 describe("admin lawyer detail projection and actions", () => {
+	it("lets admins update lawyer profile record fields from the detail surface", async () => {
+		const t = createHarness();
+		const { guestProfileId } = await seedLawyerRosterRows(t);
+
+		await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(adminLawyersApi.updateLawyerProfileAdmin, {
+				barNumber: "lso 999",
+				displayName: "Guest Legal Updated",
+				email: "Guest.Updated@Example.Test",
+				firmName: "Updated Law",
+				jurisdiction: "on",
+				profileId: guestProfileId,
+			});
+		const profile = await t.run(async (ctx) => ctx.db.get(guestProfileId));
+
+		expect(profile).toMatchObject({
+			barNumber: "LSO999",
+			displayName: "Guest Legal Updated",
+			email: "Guest.Updated@Example.Test",
+			firmName: "Updated Law",
+			jurisdiction: "ON",
+			normalizedEmail: "guest.updated@example.test",
+		});
+	});
+
+	it("lets admins attach missing LSO evidence to an existing lawyer profile", async () => {
+		const t = createHarness();
+		const { guestProfileId } = await seedLawyerRosterRows(t);
+		const lsoLawyerId = await t.run(async (ctx) =>
+			ctx.db.insert("lsoLawyers", {
+				barNumber: "L200002",
+				displayName: "Guest Lawyer",
+				entitledToPractise: true,
+				jurisdiction: "ON",
+				licenseeType: "lawyer",
+				licensingStatus: "licensed",
+				normalizedName: "guest lawyer",
+				restrictionStatus: "clear",
+				source: "lso_import",
+				sourceFetchedAt: Date.UTC(2026, 4, 3),
+				sourceSnapshot: { source: "test_fixture" },
+				updatedAt: Date.UTC(2026, 4, 3),
+			})
+		);
+
+		const result = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(adminLawyersApi.repairLawyerProfileLsoLink, {
+				lsoLawyerId,
+				profileId: guestProfileId,
+			});
+		const rows = await t.run(async (ctx) => {
+			const profile = await ctx.db.get(guestProfileId);
+			const verification = profile?.latestVerificationId
+				? await ctx.db.get(profile.latestVerificationId)
+				: null;
+			return { profile, verification };
+		});
+
+		expect(result).toMatchObject({ lsoLawyerId, profileId: guestProfileId });
+		expect(rows.verification).toMatchObject({
+			lawyerProfileId: guestProfileId,
+			lsoLawyerId,
+			outcome: "eligible",
+			provider: "manual_admin",
+		});
+		expect(rows.profile?.latestVerificationId).toBe(rows.verification?._id);
+	});
+
 	it("returns detail sections for a selected lawyer profile", async () => {
 		const t = createHarness();
 		const { guestProfileId } = await seedLawyerRosterRows(t);
@@ -511,6 +1024,21 @@ describe("admin lawyer detail projection and actions", () => {
 		expect(pending).toMatchObject({
 			action: "created_pending_invite",
 			deliveryStatus: "pending",
+		});
+		const roster = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.listLawyerRosterPage, {
+				filters: { profileKind: "all", urgency: "all" },
+				pagination: { cursor: null, pageSize: 25 },
+				search: "pending.platform@example.test",
+				sort: "latest_activity",
+			});
+		expect(roster.rows[0]).toMatchObject({
+			displayName: "Pending Lawyer",
+			identityStatus: "linked",
+			invitationStatus: "pending",
+			platformStatus: "invited",
+			profileKind: "platform",
 		});
 	});
 

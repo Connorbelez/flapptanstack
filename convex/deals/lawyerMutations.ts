@@ -145,14 +145,31 @@ async function transitionDealFromLawyerPortal(
 	dealId: Id<"deals">,
 	eventType: "REPRESENTATION_CONFIRMED" | "LAWYER_APPROVED_DOCUMENTS"
 ): Promise<TransitionResult> {
-	const result = await executeTransition(ctx, {
-		entityId: dealId,
-		entityType: "deal",
+	return transitionDeal(ctx, {
+		dealId,
 		eventType,
 		source: lawyerSource(ctx.viewer),
 	});
+}
+
+async function transitionDeal(
+	ctx: LawyerMutationCtx,
+	args: {
+		dealId: Id<"deals">;
+		eventType: "REPRESENTATION_CONFIRMED" | "LAWYER_APPROVED_DOCUMENTS";
+		source: CommandSource;
+	}
+): Promise<TransitionResult> {
+	const result = await executeTransition(ctx, {
+		entityId: args.dealId,
+		entityType: "deal",
+		eventType: args.eventType,
+		source: args.source,
+	});
 	if (!result.success) {
-		throw new ConvexError(result.reason ?? `Transition rejected: ${eventType}`);
+		throw new ConvexError(
+			result.reason ?? `Transition rejected: ${args.eventType}`
+		);
 	}
 	return result;
 }

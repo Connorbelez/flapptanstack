@@ -93,6 +93,7 @@ async function seedPortalDeal(
 		lawyerEmail?: string;
 		lawyerAccessUserId?: string;
 		lawyerOnboardingSessionStatus?: Doc<"lawyerOnboardingSessions">["status"];
+		missingPaymentProofAsset?: boolean;
 		withPaymentProof?: boolean;
 		withRepresentationInvitation?: boolean;
 	}
@@ -322,6 +323,9 @@ async function seedPortalDeal(
 				transferDate: NOW,
 				updatedAt: NOW + 2,
 			});
+			if (args.missingPaymentProofAsset) {
+				await ctx.db.delete(assetId);
+			}
 		}
 		return { dealId };
 	});
@@ -369,6 +373,7 @@ describe("deal portal shared projection", () => {
 
 		expect(result).toMatchObject({
 			activeScreen: "representation",
+			deal: { dealValue: 125_000 },
 			viewer: { persona: "purchasing_lender" },
 		});
 		expect(result.capabilities).toContain("representation.invitation.resend");
@@ -576,15 +581,31 @@ describe("deal portal shared projection", () => {
 		expectOnboardingOnlyWorkspace(workspace);
 	});
 
-	it("shows admin payment review records and redacts them for lender viewers", async () => {
+	it("shows payment review attachment previews to admins and upload-capable deal personas", async () => {
 		const t = createHarness();
+		const lawyerAuthId = "lawyer-payment-auth";
+		const lawyerEmail = "lawyer-payment@example.test";
 		const { dealId } = await seedPortalDeal(t, {
+			closingTeamAccessUserId: lawyerAuthId,
 			dealStatus: "fundsTransfer.pending",
+			lawyerAccessUserId: lawyerAuthId,
+			lawyerEmail,
+			lawyerOnboardingSessionStatus: "complete",
 			withPaymentProof: true,
 		});
 
 		const adminResult = await getWorkspace(t, ADMIN_IDENTITY, dealId);
 		const lenderResult = await getWorkspace(t, LENDER_IDENTITY, dealId);
+		const lawyerResult = await getWorkspace(
+			t,
+			identity({
+				authId: lawyerAuthId,
+				email: lawyerEmail,
+				role: "lawyer",
+				roles: ["lawyer"],
+			}),
+			dealId
+		);
 
 		expect(adminResult.activeScreen).toBe("payment");
 		expect(adminResult.capabilities).toContain("payment.proof.review");
@@ -592,6 +613,16 @@ describe("deal portal shared projection", () => {
 		expect(adminResult.payment.adminReview).toEqual({
 			proofs: [
 				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							assetId: expect.any(String),
+							fileSize: 10,
+							mimeType: "application/pdf",
+							name: "wire-proof.pdf",
+							originalFilename: "wire-proof.pdf",
+							url: expect.any(String),
+						}),
+					],
 					reviewReason: "Matches expected funds transfer.",
 					reviewedBy: ADMIN_AUTH_ID,
 					status: "approved",
@@ -600,10 +631,117 @@ describe("deal portal shared projection", () => {
 		});
 		expect(lenderResult.viewer.persona).toBe("purchasing_lender");
 		expect(lenderResult.payment.proofs).toHaveLength(1);
-		expect(lenderResult.payment.adminReview).toBeNull();
-		expect(JSON.stringify(lenderResult.payment)).not.toContain(
-			"Matches expected funds transfer."
-		);
+		expect(lenderResult.payment.adminReview).toEqual({
+			proofs: [
+				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							mimeType: "application/pdf",
+							name: "wire-proof.pdf",
+							url: expect.any(String),
+						}),
+					],
+					status: "approved",
+				}),
+			],
+		});
+		expect(lenderResult.capabilities).not.toContain("payment.proof.approve");
+		expect(lenderResult.capabilities).not.toContain("payment.proof.reject");
+		expect(lawyerResult.viewer.persona).toBe("primary_lawyer");
+		expect(lawyerResult.payment.adminReview).toEqual({
+			proofs: [
+				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							mimeType: "application/pdf",
+							name: "wire-proof.pdf",
+							url: expect.any(String),
+						}),
+					],
+					status: "approved",
+				}),
+			],
+		});
+		expect(lawyerResult.capabilities).not.toContain("payment.proof.approve");
+		expect(lawyerResult.capabilities).not.toContain("payment.proof.reject");
+	});
+
+	it("shows payment proof attachments to involved brokers without approval capabilities", async () => {
+		const t = createHarness();
+		const { dealId } = await seedPortalDeal(t, {
+			dealStatus: "fundsTransfer.pending",
+			withPaymentProof: true,
+		});
+
+		const brokerResult = await getWorkspace(t, BROKER_IDENTITY, dealId);
+
+		expect(brokerResult.viewer.persona).toBe("broker_of_record");
+		expect(brokerResult.capabilities).toContain("payment.proof.review");
+		expect(brokerResult.capabilities).not.toContain("payment.proof.approve");
+		expect(brokerResult.capabilities).not.toContain("payment.proof.reject");
+		expect(brokerResult.payment.adminReview).toEqual({
+			proofs: [
+				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							mimeType: "application/pdf",
+							name: "wire-proof.pdf",
+							url: expect.any(String),
+						}),
+					],
+					status: "approved",
+				}),
+			],
+		});
+	});
+
+	it("keeps review rows available when a payment proof attachment URL is unavailable", async () => {
+		const t = createHarness();
+		const { dealId } = await seedPortalDeal(t, {
+			dealStatus: "fundsTransfer.pending",
+			missingPaymentProofAsset: true,
+			withPaymentProof: true,
+		});
+
+		const adminResult = await getWorkspace(t, ADMIN_IDENTITY, dealId);
+
+		expect(adminResult.payment.adminReview).toEqual({
+			proofs: [
+				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							assetId: expect.any(String),
+							fileSize: null,
+							mimeType: null,
+							name: "Unavailable attachment",
+							originalFilename: "Unavailable attachment",
+							url: null,
+						}),
+					],
+					status: "approved",
+				}),
+			],
+		});
+	});
+
+	it("exposes empty document progression to involved active deal personas", async () => {
+		const t = createHarness();
+		const { dealId } = await seedPortalDeal(t, {
+			dealStatus: "documentReview.pending",
+		});
+
+		const workspaces = await Promise.all([
+			getWorkspace(t, LENDER_IDENTITY, dealId),
+			getWorkspace(t, SELLER_IDENTITY, dealId),
+			getWorkspace(t, BROKER_IDENTITY, dealId),
+			getWorkspace(t, ADMIN_IDENTITY, dealId),
+		]);
+
+		for (const workspace of workspaces) {
+			expect(workspace.activeScreen).toBe("documents");
+			expect(workspace.documents.instances).toEqual([]);
+			expect(workspace.capabilities).toContain("documents.skipEmpty");
+		}
 	});
 
 	it("keeps broker and seller personas view-only for payment proof by default", async () => {

@@ -21,6 +21,12 @@ const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
 	"image/png",
 	"image/webp",
 ]);
+const paymentProofMimeTypeValidator = v.union(
+	v.literal("application/pdf"),
+	v.literal("image/jpeg"),
+	v.literal("image/png"),
+	v.literal("image/webp")
+);
 const MIN_TRANSFER_DATE_MS = Date.UTC(2000, 0, 1);
 const MAX_TRANSFER_DATE_FUTURE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -131,6 +137,14 @@ function assertValidTransferDate(transferDate: number, now = Date.now()) {
 			"Transfer date cannot be more than 7 days in the future"
 		);
 	}
+}
+
+async function assertPaymentProofAssetUploadAllowed(
+	ctx: DbContext,
+	args: { dealId: Id<"deals">; viewer: Viewer }
+): Promise<PaymentProofSubmitterRole> {
+	assertFundsPending(await ctx.db.get(args.dealId));
+	return await resolveUploaderRole(ctx, args);
 }
 
 async function viewerUserId(
@@ -611,6 +625,79 @@ export const getCashLedgerIdsForPaymentProofInternal = convex
 		}
 	)
 	.internal();
+
+export const generatePaymentProofUploadUrl = authedMutation
+	.input({ dealId: v.id("deals") })
+	.returns(v.object({ uploadUrl: v.string() }))
+	.handler(async (ctx, args) => {
+		await assertPaymentProofAssetUploadAllowed(ctx, {
+			dealId: args.dealId,
+			viewer: ctx.viewer,
+		});
+		return { uploadUrl: await ctx.storage.generateUploadUrl() };
+	})
+	.public();
+
+export const createPaymentProofAsset = authedMutation
+	.input({
+		dealId: v.id("deals"),
+		description: v.optional(v.string()),
+		fileHash: v.string(),
+		fileRef: v.id("_storage"),
+		fileSize: v.number(),
+		mimeType: paymentProofMimeTypeValidator,
+		name: v.string(),
+		originalFilename: v.string(),
+	})
+	.returns(
+		v.object({
+			assetId: v.id("documentAssets"),
+			duplicate: v.boolean(),
+		})
+	)
+	.handler(async (ctx, args) => {
+		await assertPaymentProofAssetUploadAllowed(ctx, {
+			dealId: args.dealId,
+			viewer: ctx.viewer,
+		});
+		if (args.fileSize <= 0) {
+			throw new ConvexError("Payment proof attachment cannot be empty");
+		}
+		if (!ALLOWED_ATTACHMENT_MIME_TYPES.has(args.mimeType)) {
+			throw new ConvexError("Payment proof attachment type is not supported");
+		}
+
+		const uploadedByUserId = await viewerUserId(ctx, ctx.viewer);
+		const matchingAssets = await ctx.db
+			.query("documentAssets")
+			.withIndex("by_hash", (query) => query.eq("fileHash", args.fileHash))
+			.collect();
+		const existingOwnPaymentProofAsset = matchingAssets.find(
+			(asset) =>
+				asset.source === "payment_proof_upload" &&
+				asset.uploadedByUserId === uploadedByUserId
+		);
+		if (existingOwnPaymentProofAsset) {
+			return { assetId: existingOwnPaymentProofAsset._id, duplicate: true };
+		}
+
+		const trimmedName = args.name.trim() || "Payment proof";
+		const assetId = await ctx.db.insert("documentAssets", {
+			description: args.description,
+			fileHash: args.fileHash,
+			fileRef: args.fileRef,
+			fileSize: args.fileSize,
+			mimeType: args.mimeType,
+			name: trimmedName,
+			originalFilename: args.originalFilename.trim() || trimmedName,
+			source: "payment_proof_upload",
+			uploadedAt: Date.now(),
+			uploadedByUserId,
+		});
+
+		return { assetId, duplicate: false };
+	})
+	.public();
 
 export const markManualPaymentProofApprovedInternal = convex
 	.mutation()

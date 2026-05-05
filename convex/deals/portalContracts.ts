@@ -20,6 +20,7 @@ export type DealPortalCapability =
 	| "representation.progressDeal"
 	| "documents.generate"
 	| "documents.approve"
+	| "documents.skipEmpty"
 	| "documents.sign"
 	| "payment.proof.upload"
 	| "payment.proof.review"

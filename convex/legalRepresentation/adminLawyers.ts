@@ -3,16 +3,25 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
 import { FAIRLEND_LAWYERS_ORG_ID } from "../constants";
+import {
+	isActiveLawyerMatterStatus,
+	isPastLawyerMatterStatus,
+} from "../deals/status";
 import { getWorkosProvisioning } from "../engine/effects/workosProvisioning";
 import { adminMutation, adminQuery, convex } from "../fluent";
 import {
+	normalizeBarNumber,
+	normalizeJurisdiction,
 	normalizeLawyerEmail,
 	normalizeLegalWhitespace,
 } from "./normalization";
 import {
+	type UpsertGuestLawyerProfileArgs,
 	type UpsertPlatformLawyerProfileArgs,
+	upsertGuestLawyerProfile,
 	upsertPlatformLawyerProfile,
 } from "./profiles";
+import { buildManualLawyerVerificationResult } from "./providers";
 import {
 	type LawyerVerificationOutcome,
 	legalRepresentationPlatformStatusValidator,
@@ -20,19 +29,13 @@ import {
 	type PlatformLawyerRestrictionRecheckStatus,
 	type PlatformLawyerSlaReviewStatus,
 } from "./validators";
+import { recordLawyerVerificationRow } from "./verifications";
 
 const MAX_PAGE_SIZE = 50;
 const MAX_ROSTER_SCAN = 500;
 const INVITATION_EXPIRING_WINDOW_MS = 48 * 60 * 60 * 1000;
 const LAWYER_ROLE_SLUG = "lawyer";
 const DELIVERY_ERROR_MAX_LENGTH = 400;
-const ACTIVE_DEAL_STATUSES = new Set([
-	"lawyerOnboarding.pending",
-	"lawyerOnboarding.verified",
-	"documentReview.pending",
-	"documentReview.signed",
-]);
-
 const urgencyValidator = v.union(
 	v.literal("all"),
 	v.literal("sla_breached"),
@@ -103,6 +106,18 @@ const platformInviteResolutionValidator = v.union(
 	v.literal("create_pending")
 );
 
+const lawyerIdentityRepairOverridesValidator = v.optional(
+	v.object({
+		authId: v.optional(v.string()),
+		barNumber: v.optional(v.string()),
+		displayName: v.optional(v.string()),
+		email: v.optional(v.string()),
+		firmName: v.optional(v.string()),
+		jurisdiction: v.optional(v.string()),
+		lsoLawyerId: v.optional(v.id("lsoLawyers")),
+	})
+);
+
 export type AdminLawyerUrgency =
 	| "sla_breached"
 	| "representation_override_needed"
@@ -130,6 +145,11 @@ export interface AdminLawyerRosterRow {
 	readonly displayName: string;
 	readonly email: string;
 	readonly firmName: string | null;
+	readonly identityRepair: {
+		readonly repairKey: string;
+		readonly totalEvidenceRecords: number;
+	} | null;
+	readonly identityStatus: "linked" | "missing_profile";
 	readonly invitationStatus:
 		| Doc<"lawyerInvitations">["status"]
 		| Doc<"platformLawyerInvitations">["status"]
@@ -145,6 +165,8 @@ export interface AdminLawyerRosterRow {
 		readonly verificationId: Id<"lawyerVerifications">;
 	} | null;
 	readonly nextAction: string;
+	readonly pastDealCount: number;
+	readonly pendingDealInviteCount: number;
 	readonly platformInvitation: {
 		readonly deliveryStatus:
 			| Doc<"platformLawyerInvitations">["deliveryStatus"]
@@ -164,12 +186,13 @@ export interface AdminLawyerRosterRow {
 	readonly platformStatus:
 		| Doc<"lawyerProfiles">["platformStatus"]
 		| "not_platform";
-	readonly profileId: Id<"lawyerProfiles">;
+	readonly profileId: Id<"lawyerProfiles"> | null;
 	readonly profileKind: Doc<"lawyerProfiles">["profileKind"];
 	readonly restrictionRecheckStatus:
 		| PlatformLawyerRestrictionRecheckStatus
 		| "due"
 		| "none";
+	readonly rowKey: string;
 	readonly slaStatus: PlatformLawyerSlaReviewStatus | "none";
 	readonly urgency: AdminLawyerUrgency;
 	readonly verificationStatus: LawyerVerificationOutcome | "not_verified";
@@ -428,24 +451,72 @@ async function availabilityForProfile(
 	};
 }
 
-function lawyerAuthTargets(profile: Doc<"lawyerProfiles">) {
-	return new Set(
-		[
-			profile.authId,
-			profile.normalizedEmail,
-			profile.email.toLowerCase(),
-		].filter(
-			(target): target is string =>
-				typeof target === "string" && target.length > 0
-		)
-	);
+function addLawyerTarget(targets: Set<string>, value: string | undefined) {
+	if (value === undefined) {
+		return;
+	}
+	const normalized = value.trim();
+	if (normalized.length === 0) {
+		return;
+	}
+	targets.add(normalized);
+	targets.add(normalized.toLowerCase());
+}
+
+async function lawyerAuthTargets(
+	ctx: Pick<QueryCtx, "db">,
+	profile: Doc<"lawyerProfiles">
+) {
+	const targets = new Set<string>();
+	addLawyerTarget(targets, profile.authId);
+	addLawyerTarget(targets, profile.normalizedEmail);
+	addLawyerTarget(targets, profile.email);
+	const userByEmail = await ctx.db
+		.query("users")
+		.withIndex("by_email", (query) => query.eq("email", profile.email))
+		.first();
+	const userByNormalizedEmail =
+		profile.normalizedEmail === profile.email
+			? null
+			: await ctx.db
+					.query("users")
+					.withIndex("by_email", (query) =>
+						query.eq("email", profile.normalizedEmail)
+					)
+					.first();
+	addLawyerTarget(targets, userByEmail?.authId);
+	addLawyerTarget(targets, userByNormalizedEmail?.authId);
+	return targets;
+}
+
+function isLawyerDealAccess(access: Doc<"dealAccess">) {
+	return access.role === "platform_lawyer" || access.role === "guest_lawyer";
+}
+
+async function addDealById(
+	ctx: Pick<QueryCtx, "db">,
+	args: {
+		readonly dealId: Id<"deals">;
+		readonly deals: Doc<"deals">[];
+		readonly seen: Set<Id<"deals">>;
+	}
+) {
+	if (args.seen.has(args.dealId)) {
+		return;
+	}
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal) {
+		return;
+	}
+	args.seen.add(deal._id);
+	args.deals.push(deal);
 }
 
 async function dealsForProfile(
 	ctx: Pick<QueryCtx, "db">,
 	profile: Doc<"lawyerProfiles">
 ) {
-	const targets = lawyerAuthTargets(profile);
+	const targets = await lawyerAuthTargets(ctx, profile);
 	const deals: Doc<"deals">[] = [];
 	const seen = new Set<Id<"deals">>();
 	for (const target of targets) {
@@ -459,9 +530,29 @@ async function dealsForProfile(
 				deals.push(deal);
 			}
 		}
+		const accessRows = await ctx.db
+			.query("dealAccess")
+			.withIndex("by_user", (query) => query.eq("userId", target))
+			.collect();
+		for (const access of accessRows) {
+			if (access.status !== "active" || !isLawyerDealAccess(access)) {
+				continue;
+			}
+			await addDealById(ctx, { dealId: access.dealId, deals, seen });
+		}
+		const engagements = await ctx.db
+			.query("representationEngagements")
+			.withIndex("by_lawyer", (query) => query.eq("lawyerAuthId", target))
+			.collect();
+		for (const engagement of engagements) {
+			await addDealById(ctx, { dealId: engagement.dealId, deals, seen });
+		}
 	}
 	return deals.filter((deal) => {
 		if (deal.lawyerId && targets.has(deal.lawyerId.toLowerCase())) {
+			return true;
+		}
+		if (seen.has(deal._id)) {
 			return true;
 		}
 		const selectedLawyer = deal.selectedLawyer;
@@ -520,7 +611,7 @@ async function needsRepresentationOverride(
 }
 
 function activeDealCount(deals: readonly Doc<"deals">[]) {
-	return deals.filter((deal) => ACTIVE_DEAL_STATUSES.has(deal.status)).length;
+	return deals.filter((deal) => isActiveLawyerMatterStatus(deal.status)).length;
 }
 
 function deriveSlaStatus(args: {
@@ -620,31 +711,31 @@ function nextActionForUrgency(urgency: AdminLawyerUrgency) {
 	}
 }
 
-function matchesSearch(profile: Doc<"lawyerProfiles">, search: string) {
-	const normalized = search.trim().toLowerCase();
-	if (normalized.length === 0) {
-		return true;
-	}
-	return [
-		profile.displayName,
-		profile.email,
-		profile.firmName ?? "",
-		profile.barNumber ?? "",
-		profile.jurisdiction ?? "",
-	]
-		.join(" ")
-		.toLowerCase()
-		.includes(normalized);
-}
-
-function profileKindMatches(
-	profile: Doc<"lawyerProfiles">,
+function rowProfileKindMatches(
+	row: AdminLawyerRosterRow,
 	filter: "all" | "platform" | "guest" | "both"
 ) {
 	if (filter === "all") {
 		return true;
 	}
-	return profile.profileKind === filter;
+	return row.profileKind === filter;
+}
+
+function matchesRosterRowSearch(row: AdminLawyerRosterRow, search: string) {
+	const normalized = search.trim().toLowerCase();
+	if (normalized.length === 0) {
+		return true;
+	}
+	return [
+		row.displayName,
+		row.email,
+		row.firmName ?? "",
+		row.barNumber ?? "",
+		row.jurisdiction ?? "",
+	]
+		.join(" ")
+		.toLowerCase()
+		.includes(normalized);
 }
 
 function platformStatusMatches(
@@ -709,7 +800,13 @@ async function buildRosterRow(
 	const invitation = latestInvitation(invitations);
 	const platformInvitation = latestPlatformInvitation(platformInvitations);
 	const onboardingSession = latestOnboardingSession(onboardingSessions);
-	const dealCount = metrics?.activeDealCount ?? activeDealCount(deals);
+	const pendingDealInviteCount = invitations.filter(
+		(row) => row.status === "pending"
+	).length;
+	const dealCount = activeDealCount(deals);
+	const pastDealCount = deals.filter((deal) =>
+		isPastLawyerMatterStatus(deal.status)
+	).length;
 	const capacityLimit =
 		metrics?.capacityLimit ?? assignment?.capacityLimit ?? null;
 	const capacityWarning =
@@ -757,6 +854,8 @@ async function buildRosterRow(
 			...deals.map((deal) => deal.createdAt)
 		),
 		nextAction: nextActionForUrgency(urgency),
+		pastDealCount,
+		pendingDealInviteCount,
 		platformStatus: includesPlatform(profile)
 			? (profile.platformStatus ?? "invited")
 			: "not_platform",
@@ -764,9 +863,12 @@ async function buildRosterRow(
 		platformOnboardingSession: summarizeOnboardingSession(onboardingSession),
 		jurisdiction: profile.jurisdiction ?? null,
 		latestVerification: summarizeVerification(verification),
+		identityRepair: null,
+		identityStatus: "linked",
 		profileId: profile._id,
 		profileKind: profile.profileKind,
 		restrictionRecheckStatus: restrictionStatus,
+		rowKey: `profile:${String(profile._id)}`,
 		slaStatus,
 		urgency,
 		verificationStatus: verification?.outcome ?? "not_verified",
@@ -776,6 +878,9 @@ async function buildRosterRow(
 function summarizeRows(rows: readonly AdminLawyerRosterRow[]) {
 	return {
 		atCapacity: rows.filter((row) => row.urgency === "at_capacity").length,
+		identityRepairs: rows.filter(
+			(row) => row.identityStatus === "missing_profile"
+		).length,
 		invitationsExpiring: rows.filter(
 			(row) => row.urgency === "invitation_expiring"
 		).length,
@@ -881,13 +986,18 @@ export const listLawyerRosterPage = adminQuery
 			.query("lawyerProfiles")
 			.take(MAX_ROSTER_SCAN + 1);
 		const boundedProfiles = profiles.slice(0, MAX_ROSTER_SCAN);
-		const rows = await Promise.all(
-			boundedProfiles
-				.filter((profile) => matchesSearch(profile, args.search))
-				.filter((profile) =>
-					profileKindMatches(profile, args.filters.profileKind)
-				)
-				.map(async (profile) => await buildRosterRow(ctx, profile, now))
+		const profileRows = await Promise.all(
+			boundedProfiles.map(
+				async (profile) => await buildRosterRow(ctx, profile, now)
+			)
+		);
+		const repairRows = (await collectLawyerProfileRepairCandidates(ctx)).map(
+			buildRepairRosterRow
+		);
+		const rows = [...profileRows, ...repairRows].filter(
+			(row) =>
+				matchesRosterRowSearch(row, args.search) &&
+				rowProfileKindMatches(row, args.filters.profileKind)
 		);
 		const filteredRows = rows.filter(
 			(row) =>
@@ -1012,8 +1122,8 @@ export const getLawyerAdminDetail = adminQuery
 				),
 			},
 			deals: {
-				active: deals.filter((deal) => ACTIVE_DEAL_STATUSES.has(deal.status)),
-				recent: deals.filter((deal) => !ACTIVE_DEAL_STATUSES.has(deal.status)),
+				active: deals.filter((deal) => isActiveLawyerMatterStatus(deal.status)),
+				recent: deals.filter((deal) => isPastLawyerMatterStatus(deal.status)),
 			},
 			invitations: {
 				active: activeInvitations,
@@ -1053,6 +1163,906 @@ export const getLawyerAdminDetail = adminQuery
 			verifications: [...verifications].sort(
 				(a, b) => b.createdAt - a.createdAt
 			),
+		};
+	})
+	.public();
+
+interface LawyerProfileRepairCandidateDraft {
+	authId: string | null;
+	barNumber: string | null;
+	dealIds: Set<Id<"deals">>;
+	displayName: string | null;
+	email: string | null;
+	engagementIds: Set<Id<"representationEngagements">>;
+	firmName: string | null;
+	invitationIds: Set<Id<"lawyerInvitations">>;
+	jurisdiction: string | null;
+	latestActivityAt: number;
+	latestInvitation: Doc<"lawyerInvitations"> | null;
+	latestVerification: Doc<"lawyerVerifications"> | null;
+	onboardingSessionIds: Set<Id<"lawyerOnboardingSessions">>;
+	repairKey: string;
+	sourceKinds: Set<string>;
+	verificationIds: Set<Id<"lawyerVerifications">>;
+}
+
+type RepairCandidateMap = Map<string, LawyerProfileRepairCandidateDraft>;
+type RepairEvidenceTable =
+	| "deals"
+	| "lawyerInvitations"
+	| "lawyerOnboardingSessions"
+	| "lawyerVerifications"
+	| "representationEngagements";
+
+interface RepairEvidenceRecord {
+	readonly label: string;
+	readonly recordId: string;
+	readonly summary: string;
+	readonly table: RepairEvidenceTable;
+}
+
+function repairKeyForIdentity(args: {
+	readonly authId?: string | null;
+	readonly barNumber?: string | null;
+	readonly email?: string | null;
+	readonly jurisdiction?: string | null;
+}) {
+	if (args.authId) {
+		return `auth:${args.authId}`;
+	}
+	if (args.email) {
+		return `email:${normalizeLawyerEmail(args.email)}`;
+	}
+	if (args.barNumber && args.jurisdiction) {
+		return `license:${normalizeBarNumber(args.barNumber)}:${normalizeJurisdiction(args.jurisdiction)}`;
+	}
+	return null;
+}
+
+function repairKeysForIdentity(args: {
+	readonly authId?: string | null;
+	readonly barNumber?: string | null;
+	readonly email?: string | null;
+	readonly jurisdiction?: string | null;
+}) {
+	const keys: string[] = [];
+	if (args.authId) {
+		keys.push(`auth:${args.authId}`);
+	}
+	if (args.email) {
+		keys.push(`email:${normalizeLawyerEmail(args.email)}`);
+	}
+	if (args.barNumber && args.jurisdiction) {
+		keys.push(
+			`license:${normalizeBarNumber(args.barNumber)}:${normalizeJurisdiction(args.jurisdiction)}`
+		);
+	}
+	return keys;
+}
+
+function emptyRepairCandidate(args: {
+	readonly authId?: string | null;
+	readonly barNumber?: string | null;
+	readonly displayName?: string | null;
+	readonly email?: string | null;
+	readonly firmName?: string | null;
+	readonly jurisdiction?: string | null;
+	readonly latestActivityAt: number;
+	readonly repairKey: string;
+}) {
+	return {
+		authId: args.authId ?? null,
+		barNumber: args.barNumber ?? null,
+		dealIds: new Set<Id<"deals">>(),
+		displayName: args.displayName ?? null,
+		email: args.email ? normalizeLawyerEmail(args.email) : null,
+		engagementIds: new Set<Id<"representationEngagements">>(),
+		firmName: args.firmName ?? null,
+		jurisdiction: args.jurisdiction
+			? normalizeJurisdiction(args.jurisdiction)
+			: null,
+		latestActivityAt: args.latestActivityAt,
+		onboardingSessionIds: new Set<Id<"lawyerOnboardingSessions">>(),
+		invitationIds: new Set<Id<"lawyerInvitations">>(),
+		latestInvitation: null,
+		latestVerification: null,
+		repairKey: args.repairKey,
+		sourceKinds: new Set<string>(),
+		verificationIds: new Set<Id<"lawyerVerifications">>(),
+	} satisfies LawyerProfileRepairCandidateDraft;
+}
+
+function mergeRepairCandidateIdentity(
+	candidate: LawyerProfileRepairCandidateDraft,
+	args: {
+		readonly authId?: string | null;
+		readonly barNumber?: string | null;
+		readonly displayName?: string | null;
+		readonly email?: string | null;
+		readonly firmName?: string | null;
+		readonly jurisdiction?: string | null;
+		readonly latestActivityAt: number;
+	}
+) {
+	candidate.authId ??= args.authId ?? null;
+	candidate.barNumber ??=
+		args.barNumber === undefined || args.barNumber === null
+			? null
+			: normalizeBarNumber(args.barNumber);
+	candidate.displayName ??= optionalText(args.displayName ?? undefined) ?? null;
+	candidate.email ??= args.email ? normalizeLawyerEmail(args.email) : null;
+	candidate.firmName ??= optionalText(args.firmName ?? undefined) ?? null;
+	candidate.jurisdiction ??= args.jurisdiction
+		? normalizeJurisdiction(args.jurisdiction)
+		: null;
+	candidate.latestActivityAt = Math.max(
+		candidate.latestActivityAt,
+		args.latestActivityAt
+	);
+}
+
+function selectedGuestLawyerIdentity(deal: Doc<"deals"> | null) {
+	if (deal?.selectedLawyer?.type !== "guest_lawyer") {
+		return {
+			barNumber: null,
+			displayName: null,
+			email: null,
+			firmName: null,
+			jurisdiction: null,
+		};
+	}
+	return {
+		barNumber: deal.selectedLawyer.lso?.barNumber ?? null,
+		displayName: deal.selectedLawyer.name,
+		email: deal.selectedLawyer.email,
+		firmName: deal.selectedLawyer.firm,
+		jurisdiction: deal.selectedLawyer.lso?.jurisdiction ?? null,
+	};
+}
+
+async function userIdentityForAuthId(
+	ctx: Pick<QueryCtx, "db">,
+	authId: string | null | undefined
+) {
+	if (!authId) {
+		return {
+			displayName: null,
+			email: null,
+		};
+	}
+	const user = await ctx.db
+		.query("users")
+		.withIndex("authId", (query) => query.eq("authId", authId))
+		.first();
+	if (!user) {
+		return {
+			displayName: null,
+			email: null,
+		};
+	}
+	return {
+		displayName: `${user.firstName} ${user.lastName}`.trim() || null,
+		email: user.email,
+	};
+}
+
+async function profileExistsForRepairCandidate(
+	ctx: Pick<QueryCtx, "db">,
+	args: {
+		readonly authId?: string | null;
+		readonly email?: string | null;
+	}
+) {
+	const authId = args.authId ?? undefined;
+	if (authId) {
+		const byAuth = await ctx.db
+			.query("lawyerProfiles")
+			.withIndex("by_auth_id", (query) => query.eq("authId", authId))
+			.first();
+		if (byAuth) {
+			return byAuth;
+		}
+	}
+	const email = args.email ?? undefined;
+	if (email) {
+		return await ctx.db
+			.query("lawyerProfiles")
+			.withIndex("by_normalized_email", (query) =>
+				query.eq("normalizedEmail", normalizeLawyerEmail(email))
+			)
+			.first();
+	}
+	return null;
+}
+
+function upsertRepairCandidate(
+	candidates: RepairCandidateMap,
+	args: {
+		readonly authId?: string | null;
+		readonly barNumber?: string | null;
+		readonly displayName?: string | null;
+		readonly email?: string | null;
+		readonly firmName?: string | null;
+		readonly jurisdiction?: string | null;
+		readonly latestActivityAt: number;
+		readonly sourceKind: string;
+	}
+) {
+	const repairKey = repairKeyForIdentity(args);
+	if (!repairKey) {
+		return null;
+	}
+	const existingKey = repairKeysForIdentity(args).find((key) =>
+		candidates.has(key)
+	);
+	const candidate =
+		(existingKey ? candidates.get(existingKey) : undefined) ??
+		emptyRepairCandidate({
+			...args,
+			repairKey,
+		});
+	if (existingKey && existingKey !== repairKey) {
+		candidates.delete(existingKey);
+		candidate.repairKey = repairKey;
+	}
+	mergeRepairCandidateIdentity(candidate, args);
+	candidate.sourceKinds.add(args.sourceKind);
+	candidates.set(repairKey, candidate);
+	return candidate;
+}
+
+function attachRepairInvitation(
+	candidate: LawyerProfileRepairCandidateDraft | null,
+	invitation: Doc<"lawyerInvitations">
+) {
+	if (!candidate) {
+		return;
+	}
+	candidate.invitationIds.add(invitation._id);
+	if (
+		candidate.latestInvitation === null ||
+		invitation.updatedAt > candidate.latestInvitation.updatedAt
+	) {
+		candidate.latestInvitation = invitation;
+	}
+}
+
+async function collectUnprofiledGuestInvitationCandidates(
+	ctx: Pick<QueryCtx, "db">,
+	candidates: RepairCandidateMap
+) {
+	const invitations = await ctx.db
+		.query("lawyerInvitations")
+		.take(MAX_ROSTER_SCAN);
+	for (const invitation of invitations) {
+		const profile = await profileExistsForRepairCandidate(ctx, {
+			authId: invitation.resolvedAuthId ?? null,
+			email: invitation.normalizedTargetEmail,
+		});
+		if (profile) {
+			continue;
+		}
+		const selected = invitation.selectedLawyerSnapshot;
+		const userIdentity = await userIdentityForAuthId(
+			ctx,
+			invitation.resolvedAuthId
+		);
+		const candidate = upsertRepairCandidate(candidates, {
+			authId: invitation.resolvedAuthId ?? null,
+			barNumber: selected.lso?.barNumber ?? null,
+			displayName: selected.name ?? userIdentity.displayName,
+			email: invitation.normalizedTargetEmail,
+			firmName: selected.firm,
+			jurisdiction: selected.lso?.jurisdiction ?? null,
+			latestActivityAt: invitation.updatedAt,
+			sourceKind: "invitation",
+		});
+		attachRepairInvitation(candidate, invitation);
+		candidate?.dealIds.add(invitation.dealId);
+	}
+}
+
+async function collectUnprofiledGuestDealCandidates(
+	ctx: Pick<QueryCtx, "db">,
+	candidates: RepairCandidateMap
+) {
+	const deals = await ctx.db.query("deals").take(MAX_ROSTER_SCAN);
+	for (const deal of deals) {
+		if (deal.lawyerType !== "guest_lawyer") {
+			continue;
+		}
+		const selected = selectedGuestLawyerIdentity(deal);
+		const authId = deal.lawyerId?.includes("@") ? null : deal.lawyerId;
+		const userIdentity = await userIdentityForAuthId(ctx, authId);
+		const email =
+			selected.email ??
+			userIdentity.email ??
+			(deal.lawyerId?.includes("@") ? deal.lawyerId : null);
+		const profile = await profileExistsForRepairCandidate(ctx, {
+			authId,
+			email,
+		});
+		if (profile) {
+			continue;
+		}
+		const candidate = upsertRepairCandidate(candidates, {
+			authId,
+			barNumber: selected.barNumber,
+			displayName: selected.displayName ?? userIdentity.displayName,
+			email,
+			firmName: selected.firmName,
+			jurisdiction: selected.jurisdiction,
+			latestActivityAt: deal.createdAt,
+			sourceKind: "deal",
+		});
+		candidate?.dealIds.add(deal._id);
+	}
+}
+
+async function collectUnlinkedOnboardingSessionCandidates(
+	ctx: Pick<QueryCtx, "db">,
+	candidates: RepairCandidateMap
+) {
+	const sessions = await ctx.db
+		.query("lawyerOnboardingSessions")
+		.take(MAX_ROSTER_SCAN);
+	for (const session of sessions) {
+		if (session.lawyerProfileId !== undefined) {
+			continue;
+		}
+		const deal = session.dealId ? await ctx.db.get(session.dealId) : null;
+		const selected = selectedGuestLawyerIdentity(deal);
+		const userIdentity = await userIdentityForAuthId(ctx, session.workosUserId);
+		const candidate = upsertRepairCandidate(candidates, {
+			authId: session.workosUserId ?? null,
+			barNumber: selected.barNumber,
+			displayName: selected.displayName ?? userIdentity.displayName,
+			email:
+				session.normalizedTargetEmail ?? selected.email ?? userIdentity.email,
+			firmName: selected.firmName,
+			jurisdiction: selected.jurisdiction,
+			latestActivityAt: session.updatedAt,
+			sourceKind: "onboarding_session",
+		});
+		candidate?.onboardingSessionIds.add(session._id);
+		if (session.dealId) {
+			candidate?.dealIds.add(session.dealId);
+		}
+	}
+}
+
+async function collectUnlinkedVerificationCandidates(
+	ctx: Pick<QueryCtx, "db">,
+	candidates: RepairCandidateMap
+) {
+	const verifications = await ctx.db
+		.query("lawyerVerifications")
+		.take(MAX_ROSTER_SCAN);
+	for (const verification of verifications) {
+		if (verification.lawyerProfileId !== undefined) {
+			continue;
+		}
+		const deal = verification.dealId
+			? await ctx.db.get(verification.dealId)
+			: null;
+		const selected = selectedGuestLawyerIdentity(deal);
+		const userIdentity = await userIdentityForAuthId(ctx, verification.authId);
+		const candidate = upsertRepairCandidate(candidates, {
+			authId: verification.authId ?? null,
+			barNumber: verification.barNumber ?? selected.barNumber,
+			displayName: selected.displayName ?? userIdentity.displayName,
+			email:
+				verification.normalizedEmail ?? selected.email ?? userIdentity.email,
+			firmName: selected.firmName,
+			jurisdiction: verification.jurisdiction ?? selected.jurisdiction,
+			latestActivityAt: verification.createdAt,
+			sourceKind: "verification",
+		});
+		candidate?.verificationIds.add(verification._id);
+		if (
+			candidate &&
+			(candidate.latestVerification === null ||
+				verification.createdAt > candidate.latestVerification.createdAt)
+		) {
+			candidate.latestVerification = verification;
+		}
+		if (verification.dealId) {
+			candidate?.dealIds.add(verification.dealId);
+		}
+	}
+}
+
+async function collectUnlinkedEngagementCandidates(
+	ctx: Pick<QueryCtx, "db">,
+	candidates: RepairCandidateMap
+) {
+	const engagements = await ctx.db
+		.query("representationEngagements")
+		.take(MAX_ROSTER_SCAN);
+	for (const engagement of engagements) {
+		if (engagement.lawyerProfileId !== undefined) {
+			continue;
+		}
+		const deal = await ctx.db.get(engagement.dealId);
+		const selected = selectedGuestLawyerIdentity(deal);
+		const userIdentity = await userIdentityForAuthId(
+			ctx,
+			engagement.lawyerAuthId
+		);
+		const candidate = upsertRepairCandidate(candidates, {
+			authId: engagement.lawyerAuthId,
+			barNumber: selected.barNumber,
+			displayName: userIdentity.displayName ?? selected.displayName,
+			email: userIdentity.email ?? selected.email,
+			firmName: selected.firmName,
+			jurisdiction: selected.jurisdiction,
+			latestActivityAt: engagement.updatedAt,
+			sourceKind: "representation_engagement",
+		});
+		candidate?.engagementIds.add(engagement._id);
+		candidate?.dealIds.add(engagement.dealId);
+	}
+}
+
+async function collectLawyerProfileRepairCandidates(ctx: Pick<QueryCtx, "db">) {
+	const candidates = new Map<string, LawyerProfileRepairCandidateDraft>();
+	await collectUnprofiledGuestInvitationCandidates(ctx, candidates);
+	await collectUnprofiledGuestDealCandidates(ctx, candidates);
+	await collectUnlinkedOnboardingSessionCandidates(ctx, candidates);
+	await collectUnlinkedVerificationCandidates(ctx, candidates);
+	await collectUnlinkedEngagementCandidates(ctx, candidates);
+
+	return [...candidates.values()]
+		.filter(
+			(candidate) =>
+				candidate.dealIds.size > 0 ||
+				candidate.invitationIds.size > 0 ||
+				candidate.onboardingSessionIds.size > 0 ||
+				candidate.verificationIds.size > 0 ||
+				candidate.engagementIds.size > 0
+		)
+		.sort((left, right) => right.latestActivityAt - left.latestActivityAt);
+}
+
+function serializeRepairCandidate(
+	candidate: LawyerProfileRepairCandidateDraft
+) {
+	const totalEvidenceRecords =
+		candidate.dealIds.size +
+		candidate.invitationIds.size +
+		candidate.onboardingSessionIds.size +
+		candidate.verificationIds.size +
+		candidate.engagementIds.size;
+	return {
+		authId: candidate.authId,
+		barNumber: candidate.barNumber,
+		displayName: candidate.displayName ?? candidate.email ?? "Unknown lawyer",
+		email: candidate.email,
+		firmName: candidate.firmName,
+		jurisdiction: candidate.jurisdiction,
+		latestActivityAt: candidate.latestActivityAt,
+		recordCounts: {
+			deals: candidate.dealIds.size,
+			engagements: candidate.engagementIds.size,
+			invitations: candidate.invitationIds.size,
+			onboardingSessions: candidate.onboardingSessionIds.size,
+			verifications: candidate.verificationIds.size,
+		},
+		repairKey: candidate.repairKey,
+		sourceKinds: [...candidate.sourceKinds].sort(),
+		totalEvidenceRecords,
+	};
+}
+
+function repairCandidateSuggestedProfile(
+	candidate: LawyerProfileRepairCandidateDraft
+) {
+	return {
+		authId: candidate.authId,
+		barNumber: candidate.barNumber,
+		displayName: candidate.displayName ?? candidate.email ?? "",
+		email: candidate.email,
+		firmName: candidate.firmName,
+		jurisdiction: candidate.jurisdiction,
+		lsoLawyerId: candidate.latestVerification?.lsoLawyerId ?? null,
+	};
+}
+
+function repairEvidenceRecords(
+	candidate: LawyerProfileRepairCandidateDraft
+): RepairEvidenceRecord[] {
+	return [
+		...[...candidate.dealIds].map((recordId) => ({
+			label: "Deal",
+			recordId: String(recordId),
+			summary: "Deal selected or references this lawyer identity.",
+			table: "deals" as const,
+		})),
+		...[...candidate.invitationIds].map((recordId) => ({
+			label: "Guest invitation",
+			recordId: String(recordId),
+			summary: "Invitation target and selected lawyer snapshot.",
+			table: "lawyerInvitations" as const,
+		})),
+		...[...candidate.onboardingSessionIds].map((recordId) => ({
+			label: "Onboarding session",
+			recordId: String(recordId),
+			summary: "Onboarding session that is not linked to a lawyer profile.",
+			table: "lawyerOnboardingSessions" as const,
+		})),
+		...[...candidate.verificationIds].map((recordId) => ({
+			label: "Verification",
+			recordId: String(recordId),
+			summary: "License verification evidence.",
+			table: "lawyerVerifications" as const,
+		})),
+		...[...candidate.engagementIds].map((recordId) => ({
+			label: "Representation engagement",
+			recordId: String(recordId),
+			summary: "Signed or recorded representation evidence.",
+			table: "representationEngagements" as const,
+		})),
+	];
+}
+
+function buildRepairRosterRow(
+	candidate: LawyerProfileRepairCandidateDraft
+): AdminLawyerRosterRow {
+	const totalEvidenceRecords =
+		candidate.dealIds.size +
+		candidate.invitationIds.size +
+		candidate.onboardingSessionIds.size +
+		candidate.verificationIds.size +
+		candidate.engagementIds.size;
+	const invitation = candidate.latestInvitation;
+	const verification = candidate.latestVerification;
+	return {
+		activeDealCount: candidate.dealIds.size,
+		activeInvitation: summarizeInvitation(
+			invitation?.status === "pending" ? invitation : null
+		),
+		barNumber: candidate.barNumber,
+		capacityLimit: null,
+		capacityWarning: null,
+		displayName: candidate.displayName ?? candidate.email ?? "Unknown lawyer",
+		email: candidate.email ?? "Missing email",
+		firmName: candidate.firmName,
+		identityRepair: {
+			repairKey: candidate.repairKey,
+			totalEvidenceRecords,
+		},
+		identityStatus: "missing_profile",
+		invitationStatus: invitation?.status ?? "none",
+		jurisdiction: candidate.jurisdiction,
+		latestActivityAt: candidate.latestActivityAt,
+		latestVerification: summarizeVerification(verification),
+		nextAction: "Repair lawyer identity",
+		pastDealCount: 0,
+		pendingDealInviteCount: invitation?.status === "pending" ? 1 : 0,
+		platformInvitation: null,
+		platformOnboardingSession: null,
+		platformStatus: "not_platform",
+		profileId: null,
+		profileKind: "guest",
+		restrictionRecheckStatus: "none",
+		rowKey: `repair:${candidate.repairKey}`,
+		slaStatus: "none",
+		urgency: "pending_onboarding",
+		verificationStatus: verification?.outcome ?? "not_verified",
+	};
+}
+
+function guestProfileArgsForRepairCandidate(
+	candidate: LawyerProfileRepairCandidateDraft,
+	overrides?: {
+		readonly authId?: string;
+		readonly barNumber?: string;
+		readonly displayName?: string;
+		readonly email?: string;
+		readonly firmName?: string;
+		readonly jurisdiction?: string;
+	}
+): UpsertGuestLawyerProfileArgs {
+	const email = optionalText(overrides?.email) ?? candidate.email;
+	if (!email) {
+		throw new ConvexError("Lawyer profile repair requires an email");
+	}
+	return {
+		authId: optionalText(overrides?.authId) ?? candidate.authId ?? undefined,
+		barNumber:
+			optionalText(overrides?.barNumber) ?? candidate.barNumber ?? undefined,
+		displayName:
+			optionalText(overrides?.displayName) ?? candidate.displayName ?? email,
+		email,
+		firmName:
+			optionalText(overrides?.firmName) ?? candidate.firmName ?? undefined,
+		jurisdiction:
+			optionalText(overrides?.jurisdiction) ??
+			candidate.jurisdiction ??
+			undefined,
+	};
+}
+
+async function recordManualLsoRepairEvidence(
+	ctx: Pick<MutationCtx, "db">,
+	args: {
+		readonly actorId: string;
+		readonly authId?: string;
+		readonly barNumber?: string;
+		readonly email: string;
+		readonly jurisdiction?: string;
+		readonly lsoLawyerId: Id<"lsoLawyers">;
+		readonly profileId: Id<"lawyerProfiles">;
+	}
+) {
+	const now = Date.now();
+	const verificationId = await recordLawyerVerificationRow(ctx, {
+		authId: args.authId,
+		barNumber: args.barNumber,
+		checkType: "manual_admin",
+		createdAt: now,
+		createdBy: args.actorId,
+		jurisdiction: args.jurisdiction,
+		lawyerProfileId: args.profileId,
+		lsoLawyerId: args.lsoLawyerId,
+		normalizedEmail: normalizeLawyerEmail(args.email),
+		providerResult: buildManualLawyerVerificationResult({
+			evidenceHash: `lawyer-identity-repair:${String(args.profileId)}:${String(args.lsoLawyerId)}:${now}`,
+			expiresAt: now + 365 * 24 * 60 * 60 * 1000,
+			outcome: "eligible",
+			reasonCodes: ["active_license"],
+			sourceSnapshot: {
+				action: "lawyer_identity_repair",
+				actorId: args.actorId,
+				lsoLawyerId: String(args.lsoLawyerId),
+				profileId: String(args.profileId),
+			},
+		}),
+	});
+	await ctx.db.patch(args.profileId, {
+		latestVerificationId: verificationId,
+		updatedAt: now,
+	});
+}
+
+async function linkRepairOnboardingSessions(
+	ctx: Pick<MutationCtx, "db">,
+	candidate: LawyerProfileRepairCandidateDraft,
+	profileId: Id<"lawyerProfiles">
+) {
+	let linkedCount = 0;
+	for (const sessionId of candidate.onboardingSessionIds) {
+		const session = await ctx.db.get(sessionId);
+		if (session && session.lawyerProfileId !== profileId) {
+			await ctx.db.patch(session._id, {
+				lawyerProfileId: profileId,
+				updatedAt: Date.now(),
+			});
+			linkedCount += 1;
+		}
+	}
+	return linkedCount;
+}
+
+async function linkRepairVerifications(
+	ctx: Pick<MutationCtx, "db">,
+	candidate: LawyerProfileRepairCandidateDraft,
+	profileId: Id<"lawyerProfiles">
+) {
+	let linkedCount = 0;
+	let latestVerification: Doc<"lawyerVerifications"> | null = null;
+	for (const verificationId of candidate.verificationIds) {
+		const verification = await ctx.db.get(verificationId);
+		if (!verification) {
+			continue;
+		}
+		if (verification.lawyerProfileId !== profileId) {
+			await ctx.db.patch(verification._id, { lawyerProfileId: profileId });
+			linkedCount += 1;
+		}
+		if (
+			verification.outcome === "eligible" &&
+			(!latestVerification ||
+				verification.createdAt > latestVerification.createdAt)
+		) {
+			latestVerification = verification;
+		}
+	}
+	if (latestVerification) {
+		await ctx.db.patch(profileId, {
+			latestVerificationId: latestVerification._id,
+			updatedAt: Date.now(),
+		});
+	}
+	return linkedCount;
+}
+
+async function linkRepairEngagements(
+	ctx: Pick<MutationCtx, "db">,
+	candidate: LawyerProfileRepairCandidateDraft,
+	profileId: Id<"lawyerProfiles">
+) {
+	let linkedCount = 0;
+	for (const engagementId of candidate.engagementIds) {
+		const engagement = await ctx.db.get(engagementId);
+		if (engagement && engagement.lawyerProfileId !== profileId) {
+			await ctx.db.patch(engagement._id, { lawyerProfileId: profileId });
+			linkedCount += 1;
+		}
+	}
+	return linkedCount;
+}
+
+export const listLawyerProfileRepairQueue = adminQuery
+	.input({})
+	.handler(async (ctx) => {
+		const candidates = await collectLawyerProfileRepairCandidates(ctx);
+		const rows = candidates.map(serializeRepairCandidate);
+		return {
+			candidates: rows,
+			summary: {
+				orphanedCandidates: rows.length,
+				totalEvidenceRecords: rows.reduce(
+					(total, row) => total + row.totalEvidenceRecords,
+					0
+				),
+			},
+		};
+	})
+	.public();
+
+export const getLawyerProfileRepairPreview = adminQuery
+	.input({ repairKey: v.string() })
+	.handler(async (ctx, args) => {
+		const candidates = await collectLawyerProfileRepairCandidates(ctx);
+		const candidate = candidates.find(
+			(row) => row.repairKey === args.repairKey
+		);
+		if (!candidate) {
+			throw new ConvexError("Lawyer profile repair candidate not found");
+		}
+		const suggestedProfile = repairCandidateSuggestedProfile(candidate);
+		return {
+			canAutoRepair: Boolean(suggestedProfile.email),
+			candidate: serializeRepairCandidate(candidate),
+			evidenceRecords: repairEvidenceRecords(candidate),
+			suggestedProfile,
+			warnings: [
+				...(suggestedProfile.email ? [] : ["Email is required before repair."]),
+				...(suggestedProfile.displayName
+					? []
+					: ["Display name is missing and should be supplied manually."]),
+				...(suggestedProfile.lsoLawyerId
+					? []
+					: ["No linked LSO profile was found in the evidence set."]),
+			],
+		};
+	})
+	.public();
+
+export const repairLawyerProfileLsoLink = adminMutation
+	.input({
+		lsoLawyerId: v.id("lsoLawyers"),
+		profileId: v.id("lawyerProfiles"),
+	})
+	.handler(async (ctx, args) => {
+		const profile = await ctx.db.get(args.profileId);
+		if (!profile) {
+			throw new ConvexError("Lawyer profile not found");
+		}
+		const lsoLawyer = await ctx.db.get(args.lsoLawyerId);
+		if (!lsoLawyer) {
+			throw new ConvexError("LSO lawyer not found");
+		}
+		await recordManualLsoRepairEvidence(ctx, {
+			actorId: ctx.viewer.authId,
+			authId: profile.authId,
+			barNumber: profile.barNumber,
+			email: profile.email,
+			jurisdiction: profile.jurisdiction,
+			lsoLawyerId: args.lsoLawyerId,
+			profileId: profile._id,
+		});
+		return {
+			lsoLawyerId: args.lsoLawyerId,
+			profileId: profile._id,
+		};
+	})
+	.public();
+
+export const updateLawyerProfileAdmin = adminMutation
+	.input({
+		barNumber: v.optional(v.string()),
+		displayName: v.string(),
+		email: v.string(),
+		firmName: v.optional(v.string()),
+		jurisdiction: v.optional(v.string()),
+		profileId: v.id("lawyerProfiles"),
+	})
+	.handler(async (ctx, args) => {
+		const profile = await ctx.db.get(args.profileId);
+		if (!profile) {
+			throw new ConvexError("Lawyer profile not found");
+		}
+		const displayName = optionalText(args.displayName);
+		const email = optionalText(args.email);
+		if (!displayName) {
+			throw new ConvexError("Lawyer display name is required");
+		}
+		if (!email) {
+			throw new ConvexError("Lawyer email is required");
+		}
+		await ctx.db.patch(profile._id, {
+			barNumber:
+				args.barNumber === undefined
+					? undefined
+					: normalizeBarNumber(args.barNumber),
+			displayName,
+			email,
+			firmName: optionalText(args.firmName),
+			jurisdiction:
+				args.jurisdiction === undefined
+					? undefined
+					: normalizeJurisdiction(args.jurisdiction),
+			normalizedEmail: normalizeLawyerEmail(email),
+			updatedAt: Date.now(),
+		});
+		return { profileId: profile._id };
+	})
+	.public();
+
+export const repairLawyerProfileIdentity = adminMutation
+	.input({
+		overrides: lawyerIdentityRepairOverridesValidator,
+		repairKey: v.string(),
+	})
+	.handler(async (ctx, args) => {
+		const candidates = await collectLawyerProfileRepairCandidates(ctx);
+		const candidate = candidates.find(
+			(row) => row.repairKey === args.repairKey
+		);
+		if (!candidate) {
+			throw new ConvexError("Lawyer profile repair candidate not found");
+		}
+		const profileArgs = guestProfileArgsForRepairCandidate(
+			candidate,
+			args.overrides
+		);
+		const existingProfile = await profileExistsForRepairCandidate(ctx, {
+			authId: profileArgs.authId,
+			email: profileArgs.email,
+		});
+		const profileId = await upsertGuestLawyerProfile(ctx, profileArgs);
+		const onboardingSessions = await linkRepairOnboardingSessions(
+			ctx,
+			candidate,
+			profileId
+		);
+		const verifications = await linkRepairVerifications(
+			ctx,
+			candidate,
+			profileId
+		);
+		const engagements = await linkRepairEngagements(ctx, candidate, profileId);
+		if (args.overrides?.lsoLawyerId) {
+			await recordManualLsoRepairEvidence(ctx, {
+				actorId: ctx.viewer.authId,
+				authId: profileArgs.authId,
+				barNumber: profileArgs.barNumber,
+				email: profileArgs.email,
+				jurisdiction: profileArgs.jurisdiction,
+				lsoLawyerId: args.overrides.lsoLawyerId,
+				profileId,
+			});
+		}
+		return {
+			action: existingProfile ? "linked_existing_profile" : "created_profile",
+			linkedCounts: {
+				engagements,
+				onboardingSessions,
+				verifications,
+			},
+			profileId,
 		};
 	})
 	.public();

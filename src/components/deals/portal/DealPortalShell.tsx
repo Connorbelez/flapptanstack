@@ -2,7 +2,12 @@ import { AlertTriangle } from "lucide-react";
 import { CompleteScreen } from "./CompleteScreen";
 import { DealPortalStepRail } from "./DealPortalStepRail";
 import { DocumentsScreen } from "./DocumentsScreen";
-import { formatEnumLabel, formatPercent, shortDealId } from "./format";
+import {
+	formatCurrency,
+	formatEnumLabel,
+	formatPercent,
+	shortDealId,
+} from "./format";
 import { PaymentScreen } from "./PaymentScreen";
 import { RepresentationScreen } from "./RepresentationScreen";
 import type { DealPortalWorkspace } from "./types";
@@ -108,8 +113,8 @@ function ClosingAssembly({
 	readonly parties: DealPortalWorkspace["participants"]["involvedParties"];
 }) {
 	return (
-		<div className="py-2">
-			<div className="flex flex-wrap items-start justify-center gap-x-2 gap-y-6">
+		<div className="py-1">
+			<div className="flex flex-wrap items-start justify-center gap-x-2 gap-y-5">
 				{parties.map((party, index) => {
 					const colors = getRoleColor(party.role);
 					const isLast = index === parties.length - 1;
@@ -118,7 +123,7 @@ function ClosingAssembly({
 							<div className="flex flex-col items-center gap-2">
 								<div className="relative">
 									<div
-										className="flex size-14 items-center justify-center rounded-full font-bold text-sm tracking-wide"
+										className="flex size-12 items-center justify-center rounded-full font-bold text-sm tracking-wide"
 										style={{
 											background: colors.bg,
 											color: colors.text,
@@ -167,7 +172,7 @@ function ClosingAssembly({
 							</div>
 							{isLast ? null : (
 								<div
-									className="mt-6 hidden h-px w-6 sm:block"
+									className="mt-5 hidden h-px w-6 sm:block"
 									style={{ background: "var(--line)" }}
 								/>
 							)}
@@ -209,19 +214,17 @@ export function DealPortalShell({
 					</div>
 
 					{onboardingOnly ? null : (
-						<div className="flex flex-col items-end gap-0.5">
-							<p
-								className="font-semibold text-xs uppercase tracking-widest"
-								style={{ color: "var(--sea-ink-soft)" }}
-							>
-								Share
-							</p>
-							<p
-								className="font-semibold text-2xl"
-								style={{ color: "var(--sea-ink)" }}
-							>
-								{formatPercent(workspace.deal.fractionalShareDisplayPercent)}
-							</p>
+						<div className="flex flex-wrap items-end justify-end gap-x-6 gap-y-3">
+							<HeaderMetric
+								label="Deal value"
+								value={formatCurrency(workspace.deal.dealValue)}
+							/>
+							<HeaderMetric
+								label="Share"
+								value={formatPercent(
+									workspace.deal.fractionalShareDisplayPercent
+								)}
+							/>
 						</div>
 					)}
 				</header>
@@ -246,7 +249,15 @@ export function DealPortalShell({
 						) : (
 							<>
 								{/* Parties — The Closing Assembly */}
-								<section className="island-shell rounded-xl p-6">
+								<section
+									className="island-shell rounded-xl p-5"
+									style={{
+										background:
+											"color-mix(in oklab, var(--surface-strong) 86%, transparent)",
+										borderColor:
+											"color-mix(in oklab, var(--line) 74%, transparent)",
+									}}
+								>
 									<div className="mb-1 text-center">
 										<h2 className="island-kicker">Closing Assembly</h2>
 										<p
@@ -305,5 +316,27 @@ export function DealPortalShell({
 				</div>
 			</div>
 		</main>
+	);
+}
+
+function HeaderMetric({
+	label,
+	value,
+}: {
+	readonly label: string;
+	readonly value: string;
+}) {
+	return (
+		<div className="flex flex-col items-end gap-0.5">
+			<p
+				className="font-semibold text-xs uppercase tracking-widest"
+				style={{ color: "var(--sea-ink-soft)" }}
+			>
+				{label}
+			</p>
+			<p className="font-semibold text-2xl" style={{ color: "var(--sea-ink)" }}>
+				{value}
+			</p>
+		</div>
 	);
 }

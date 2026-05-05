@@ -5,6 +5,7 @@ import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { lawyerQuery, type Viewer } from "../fluent";
 import { evaluateDealLegalGate } from "../legalRepresentation/gates";
 import { buildDealParticipantProjection } from "./participantProjection";
+import { isCompletedDealStatus } from "./status";
 
 type LawyerQueryCtx = Pick<QueryCtx, "db"> & { viewer: Viewer };
 type PackageSurface = Awaited<
@@ -53,10 +54,6 @@ type LawyerParticipantProjection = Pick<
 
 function isLawyerAccessRole(role: Doc<"dealAccess">["role"]) {
 	return role === "platform_lawyer" || role === "guest_lawyer";
-}
-
-function isCompletedDealStatus(status: string) {
-	return status === "confirmed";
 }
 
 function queueBucketForDeal(status: string): LawyerMatterQueueBucket {

@@ -121,24 +121,13 @@ function resolveFieldHelpContent(field: NormalizedFieldDefinition | undefined) {
 	);
 }
 
-function resolveMetadataBadge(field: NormalizedFieldDefinition | undefined):
+function resolveMetadataBadge(_field: NormalizedFieldDefinition | undefined):
 	| {
 			label: string;
 			variant: "outline" | "secondary";
 	  }
 	| undefined {
-	if (!field) {
-		return undefined;
-	}
-
-	switch (field.editability.mode) {
-		case "computed":
-			return { label: "Computed", variant: "secondary" };
-		case "read_only":
-			return { label: "Read only", variant: "outline" };
-		default:
-			return undefined;
-	}
+	return undefined;
 }
 
 function toSelectOptions(

@@ -45,6 +45,7 @@ interface PortalDealProjection {
 	closingDate: number | null;
 	createdAt: number;
 	dealId: Id<"deals">;
+	dealValue: number | null;
 	fractionalShareDisplayPercent: number | null;
 	fractionalShareUnits: number;
 	lawyerId: string | null;
@@ -72,9 +73,18 @@ interface ParticipantSafePaymentProof {
 	transferDate: number;
 }
 
+interface PaymentProofReviewAttachment {
+	assetId: Id<"documentAssets">;
+	fileSize: number | null;
+	mimeType: Doc<"documentAssets">["mimeType"] | null;
+	name: string;
+	originalFilename: string;
+	url: string | null;
+}
+
 interface AdminPaymentProofReview {
 	amount: number;
-	attachmentIds: Id<"documentAssets">[];
+	attachments: PaymentProofReviewAttachment[];
 	cashLedgerJournalEntryIds: Id<"cash_ledger_journal_entries">[];
 	cashLedgerPostingGroupId: string | null;
 	currency: "CAD";
@@ -197,9 +207,21 @@ function addCapability(
 	capabilities.add(capability);
 }
 
+function canSkipEmptyDocumentSigning(args: {
+	deal: Doc<"deals">;
+	documents: DealDocumentPackageSurface;
+}) {
+	return (
+		args.deal.status === "documentReview.pending" &&
+		args.documents.instances.length === 0
+	);
+}
+
 function buildCapabilities(args: {
 	activeScreen: DealPortalScreen;
 	deal: Doc<"deals">;
+	documents: DealDocumentPackageSurface;
+	payment: PaymentProjection;
 	persona: DealPortalPersona;
 	representation: LegalRepresentationStatusProjection;
 }): DealPortalCapability[] {
@@ -215,6 +237,13 @@ function buildCapabilities(args: {
 		] as const) {
 			addCapability(capabilities, capability);
 		}
+	}
+
+	if (
+		args.persona === "broker_of_record" &&
+		args.payment.adminReview?.proofs.length
+	) {
+		addCapability(capabilities, "payment.proof.review");
 	}
 
 	if (
@@ -249,6 +278,9 @@ function buildCapabilities(args: {
 	) {
 		addCapability(capabilities, "documents.approve");
 	}
+	if (canSkipEmptyDocumentSigning(args)) {
+		addCapability(capabilities, "documents.skipEmpty");
+	}
 
 	if (
 		args.deal.status === "fundsTransfer.pending" &&
@@ -281,12 +313,46 @@ function paymentProofSummary(
 	};
 }
 
-function adminPaymentProofReview(
+async function readPaymentProofReviewAttachments(
+	ctx: Pick<QueryCtx, "db" | "storage">,
+	attachmentIds: readonly Id<"documentAssets">[]
+): Promise<PaymentProofReviewAttachment[]> {
+	return await Promise.all(
+		attachmentIds.map(async (assetId) => {
+			const asset = await ctx.db.get(assetId);
+			if (!asset) {
+				return {
+					assetId,
+					fileSize: null,
+					mimeType: null,
+					name: "Unavailable attachment",
+					originalFilename: "Unavailable attachment",
+					url: null,
+				};
+			}
+
+			return {
+				assetId: asset._id,
+				fileSize: asset.fileSize,
+				mimeType: asset.mimeType,
+				name: asset.name,
+				originalFilename: asset.originalFilename,
+				url: await ctx.storage.getUrl(asset.fileRef),
+			};
+		})
+	);
+}
+
+async function adminPaymentProofReview(
+	ctx: Pick<QueryCtx, "db" | "storage">,
 	proof: DealPaymentProofRow
-): AdminPaymentProofReview {
+): Promise<AdminPaymentProofReview> {
 	return {
 		amount: proof.amount,
-		attachmentIds: proof.attachmentIds,
+		attachments: await readPaymentProofReviewAttachments(
+			ctx,
+			proof.attachmentIds
+		),
 		cashLedgerJournalEntryIds: proof.cashLedgerJournalEntryIds ?? [],
 		cashLedgerPostingGroupId: proof.cashLedgerPostingGroupId ?? null,
 		currency: proof.currency,
@@ -309,8 +375,8 @@ function adminPaymentProofReview(
 }
 
 async function readPaymentProjection(
-	ctx: Pick<QueryCtx, "db">,
-	args: { dealId: Id<"deals">; isAdmin: boolean }
+	ctx: Pick<QueryCtx, "db" | "storage">,
+	args: { dealId: Id<"deals">; persona: DealPortalPersona }
 ): Promise<PaymentProjection> {
 	const proofs = await ctx.db
 		.query("dealPaymentProofs")
@@ -323,10 +389,20 @@ async function readPaymentProjection(
 		return String(right._id).localeCompare(String(left._id));
 	});
 
+	const canSeeReview =
+		args.persona === "fairlend_admin" ||
+		(orderedProofs.length > 0 &&
+			(args.persona === "purchasing_lender" ||
+				args.persona === "primary_lawyer" ||
+				args.persona === "broker_of_record"));
+	const reviewProofs = canSeeReview
+		? await Promise.all(
+				orderedProofs.map((proof) => adminPaymentProofReview(ctx, proof))
+			)
+		: null;
+
 	return {
-		adminReview: args.isAdmin
-			? { proofs: orderedProofs.map(adminPaymentProofReview) }
-			: null,
+		adminReview: reviewProofs ? { proofs: reviewProofs } : null,
 		hasApprovedProof: orderedProofs.some(
 			(proof) => proof.status === "approved"
 		),
@@ -363,12 +439,19 @@ function buildBlockers(args: {
 
 function projectDeal(args: {
 	deal: Doc<"deals">;
+	mortgage: Doc<"mortgages"> | null;
 	participants: DealParticipantProjection;
 }): PortalDealProjection {
+	const dealValue =
+		args.mortgage && args.participants.fractionalShareStatus.isValid
+			? (args.mortgage.principal * args.participants.fractionalShareUnits) /
+				10_000
+			: null;
 	return {
 		closingDate: args.deal.closingDate ?? null,
 		createdAt: args.deal.createdAt,
 		dealId: args.deal._id,
+		dealValue,
 		fractionalShareDisplayPercent:
 			args.participants.fractionalShareDisplayPercent,
 		fractionalShareUnits: args.participants.fractionalShareUnits,
@@ -514,6 +597,7 @@ function onboardingOnlyWorkspace(args: {
 			closingDate: null,
 			createdAt: 0,
 			dealId: args.deal._id,
+			dealValue: null,
 			fractionalShareDisplayPercent: null,
 			fractionalShareUnits: 0,
 			lawyerId: null,
@@ -592,7 +676,7 @@ export const getDealPortalWorkspace = authedQuery
 			}
 			const persona = accessDecision.persona;
 
-			const [representation, participants, documents, payment] =
+			const [representation, participants, documents, payment, mortgage] =
 				await Promise.all([
 					buildLegalRepresentationStatusProjection(ctx, { deal }),
 					buildDealParticipantProjection(ctx, deal),
@@ -602,8 +686,9 @@ export const getDealPortalWorkspace = authedQuery
 					}),
 					readPaymentProjection(ctx, {
 						dealId: deal._id,
-						isAdmin: ctx.viewer.isFairLendAdmin,
+						persona,
 					}),
+					ctx.db.get(deal.mortgageId),
 				]);
 			const activeScreen = activeDealPortalScreenForStatus(deal.status);
 
@@ -615,6 +700,8 @@ export const getDealPortalWorkspace = authedQuery
 					? buildCapabilities({
 							activeScreen,
 							deal,
+							documents,
+							payment,
 							persona,
 							representation,
 						})
@@ -626,7 +713,7 @@ export const getDealPortalWorkspace = authedQuery
 							? (deal.lastTransitionAt ?? null)
 							: null,
 				},
-				deal: projectDeal({ deal, participants }),
+				deal: projectDeal({ deal, mortgage, participants }),
 				documents,
 				onboarding: {
 					nextRoute:

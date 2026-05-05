@@ -46,6 +46,7 @@ export type AdminLawyerCapacitySlaFilter =
 
 export type AdminLawyerSummaryKey =
 	| "needsAction"
+	| "identityRepairs"
 	| "slaBreached"
 	| "invitationsExpiring"
 	| "verificationReview"
@@ -78,6 +79,11 @@ export interface AdminLawyerRosterRow {
 	readonly displayName: string;
 	readonly email: string;
 	readonly firmName: string | null;
+	readonly identityRepair: {
+		readonly repairKey: string;
+		readonly totalEvidenceRecords: number;
+	} | null;
+	readonly identityStatus: "linked" | "missing_profile";
 	readonly invitationStatus: string;
 	readonly jurisdiction: string | null;
 	readonly latestActivityAt: number;
@@ -90,6 +96,8 @@ export interface AdminLawyerRosterRow {
 		readonly verificationId: Id<"lawyerVerifications">;
 	} | null;
 	readonly nextAction: string;
+	readonly pastDealCount: number;
+	readonly pendingDealInviteCount: number;
 	readonly platformInvitation: {
 		readonly deliveryStatus: string | null;
 		readonly invitationId: Id<"platformLawyerInvitations">;
@@ -105,9 +113,10 @@ export interface AdminLawyerRosterRow {
 		readonly updatedAt: number;
 	} | null;
 	readonly platformStatus: string;
-	readonly profileId: Id<"lawyerProfiles">;
+	readonly profileId: Id<"lawyerProfiles"> | null;
 	readonly profileKind: "platform" | "guest" | "both";
 	readonly restrictionRecheckStatus?: string;
+	readonly rowKey: string;
 	readonly slaStatus?: string;
 	readonly urgency: AdminLawyerUrgency;
 	readonly verificationStatus: string;
@@ -118,6 +127,55 @@ export interface AdminLawyerRosterResult {
 	readonly rows: readonly AdminLawyerRosterRow[];
 	readonly summary: Record<AdminLawyerSummaryKey, number>;
 	readonly totalCount: number;
+}
+
+export interface AdminLawyerProfileRepairCandidate {
+	readonly authId: string | null;
+	readonly barNumber: string | null;
+	readonly displayName: string;
+	readonly email: string | null;
+	readonly firmName: string | null;
+	readonly jurisdiction: string | null;
+	readonly latestActivityAt: number;
+	readonly recordCounts: {
+		readonly deals: number;
+		readonly engagements: number;
+		readonly invitations: number;
+		readonly onboardingSessions: number;
+		readonly verifications: number;
+	};
+	readonly repairKey: string;
+	readonly sourceKinds: readonly string[];
+	readonly totalEvidenceRecords: number;
+}
+
+export interface AdminLawyerProfileRepairQueueResult {
+	readonly candidates: readonly AdminLawyerProfileRepairCandidate[];
+	readonly summary: {
+		readonly orphanedCandidates: number;
+		readonly totalEvidenceRecords: number;
+	};
+}
+
+export interface AdminLawyerProfileRepairPreviewResult {
+	readonly canAutoRepair: boolean;
+	readonly candidate: AdminLawyerProfileRepairCandidate;
+	readonly evidenceRecords: readonly {
+		readonly label: string;
+		readonly recordId: string;
+		readonly summary: string;
+		readonly table: string;
+	}[];
+	readonly suggestedProfile: {
+		readonly authId: string | null;
+		readonly barNumber: string | null;
+		readonly displayName: string;
+		readonly email: string | null;
+		readonly firmName: string | null;
+		readonly jurisdiction: string | null;
+		readonly lsoLawyerId: Id<"lsoLawyers"> | null;
+	};
+	readonly warnings: readonly string[];
 }
 
 export interface AdminLawyerDetailResult {
@@ -198,7 +256,10 @@ export interface AdminLawyerDetailResult {
 		readonly engagements: readonly unknown[];
 		readonly overrideEvidence: readonly unknown[];
 	};
-	readonly verifications: readonly { readonly outcome?: string }[];
+	readonly verifications: readonly {
+		readonly lsoLawyerId?: Id<"lsoLawyers">;
+		readonly outcome?: string;
+	}[];
 }
 
 export interface PlatformInviteResolution {
@@ -267,6 +328,8 @@ export function getLawyerRosterFilterFromSummaryCard(
 			return { profileKind: "all", urgency: "sla_breached" };
 		case "invitationsExpiring":
 			return { profileKind: "all", urgency: "invitation_expiring" };
+		case "identityRepairs":
+			return { profileKind: "all", urgency: "pending_onboarding" };
 		case "verificationReview":
 			return { profileKind: "all", urgency: "verification_requires_review" };
 		case "atCapacity":

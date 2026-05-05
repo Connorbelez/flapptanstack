@@ -3,6 +3,7 @@
 import { Link } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
+import { ChevronDown } from "lucide-react";
 import type { Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -22,6 +23,11 @@ import {
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "#/components/ui/collapsible";
 import {
 	Dialog,
 	DialogContent,
@@ -91,7 +97,11 @@ function formatDate(value: number | string | null | undefined) {
 		return String(value);
 	}
 
-	return date.toLocaleDateString();
+	return date.toLocaleDateString("en-US", {
+		year: "numeric",
+		month: "short",
+		day: "numeric",
+	});
 }
 
 function formatDateInputValue(value: number | string | null | undefined) {
@@ -122,7 +132,13 @@ function formatDateTime(value: number | string | null | undefined) {
 		return String(value);
 	}
 
-	return date.toLocaleString();
+	return date.toLocaleString("en-US", {
+		year: "numeric",
+		month: "short",
+		day: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+	});
 }
 
 function formatEnumLabel(value: string) {
@@ -153,24 +169,45 @@ function filterDetailFields(
 
 function DetailSectionShell({
 	children,
+	defaultCollapsed,
 	description,
 	title,
 }: {
 	readonly children: ReactNode;
+	readonly defaultCollapsed?: boolean;
 	readonly description?: string;
 	readonly title: string;
 }) {
+	const header = (
+		<>
+			<h3 className="font-medium text-sm tracking-[0.02em]">{title}</h3>
+			{description ? (
+				<AdminDescriptionHelp
+					content={description}
+					label={`${title} details`}
+				/>
+			) : null}
+		</>
+	);
+
+	if (defaultCollapsed !== undefined) {
+		return (
+			<Collapsible
+				className="space-y-4 border-border/70 border-t pt-5"
+				defaultOpen={!defaultCollapsed}
+			>
+				<CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-1.5 text-left">
+					{header}
+					<ChevronDown className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+				</CollapsibleTrigger>
+				<CollapsibleContent>{children}</CollapsibleContent>
+			</Collapsible>
+		);
+	}
+
 	return (
 		<section className="space-y-4 border-border/70 border-t pt-5">
-			<div className="flex items-center gap-1.5">
-				<h3 className="font-medium text-sm tracking-[0.02em]">{title}</h3>
-				{description ? (
-					<AdminDescriptionHelp
-						content={description}
-						label={`${title} details`}
-					/>
-				) : null}
-			</div>
+			<div className="flex items-center gap-1.5">{header}</div>
 			{children}
 		</section>
 	);
@@ -5441,6 +5478,7 @@ export function LendersDedicatedDetails({
 					{
 						title: "Compliance & onboarding",
 						description: "Accreditation, identity, and onboarding references.",
+						defaultCollapsed: false,
 						fieldNames: [
 							"accreditationStatus",
 							"idvStatus",

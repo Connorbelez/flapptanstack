@@ -519,6 +519,71 @@ function expectNoFundsSideEffects(
 }
 
 describe("deal payment proof schema", () => {
+	it("lets ready lawyers create payment proof upload assets without document upload admin permissions", async () => {
+		const t = createHarness();
+		const seeded = await seedFundsPendingDeal(t);
+		await seedReadyPrimaryLawyer(t, {
+			dealId: seeded.dealId,
+			identity: GUEST_LAWYER_IDENTITY,
+			role: "guest_lawyer",
+		});
+		await seedUser(t, {
+			authId: GUEST_LAWYER_IDENTITY.subject,
+			email: GUEST_LAWYER_IDENTITY.user_email,
+		});
+		const fileRef = await t.run(async (ctx) => {
+			const stored = await (
+				ctx.storage as unknown as { store: (blob: Blob) => Promise<string> }
+			).store(
+				new Blob(["guest lawyer wire proof"], { type: "application/pdf" })
+			);
+			return stored as Id<"_storage">;
+		});
+
+		const uploadUrl = await t
+			.withIdentity(GUEST_LAWYER_IDENTITY)
+			.mutation(paymentProofsApi.generatePaymentProofUploadUrl, {
+				dealId: seeded.dealId,
+			});
+		const created = await t
+			.withIdentity(GUEST_LAWYER_IDENTITY)
+			.mutation(paymentProofsApi.createPaymentProofAsset, {
+				dealId: seeded.dealId,
+				fileHash: "guest-lawyer-wire-proof-hash",
+				fileRef,
+				fileSize: 23,
+				mimeType: "application/pdf",
+				name: "Guest lawyer wire proof",
+				originalFilename: "guest-lawyer-wire-proof.pdf",
+			});
+
+		expect(uploadUrl.uploadUrl).toEqual(expect.any(String));
+		const asset = await t.run((ctx) => ctx.db.get(created.assetId));
+		expect(asset).toMatchObject({
+			fileHash: "guest-lawyer-wire-proof-hash",
+			source: "payment_proof_upload",
+			uploadedByUserId: expect.any(String),
+		});
+	});
+
+	it("blocks non-upload personas from creating payment proof upload assets", async () => {
+		const t = createHarness();
+		const seeded = await seedFundsPendingDeal(t);
+		await grantDealAccess(t, {
+			dealId: seeded.dealId,
+			role: "broker_of_record",
+			userId: BROKER_IDENTITY.subject,
+		});
+
+		await expect(
+			t
+				.withIdentity(BROKER_IDENTITY)
+				.mutation(paymentProofsApi.generatePaymentProofUploadUrl, {
+					dealId: seeded.dealId,
+				})
+		).rejects.toThrow(UPLOAD_FORBIDDEN_ERROR);
+	});
+
 	it("creates a pending proof without advancing the deal", async () => {
 		const t = createHarness();
 		const seeded = await seedFundsPendingDeal(t);

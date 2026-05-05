@@ -36,8 +36,12 @@ export function PaymentProofUploader({
 	const [submitting, setSubmitting] = useState(false);
 	const queryClient = useQueryClient();
 
-	const generateUploadUrl = useMutation(api.documents.assets.generateUploadUrl);
-	const createAsset = useMutation(api.documents.assets.create);
+	const generateUploadUrl = useMutation(
+		api.deals.paymentProofs.generatePaymentProofUploadUrl
+	);
+	const createAsset = useMutation(
+		api.deals.paymentProofs.createPaymentProofAsset
+	);
 	const uploadProof = useMutation(
 		api.deals.paymentProofs.uploadManualPaymentProof
 	);
@@ -65,7 +69,7 @@ export function PaymentProofUploader({
 		setSubmitting(true);
 		setStatus(null);
 		try {
-			const { uploadUrl } = await generateUploadUrl({});
+			const { uploadUrl } = await generateUploadUrl({ dealId });
 			const uploadResponse = await fetch(uploadUrl, {
 				body: file,
 				headers: { "Content-Type": file.type },
@@ -78,6 +82,7 @@ export function PaymentProofUploader({
 				storageId: Id<"_storage">;
 			};
 			const asset = await createAsset({
+				dealId,
 				fileHash: await sha256Hex(file),
 				fileRef: storageId,
 				fileSize: file.size,
@@ -86,7 +91,6 @@ export function PaymentProofUploader({
 					file.name.replace(FILE_EXTENSION_SUFFIX_PATTERN, "") ||
 					"Payment proof",
 				originalFilename: file.name,
-				source: "payment_proof_upload",
 			});
 			await uploadProof({
 				amount: Math.round(amountNumber * 100),

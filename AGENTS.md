@@ -219,21 +219,68 @@ We're building a backoffice Loan Management System with an integrated ledger and
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **fairlendapp** (43360 symbols, 62812 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **fairlendapp** (43564 symbols, 63198 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely, subject to the Convex generated API limitations below.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
+## Critical Convex Limitation
+
+GitNexus currently underreports upstream impact for exported Convex queries, mutations, actions, internal functions, and fluent-convex endpoints because generated references flow through `convex/_generated/api` (`api = anyApi`, `internal = anyApi`). It can report `LOW` risk and `0` callers for backend functions that are actually used by production routes, components, tests, e2e helpers, or other Convex functions through generated API references.
+
+**Do not use GitNexus as the authority for the blast radius of exported Convex functions.** For Convex exports, GitNexus is allowed only as supplemental context for ordinary helper symbols discovered during manual tracing.
+
+This override applies to every GitNexus-related skill found for this project, including:
+- repo-local `.claude/skills/gitnexus/gitnexus-impact-analysis`
+- repo-local `.claude/skills/gitnexus/gitnexus-debugging`
+- repo-local `.claude/skills/gitnexus/gitnexus-exploring`
+- repo-local `.claude/skills/gitnexus/gitnexus-refactoring`
+- repo-local `.claude/skills/gitnexus/gitnexus-guide`
+- repo-local `.claude/skills/gitnexus/gitnexus-cli`
+- global `~/.agents/skills/gitnexus-impact-analysis`
+- global `~/.agents/skills/gitnexus-debugging`
+- global `~/.agents/skills/gitnexus-exploring`
+- global `~/.agents/skills/gitnexus-refactoring`
+- global `~/.agents/skills/gitnexus-pr-review`
+- global `~/.agents/skills/gitnexus-guide`
+- global `~/.agents/skills/gitnexus-cli`
+
+## Convex Blast Radius Procedure
+
+Before changing any exported Convex query, mutation, action, internal function, or fluent-convex endpoint:
+
+1. Identify the generated API namespace from the Convex file path and export name. Examples:
+   - `convex/listings/marketplace.ts:listMarketplaceListings` -> `api.listings.marketplace.listMarketplaceListings`
+   - `convex/deals/portalMutations.ts:uploadManualPaymentProof` -> `api.deals.portalMutations.uploadManualPaymentProof`
+   - `convex/payments/webhooks/stripe.ts:handleStripeWebhookInternal` -> `internal.payments.webhooks.stripe.handleStripeWebhookInternal`
+2. Search manually with `rg` for both public and internal generated API references:
+   - `api.<modulePath>.<exportName>`
+   - `internal.<modulePath>.<exportName>`
+3. Trace all wrappers and call sites found by that search, including:
+   - `convexQuery(...)` query option helpers
+   - `useQuery`, `useSuspenseQuery`, `useMutation`, and `useAction`
+   - TanStack route loaders and route components
+   - convex-test calls such as `t.query`, `t.mutation`, `auth.query`, and `auth.mutation`
+   - e2e helpers using `ConvexHttpClient`
+   - Convex functions that call `ctx.runQuery`, `ctx.runMutation`, or `ctx.runAction`
+4. Report the manual generated API trace as the source of truth for upstream impact.
+5. If GitNexus reports `LOW` or `0` callers for a Convex export but manual generated API references exist, explicitly label the GitNexus result as a false negative and set risk from the manual trace.
+
+Use GitNexus after this manual trace only for non-endpoint helper symbols, shared utilities, route wrappers, view-model builders, and ordinary TypeScript imports/calls.
+
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run impact analysis before editing any non-Convex symbol.** Before modifying a normal function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST use the Convex Blast Radius Procedure before editing exported Convex functions.** Manual generated API tracing is mandatory and overrides GitNexus upstream impact results for Convex exports.
 - **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
 - **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When exploring unfamiliar non-Convex code, use `gitnexus_query({query: "concept"})` to find execution flows before broad grepping. It returns process-grouped results ranked by relevance.
 - When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
 
 ## Never Do
 
-- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER edit a non-Convex function, class, or method without first running `gitnexus_impact` on it.
+- NEVER use GitNexus upstream impact as the sole blast-radius analysis for exported Convex queries, mutations, actions, internal functions, or fluent-convex endpoints.
+- NEVER classify an exported Convex function as low risk just because GitNexus reports `LOW`, `0` callers, or `0` affected processes.
 - NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
 - NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
 - NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.

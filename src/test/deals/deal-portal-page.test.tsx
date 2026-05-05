@@ -15,6 +15,27 @@ vi.mock("convex/react", () => ({
 	useMutation: () => vi.fn(async () => ({ assetId: "asset_test" })),
 }));
 
+vi.mock("#/components/shared/PdfPreviewViewer", () => ({
+	PdfPreviewViewer: ({
+		fileUrl,
+		label,
+		openFileLabel = "Open file",
+	}: {
+		fileUrl?: string | null;
+		label: string;
+		openFileLabel?: string;
+	}) => (
+		<div data-testid="pdf-preview-viewer">
+			<span>{label}</span>
+			{fileUrl ? (
+				<a href={fileUrl} rel="noreferrer" target="_blank">
+					{openFileLabel}
+				</a>
+			) : null}
+		</div>
+	),
+}));
+
 afterEach(() => {
 	cleanup();
 });
@@ -28,6 +49,7 @@ const baseWorkspace = {
 		closingDate: null,
 		createdAt: 1,
 		dealId: "deal_test",
+		dealValue: 125_000,
 		fractionalShareDisplayPercent: 25,
 		fractionalShareUnits: 2500,
 		lawyerId: "lawyer-auth",
@@ -198,6 +220,8 @@ describe("DealPortalShell", () => {
 			screen.getByRole("heading", { name: /legal representation/i })
 		).toBeTruthy();
 		expect(screen.getByText("Guest invitation sent")).toBeTruthy();
+		expect(screen.getByText("Deal value")).toBeTruthy();
+		expect(screen.getByText("$125,000")).toBeTruthy();
 	});
 
 	it("renders a send invite action when a guest lawyer is selected without an invitation row", () => {
@@ -300,7 +324,57 @@ describe("DealPortalShell", () => {
 		expect(
 			screen.queryByText(/after legal representation is confirmed/i)
 		).toBeNull();
-		expect(screen.getByText(/document package has not been generated/i)).toBeTruthy();
+		expect(screen.getByText(/no documents required/i)).toBeTruthy();
+		expect(screen.getByText(/no signing envelopes/i)).toBeTruthy();
+	});
+
+	it("shows empty-document progression only when no document instances are present", () => {
+		const emptyWorkspace = {
+			...baseWorkspace,
+			activeScreen: "documents",
+			capabilities: ["documents.skipEmpty"],
+			deal: {
+				...baseWorkspace.deal,
+				status: "documentReview.pending",
+			},
+			documents: {
+				...baseWorkspace.documents,
+				instances: [],
+				package: null,
+			},
+		} as never;
+
+		const { rerender } = render(<DealPortalShell workspace={emptyWorkspace} />);
+
+		expect(screen.getByRole("button", { name: /progress deal/i })).toBeTruthy();
+
+		rerender(
+			<DealPortalShell
+				workspace={
+					{
+						...emptyWorkspace,
+						documents: {
+							...baseWorkspace.documents,
+							instances: [
+								{
+									class: "private_templated_signable",
+									displayName: "Closing Signature Package",
+									instanceId: "instance_test",
+									signing: null,
+									status: "available",
+									url: null,
+								},
+							],
+							package: null,
+						},
+					} as never
+				}
+			/>
+		);
+
+		expect(
+			screen.queryByRole("button", { name: /continue to payment/i })
+		).toBeNull();
 	});
 
 	it("renders onboarding-required state without lender or lawyer controls", () => {
@@ -434,7 +508,32 @@ describe("DealPortalShell", () => {
 								proofs: [
 									{
 										amount: 125_000,
-										attachmentIds: ["asset_1"],
+										attachments: [
+											{
+												assetId: "asset_pdf",
+												fileSize: 10,
+												mimeType: "application/pdf",
+												name: "wire-proof.pdf",
+												originalFilename: "wire-proof.pdf",
+												url: "https://files.example.test/wire-proof.pdf",
+											},
+											{
+												assetId: "asset_image",
+												fileSize: 20,
+												mimeType: "image/png",
+												name: "wire-proof.png",
+												originalFilename: "wire-proof.png",
+												url: "https://files.example.test/wire-proof.png",
+											},
+											{
+												assetId: "asset_missing",
+												fileSize: null,
+												mimeType: null,
+												name: "Unavailable attachment",
+												originalFilename: "Unavailable attachment",
+												url: null,
+											},
+										],
 										cashLedgerJournalEntryIds: [],
 										cashLedgerPostingGroupId: null,
 										currency: "CAD",
@@ -480,5 +579,151 @@ describe("DealPortalShell", () => {
 			"disabled",
 			true
 		);
+		expect(screen.getByText("Attachments")).toBeTruthy();
+		expect(screen.getByTestId("pdf-preview-viewer").textContent).toContain(
+			"wire-proof.pdf"
+		);
+		expect(screen.getByAltText("wire-proof.png")).toBeTruthy();
+		expect(screen.getAllByRole("link", { name: /open file/i })).toHaveLength(2);
+		expect(screen.getByText(/file unavailable/i)).toBeTruthy();
+	});
+
+	it("shows broker payment proof attachments without approval controls", () => {
+		render(
+			<DealPortalShell
+				workspace={
+					{
+						...baseWorkspace,
+						activeScreen: "payment",
+						capabilities: ["payment.proof.review"],
+						deal: {
+							...baseWorkspace.deal,
+							status: "fundsTransfer.pending",
+						},
+						payment: {
+							adminReview: {
+								proofs: [
+									{
+										amount: 125_000,
+										attachments: [
+											{
+												assetId: "asset_1",
+												fileSize: 10,
+												mimeType: "application/pdf",
+												name: "wire-proof.pdf",
+												originalFilename: "wire-proof.pdf",
+												url: "https://files.example.test/wire-proof.pdf",
+											},
+										],
+										cashLedgerJournalEntryIds: [],
+										cashLedgerPostingGroupId: null,
+										currency: "CAD",
+										fundsEvidenceId: null,
+										institutionName: "Bank",
+										leg1TransferId: null,
+										leg2TransferId: null,
+										note: null,
+										proofId: "proof_1",
+										referenceNumber: "WIRE-1",
+										reviewReason: null,
+										reviewedAt: null,
+										reviewedBy: null,
+										sendingParty: "Lender trust",
+										status: "pending_review",
+										submittedBy: "lender-auth",
+										submittedByRole: "purchasing_lender",
+										submittedByPersona: "purchasing_lender",
+										transferDate: 1,
+									},
+								],
+							},
+							hasApprovedProof: false,
+							hasPendingProof: true,
+							proofs: [],
+						},
+						viewer: {
+							...baseWorkspace.viewer,
+							authId: "broker-auth",
+							isFairLendAdmin: false,
+							persona: "broker_of_record",
+						},
+					} as never
+				}
+			/>
+		);
+
+		expect(screen.getByText("Attachments")).toBeTruthy();
+		expect(screen.getByTestId("pdf-preview-viewer").textContent).toContain(
+			"wire-proof.pdf"
+		);
+		expect(screen.queryByRole("button", { name: /approve proof/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /reject proof/i })).toBeNull();
+	});
+
+	it("shows upload-capable participants a read-only FairLend review preview", () => {
+		render(
+			<DealPortalShell
+				workspace={
+					{
+						...baseWorkspace,
+						activeScreen: "payment",
+						capabilities: ["payment.proof.upload"],
+						deal: {
+							...baseWorkspace.deal,
+							status: "fundsTransfer.pending",
+						},
+						payment: {
+							adminReview: {
+								proofs: [
+									{
+										amount: 125_000,
+										attachments: [
+											{
+												assetId: "asset_1",
+												fileSize: 10,
+												mimeType: "application/pdf",
+												name: "wire-proof.pdf",
+												originalFilename: "wire-proof.pdf",
+												url: "https://files.example.test/wire-proof.pdf",
+											},
+										],
+										cashLedgerJournalEntryIds: [],
+										cashLedgerPostingGroupId: null,
+										currency: "CAD",
+										fundsEvidenceId: null,
+										institutionName: "Bank",
+										leg1TransferId: null,
+										leg2TransferId: null,
+										note: null,
+										proofId: "proof_1",
+										referenceNumber: "WIRE-1",
+										reviewReason: null,
+										reviewedAt: null,
+										reviewedBy: null,
+										sendingParty: "Lender trust",
+										status: "pending_review",
+										submittedBy: "lender-auth",
+										submittedByRole: "purchasing_lender",
+										submittedByPersona: "purchasing_lender",
+										transferDate: 1,
+									},
+								],
+							},
+							hasApprovedProof: false,
+							hasPendingProof: true,
+							proofs: [],
+						},
+					} as never
+				}
+			/>
+		);
+
+		expect(screen.getByRole("heading", { name: /fairlend review preview/i })).toBeTruthy();
+		expect(screen.getByTestId("pdf-preview-viewer").textContent).toContain(
+			"wire-proof.pdf"
+		);
+		expect(screen.getByRole("button", { name: /upload proof/i })).toBeTruthy();
+		expect(screen.queryByRole("button", { name: /approve proof/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /reject proof/i })).toBeNull();
 	});
 });

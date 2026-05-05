@@ -716,7 +716,7 @@ function PageSummaryRail({
 	summaryActions,
 	summaryFields,
 	supportingText,
-	title,
+	title: _title,
 }: {
 	readonly adapterAside: ReactNode;
 	readonly entity: ReturnType<typeof getAdminEntityByType> | undefined;
@@ -732,13 +732,9 @@ function PageSummaryRail({
 		<>
 			<PageSummarySection title="At a Glance">
 				<div className="space-y-3">
-					<div>
-						<p className="font-medium text-sm">{title}</p>
-						<p className="mt-1 text-muted-foreground text-sm">
-							{supportingText ??
-								"Shared entity detail surface for dedicated admin record routes."}
-						</p>
-					</div>
+					{supportingText ? (
+						<p className="text-muted-foreground text-sm">{supportingText}</p>
+					) : null}
 					<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
 						<SummaryValueCard label="Record ID" value={recordId} />
 						<SummaryValueCard
@@ -911,10 +907,16 @@ function resolveSummaryFields(args: {
 
 	const record = args.record;
 	const fieldLookup = new Map(args.fields.map((field) => [field.name, field]));
-	const preferredNames = [
-		...(args.adapter?.pageSummaryFieldNames ?? []),
-		...DEFAULT_PAGE_SUMMARY_FIELD_NAMES,
-	];
+	const explicitSummaryFieldNames = args.adapter?.pageSummaryFieldNames;
+	const hasExplicitConfig = explicitSummaryFieldNames !== undefined;
+
+	if (hasExplicitConfig && explicitSummaryFieldNames.length === 0) {
+		return [];
+	}
+
+	const preferredNames = hasExplicitConfig
+		? explicitSummaryFieldNames
+		: DEFAULT_PAGE_SUMMARY_FIELD_NAMES;
 	const preferredFields = preferredNames.flatMap((fieldName) => {
 		const field = fieldLookup.get(fieldName);
 		if (!(field && hasRenderableFieldValue(record.fields[field.name]))) {
@@ -1001,5 +1003,11 @@ function isPlaceholderRecordId(recordId: string) {
 }
 
 function formatTimestamp(timestamp: number) {
-	return new Date(timestamp).toLocaleString();
+	return new Date(timestamp).toLocaleString("en-US", {
+		year: "numeric",
+		month: "short",
+		day: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+	});
 }
