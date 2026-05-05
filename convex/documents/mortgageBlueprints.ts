@@ -6,6 +6,8 @@ import { adminMutation, adminQuery, requirePermission } from "../fluent";
 import { syncListingPublicDocumentsProjection } from "../listings/projection";
 import {
 	ALLOWED_MORTGAGE_SIGNATORY_PLATFORM_ROLES,
+	LEGACY_MORTGAGE_DOCUMENT_VARIABLE_KEY_ALIASES,
+	LEGACY_MORTGAGE_SIGNATORY_ROLE_ALIASES,
 	type MortgageDocumentBlueprintClass,
 	type MortgageDocumentMappingOverrides,
 	type MortgageDocumentValidationSummary,
@@ -265,6 +267,22 @@ function assertUniqueRows(values: readonly string[], message: string) {
 	}
 }
 
+function canonicalMortgageSignatoryRole(role: string) {
+	return (
+		LEGACY_MORTGAGE_SIGNATORY_ROLE_ALIASES[
+			role as keyof typeof LEGACY_MORTGAGE_SIGNATORY_ROLE_ALIASES
+		] ?? role
+	);
+}
+
+function canonicalMortgageVariableKey(key: string) {
+	return (
+		LEGACY_MORTGAGE_DOCUMENT_VARIABLE_KEY_ALIASES[
+			key as keyof typeof LEGACY_MORTGAGE_DOCUMENT_VARIABLE_KEY_ALIASES
+		] ?? key
+	);
+}
+
 export function validateMortgageDocumentMappingOverrides(args: {
 	allowedPlatformRoles: readonly string[];
 	allowedVariableKeys: readonly string[];
@@ -289,7 +307,11 @@ export function validateMortgageDocumentMappingOverrides(args: {
 		if (!args.requiredVariableKeys.includes(row.templateVariableKey)) {
 			throw new ConvexError("Unknown template variable override");
 		}
-		if (!args.allowedVariableKeys.includes(row.dealVariableKey)) {
+		if (
+			!args.allowedVariableKeys.includes(
+				canonicalMortgageVariableKey(row.dealVariableKey)
+			)
+		) {
 			throw new ConvexError("Unsupported variable mapping target");
 		}
 	}
@@ -298,7 +320,11 @@ export function validateMortgageDocumentMappingOverrides(args: {
 		if (!args.requiredPlatformRoles.includes(row.templatePlatformRole)) {
 			throw new ConvexError("Unknown template signatory override");
 		}
-		if (!args.allowedPlatformRoles.includes(row.dealParticipantRole)) {
+		if (
+			!args.allowedPlatformRoles.includes(
+				canonicalMortgageSignatoryRole(row.dealParticipantRole)
+			)
+		) {
 			throw new ConvexError("Unsupported signatory mapping target");
 		}
 	}
@@ -324,13 +350,15 @@ export function buildEffectiveMortgageDocumentMappings(args: {
 
 	return {
 		signatories: args.requiredPlatformRoles.map((templatePlatformRole) => ({
-			dealParticipantRole:
-				signatoryOverrides.get(templatePlatformRole) ?? templatePlatformRole,
+			dealParticipantRole: canonicalMortgageSignatoryRole(
+				signatoryOverrides.get(templatePlatformRole) ?? templatePlatformRole
+			),
 			templatePlatformRole,
 		})),
 		variables: args.requiredVariableKeys.map((templateVariableKey) => ({
-			dealVariableKey:
-				variableOverrides.get(templateVariableKey) ?? templateVariableKey,
+			dealVariableKey: canonicalMortgageVariableKey(
+				variableOverrides.get(templateVariableKey) ?? templateVariableKey
+			),
 			templateVariableKey,
 		})),
 	};

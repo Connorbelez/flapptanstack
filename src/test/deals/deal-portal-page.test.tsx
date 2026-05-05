@@ -62,44 +62,37 @@ const baseWorkspace = {
 			{
 				email: "lender@example.test",
 				hasWorkspaceAccess: true,
-				label: "Buyer",
+				label: "Purchasing lender",
 				name: "Lena Lender",
-				role: "buyer",
+				role: "purchasing_lender",
 			},
 			{
 				email: "seller@example.test",
 				hasWorkspaceAccess: true,
-				label: "Seller",
-				name: "Sam Seller",
-				role: "seller",
+				label: "Selling lender",
+				name: "Sam Selling",
+				role: "selling_lender",
 			},
 			{
 				email: "lawyer@example.test",
 				hasWorkspaceAccess: true,
-				label: "Buyer's Lawyer",
+				label: "Primary lawyer",
 				name: "Laura Lawyer",
-				role: "buyer_lawyer",
-			},
-			{
-				email: null,
-				hasWorkspaceAccess: false,
-				label: "Seller's Lawyer",
-				name: null,
-				role: "seller_lawyer",
+				role: "primary_lawyer",
 			},
 			{
 				email: "broker@example.test",
 				hasWorkspaceAccess: true,
 				label: "Broker",
 				name: "Bryn Broker",
-				role: "broker",
+				role: "broker_of_record",
 			},
 			{
-				email: "seller@example.test",
+				email: "borrower@example.test",
 				hasWorkspaceAccess: true,
-				label: "Borrower",
-				name: "Sam Seller",
-				role: "borrower",
+				label: "Primary borrower",
+				name: "Bailey Borrower",
+				role: "primary_borrower",
 			},
 		],
 		lawyer: {
@@ -108,12 +101,49 @@ const baseWorkspace = {
 			lawyerType: "guest_lawyer",
 		},
 		personas: {
-			admin: null,
-			buyer: "lender-auth",
-			lawyer: "lawyer-auth",
-			seller: "seller-auth",
+			assigned_broker: "assigned_broker",
+			broker_of_record: "broker_of_record",
+			fairlend_admin: "fairlend_admin",
+			primary_borrower: "primary_borrower",
+			primary_lawyer: "primary_lawyer",
+			purchasing_lender: "purchasing_lender",
+			selling_lender: "selling_lender",
 		},
-		seller: { displayName: "Sam Seller" },
+		primary_borrower: {
+			authId: "borrower-auth",
+			borrowerId: "borrower_test",
+			displayName: "Bailey Borrower",
+			email: "borrower@example.test",
+			persona: "primary_borrower",
+			userId: "user_borrower",
+		},
+		primary_lawyer: {
+			authId: "lawyer-auth",
+			displayName: "Laura Lawyer",
+			email: "lawyer@example.test",
+			hasActiveDealAccess: true,
+			lawyerType: "guest_lawyer",
+			persona: "primary_lawyer",
+		},
+		purchasing_lender: {
+			accessRole: "lender",
+			authId: "lender-auth",
+			displayName: "Lena Lender",
+			email: "lender@example.test",
+			lenderId: "lender_test",
+			persona: "purchasing_lender",
+			userId: "user_lender",
+		},
+		seller: { displayName: "Sam Selling" },
+		selling_lender: {
+			accessRole: "lender",
+			authId: "seller-auth",
+			displayName: "Sam Selling",
+			email: "seller@example.test",
+			lenderId: "seller_lender_test",
+			persona: "selling_lender",
+			userId: "user_seller",
+		},
 	},
 	payment: { adminReview: null, hasApprovedProof: false, hasPendingProof: false, proofs: [] },
 	representation: {
@@ -155,7 +185,7 @@ const baseWorkspace = {
 		authId: "lender-auth",
 		email: "lender@example.test",
 		isFairLendAdmin: false,
-		persona: "lender",
+		persona: "purchasing_lender",
 		userId: "user_lender",
 	},
 } as const;
@@ -208,6 +238,38 @@ describe("DealPortalShell", () => {
 		expect(screen.getByText("Target email")).toBeTruthy();
 	});
 
+	it("renders a progress deal recovery action for satisfied legal representation gates", () => {
+		render(
+			<DealPortalShell
+				workspace={
+					{
+						...baseWorkspace,
+						capabilities: ["representation.progressDeal"],
+						representation: {
+							...baseWorkspace.representation,
+							gate: {
+								message: "Legal representation gate is satisfied.",
+								reasonCodes: [],
+							},
+							kind: "guest_verified",
+							label: "Guest lawyer verified",
+							summary:
+								"Laura Lawyer is verified and awaiting representation confirmation.",
+						},
+						viewer: {
+							...baseWorkspace.viewer,
+							authId: "lawyer-auth",
+							email: "lawyer@example.test",
+							persona: "primary_lawyer",
+						},
+					} as never
+				}
+			/>
+		);
+
+		expect(screen.getByRole("button", { name: /progress deal/i })).toBeTruthy();
+	});
+
 	it("renders onboarding-required state without lender or lawyer controls", () => {
 		render(
 			<DealPortalShell
@@ -223,7 +285,7 @@ describe("DealPortalShell", () => {
 						viewer: {
 							...baseWorkspace.viewer,
 							authId: "lawyer-auth",
-							persona: "selected_lawyer_onboarding_required",
+							persona: "primary_lawyer",
 						},
 					} as never
 				}
@@ -233,14 +295,16 @@ describe("DealPortalShell", () => {
 		expect(
 			screen.getByRole("heading", { name: /complete legal onboarding/i })
 		).toBeTruthy();
-		expect(
-			screen
-				.getByRole("link", { name: /continue onboarding/i })
-				.getAttribute("href")
-		).toBe("/lawyer/onboarding/session_test");
-		expect(screen.queryByRole("button", { name: /send invite/i })).toBeNull();
-		expect(
-			screen.queryByRole("button", { name: /confirm representation/i })
+			expect(
+				screen
+					.getByRole("link", { name: /continue onboarding/i })
+					.getAttribute("href")
+			).toBe("/lawyer/onboarding/session_test");
+			expect(screen.queryByRole("heading", { name: "Closing Assembly" })).toBeNull();
+			expect(screen.queryByText("Purchasing lender")).toBeNull();
+			expect(screen.queryByRole("button", { name: /send invite/i })).toBeNull();
+			expect(
+				screen.queryByRole("button", { name: /confirm representation/i })
 		).toBeNull();
 		expect(screen.queryByRole("button", { name: /upload proof/i })).toBeNull();
 	});
@@ -248,19 +312,17 @@ describe("DealPortalShell", () => {
 	it("renders all deal parties below the portal header", () => {
 		render(<DealPortalShell workspace={baseWorkspace as never} />);
 
-		expect(screen.getByRole("heading", { name: "Parties" })).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "Closing Assembly" })).toBeTruthy();
 		for (const role of [
-			"Buyer",
-			"Seller",
-			"Buyer's Lawyer",
-			"Seller's Lawyer",
+			"Purchasing lender",
+			"Selling lender",
+			"Primary lawyer",
 			"Broker",
-			"Borrower",
+			"Primary borrower",
 		]) {
 			expect(screen.getByText(role)).toBeTruthy();
 		}
-		expect(screen.getByText("Not assigned")).toBeTruthy();
-		expect(screen.getAllByText("Signatory")).toHaveLength(5);
+		expect(screen.getAllByLabelText("Signatory")).toHaveLength(5);
 	});
 
 	it("renders payment upload for lender on fundsTransfer.pending", () => {
@@ -305,7 +367,7 @@ describe("DealPortalShell", () => {
 							...baseWorkspace.viewer,
 							authId: "seller-auth",
 							isFairLendAdmin: false,
-							persona: "seller",
+							persona: "selling_lender",
 						},
 					} as never
 				}
@@ -356,7 +418,8 @@ describe("DealPortalShell", () => {
 										sendingParty: "Lender trust",
 										status: "pending_review",
 										submittedBy: "lender-auth",
-										submittedByRole: "lender",
+										submittedByRole: "purchasing_lender",
+										submittedByPersona: "purchasing_lender",
 										transferDate: 1,
 									},
 								],
@@ -369,7 +432,7 @@ describe("DealPortalShell", () => {
 							...baseWorkspace.viewer,
 							authId: "admin-auth",
 							isFairLendAdmin: true,
-							persona: "admin",
+							persona: "fairlend_admin",
 						},
 					} as never
 				}

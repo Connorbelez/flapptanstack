@@ -46,7 +46,9 @@ export function ParticipantDealsQueuePage({
 			queue.completed.length >
 		0;
 	const title =
-		queue.persona === "buyer" ? "Buyer Closings" : "Seller Closings";
+		queue.persona === "selling_lender"
+			? "Selling Lender Closings"
+			: "Lender Closings";
 
 	return (
 		<div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6">
@@ -67,21 +69,9 @@ export function ParticipantDealsQueuePage({
 
 			{hasDeals ? (
 				<div className="grid gap-4 lg:grid-cols-3">
-					<QueueGroup
-						items={queue.needsAction}
-						kind="needsAction"
-						persona={queue.persona}
-					/>
-					<QueueGroup
-						items={queue.inProgress}
-						kind="inProgress"
-						persona={queue.persona}
-					/>
-					<QueueGroup
-						items={queue.completed}
-						kind="completed"
-						persona={queue.persona}
-					/>
+					<QueueGroup items={queue.needsAction} kind="needsAction" />
+					<QueueGroup items={queue.inProgress} kind="inProgress" />
+					<QueueGroup items={queue.completed} kind="completed" />
 				</div>
 			) : (
 				<Card>
@@ -106,11 +96,9 @@ export function ParticipantDealsQueuePage({
 function QueueGroup({
 	items,
 	kind,
-	persona,
 }: {
 	items: QueueItem[];
 	kind: keyof typeof groupConfig;
-	persona: ParticipantDealQueue["persona"];
 }) {
 	const Icon = groupConfig[kind].icon;
 	return (
@@ -124,9 +112,7 @@ function QueueGroup({
 			</div>
 			<div className="space-y-3">
 				{items.length > 0 ? (
-					items.map((item) => (
-						<QueueCard item={item} key={item.dealId} persona={persona} />
-					))
+					items.map((item) => <QueueCard item={item} key={item.dealId} />)
 				) : (
 					<div className="rounded-lg border border-dashed p-4 text-muted-foreground text-sm">
 						No closings in this group.
@@ -137,17 +123,8 @@ function QueueGroup({
 	);
 }
 
-function QueueCard({
-	item,
-	persona,
-}: {
-	item: QueueItem;
-	persona: ParticipantDealQueue["persona"];
-}) {
-	const href =
-		persona === "buyer"
-			? `/lender/deals/${String(item.dealId)}`
-			: `/borrower/deals/${String(item.dealId)}`;
+function QueueCard({ item }: { item: QueueItem }) {
+	const href = `/lender/deals/${String(item.dealId)}`;
 
 	return (
 		<Card>

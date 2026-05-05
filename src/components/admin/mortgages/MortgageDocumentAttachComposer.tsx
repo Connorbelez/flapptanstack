@@ -22,7 +22,10 @@ import {
 	SelectValue,
 } from "#/components/ui/select";
 import { Textarea } from "#/components/ui/textarea";
-import { SUPPORTED_DEAL_DOCUMENT_VARIABLE_KEYS } from "#/lib/document-engine/contracts";
+import {
+	MORTGAGE_DOCUMENT_SIGNATORY_ROLES,
+	SUPPORTED_DEAL_DOCUMENT_VARIABLE_KEYS,
+} from "#/lib/document-engine/contracts";
 import {
 	defaultDocumentAssetName,
 	uploadDocumentAsset,
@@ -81,15 +84,7 @@ interface MappingPreview {
 
 const ALLOWED_VARIABLE_KEYS = SUPPORTED_DEAL_DOCUMENT_VARIABLE_KEYS;
 
-const ALLOWED_PLATFORM_ROLES = [
-	"borrower_primary",
-	"borrower_co_1",
-	"borrower_co_2",
-	"broker_of_record",
-	"assigned_broker",
-	"lawyer_primary",
-	"lender_primary",
-] as const;
+const ALLOWED_PLATFORM_ROLES = MORTGAGE_DOCUMENT_SIGNATORY_ROLES;
 
 const EMPTY_MAPPING_OVERRIDES: MortgageDocumentMappingOverrides = {
 	signatories: [],

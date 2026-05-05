@@ -1,7 +1,11 @@
 import { ConvexError, v } from "convex/values";
+import { resolveDealAccessDecision } from "../../src/lib/deals/access-policy/resolve";
+import type {
+	DealAccessDecision,
+	DealPersonaReadiness,
+} from "../../src/lib/deals/access-policy/types";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { assertDealAccess } from "../authz/resourceAccess";
 import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { authedQuery, type Viewer } from "../fluent";
 import {
@@ -22,7 +26,6 @@ import {
 } from "./portalContracts";
 
 type PortalQueryCtx = Pick<QueryCtx, "db" | "storage"> & { viewer: Viewer };
-type DealAccessRow = Doc<"dealAccess">;
 type DealPaymentProofRow = Doc<"dealPaymentProofs">;
 type LawyerOnboardingSessionRow = Doc<"lawyerOnboardingSessions">;
 type DealDocumentPackageSurface = Awaited<
@@ -34,6 +37,7 @@ interface PortalViewerProjection {
 	email: string | null;
 	isFairLendAdmin: boolean;
 	persona: DealPortalPersona;
+	readiness: DealPersonaReadiness;
 	userId: Id<"users"> | null;
 }
 
@@ -110,6 +114,7 @@ interface OnboardingProjection {
 }
 
 interface DealPortalWorkspace {
+	accessDecision: DealAccessDecision;
 	activeScreen: DealPortalScreen;
 	blockers: PortalBlocker[];
 	capabilities: DealPortalCapability[];
@@ -185,92 +190,6 @@ async function getActiveOnboardingSessionForViewer(
 	);
 }
 
-function activeAccessRowsForViewer(
-	accessRows: readonly DealAccessRow[],
-	viewer: Viewer
-) {
-	return accessRows.filter((row) => {
-		if (row.status !== "active") {
-			return false;
-		}
-		return row.userId === viewer.authId;
-	});
-}
-
-function hasActiveRole(
-	activeAccessRows: readonly DealAccessRow[],
-	roles: ReadonlySet<DealAccessRow["role"]>
-) {
-	return activeAccessRows.some((row) => roles.has(row.role));
-}
-
-function selectedLawyerMatchesViewer(deal: Doc<"deals">, viewer: Viewer) {
-	const normalizedViewerEmail = normalizeEmail(
-		viewer.verifiedEmail ?? viewer.email
-	);
-	const selectedLawyerEmail = normalizeEmail(deal.selectedLawyer?.email);
-	const selectedLawyerId =
-		deal.selectedLawyer?.type === "platform_lawyer"
-			? deal.selectedLawyer.lawyerId
-			: undefined;
-
-	return (
-		deal.lawyerId === viewer.authId ||
-		selectedLawyerId === viewer.authId ||
-		(normalizedViewerEmail !== null &&
-			selectedLawyerEmail === normalizedViewerEmail)
-	);
-}
-
-function resolveViewerPersona(args: {
-	activeAccessRows: readonly DealAccessRow[];
-	deal: Doc<"deals">;
-	onboardingSession: LawyerOnboardingSessionRow | null;
-	viewer: Viewer;
-}): DealPortalPersona {
-	if (args.viewer.isFairLendAdmin) {
-		return "admin";
-	}
-	if (
-		args.deal.buyerId === args.viewer.authId ||
-		hasActiveRole(args.activeAccessRows, new Set(["lender"]))
-	) {
-		return "lender";
-	}
-	const selectedLawyerMatches = selectedLawyerMatchesViewer(
-		args.deal,
-		args.viewer
-	);
-	const hasActiveLawyerDealAccess = hasActiveRole(
-		args.activeAccessRows,
-		new Set(["guest_lawyer", "platform_lawyer"])
-	);
-	if (hasActiveLawyerDealAccess) {
-		return "selected_lawyer";
-	}
-	if (selectedLawyerMatches) {
-		return args.onboardingSession?.status === "complete"
-			? "selected_lawyer"
-			: "selected_lawyer_onboarding_required";
-	}
-	if (
-		hasActiveRole(
-			args.activeAccessRows,
-			new Set(["assigned_broker", "broker_of_record"])
-		)
-	) {
-		return "broker";
-	}
-	if (
-		args.deal.sellerId === args.viewer.authId ||
-		hasActiveRole(args.activeAccessRows, new Set(["borrower"]))
-	) {
-		return "seller";
-	}
-
-	throw new ConvexError("Forbidden: no deal portal persona for viewer");
-}
-
 function addCapability(
 	capabilities: Set<DealPortalCapability>,
 	capability: DealPortalCapability
@@ -286,12 +205,7 @@ function buildCapabilities(args: {
 }): DealPortalCapability[] {
 	const capabilities = new Set<DealPortalCapability>();
 
-	if (args.persona === "selected_lawyer_onboarding_required") {
-		addCapability(capabilities, "representation.onboarding.resume");
-		return [...capabilities].sort();
-	}
-
-	if (args.persona === "admin") {
+	if (args.persona === "fairlend_admin") {
 		for (const capability of [
 			"representation.adminOverride",
 			"documents.generate",
@@ -303,7 +217,10 @@ function buildCapabilities(args: {
 		}
 	}
 
-	if (args.persona === "admin" || args.persona === "lender") {
+	if (
+		args.persona === "fairlend_admin" ||
+		args.persona === "purchasing_lender"
+	) {
 		if (args.representation.actions.resendInvitation.allowed) {
 			addCapability(capabilities, "representation.invitation.resend");
 		}
@@ -313,14 +230,21 @@ function buildCapabilities(args: {
 	}
 
 	if (
-		args.persona === "selected_lawyer" &&
+		args.persona === "primary_lawyer" &&
 		args.deal.status === "lawyerOnboarding.verified"
 	) {
 		addCapability(capabilities, "representation.confirm");
 	}
+	if (
+		(args.persona === "fairlend_admin" || args.persona === "primary_lawyer") &&
+		(args.deal.status === "lawyerOnboarding.pending" ||
+			args.deal.status === "lawyerOnboarding.verified")
+	) {
+		addCapability(capabilities, "representation.progressDeal");
+	}
 
 	if (
-		args.persona === "selected_lawyer" &&
+		args.persona === "primary_lawyer" &&
 		args.deal.status === "documentReview.pending"
 	) {
 		addCapability(capabilities, "documents.approve");
@@ -418,7 +342,7 @@ function buildBlockers(args: {
 	payment: PaymentProjection;
 	persona: DealPortalPersona;
 }): PortalBlocker[] {
-	if (args.persona === "selected_lawyer_onboarding_required") {
+	if (args.persona === "primary_lawyer") {
 		return [];
 	}
 	if (
@@ -457,6 +381,177 @@ function projectDeal(args: {
 	};
 }
 
+function redactedParticipants(dealId: Id<"deals">): DealParticipantProjection {
+	const hiddenLender = {
+		accessRole: "lender" as const,
+		authId: "redacted",
+		displayName: "Hidden until onboarding completes",
+		email: null,
+		lenderId: null,
+		userId: null,
+	};
+	const hiddenLawyer = {
+		authId: null,
+		displayName: null,
+		email: null,
+		hasActiveDealAccess: false,
+		lawyerType: null,
+	};
+	return {
+		buyer: hiddenLender,
+		dealId,
+		fractionalShareDisplayPercent: null,
+		fractionalShareStatus: {
+			fractionalShareDisplayPercent: null,
+			fractionalShareUnits: 0,
+			isValid: true,
+			validationError: null,
+		},
+		fractionalShareUnits: 0,
+		involvedParties: [],
+		lawyer: hiddenLawyer,
+		personas: {
+			assigned_broker: "assigned_broker",
+			broker_of_record: "broker_of_record",
+			fairlend_admin: "fairlend_admin",
+			primary_borrower: "primary_borrower",
+			primary_lawyer: "primary_lawyer",
+			purchasing_lender: "purchasing_lender",
+			selling_lender: "selling_lender",
+		},
+		primary_borrower: {
+			authId: null,
+			borrowerId: null,
+			displayName: null,
+			email: null,
+			persona: "primary_borrower",
+			userId: null,
+		},
+		primary_lawyer: {
+			...hiddenLawyer,
+			persona: "primary_lawyer",
+		},
+		purchasing_lender: {
+			...hiddenLender,
+			persona: "purchasing_lender",
+		},
+		seller: {
+			...hiddenLender,
+			borrowerId: null,
+		},
+		selling_lender: {
+			...hiddenLender,
+			persona: "selling_lender",
+		},
+	};
+}
+
+function redactedRepresentation(): LegalRepresentationStatusProjection {
+	const action = { allowed: false, reason: "onboarding_required" };
+	return {
+		actions: {
+			changeGuestEmail: action,
+			replaceLawyer: action,
+			resendInvitation: action,
+		},
+		activeLawyerAccessCount: 0,
+		currentInvitation: {
+			acceptedAt: null,
+			deliveredAt: null,
+			deliveryError: null,
+			deliveryProvider: null,
+			deliveryStatus: null,
+			expiresAt: null,
+			invitationId: null,
+			lastDeliveryAttemptAt: null,
+			status: "none",
+			targetEmail: null,
+			updatedAt: null,
+			workosInvitationId: null,
+		},
+		gate: {
+			message: "Complete lawyer onboarding before viewing this deal.",
+			reasonCodes: [],
+		},
+		kind: "blocked",
+		label: "Onboarding required",
+		overrideEvidence: null,
+		selectedLawyer: {
+			email: null,
+			lawyerId: null,
+			name: null,
+			type: null,
+		},
+		showInDealViews: false,
+		summary: "Complete lawyer onboarding before viewing this deal.",
+	};
+}
+
+function onboardingOnlyWorkspace(args: {
+	accessDecision: DealAccessDecision;
+	deal: Doc<"deals">;
+	onboardingSession: LawyerOnboardingSessionRow | null;
+	viewer: Viewer;
+	viewerUserId: Id<"users"> | null;
+}): DealPortalWorkspace {
+	const participants = redactedParticipants(args.deal._id);
+	const nextRoute =
+		args.onboardingSession?.nextRoute ??
+		args.accessDecision.redirectTo ??
+		(args.onboardingSession
+			? `/lawyer/onboarding/${String(args.onboardingSession._id)}`
+			: null);
+	return {
+		accessDecision: args.accessDecision,
+		activeScreen: "unavailable",
+		blockers: [],
+		capabilities: [],
+		completion: {
+			completed: false,
+			completedAt: null,
+		},
+		deal: {
+			closingDate: null,
+			createdAt: 0,
+			dealId: args.deal._id,
+			fractionalShareDisplayPercent: null,
+			fractionalShareUnits: 0,
+			lawyerId: null,
+			lawyerType: null,
+			lenderId: null,
+			mortgageId: args.deal.mortgageId,
+			selectedLawyer: null,
+			status: "onboarding_required",
+		},
+		documents: {
+			instances: [],
+			package: null,
+			participants: null,
+		},
+		onboarding: {
+			nextRoute,
+			required: true,
+			sessionId: args.onboardingSession?._id ?? null,
+		},
+		participants,
+		payment: {
+			adminReview: null,
+			hasApprovedProof: false,
+			hasPendingProof: false,
+			proofs: [],
+		},
+		representation: redactedRepresentation(),
+		viewer: {
+			authId: args.viewer.authId,
+			email: normalizeEmail(args.viewer.email),
+			isFairLendAdmin: args.viewer.isFairLendAdmin,
+			persona: args.accessDecision.persona,
+			readiness: args.accessDecision.readiness,
+			userId: args.viewerUserId,
+		},
+	};
+}
+
 export const getDealPortalWorkspace = authedQuery
 	.input({ dealId: v.id("deals") })
 	.handler(
@@ -466,29 +561,36 @@ export const getDealPortalWorkspace = authedQuery
 				return null;
 			}
 
-			await assertDealAccess(ctx, args.dealId);
-
-			const [accessRows, viewerUserId] = await Promise.all([
-				ctx.db
-					.query("dealAccess")
-					.withIndex("by_deal", (query) => query.eq("dealId", args.dealId))
-					.collect(),
+			const [accessDecision, viewerUserId] = await Promise.all([
+				resolveDealAccessDecision(ctx, {
+					dealId: args.dealId,
+					intent: "deal.portal.view",
+					viewer: ctx.viewer,
+				}),
 				getViewerUserIdByAuthId(ctx, ctx.viewer.authId),
 			]);
+			if (!accessDecision) {
+				return null;
+			}
+			if (!(accessDecision.allowed || accessDecision.redirectTo)) {
+				throw new ConvexError(
+					`Forbidden: no deal access for ${String(args.dealId)}`
+				);
+			}
 			const onboardingSession = await getActiveOnboardingSessionForViewer(ctx, {
 				dealId: deal._id,
 				viewer: ctx.viewer,
 			});
-			const activeViewerAccessRows = activeAccessRowsForViewer(
-				accessRows,
-				ctx.viewer
-			);
-			const persona = resolveViewerPersona({
-				activeAccessRows: activeViewerAccessRows,
-				deal,
-				onboardingSession,
-				viewer: ctx.viewer,
-			});
+			if (!accessDecision.allowed) {
+				return onboardingOnlyWorkspace({
+					accessDecision,
+					deal,
+					onboardingSession,
+					viewer: ctx.viewer,
+					viewerUserId,
+				});
+			}
+			const persona = accessDecision.persona;
 
 			const [representation, participants, documents, payment] =
 				await Promise.all([
@@ -507,13 +609,16 @@ export const getDealPortalWorkspace = authedQuery
 
 			return {
 				activeScreen,
+				accessDecision,
 				blockers: buildBlockers({ activeScreen, payment, persona }),
-				capabilities: buildCapabilities({
-					activeScreen,
-					deal,
-					persona,
-					representation,
-				}),
+				capabilities: accessDecision.allowed
+					? buildCapabilities({
+							activeScreen,
+							deal,
+							persona,
+							representation,
+						})
+					: [],
 				completion: {
 					completed: deal.status === "confirmed",
 					completedAt:
@@ -526,10 +631,13 @@ export const getDealPortalWorkspace = authedQuery
 				onboarding: {
 					nextRoute:
 						onboardingSession?.nextRoute ??
+						accessDecision.redirectTo ??
 						(onboardingSession
 							? `/lawyer/onboarding/${String(onboardingSession._id)}`
 							: null),
-					required: persona === "selected_lawyer_onboarding_required",
+					required:
+						persona === "primary_lawyer" &&
+						accessDecision.readiness !== "active",
 					sessionId: onboardingSession?._id ?? null,
 				},
 				participants,
@@ -540,6 +648,7 @@ export const getDealPortalWorkspace = authedQuery
 					email: normalizeEmail(ctx.viewer.email),
 					isFairLendAdmin: ctx.viewer.isFairLendAdmin,
 					persona,
+					readiness: accessDecision.readiness,
 					userId: viewerUserId,
 				},
 			};

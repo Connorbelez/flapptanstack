@@ -26,10 +26,10 @@ export const BuyerSigningReady: Story = {};
 
 export const SellerBlockedSigning: Story = {
 	args: {
-		backTo: "/borrower/deals",
+		backTo: "/lender/deals",
 		workspace: {
 			...blockedParticipantWorkspaceFixture,
-			persona: "seller",
+			persona: "selling_lender",
 		},
 	},
 };

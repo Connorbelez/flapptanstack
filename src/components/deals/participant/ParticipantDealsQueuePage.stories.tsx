@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import {
 	emptyParticipantQueueFixture,
-	participantBuyerQueueFixture,
-	participantSellerQueueFixture,
+	participantPurchasingLenderQueueFixture,
+	participantSellingLenderQueueFixture,
 } from "#/components/deals/portal-story-fixtures";
 import { ParticipantDealsQueuePage } from "./ParticipantDealsQueuePage";
 
@@ -10,7 +10,7 @@ const meta = {
 	title: "Deal Portals/Participant/Deals Queue",
 	component: ParticipantDealsQueuePage,
 	args: {
-		queue: participantBuyerQueueFixture,
+		queue: participantPurchasingLenderQueueFixture,
 	},
 	parameters: {
 		layout: "fullscreen",
@@ -21,11 +21,11 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const BuyerMixedQueue: Story = {};
+export const PurchasingLenderMixedQueue: Story = {};
 
-export const SellerNeedsAction: Story = {
+export const SellingLenderNeedsAction: Story = {
 	args: {
-		queue: participantSellerQueueFixture,
+		queue: participantSellingLenderQueueFixture,
 	},
 };
 

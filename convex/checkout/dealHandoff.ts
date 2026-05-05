@@ -657,6 +657,8 @@ async function createDealForCheckout(
 		mortgageId: checkoutSession.mortgageId,
 		buyerId: checkoutSession.lenderAuthId,
 		sellerId: sellerLedgerLenderId,
+		purchasingLenderAuthId: checkoutSession.lenderAuthId,
+		sellingLenderAuthId: sellerLedgerLenderId,
 		fractionalShare: checkoutSession.requestedFractions,
 		closingDate: undefined,
 		lockingFeeAmount: checkoutSession.lockFeeAmount,

@@ -245,6 +245,7 @@ import type * as legalRepresentation_normalization from "../legalRepresentation/
 import type * as legalRepresentation_onboarding from "../legalRepresentation/onboarding.js";
 import type * as legalRepresentation_platformLawyers from "../legalRepresentation/platformLawyers.js";
 import type * as legalRepresentation_profiles from "../legalRepresentation/profiles.js";
+import type * as legalRepresentation_progression from "../legalRepresentation/progression.js";
 import type * as legalRepresentation_providers from "../legalRepresentation/providers.js";
 import type * as legalRepresentation_sla from "../legalRepresentation/sla.js";
 import type * as legalRepresentation_status from "../legalRepresentation/status.js";
@@ -739,6 +740,7 @@ declare const fullApi: ApiFromModules<{
   "legalRepresentation/onboarding": typeof legalRepresentation_onboarding;
   "legalRepresentation/platformLawyers": typeof legalRepresentation_platformLawyers;
   "legalRepresentation/profiles": typeof legalRepresentation_profiles;
+  "legalRepresentation/progression": typeof legalRepresentation_progression;
   "legalRepresentation/providers": typeof legalRepresentation_providers;
   "legalRepresentation/sla": typeof legalRepresentation_sla;
   "legalRepresentation/status": typeof legalRepresentation_status;

@@ -1,5 +1,5 @@
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import aggregateSchema from "../../../node_modules/@convex-dev/aggregate/dist/component/schema.js";
 import auditLogSchema from "../../../node_modules/convex-audit-log/dist/component/schema.js";
 import { api } from "../../_generated/api";
@@ -624,6 +624,71 @@ describe("lawyer workspace mutations", () => {
 			previousState: "lawyerOnboarding.verified",
 			success: true,
 		});
+		const deal = await t.run((ctx) => ctx.db.get(dealId));
+		expect(deal?.status).toBe("documentReview.pending");
+	});
+
+	it("recovers a pending legal representation state when lawyer gates are already satisfied", async () => {
+		const { dealId, t } = await seedLawyerWorkspaceFixture({
+			dealStatus: "lawyerOnboarding.pending",
+			includeRepresentationEngagement: true,
+			includeVerificationEvidence: true,
+		});
+
+		vi.useFakeTimers();
+		try {
+			const result = await t
+				.withIdentity(lawyerIdentity("lawyer-auth", "lawyer@test.fairlend.ca"))
+				.mutation(api.deals.lawyerMutations.progressLegalRepresentation, {
+					dealId,
+				});
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+			expect(result).toMatchObject({
+				success: true,
+				transitions: [
+					{
+						eventType: "LAWYER_VERIFIED",
+						newState: "lawyerOnboarding.verified",
+						previousState: "lawyerOnboarding.pending",
+					},
+					{
+						eventType: "REPRESENTATION_CONFIRMED",
+						newState: "documentReview.pending",
+						previousState: "lawyerOnboarding.verified",
+					},
+				],
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+
+		const deal = await t.run((ctx) => ctx.db.get(dealId));
+		expect(deal?.status).toBe("documentReview.pending");
+	});
+
+	it("allows FairLend admins to recover satisfied legal representation gates", async () => {
+		const { dealId, t } = await seedLawyerWorkspaceFixture({
+			dealStatus: "lawyerOnboarding.pending",
+			includeRepresentationEngagement: true,
+			includeVerificationEvidence: true,
+		});
+
+		vi.useFakeTimers();
+		try {
+			const result = await t
+				.withIdentity(fairLendAdminIdentity("admin-auth"))
+				.mutation(api.deals.lawyerMutations.progressLegalRepresentation, {
+					dealId,
+				});
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+			expect(result).toMatchObject({
+				dealStatus: "documentReview.pending",
+				success: true,
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+
 		const deal = await t.run((ctx) => ctx.db.get(dealId));
 		expect(deal?.status).toBe("documentReview.pending");
 	});

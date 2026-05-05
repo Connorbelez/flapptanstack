@@ -2,11 +2,11 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Authenticated, AuthLoading } from "convex/react";
 import { AppRoutePendingScreen } from "#/components/AppRoutePendingScreen";
 
-export const Route = createFileRoute("/lawyer")({
-	component: LawyerLayout,
+export const Route = createFileRoute("/deals")({
+	component: DealLayout,
 });
 
-export function LawyerLayout() {
+export function DealLayout() {
 	return (
 		<>
 			<Authenticated>

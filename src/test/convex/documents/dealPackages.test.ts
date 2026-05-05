@@ -1006,12 +1006,16 @@ describe("documents/dealPackages", () => {
 		expect(variables).toMatchObject({
 			assigned_broker_email: "broker.phase7@test.fairlend.ca",
 			assigned_broker_full_name: "Brooke Broker",
+			co_borrower_1_email: "co1.phase7@test.fairlend.ca",
+			co_borrower_1_full_name: "Cora Coborrower",
+			co_borrower_2_email: "co2.phase7@test.fairlend.ca",
+			co_borrower_2_full_name: "Chris Coborrower",
 			borrower_co_1_email: "co1.phase7@test.fairlend.ca",
 			borrower_co_1_full_name: "Cora Coborrower",
 			borrower_co_2_email: "co2.phase7@test.fairlend.ca",
 			borrower_co_2_full_name: "Chris Coborrower",
-			borrower_primary_email: "seller.phase7@test.fairlend.ca",
-			borrower_primary_full_name: "Sam Seller",
+			borrower_primary_email: "borrower.phase7@test.fairlend.ca",
+			borrower_primary_full_name: "Ada Borrower",
 			broker_of_record_email: "broker.phase7@test.fairlend.ca",
 			broker_of_record_full_name: "Brooke Broker",
 			deal_investment_amount: "62500",
@@ -1102,9 +1106,9 @@ describe("documents/dealPackages", () => {
 					signing: expect.objectContaining({
 						recipients: expect.arrayContaining([
 							expect.objectContaining({
-								email: "seller.phase7@test.fairlend.ca",
-								status: "pending",
-							}),
+									email: "borrower.phase7@test.fairlend.ca",
+									status: "pending",
+								}),
 						]),
 						status: "sent",
 					}),
@@ -1244,8 +1248,8 @@ describe("documents/dealPackages", () => {
 			fixture.lenderIdentity.subject
 		);
 		expect(variables).toMatchObject({
-			borrower_primary_email: "seller.phase7@test.fairlend.ca",
-			borrower_primary_full_name: "Sam Seller",
+			borrower_primary_email: "borrower.phase7@test.fairlend.ca",
+			borrower_primary_full_name: "Ada Borrower",
 			lender_primary_email: "lender.phase7@test.fairlend.ca",
 			lender_primary_full_name: "Lena Lender",
 		});
@@ -1257,8 +1261,8 @@ describe("documents/dealPackages", () => {
 					platformRole: "lender_primary",
 				}),
 				expect.objectContaining({
-					email: "seller.phase7@test.fairlend.ca",
-					name: "Sam Seller",
+					email: "borrower.phase7@test.fairlend.ca",
+					name: "Ada Borrower",
 					platformRole: "borrower_primary",
 				}),
 			])
@@ -1326,8 +1330,8 @@ describe("documents/dealPackages", () => {
 		]);
 		expect(signatureRecipients).toEqual([
 			expect.objectContaining({
-				email: "seller.phase7@test.fairlend.ca",
-				name: "Sam Seller",
+				email: "borrower.phase7@test.fairlend.ca",
+				name: "Ada Borrower",
 				platformRole: "borrower_primary",
 				status: "pending",
 			}),
@@ -1837,8 +1841,8 @@ describe("documents/dealPackages", () => {
 
 	it("stores provider recipient ids when Documenso echoes a zero-based signing order", async () => {
 		installMockDocumensoFetch({
-			recipientEmail: "seller.phase7@test.fairlend.ca",
-			recipientName: "Sam Seller",
+			recipientEmail: "borrower.phase7@test.fairlend.ca",
+			recipientName: "Ada Borrower",
 			recipientSigningOrder: 0,
 		});
 		const t = createTestConvex({ includeWorkflowComponents: false });
@@ -1866,8 +1870,8 @@ describe("documents/dealPackages", () => {
 					signing: expect.objectContaining({
 						recipients: [
 							expect.objectContaining({
-								email: "seller.phase7@test.fairlend.ca",
-								providerRecipientId: "doc_rcpt_1",
+									email: "borrower.phase7@test.fairlend.ca",
+									providerRecipientId: "doc_rcpt_1",
 							}),
 						],
 					}),
@@ -2077,7 +2081,7 @@ describe("documents/dealPackages", () => {
 		);
 
 		expect(variables).toMatchObject({
-			borrower_primary_full_name: "Sam Seller",
+			borrower_primary_full_name: "Ada Borrower",
 			lender_primary_email: "lender.phase7@test.fairlend.ca",
 			lender_primary_full_name: "Lena Lender",
 			lender_primary_system_id: String(fixture.lenderUserId),

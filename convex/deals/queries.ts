@@ -403,7 +403,10 @@ export interface ParticipantCloseReceiptSummary {
 	signedArchiveStatus: SignedArchiveStatus | null;
 }
 
-export type ParticipantWorkspacePersona = "buyer" | "seller";
+export type ParticipantWorkspacePersona =
+	| "purchasing_lender"
+	| "selling_lender"
+	| "participating_lender";
 export type ParticipantQueueGroupName =
 	| "needsAction"
 	| "inProgress"
@@ -1287,8 +1290,48 @@ function hasParticipantCloseReceiptEvidence(
 	);
 }
 
-function roleForPersona(persona: ParticipantWorkspacePersona) {
-	return persona === "buyer" ? "lender" : "borrower";
+function canonicalLenderPersonaForViewer(
+	deal: Doc<"deals">,
+	viewerAuthId: string
+): Exclude<ParticipantWorkspacePersona, "participating_lender"> | null {
+	const purchasingLenderAuthId =
+		"purchasingLenderAuthId" in deal && deal.purchasingLenderAuthId
+			? deal.purchasingLenderAuthId
+			: deal.buyerId;
+	const sellingLenderAuthId =
+		"sellingLenderAuthId" in deal && deal.sellingLenderAuthId
+			? deal.sellingLenderAuthId
+			: deal.sellerId;
+	if (viewerAuthId === purchasingLenderAuthId) {
+		return "purchasing_lender";
+	}
+	if (viewerAuthId === sellingLenderAuthId) {
+		return "selling_lender";
+	}
+	return null;
+}
+
+function requestedPersonaMatches(
+	requested: ParticipantWorkspacePersona,
+	actual: Exclude<ParticipantWorkspacePersona, "participating_lender">
+) {
+	return requested === "participating_lender" || requested === actual;
+}
+
+function participantPersonaFromAccessRow(
+	row: Doc<"dealAccess">,
+	directPersona: Exclude<
+		ParticipantWorkspacePersona,
+		"participating_lender"
+	> | null
+) {
+	if (row.persona === "purchasing_lender" || row.persona === "selling_lender") {
+		return row.persona;
+	}
+	if (row.role === "lender") {
+		return directPersona;
+	}
+	return null;
 }
 
 async function requireParticipantPersonaDealAccess(
@@ -1301,15 +1344,46 @@ async function requireParticipantPersonaDealAccess(
 	if (ctx.viewer.isFairLendAdmin) {
 		return;
 	}
-	const role = roleForPersona(args.persona);
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal) {
+		throw new ConvexError(`Deal not found: ${String(args.dealId)}`);
+	}
+	const directPersona = canonicalLenderPersonaForViewer(
+		deal,
+		ctx.viewer.authId
+	);
 	const access = await ctx.db
 		.query("dealAccess")
 		.withIndex("by_user_and_deal", (query) =>
 			query.eq("userId", ctx.viewer.authId).eq("dealId", args.dealId)
 		)
 		.collect();
-	if (access.some((row) => row.status === "active" && row.role === role)) {
+	const hasRevokedDirectPersona = access.some((row) => {
+		const rowPersona = participantPersonaFromAccessRow(row, directPersona);
+		return (
+			row.status !== "active" &&
+			rowPersona !== null &&
+			requestedPersonaMatches(args.persona, rowPersona)
+		);
+	});
+	if (
+		directPersona &&
+		requestedPersonaMatches(args.persona, directPersona) &&
+		!hasRevokedDirectPersona
+	) {
 		return;
+	}
+	for (const row of access) {
+		if (row.status !== "active") {
+			continue;
+		}
+		const rowPersona = participantPersonaFromAccessRow(row, directPersona);
+		if (
+			(rowPersona === "purchasing_lender" || rowPersona === "selling_lender") &&
+			requestedPersonaMatches(args.persona, rowPersona)
+		) {
+			return;
+		}
 	}
 	throw new ConvexError(
 		`Forbidden: no ${args.persona} workspace access for ${String(args.dealId)}`
@@ -1595,7 +1669,8 @@ function nextActionForWorkspace(args: {
 	queueGroup: ParticipantQueueGroupName;
 	signingStatus: ParticipantSigningStatus;
 }) {
-	const roleLabel = args.persona === "buyer" ? "buyer" : "seller";
+	const roleLabel =
+		args.persona === "selling_lender" ? "selling lender" : "purchasing lender";
 	if (args.queueGroup === "completed") {
 		return "Review your closing receipt";
 	}
@@ -2162,7 +2237,11 @@ async function buildParticipantDealWorkspace(
 }
 
 const participantWorkspaceInput = {
-	persona: v.union(v.literal("buyer"), v.literal("seller")),
+	persona: v.union(
+		v.literal("purchasing_lender"),
+		v.literal("selling_lender"),
+		v.literal("participating_lender")
+	),
 };
 
 export const getParticipantDealQueue = authedQuery
@@ -2179,9 +2258,23 @@ export const getParticipantDealQueue = authedQuery
 		};
 
 		for (const deal of deals) {
+			let workspacePersona: Exclude<
+				ParticipantWorkspacePersona,
+				"participating_lender"
+			> | null;
+			if (args.persona === "participating_lender") {
+				workspacePersona = ctx.viewer.isFairLendAdmin
+					? "purchasing_lender"
+					: canonicalLenderPersonaForViewer(deal, ctx.viewer.authId);
+			} else {
+				workspacePersona = args.persona;
+			}
+			if (!workspacePersona) {
+				continue;
+			}
 			const workspace = await buildParticipantDealWorkspace(ctx, {
 				deal,
-				persona: args.persona,
+				persona: workspacePersona,
 			});
 			if (!workspace) {
 				continue;
@@ -2191,7 +2284,7 @@ export const getParticipantDealQueue = authedQuery
 				dealId: workspace.deal.dealId,
 				group: workspace.queueGroup,
 				nextAction: workspace.nextAction,
-				persona: args.persona,
+				persona: workspacePersona,
 				propertyLabel: propertyLabel(workspace.property),
 				signingStatus: workspace.signing.status,
 				status: workspace.deal.status,
@@ -2243,22 +2336,84 @@ async function readParticipantPersonaDeals(
 	ctx: QueryCtx & { viewer: { authId: string } },
 	persona: ParticipantWorkspacePersona
 ) {
-	const role = roleForPersona(persona);
 	const accessRows = await ctx.db
 		.query("dealAccess")
 		.withIndex("by_user", (query) => query.eq("userId", ctx.viewer.authId))
 		.collect();
-	const dealIds = [
+	const directDealReads: Promise<Doc<"deals">[]>[] = [];
+	if (persona === "purchasing_lender" || persona === "participating_lender") {
+		directDealReads.push(
+			ctx.db
+				.query("deals")
+				.withIndex("by_buyer", (query) =>
+					query.eq("buyerId", ctx.viewer.authId)
+				)
+				.collect()
+		);
+	}
+	if (persona === "selling_lender" || persona === "participating_lender") {
+		directDealReads.push(
+			ctx.db
+				.query("deals")
+				.withIndex("by_seller", (query) =>
+					query.eq("sellerId", ctx.viewer.authId)
+				)
+				.collect()
+		);
+	}
+	const directlyAddressedDeals = (await Promise.all(directDealReads)).flat();
+	const accessDealIds = [
 		...new Set(
 			accessRows
-				.filter((row) => row.status === "active" && row.role === role)
+				.filter((row) => {
+					if (row.status !== "active") {
+						return false;
+					}
+					if (row.persona === undefined) {
+						return row.role === "lender";
+					}
+					return (
+						(row.persona === "purchasing_lender" ||
+							row.persona === "selling_lender") &&
+						requestedPersonaMatches(persona, row.persona)
+					);
+				})
 				.map((row) => row.dealId)
 		),
 	];
-	const deals = await Promise.all(dealIds.map((dealId) => ctx.db.get(dealId)));
-	return deals.filter(
-		(deal): deal is NonNullable<typeof deal> => deal !== null
+	const accessDeals = await Promise.all(
+		accessDealIds.map((dealId) => ctx.db.get(dealId))
 	);
+	const combined = [
+		...directlyAddressedDeals,
+		...accessDeals.filter(
+			(deal): deal is NonNullable<typeof deal> => deal !== null
+		),
+	].filter((deal) => {
+		const directPersona = canonicalLenderPersonaForViewer(
+			deal,
+			ctx.viewer.authId
+		);
+		const hasRevokedDirectPersona = accessRows.some((row) => {
+			if (row.dealId !== deal._id) {
+				return false;
+			}
+			const rowPersona = participantPersonaFromAccessRow(row, directPersona);
+			return (
+				row.status !== "active" &&
+				rowPersona !== null &&
+				requestedPersonaMatches(persona, rowPersona)
+			);
+		});
+		if (hasRevokedDirectPersona) {
+			return false;
+		}
+		if (persona === "participating_lender") {
+			return true;
+		}
+		return directPersona === persona;
+	});
+	return [...new Map(combined.map((deal) => [deal._id, deal])).values()];
 }
 
 export const getAdminCloseEvidence = adminQuery

@@ -1,4 +1,8 @@
 import { ConvexError, v } from "convex/values";
+import type {
+	DealPersona,
+	LawyerSourceKind,
+} from "../../src/lib/deals/access-policy/types";
 import type { Id } from "../_generated/dataModel";
 import type { DatabaseWriter } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
@@ -25,6 +29,69 @@ export type DealAccessRole =
 	| "lender"
 	| "borrower";
 
+async function resolveCanonicalDealAccessPersona(
+	db: DatabaseWriter,
+	args: {
+		dealId: Id<"deals">;
+		role: DealAccessRole;
+		userId: string;
+	}
+): Promise<{
+	lawyerSource?: LawyerSourceKind;
+	persona: DealPersona;
+}> {
+	if (args.role === "platform_lawyer" || args.role === "guest_lawyer") {
+		return { lawyerSource: args.role, persona: "primary_lawyer" };
+	}
+	if (args.role === "broker_of_record" || args.role === "assigned_broker") {
+		return { persona: args.role };
+	}
+	if (args.role === "borrower") {
+		const deal = await db.get(args.dealId);
+		if (!deal) {
+			throw new ConvexError(
+				"Cannot grant borrower deal access for missing deal"
+			);
+		}
+		const user = await db
+			.query("users")
+			.withIndex("authId", (query) => query.eq("authId", args.userId))
+			.first();
+		const borrower = user
+			? await db
+					.query("borrowers")
+					.withIndex("by_user", (query) => query.eq("userId", user._id))
+					.first()
+			: null;
+		const mortgageBorrower = borrower
+			? await db
+					.query("mortgageBorrowers")
+					.withIndex("by_borrower", (query) =>
+						query.eq("borrowerId", borrower._id)
+					)
+					.filter((query) =>
+						query.eq(query.field("mortgageId"), deal.mortgageId)
+					)
+					.first()
+			: null;
+		if (!mortgageBorrower) {
+			throw new ConvexError(
+				"Cannot grant borrower deal access without mortgage borrower record"
+			);
+		}
+		return { persona: "primary_borrower" };
+	}
+
+	const deal = await db.get(args.dealId);
+	if (deal?.sellerId === args.userId) {
+		return { persona: "selling_lender" };
+	}
+	if (deal?.buyerId === args.userId) {
+		return { persona: "purchasing_lender" };
+	}
+	return { persona: "participating_lender" };
+}
+
 /**
  * Shared idempotent grant logic for dealAccess records.
  * If an active record already exists for (userId, dealId) with the same role,
@@ -40,6 +107,7 @@ export async function grantDealAccess(
 		grantedBy: string;
 	}
 ): Promise<Id<"dealAccess">> {
+	const canonicalAccess = await resolveCanonicalDealAccessPersona(db, args);
 	const existing = await db
 		.query("dealAccess")
 		.withIndex("by_user_and_deal", (q) =>
@@ -49,9 +117,15 @@ export async function grantDealAccess(
 		.first();
 
 	if (existing) {
-		if (existing.role !== args.role) {
+		if (
+			existing.role !== args.role ||
+			existing.persona !== canonicalAccess.persona ||
+			existing.lawyerSource !== canonicalAccess.lawyerSource
+		) {
 			await db.patch(existing._id, {
 				role: args.role,
+				persona: canonicalAccess.persona,
+				lawyerSource: canonicalAccess.lawyerSource,
 				grantedBy: args.grantedBy,
 				grantedAt: Date.now(),
 			});
@@ -63,6 +137,8 @@ export async function grantDealAccess(
 		userId: args.userId,
 		dealId: args.dealId,
 		role: args.role,
+		persona: canonicalAccess.persona,
+		lawyerSource: canonicalAccess.lawyerSource,
 		grantedAt: Date.now(),
 		grantedBy: args.grantedBy,
 		status: "active",

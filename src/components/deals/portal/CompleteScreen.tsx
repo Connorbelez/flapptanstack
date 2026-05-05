@@ -52,11 +52,11 @@ export function CompleteScreen({
 				</div>
 				<div className="mt-5 grid gap-3 sm:grid-cols-3">
 					<Snapshot
-						label="Buyer"
+						label="Purchasing Lender"
 						value={workspace.participants.buyer.displayName ?? "Not available"}
 					/>
 					<Snapshot
-						label="Seller"
+						label="Selling Lender"
 						value={workspace.participants.seller.displayName ?? "Not available"}
 					/>
 					<Snapshot
@@ -101,7 +101,8 @@ export function CompleteScreen({
 				</div>
 			</section>
 
-			{workspace.viewer.persona === "admin" && adminProofs.length > 0 ? (
+			{workspace.viewer.persona === "fairlend_admin" &&
+			adminProofs.length > 0 ? (
 				<section className="rounded-lg border border-slate-200 bg-white p-5 shadow-xs">
 					<h3 className="font-semibold text-lg">Admin Ledger Evidence</h3>
 					<div className="mt-4 grid gap-3">

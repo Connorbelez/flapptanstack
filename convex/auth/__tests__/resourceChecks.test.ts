@@ -268,6 +268,35 @@ async function insertDealAccess(
 	});
 }
 
+async function insertActiveLawyerReadiness(
+	ctx: MutationCtx,
+	dealId: Id<"deals">,
+	lawyerAuthId: string
+) {
+	await ctx.db.insert("lawyerVerifications", {
+		authId: lawyerAuthId,
+		checkType: "manual_admin",
+		createdAt: NOW,
+		createdBy: "admin-auth-id",
+		dealId,
+		expiresAt: NOW + 86_400_000,
+		outcome: "eligible",
+		provider: "manual_admin",
+		reasonCodes: ["manual_override"],
+		sourceSnapshot: { source: "resource-check-test" },
+	});
+	await ctx.db.insert("representationEngagements", {
+		createdAt: NOW,
+		dealId,
+		evidenceHash: `resource-check:${String(dealId)}:${lawyerAuthId}`,
+		lawyerAuthId,
+		provider: "manual_admin",
+		signedAt: NOW,
+		status: "signed",
+		updatedAt: NOW,
+	});
+}
+
 async function insertProvisionalApplication(
 	ctx: MutationCtx,
 	brokerId: Id<"brokers">,
@@ -673,7 +702,7 @@ describe("canAccessDeal", () => {
 		});
 	});
 
-	it("lawyer — dealAccess active — true", async () => {
+	it("lawyer — active dealAccess without onboarding gates — false", async () => {
 		const t = convexTest(schema, modules);
 		await t.run(async (ctx) => {
 			const brokerUserId = await insertUser(ctx, { authId: "broker-auth" });
@@ -697,7 +726,7 @@ describe("canAccessDeal", () => {
 
 			const viewer = makeViewer({ authId: "lawyer-auth" });
 			const result = await canAccessDeal(ctx, viewer, dealId);
-			expect(result).toBe(true);
+			expect(result).toBe(false);
 		});
 	});
 
@@ -745,6 +774,64 @@ describe("canAccessDeal", () => {
 			);
 
 			const viewer = makeViewer({ authId: "lawyer-auth" });
+			const result = await canAccessDeal(ctx, viewer, dealId);
+			expect(result).toBe(false);
+		});
+	});
+
+	it("guest lawyer provisional email access does not grant generic deal access", async () => {
+		const t = convexTest(schema, modules);
+		await t.run(async (ctx) => {
+			const brokerUserId = await insertUser(ctx, { authId: "broker-auth" });
+			const brokerId = await insertBroker(ctx, brokerUserId);
+			const propId = await insertProperty(ctx);
+			const mortgageId = await insertMortgage(ctx, propId, brokerId);
+			const dealId = await insertDeal(
+				ctx,
+				mortgageId,
+				"buyer-auth",
+				"selling-lender-auth"
+			);
+			await insertDealAccess(
+				ctx,
+				"guest.lawyer@example.test",
+				dealId,
+				"guest_lawyer",
+				"active"
+			);
+
+			const viewer = makeViewer({
+				authId: "new-workos-lawyer-auth",
+				email: "guest.lawyer@example.test",
+				verifiedEmail: "guest.lawyer@example.test",
+			});
+			const result = await canAccessDeal(ctx, viewer, dealId);
+			expect(result).toBe(false);
+		});
+	});
+
+	it("legacy borrower dealAccess rows without canonical persona do not grant deal access", async () => {
+		const t = convexTest(schema, modules);
+		await t.run(async (ctx) => {
+			const brokerUserId = await insertUser(ctx, { authId: "broker-auth" });
+			const brokerId = await insertBroker(ctx, brokerUserId);
+			const propId = await insertProperty(ctx);
+			const mortgageId = await insertMortgage(ctx, propId, brokerId);
+			const dealId = await insertDeal(
+				ctx,
+				mortgageId,
+				"buyer-auth",
+				"selling-lender-auth"
+			);
+			await insertDealAccess(
+				ctx,
+				"legacy-borrower-row-auth",
+				dealId,
+				"borrower",
+				"active"
+			);
+
+			const viewer = makeViewer({ authId: "legacy-borrower-row-auth" });
 			const result = await canAccessDeal(ctx, viewer, dealId);
 			expect(result).toBe(false);
 		});
@@ -1237,6 +1324,46 @@ describe("canAccessDocument", () => {
 		});
 	});
 
+	it("public + deal — provisional guest lawyer email access is not entity access", async () => {
+		const t = convexTest(schema, modules);
+		await t.run(async (ctx) => {
+			const { templateId, storageId } = await insertDocumentPrereqs(ctx);
+			const brokerUserId = await insertUser(ctx, { authId: "broker-auth" });
+			const brokerId = await insertBroker(ctx, brokerUserId);
+			const propId = await insertProperty(ctx);
+			const mortgageId = await insertMortgage(ctx, propId, brokerId);
+			const dealId = await insertDeal(
+				ctx,
+				mortgageId,
+				"buyer-auth",
+				"selling-lender-auth"
+			);
+			await insertDealAccess(
+				ctx,
+				"guest.lawyer@example.test",
+				dealId,
+				"guest_lawyer",
+				"active"
+			);
+			const docId = await insertGeneratedDocument(
+				ctx,
+				templateId,
+				storageId,
+				"deal",
+				dealId,
+				"public"
+			);
+
+			const viewer = makeViewer({
+				authId: "new-workos-lawyer-auth",
+				email: "guest.lawyer@example.test",
+				verifiedEmail: "guest.lawyer@example.test",
+			});
+			const result = await canAccessDocument(ctx, viewer, docId);
+			expect(result).toBe(false);
+		});
+	});
+
 	it("public + applicationPackage — sr_underwriter — true", async () => {
 		const t = convexTest(schema, modules);
 		await t.run(async (ctx) => {
@@ -1338,7 +1465,7 @@ describe("canAccessDocument", () => {
 		});
 	});
 
-	// ── Private tier: entity access + dealAccess ──────────────────
+	// ── Private tier: entity access + deal document policy ────────
 
 	it("private + deal — has active dealAccess — true", async () => {
 		const t = convexTest(schema, modules);
@@ -1354,7 +1481,7 @@ describe("canAccessDocument", () => {
 				"buyer-auth",
 				"seller-auth"
 			);
-			await insertDealAccess(ctx, "lawyer-auth", dealId, "platform_lawyer");
+			await insertDealAccess(ctx, "broker-auth", dealId, "broker_of_record");
 			const docId = await insertGeneratedDocument(
 				ctx,
 				templateId,
@@ -1364,14 +1491,13 @@ describe("canAccessDocument", () => {
 				"private"
 			);
 
-			// Lawyer has dealAccess + canAccessDeal (via dealAccess)
-			const viewer = makeViewer({ authId: "lawyer-auth" });
+			const viewer = makeViewer({ authId: "broker-auth" });
 			const result = await canAccessDocument(ctx, viewer, docId);
 			expect(result).toBe(true);
 		});
 	});
 
-	it("private + deal — entity access but no dealAccess — false", async () => {
+	it("private + deal — purchasing lender relationship is policy access — true", async () => {
 		const t = convexTest(schema, modules);
 		await t.run(async (ctx) => {
 			const { templateId, storageId } = await insertDocumentPrereqs(ctx);
@@ -1394,10 +1520,9 @@ describe("canAccessDocument", () => {
 				"private"
 			);
 
-			// Buyer can access the deal entity, but has no dealAccess record
 			const viewer = makeViewer({ authId: "buyer-auth" });
 			const result = await canAccessDocument(ctx, viewer, docId);
-			expect(result).toBe(false);
+			expect(result).toBe(true);
 		});
 	});
 
@@ -1415,9 +1540,7 @@ describe("canAccessDocument", () => {
 				"buyer-auth",
 				"seller-auth"
 			);
-			await insertDealAccess(ctx, "lawyer-auth", dealId, "platform_lawyer");
-			// Lawyer needs mortgage access too — assign via closingTeam
-			await insertClosingTeamAssignment(ctx, mortgageId, "lawyer-auth");
+			await insertDealAccess(ctx, "broker-auth", dealId, "broker_of_record");
 			const docId = await insertGeneratedDocument(
 				ctx,
 				templateId,
@@ -1427,7 +1550,7 @@ describe("canAccessDocument", () => {
 				"private"
 			);
 
-			const viewer = makeViewer({ authId: "lawyer-auth" });
+			const viewer = makeViewer({ authId: "broker-auth" });
 			const result = await canAccessDocument(ctx, viewer, docId);
 			expect(result).toBe(true);
 		});
@@ -1453,6 +1576,37 @@ describe("canAccessDocument", () => {
 
 			// Broker has entity access to mortgage but no dealAccess
 			const viewer = makeViewer({ authId: "broker-auth" });
+			const result = await canAccessDocument(ctx, viewer, docId);
+			expect(result).toBe(false);
+		});
+	});
+
+	it("private + mortgage — not-ready lawyer deal access is blocked by deal policy — false", async () => {
+		const t = convexTest(schema, modules);
+		await t.run(async (ctx) => {
+			const { templateId, storageId } = await insertDocumentPrereqs(ctx);
+			const brokerUserId = await insertUser(ctx, { authId: "broker-auth" });
+			const brokerId = await insertBroker(ctx, brokerUserId);
+			const propId = await insertProperty(ctx);
+			const mortgageId = await insertMortgage(ctx, propId, brokerId);
+			const dealId = await insertDeal(
+				ctx,
+				mortgageId,
+				"buyer-auth",
+				"seller-auth"
+			);
+			await insertDealAccess(ctx, "lawyer-auth", dealId, "platform_lawyer");
+			await insertClosingTeamAssignment(ctx, mortgageId, "lawyer-auth");
+			const docId = await insertGeneratedDocument(
+				ctx,
+				templateId,
+				storageId,
+				"mortgage",
+				mortgageId,
+				"private"
+			);
+
+			const viewer = makeViewer({ authId: "lawyer-auth" });
 			const result = await canAccessDocument(ctx, viewer, docId);
 			expect(result).toBe(false);
 		});
@@ -1604,7 +1758,7 @@ describe("canAccessDocument", () => {
 				"buyer-auth",
 				"seller-auth"
 			);
-			await insertDealAccess(ctx, "lawyer-auth", dealId, "platform_lawyer");
+			await insertDealAccess(ctx, "broker-auth", dealId, "broker_of_record");
 			const docId = await insertGeneratedDocument(
 				ctx,
 				templateId,
@@ -1615,7 +1769,7 @@ describe("canAccessDocument", () => {
 			);
 
 			const viewer = makeViewer({
-				authId: "lawyer-auth",
+				authId: "broker-auth",
 				permissions: new Set(["document:review"]),
 			});
 			const result = await canAccessDocument(ctx, viewer, docId);
@@ -1743,6 +1897,7 @@ describe("canAccessDocument", () => {
 			await insertDealAccess(ctx, "lawyer-auth", dealId, "platform_lawyer");
 			// Lawyer needs mortgage access via closingTeamAssignment
 			await insertClosingTeamAssignment(ctx, mortgageId, "lawyer-auth");
+			await insertActiveLawyerReadiness(ctx, dealId, "lawyer-auth");
 			const docId = await insertGeneratedDocument(
 				ctx,
 				templateId,
@@ -1794,7 +1949,7 @@ describe("canAccessDocument", () => {
 		});
 	});
 
-	it("sensitive + mortgage — entity access but no dealAccess — false", async () => {
+	it("sensitive + mortgage — entity access but no deal policy access — false", async () => {
 		const t = convexTest(schema, modules);
 		await t.run(async (ctx) => {
 			const { templateId, storageId } = await insertDocumentPrereqs(ctx);
@@ -1803,8 +1958,6 @@ describe("canAccessDocument", () => {
 			const propId = await insertProperty(ctx);
 			const mortgageId = await insertMortgage(ctx, propId, brokerId);
 			await insertDeal(ctx, mortgageId, "buyer-auth", "seller-auth");
-			// Lawyer has mortgage access via closingTeamAssignment but no dealAccess
-			await insertClosingTeamAssignment(ctx, mortgageId, "lawyer-auth");
 			const docId = await insertGeneratedDocument(
 				ctx,
 				templateId,
@@ -1815,7 +1968,7 @@ describe("canAccessDocument", () => {
 			);
 
 			const viewer = makeViewer({
-				authId: "lawyer-auth",
+				authId: "broker-auth",
 				permissions: new Set(["document:review"]),
 			});
 			const result = await canAccessDocument(ctx, viewer, docId);
@@ -2459,6 +2612,58 @@ describe("payment resource helpers", () => {
 				true
 			);
 			expect(await canAccessWorkoutPlan(ctx, viewer, workoutPlanId)).toBe(true);
+		});
+	});
+
+	it("canAccessTransferRequest does not allow provisional guest lawyer email access through deal linkage", async () => {
+		const t = convexTest(schema, modules);
+		await t.run(async (ctx) => {
+			const brokerUserId = await insertUser(ctx, { authId: "broker-auth" });
+			const brokerId = await insertBroker(ctx, brokerUserId);
+			const propertyId = await insertProperty(ctx);
+			const mortgageId = await insertMortgage(ctx, propertyId, brokerId);
+			const dealId = await insertDeal(
+				ctx,
+				mortgageId,
+				"buyer-auth",
+				"selling-lender-auth"
+			);
+			await insertDealAccess(
+				ctx,
+				"guest.lawyer@example.test",
+				dealId,
+				"guest_lawyer",
+				"active"
+			);
+			const transferId = await ctx.db.insert("transferRequests", {
+				status: "pending",
+				direction: "inbound",
+				transferType: "deal_principal_transfer",
+				amount: 15_000,
+				currency: "CAD",
+				counterpartyType: "investor",
+				counterpartyId: "buyer-auth",
+				providerCode: "manual",
+				idempotencyKey: "resource-check-provisional-deal-transfer",
+				source: {
+					actorId: "test",
+					actorType: "system",
+					channel: "admin_dashboard",
+				},
+				dealId,
+				mortgageId,
+				createdAt: NOW,
+				lastTransitionAt: NOW,
+			});
+
+			const viewer = makeViewer({
+				authId: "new-workos-lawyer-auth",
+				email: "guest.lawyer@example.test",
+				verifiedEmail: "guest.lawyer@example.test",
+			});
+			expect(await canAccessTransferRequest(ctx, viewer, transferId)).toBe(
+				false
+			);
 		});
 	});
 

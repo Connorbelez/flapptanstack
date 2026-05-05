@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { dealPersonaValidator } from "../src/lib/deals/access-policy/types";
 import {
 	originationCaseStatusValidator,
 	originationCollectionsDraftValidator,
@@ -1471,7 +1472,8 @@ export default defineSchema({
 		trigger: velocitySyncTriggerValidator,
 		loanCode: v.optional(v.string()),
 		dealHref: v.optional(v.string()),
-		idempotencyKey: v.string(),
+		//TODO: Run migration and remove optional from these fields
+		idempotencyKey: v.optional(v.string()),
 		connectorCredentialContext: v.optional(
 			velocityConnectorCredentialContextValidator
 		),
@@ -2562,6 +2564,8 @@ export default defineSchema({
 		mortgageId: v.id("mortgages"),
 		buyerId: v.string(),
 		sellerId: v.string(),
+		purchasingLenderAuthId: v.optional(v.string()),
+		sellingLenderAuthId: v.optional(v.string()),
 		fractionalShare: v.number(),
 		closingDate: v.optional(v.number()),
 		lockingFeeAmount: v.optional(v.number()),
@@ -2604,6 +2608,8 @@ export default defineSchema({
 		mortgageId: v.id("mortgages"),
 		buyerAuthId: v.string(),
 		sellerAuthId: v.string(),
+		purchasingLenderAuthId: v.optional(v.string()),
+		sellingLenderAuthId: v.optional(v.string()),
 		selectedLawyerAuthId: v.optional(v.string()),
 		selectedLawyerType: v.optional(dealLockSelectedLawyerTypeValidator),
 		fractionalShareUnits: v.number(),
@@ -2669,8 +2675,12 @@ export default defineSchema({
 			v.literal("lender"),
 			v.literal("platform_lawyer"),
 			v.literal("guest_lawyer"),
-			v.literal("admin")
+			v.literal("admin"),
+			v.literal("purchasing_lender"),
+			v.literal("primary_lawyer"),
+			v.literal("fairlend_admin")
 		),
+		submittedByPersona: v.optional(dealPersonaValidator),
 		status: v.union(
 			v.literal("pending_review"),
 			v.literal("approved"),
@@ -3163,6 +3173,10 @@ export default defineSchema({
 			v.literal("assigned_broker"),
 			v.literal("lender"),
 			v.literal("borrower")
+		),
+		persona: v.optional(dealPersonaValidator),
+		lawyerSource: v.optional(
+			v.union(v.literal("platform_lawyer"), v.literal("guest_lawyer"))
 		),
 		grantedAt: v.number(),
 		grantedBy: v.string(),

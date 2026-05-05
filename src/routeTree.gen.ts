@@ -23,6 +23,7 @@ import { Route as OnboardRouteRouteImport } from './routes/onboard/route'
 import { Route as ListingsRouteRouteImport } from './routes/listings/route'
 import { Route as LenderRouteRouteImport } from './routes/lender/route'
 import { Route as LawyerRouteRouteImport } from './routes/lawyer/route'
+import { Route as DealsRouteRouteImport } from './routes/deals/route'
 import { Route as BrokerRouteRouteImport } from './routes/broker/route'
 import { Route as BorrowerRouteRouteImport } from './routes/borrower/route'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
@@ -243,6 +244,11 @@ const LenderRouteRoute = LenderRouteRouteImport.update({
 const LawyerRouteRoute = LawyerRouteRouteImport.update({
   id: '/lawyer',
   path: '/lawyer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DealsRouteRoute = DealsRouteRouteImport.update({
+  id: '/deals',
+  path: '/deals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BrokerRouteRoute = BrokerRouteRouteImport.update({
@@ -480,9 +486,9 @@ const DemoConvexRoute = DemoConvexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const DealsDealIdRoute = DealsDealIdRouteImport.update({
-  id: '/deals/$dealId',
-  path: '/deals/$dealId',
-  getParentRoute: () => rootRouteImport,
+  id: '/$dealId',
+  path: '/$dealId',
+  getParentRoute: () => DealsRouteRoute,
 } as any)
 const CheckoutCompleteRoute = CheckoutCompleteRouteImport.update({
   id: '/checkout/complete',
@@ -1055,6 +1061,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/borrower': typeof BorrowerRouteRouteWithChildren
   '/broker': typeof BrokerRouteRouteWithChildren
+  '/deals': typeof DealsRouteRouteWithChildren
   '/lawyer': typeof LawyerRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
   '/listings': typeof ListingsRouteRouteWithChildren
@@ -1221,6 +1228,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/borrower': typeof BorrowerRouteRouteWithChildren
+  '/deals': typeof DealsRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
@@ -1375,6 +1383,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteRouteWithChildren
   '/borrower': typeof BorrowerRouteRouteWithChildren
   '/broker': typeof BrokerRouteRouteWithChildren
+  '/deals': typeof DealsRouteRouteWithChildren
   '/lawyer': typeof LawyerRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
   '/listings': typeof ListingsRouteRouteWithChildren
@@ -1544,6 +1553,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/borrower'
     | '/broker'
+    | '/deals'
     | '/lawyer'
     | '/lender'
     | '/listings'
@@ -1710,6 +1720,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/borrower'
+    | '/deals'
     | '/lender'
     | '/onboard'
     | '/about'
@@ -1863,6 +1874,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/borrower'
     | '/broker'
+    | '/deals'
     | '/lawyer'
     | '/lender'
     | '/listings'
@@ -2031,6 +2043,7 @@ export interface RootRouteChildren {
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   BorrowerRouteRoute: typeof BorrowerRouteRouteWithChildren
   BrokerRouteRoute: typeof BrokerRouteRouteWithChildren
+  DealsRouteRoute: typeof DealsRouteRouteWithChildren
   LawyerRouteRoute: typeof LawyerRouteRouteWithChildren
   LenderRouteRoute: typeof LenderRouteRouteWithChildren
   ListingsRouteRoute: typeof ListingsRouteRouteWithChildren
@@ -2055,7 +2068,6 @@ export interface RootRouteChildren {
   DemoRbacAuthRouteRoute: typeof DemoRbacAuthRouteRouteWithChildren
   AuthenticatedAuthenticatedRoute: typeof AuthenticatedAuthenticatedRoute
   CheckoutCompleteRoute: typeof CheckoutCompleteRoute
-  DealsDealIdRoute: typeof DealsDealIdRoute
   DemoConvexRoute: typeof DemoConvexRoute
   DemoConvexActionCacheRoute: typeof DemoConvexActionCacheRoute
   DemoConvexAggregateRoute: typeof DemoConvexAggregateRoute
@@ -2190,6 +2202,13 @@ declare module '@tanstack/react-router' {
       path: '/lawyer'
       fullPath: '/lawyer'
       preLoaderRoute: typeof LawyerRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deals': {
+      id: '/deals'
+      path: '/deals'
+      fullPath: '/deals'
+      preLoaderRoute: typeof DealsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/broker': {
@@ -2516,10 +2535,10 @@ declare module '@tanstack/react-router' {
     }
     '/deals/$dealId': {
       id: '/deals/$dealId'
-      path: '/deals/$dealId'
+      path: '/$dealId'
       fullPath: '/deals/$dealId'
       preLoaderRoute: typeof DealsDealIdRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof DealsRouteRoute
     }
     '/checkout/complete': {
       id: '/checkout/complete'
@@ -3474,6 +3493,18 @@ const BrokerRouteRouteWithChildren = BrokerRouteRoute._addFileChildren(
   BrokerRouteRouteChildren,
 )
 
+interface DealsRouteRouteChildren {
+  DealsDealIdRoute: typeof DealsDealIdRoute
+}
+
+const DealsRouteRouteChildren: DealsRouteRouteChildren = {
+  DealsDealIdRoute: DealsDealIdRoute,
+}
+
+const DealsRouteRouteWithChildren = DealsRouteRoute._addFileChildren(
+  DealsRouteRouteChildren,
+)
+
 interface LawyerRouteRouteChildren {
   LawyerInvitationRoute: typeof LawyerInvitationRoute
   LawyerIndexRoute: typeof LawyerIndexRoute
@@ -3790,6 +3821,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRouteRoute: AdminRouteRouteWithChildren,
   BorrowerRouteRoute: BorrowerRouteRouteWithChildren,
   BrokerRouteRoute: BrokerRouteRouteWithChildren,
+  DealsRouteRoute: DealsRouteRouteWithChildren,
   LawyerRouteRoute: LawyerRouteRouteWithChildren,
   LenderRouteRoute: LenderRouteRouteWithChildren,
   ListingsRouteRoute: ListingsRouteRouteWithChildren,
@@ -3815,7 +3847,6 @@ const rootRouteChildren: RootRouteChildren = {
   DemoRbacAuthRouteRoute: DemoRbacAuthRouteRouteWithChildren,
   AuthenticatedAuthenticatedRoute: AuthenticatedAuthenticatedRoute,
   CheckoutCompleteRoute: CheckoutCompleteRoute,
-  DealsDealIdRoute: DealsDealIdRoute,
   DemoConvexRoute: DemoConvexRoute,
   DemoConvexActionCacheRoute: DemoConvexActionCacheRoute,
   DemoConvexAggregateRoute: DemoConvexAggregateRoute,

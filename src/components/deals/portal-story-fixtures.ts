@@ -26,23 +26,32 @@ const STORY_CLOSING_AT = Date.parse("2026-05-15T16:00:00.000Z");
 const STORY_READY_AT = Date.parse("2026-05-10T14:30:00.000Z");
 const STORY_SIGNED_AT = Date.parse("2026-05-17T18:00:00.000Z");
 
-const buyerParticipant = {
+const purchasingLenderParticipant = {
 	accessRole: "lender",
 	authId: "buyer-auth",
-	displayName: "Bianca Buyer",
+	displayName: "Bianca Purchasing",
 	email: "bianca@example.test",
 	lenderId: "lender_bianca" as never,
 	userId: "user_bianca" as never,
 };
 
-const sellerParticipant = {
-	accessRole: "borrower",
+const sellingLenderParticipant = {
+	accessRole: "lender",
 	authId: "seller-auth",
-	borrowerId: "borrower_sam" as never,
-	displayName: "Sam Seller",
+	borrowerId: null,
+	displayName: "Sam Selling",
 	email: "sam@example.test",
-	lenderId: null,
+	lenderId: "lender_sam" as never,
 	userId: "user_sam" as never,
+};
+
+const primaryBorrowerParticipant = {
+	authId: "borrower-auth",
+	borrowerId: "borrower_bailey" as never,
+	displayName: "Bailey Borrower",
+	email: "bailey@example.test",
+	persona: "primary_borrower",
+	userId: "user_bailey" as never,
 };
 
 const lawyerParticipant = {
@@ -54,7 +63,7 @@ const lawyerParticipant = {
 };
 
 const participants = {
-	buyer: buyerParticipant,
+	buyer: purchasingLenderParticipant,
 	dealId: "deal_king" as never,
 	fractionalShareDisplayPercent: 25,
 	fractionalShareStatus: {
@@ -66,22 +75,38 @@ const participants = {
 	fractionalShareUnits: 2500,
 	lawyer: lawyerParticipant,
 	personas: {
-		admin: "admin-auth",
-		buyer: "buyer-auth",
-		lawyer: "lawyer-auth",
-		seller: "seller-auth",
+		assigned_broker: "assigned_broker",
+		broker_of_record: "broker_of_record",
+		fairlend_admin: "fairlend_admin",
+		primary_borrower: "primary_borrower",
+		primary_lawyer: "primary_lawyer",
+		purchasing_lender: "purchasing_lender",
+		selling_lender: "selling_lender",
 	},
-	seller: sellerParticipant,
+	primary_borrower: primaryBorrowerParticipant,
+	primary_lawyer: {
+		...lawyerParticipant,
+		persona: "primary_lawyer",
+	},
+	purchasing_lender: {
+		...purchasingLenderParticipant,
+		persona: "purchasing_lender",
+	},
+	seller: sellingLenderParticipant,
+	selling_lender: {
+		...sellingLenderParticipant,
+		persona: "selling_lender",
+	},
 };
 
-export const participantBuyerQueueFixture = {
+export const participantPurchasingLenderQueueFixture = {
 	completed: [
 		{
 			closingDate: Date.parse("2026-04-01T16:00:00.000Z"),
 			dealId: "deal_closed" as never,
 			group: "completed",
 			nextAction: "Closing completed and archived.",
-			persona: "buyer",
+			persona: "purchasing_lender",
 			propertyLabel: "88 Queen St W, Toronto, ON",
 			signingStatus: "completed",
 			status: "confirmed",
@@ -93,7 +118,7 @@ export const participantBuyerQueueFixture = {
 			dealId: "deal_review" as never,
 			group: "inProgress",
 			nextAction: "Lawyer is reviewing the generated package.",
-			persona: "buyer",
+			persona: "purchasing_lender",
 			propertyLabel: "55 Front St E, Toronto, ON",
 			signingStatus: "signature_draft",
 			status: "documentReview.pending",
@@ -104,31 +129,33 @@ export const participantBuyerQueueFixture = {
 			closingDate: STORY_CLOSING_AT,
 			dealId: "deal_king" as never,
 			group: "needsAction",
-			nextAction: "Sign your buyer closing documents.",
-			persona: "buyer",
+			nextAction: "Sign your purchasing lender closing documents.",
+			persona: "purchasing_lender",
 			propertyLabel: "123 King St W, Toronto, ON",
 			signingStatus: "ready_to_sign",
 			status: "documentReview.signed",
 		},
 	],
-	persona: "buyer",
+	persona: "purchasing_lender",
 } as unknown as ParticipantQueue;
 
-export const participantSellerQueueFixture = {
-	...participantBuyerQueueFixture,
-	persona: "seller",
-	needsAction: participantBuyerQueueFixture.needsAction.map((item) => ({
-		...item,
-		nextAction: "Review seller close receipt and archived documents.",
-		persona: "seller",
-	})),
+export const participantSellingLenderQueueFixture = {
+	...participantPurchasingLenderQueueFixture,
+	persona: "selling_lender",
+	needsAction: participantPurchasingLenderQueueFixture.needsAction.map(
+		(item) => ({
+			...item,
+			nextAction: "Review selling lender close receipt and archived documents.",
+			persona: "selling_lender",
+		})
+	),
 } as unknown as ParticipantQueue;
 
 export const emptyParticipantQueueFixture = {
 	completed: [],
 	inProgress: [],
 	needsAction: [],
-	persona: "buyer",
+	persona: "purchasing_lender",
 } as unknown as ParticipantQueue;
 
 export const participantWorkspaceFixture = {
@@ -145,7 +172,7 @@ export const participantWorkspaceFixture = {
 		fractionalShareDisplayPercent: 25,
 		fractionalShareUnits: 2500,
 		lockingFeeAmount: null,
-		persona: "buyer",
+		persona: "purchasing_lender",
 		status: "documentReview.signed",
 	},
 	documentInstances: [
@@ -183,7 +210,7 @@ export const participantWorkspaceFixture = {
 		principal: 500_000,
 		status: "funded",
 	},
-	nextAction: "Sign your buyer closing documents.",
+	nextAction: "Sign your purchasing lender closing documents.",
 	participants,
 	parties: {
 		assignedLawyer: {
@@ -191,15 +218,15 @@ export const participantWorkspaceFixture = {
 			name: lawyerParticipant.displayName,
 		},
 		lender: {
-			email: buyerParticipant.email,
-			name: buyerParticipant.displayName,
+			email: purchasingLenderParticipant.email,
+			name: purchasingLenderParticipant.displayName,
 		},
 		seller: {
-			email: sellerParticipant.email,
-			name: sellerParticipant.displayName,
+			email: sellingLenderParticipant.email,
+			name: sellingLenderParticipant.displayName,
 		},
 	},
-	persona: "buyer",
+	persona: "purchasing_lender",
 	property: {
 		city: "Toronto",
 		propertyType: "residential",
@@ -211,17 +238,17 @@ export const participantWorkspaceFixture = {
 	signing: {
 		attemptId: "attempt_king" as never,
 		completedRequiredCount: 1,
-		embeddedSigningToken: "https://sign.example.test/session/buyer",
+		embeddedSigningToken: "https://sign.example.test/session/purchasing-lender",
 		exceptionMessage: null,
 		providerDocumentId: "doc_king",
 		providerEnvelopeId: "env_king",
-		recipientName: "Bianca Buyer",
+		recipientName: "Bianca Purchasing",
 		recipients: [
 			{
 				completedAt: STORY_READY_AT,
 				documensoRole: "SIGNER",
-				name: "Sam Seller",
-				platformRole: "seller_primary",
+				name: "Sam Selling",
+				platformRole: "selling_lender",
 				required: true,
 				signingOrder: 1,
 				signingStatus: "completed",
@@ -229,8 +256,8 @@ export const participantWorkspaceFixture = {
 			{
 				completedAt: null,
 				documensoRole: "SIGNER",
-				name: "Bianca Buyer",
-				platformRole: "lender_primary",
+				name: "Bianca Purchasing",
+				platformRole: "purchasing_lender",
 				required: true,
 				signingOrder: 2,
 				signingStatus: "not_started",
@@ -249,8 +276,8 @@ export const participantWorkspaceFixture = {
 		},
 		{
 			at: STORY_CLOSING_AT,
-			description: "Buyer signature is ready in the portal.",
-			label: "Buyer signing",
+			description: "Purchasing lender signature is ready in the portal.",
+			label: "Purchasing lender signing",
 			status: "current",
 		},
 	],
@@ -305,7 +332,7 @@ export const lawyerMattersFixture = [
 		dealId: "deal_rep" as never,
 		fractionalShareDisplayPercent: 25,
 		lawyer: lawyerParticipant,
-		matterName: "Bianca Buyer / Sam Seller",
+		matterName: "Bianca Purchasing / Sam Selling",
 		participants: { ...participants, dealId: "deal_rep" as never },
 		status: "lawyerOnboarding.verified",
 	},
@@ -329,7 +356,7 @@ export const lawyerMattersFixture = [
 		dealId: "deal_done" as never,
 		fractionalShareDisplayPercent: 10,
 		lawyer: lawyerParticipant,
-		matterName: "Closed Buyer / Closed Seller",
+		matterName: "Closed Purchasing Lender / Closed Selling Lender",
 		participants,
 		status: "confirmed",
 	},
@@ -367,10 +394,10 @@ export const lawyerWorkspaceFixture = {
 						dealDocumentInstanceId: "instance_signable" as never,
 						dealId: "deal_review" as never,
 						documensoRole: "SIGNER",
-						email: sellerParticipant.email,
-						name: sellerParticipant.displayName,
+						email: sellingLenderParticipant.email,
+						name: sellingLenderParticipant.displayName,
 						packageId: "package_review" as never,
-						platformRole: "seller_primary",
+						platformRole: "selling_lender",
 						readStatus: "opened",
 						required: true,
 						sendStatus: "sent",
@@ -390,7 +417,7 @@ export const lawyerWorkspaceFixture = {
 						email: lawyerParticipant.email,
 						name: lawyerParticipant.displayName,
 						packageId: "package_review" as never,
-						platformRole: "lawyer_primary",
+						platformRole: "primary_lawyer",
 						readStatus: "available",
 						required: true,
 						sendStatus: "sent",
@@ -453,7 +480,7 @@ export const blockedLawyerWorkspaceFixture = {
 			{
 				createdAt: STORY_READY_AT,
 				kind: "pre_send_configuration_failure",
-				message: "Seller recipient mapping is missing a provider role.",
+				message: "Selling lender recipient mapping is missing a provider role.",
 				raisedAt: STORY_READY_AT,
 				severity: "blocking",
 				status: "open",
@@ -534,14 +561,14 @@ export const portalDealDetailFixture = {
 				recipients: [
 					{
 						isCurrentViewer: true,
-						name: "Bianca Buyer",
-						platformRole: "lender_primary",
+						name: "Bianca Purchasing",
+						platformRole: "purchasing_lender",
 						status: "not_started",
 					},
 					{
 						isCurrentViewer: false,
-						name: "Sam Seller",
-						platformRole: "seller_primary",
+						name: "Sam Selling",
+						platformRole: "selling_lender",
 						status: "completed",
 					},
 				],

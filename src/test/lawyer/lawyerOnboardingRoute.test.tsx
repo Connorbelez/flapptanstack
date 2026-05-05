@@ -90,6 +90,15 @@ const platformAgreementPendingFixture = {
 	workosUserId: "user_platform_123",
 } as const;
 
+const guestCompleteFixture = {
+	...identityPendingFixture,
+	completedAt: 1_777_800_010_000,
+	currentStep: "complete",
+	nextRoute: "/deals/deal_123",
+	status: "complete",
+	updatedAt: 1_777_800_010_000,
+} as const;
+
 describe("lawyer onboarding route UI", () => {
 	it("renders the current onboarding checkpoint", async () => {
 		mockUseMutation();
@@ -99,11 +108,20 @@ describe("lawyer onboarding route UI", () => {
 		);
 
 		expect(
-			view.getByRole("heading", { name: /Confirm identity/i })
+			view.getByRole("heading", { name: /Confirm your identity/i })
 		).toBeTruthy();
 		expect(
-			view.getByRole("button", { name: /Confirm identity/i })
+			view.getByRole("button", { name: /Confirm your identity/i })
 		).toBeTruthy();
+	});
+
+	it("links completed guest lawyers back to the deal workspace", async () => {
+		mockUseMutation();
+
+		const view = render(<LawyerOnboardingPage session={guestCompleteFixture} />);
+
+		const link = view.getByRole("link", { name: /Go to deal workspace/i });
+		expect(link.getAttribute("href")).toBe("/deals/deal_123");
 	});
 
 	it("renders platform onboarding without a deal context", async () => {
@@ -116,6 +134,8 @@ describe("lawyer onboarding route UI", () => {
 		expect(
 			view.getByRole("heading", { name: /Accept platform agreement/i })
 		).toBeTruthy();
-		expect(view.getByText("Platform onboarding")).toBeTruthy();
+		expect(
+			view.getByRole("button", { name: /Accept platform agreement/i })
+		).toBeTruthy();
 	});
 });

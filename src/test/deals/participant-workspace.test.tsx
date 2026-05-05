@@ -66,14 +66,14 @@ const queue: ParticipantDealQueue = {
 			closingDate: 1_800_000_000_000,
 			dealId: "deal_123" as never,
 			group: "needsAction",
-			nextAction: "Sign your buyer closing documents",
-			persona: "buyer",
+			nextAction: "Sign your purchasing lender closing documents",
+			persona: "purchasing_lender",
 			propertyLabel: "123 King St W, Toronto, ON",
 			signingStatus: "ready_to_sign",
 			status: "documentReview.signed",
 		},
 	],
-	persona: "buyer",
+	persona: "purchasing_lender",
 };
 
 const workspace: ParticipantDealWorkspace = {
@@ -90,7 +90,7 @@ const workspace: ParticipantDealWorkspace = {
 		fractionalShareDisplayPercent: 25,
 		fractionalShareUnits: 2500,
 		lockingFeeAmount: null,
-		persona: "buyer",
+		persona: "purchasing_lender",
 		status: "documentReview.signed",
 	},
 	documentInstances: [
@@ -154,12 +154,12 @@ const workspace: ParticipantDealWorkspace = {
 		principal: 500_000,
 		status: "funded",
 	},
-	nextAction: "Sign your buyer closing documents",
+	nextAction: "Sign your purchasing lender closing documents",
 	participants: {
 		buyer: {
 			accessRole: "lender",
 			authId: "buyer-auth",
-			displayName: "Bianca Buyer",
+			displayName: "Bianca Purchasing",
 			email: "buyer@test.fairlend.ca",
 			lenderId: "lender_123" as never,
 			userId: "user_123" as never,
@@ -181,18 +181,55 @@ const workspace: ParticipantDealWorkspace = {
 			lawyerType: "guest_lawyer",
 		},
 		personas: {
-			admin: "admin",
-			buyer: "buyer",
-			lawyer: "lawyer",
-			seller: "seller",
+			assigned_broker: "assigned_broker",
+			broker_of_record: "broker_of_record",
+			fairlend_admin: "fairlend_admin",
+			primary_borrower: "primary_borrower",
+			primary_lawyer: "primary_lawyer",
+			purchasing_lender: "purchasing_lender",
+			selling_lender: "selling_lender",
+		},
+		primary_borrower: {
+			authId: "borrower-auth",
+			borrowerId: "borrower_123" as never,
+			displayName: "Bailey Borrower",
+			email: "borrower@test.fairlend.ca",
+			persona: "primary_borrower",
+			userId: "user_borrower" as never,
+		},
+		primary_lawyer: {
+			authId: "lawyer-auth",
+			displayName: "Laura Lawyer",
+			email: "lawyer@test.fairlend.ca",
+			hasActiveDealAccess: true,
+			lawyerType: "guest_lawyer",
+			persona: "primary_lawyer",
+		},
+		purchasing_lender: {
+			accessRole: "lender",
+			authId: "buyer-auth",
+			displayName: "Bianca Purchasing",
+			email: "buyer@test.fairlend.ca",
+			lenderId: "lender_123" as never,
+			persona: "purchasing_lender",
+			userId: "user_123" as never,
 		},
 		seller: {
-			accessRole: "borrower",
+			accessRole: "lender",
 			authId: "seller-auth",
-			borrowerId: "borrower_123" as never,
-			displayName: "Sam Seller",
+			borrowerId: null,
+			displayName: "Sam Selling",
 			email: "seller@test.fairlend.ca",
-			lenderId: null,
+			lenderId: "seller_lender_123" as never,
+			userId: "user_456" as never,
+		},
+		selling_lender: {
+			accessRole: "lender",
+			authId: "seller-auth",
+			displayName: "Sam Selling",
+			email: "seller@test.fairlend.ca",
+			lenderId: "seller_lender_123" as never,
+			persona: "selling_lender",
 			userId: "user_456" as never,
 		},
 	},
@@ -203,14 +240,14 @@ const workspace: ParticipantDealWorkspace = {
 		},
 		lender: {
 			email: "buyer@test.fairlend.ca",
-			name: "Bianca Buyer",
+			name: "Bianca Purchasing",
 		},
 		seller: {
 			email: "seller@test.fairlend.ca",
-			name: "Sam Seller",
+			name: "Sam Selling",
 		},
 	},
-	persona: "buyer",
+	persona: "purchasing_lender",
 	property: {
 		city: "Toronto",
 		propertyType: "residential",
@@ -222,17 +259,17 @@ const workspace: ParticipantDealWorkspace = {
 	signing: {
 		attemptId: "attempt_123" as never,
 		completedRequiredCount: 0,
-		embeddedSigningToken: "buyer-token",
+		embeddedSigningToken: "purchasing-lender-token",
 		exceptionMessage: null,
 		providerDocumentId: "doc_123",
 		providerEnvelopeId: "env_123",
-		recipientName: "Bianca Buyer",
+		recipientName: "Bianca Purchasing",
 		recipients: [
 			{
 				completedAt: null,
 				documensoRole: "SIGNER",
-				name: "Bianca Buyer",
-				platformRole: "lender_primary",
+				name: "Bianca Purchasing",
+				platformRole: "purchasing_lender",
 				required: true,
 				signingOrder: 1,
 				signingStatus: "not_started",
@@ -253,13 +290,15 @@ const workspace: ParticipantDealWorkspace = {
 };
 
 describe("participant deal workspace UI", () => {
-	it("renders queue groups and buyer next action", () => {
+	it("renders queue groups and purchasing lender next action", () => {
 		render(<ParticipantDealsQueuePage queue={queue} />);
 
 		expect(screen.getByText("My Closings")).toBeTruthy();
 		expect(screen.getByText("Needs Action")).toBeTruthy();
 		expect(screen.getByText("123 King St W, Toronto, ON")).toBeTruthy();
-		expect(screen.getByText("Sign your buyer closing documents")).toBeTruthy();
+		expect(
+			screen.getByText("Sign your purchasing lender closing documents")
+		).toBeTruthy();
 	});
 
 	it("renders workspace panels and only the projected signing entry", () => {
@@ -277,7 +316,7 @@ describe("participant deal workspace UI", () => {
 		expect(screen.getByText("Signing task ready")).toBeTruthy();
 		expect(screen.queryByRole("link", { name: /open signing/i })).toBeNull();
 		expect(
-			document.querySelector('a[href="buyer-token"]')
+			document.querySelector('a[href="purchasing-lender-token"]')
 		).toBeNull();
 		expect(screen.queryByText("lawyer-token")).toBeNull();
 	});
@@ -290,14 +329,16 @@ describe("participant deal workspace UI", () => {
 					...workspace,
 					signing: {
 						...workspace.signing,
-						embeddedSigningToken: "https://sign.example/buyer",
+						embeddedSigningToken: "https://sign.example/purchasing-lender",
 					},
 				}}
 			/>
 		);
 
 		const signingLink = screen.getByRole("link", { name: /open signing/i });
-		expect(signingLink.getAttribute("href")).toBe("https://sign.example/buyer");
+		expect(signingLink.getAttribute("href")).toBe(
+			"https://sign.example/purchasing-lender"
+		);
 	});
 
 	it("wraps lender and borrower route trees before suspense children render", () => {

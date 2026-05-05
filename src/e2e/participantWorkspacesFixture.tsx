@@ -15,40 +15,40 @@ const baseQueueItem = {
 	closingDate: 1_800_000_000_000,
 	dealId: "deal_123" as never,
 	group: "needsAction",
-	nextAction: "Sign your buyer closing documents",
-	persona: "buyer",
+	nextAction: "Sign your purchasing lender closing documents",
+	persona: "purchasing_lender",
 	propertyLabel: "123 King St W, Toronto, ON",
 	signingStatus: "ready_to_sign",
 	status: "documentReview.signed",
 } satisfies ParticipantDealQueue["needsAction"][number];
 
-const buyerQueue: ParticipantDealQueue = {
+const purchasingLenderQueue: ParticipantDealQueue = {
 	completed: [],
 	inProgress: [],
 	needsAction: [baseQueueItem],
-	persona: "buyer",
+	persona: "participating_lender",
 };
 
-const sellerQueue: ParticipantDealQueue = {
+const sellingLenderQueue: ParticipantDealQueue = {
 	completed: [],
 	inProgress: [
 		{
 			...baseQueueItem,
 			group: "inProgress",
 			nextAction: "Review closing progress",
-			persona: "seller",
+			persona: "selling_lender",
 			signingStatus: "upcoming",
 		},
 	],
 	needsAction: [],
-	persona: "seller",
+	persona: "selling_lender",
 };
 
 const emptyQueue: ParticipantDealQueue = {
 	completed: [],
 	inProgress: [],
 	needsAction: [],
-	persona: "buyer",
+	persona: "participating_lender",
 };
 
 const baseWorkspace: ParticipantDealWorkspace = {
@@ -65,7 +65,7 @@ const baseWorkspace: ParticipantDealWorkspace = {
 		fractionalShareDisplayPercent: 25,
 		fractionalShareUnits: 2500,
 		lockingFeeAmount: null,
-		persona: "buyer",
+		persona: "purchasing_lender",
 		status: "documentReview.signed",
 	},
 	documentInstances: [
@@ -145,12 +145,12 @@ const baseWorkspace: ParticipantDealWorkspace = {
 		principal: 500_000,
 		status: "funded",
 	},
-	nextAction: "Sign your buyer closing documents",
+	nextAction: "Sign your purchasing lender closing documents",
 	participants: {
 		buyer: {
 			accessRole: "lender",
 			authId: "buyer-auth",
-			displayName: "Bianca Buyer",
+			displayName: "Bianca Purchasing",
 			email: "buyer@test.fairlend.ca",
 			lenderId: "lender_123" as never,
 			userId: "user_123" as never,
@@ -168,23 +168,23 @@ const baseWorkspace: ParticipantDealWorkspace = {
 			{
 				email: "buyer@test.fairlend.ca",
 				hasWorkspaceAccess: true,
-				label: "Buyer",
-				name: "Bianca Buyer",
-				role: "buyer",
+				label: "Purchasing lender",
+				name: "Bianca Purchasing",
+				role: "purchasing_lender",
 			},
 			{
 				email: "seller@test.fairlend.ca",
 				hasWorkspaceAccess: true,
-				label: "Seller",
-				name: "Sam Seller",
-				role: "seller",
+				label: "Selling lender",
+				name: "Sam Selling",
+				role: "selling_lender",
 			},
 			{
 				email: "lawyer@test.fairlend.ca",
 				hasWorkspaceAccess: true,
-				label: "Buyer's Lawyer",
+				label: "Primary lawyer",
 				name: "Laura Lawyer",
-				role: "buyer_lawyer",
+				role: "primary_lawyer",
 			},
 		],
 		lawyer: {
@@ -195,18 +195,55 @@ const baseWorkspace: ParticipantDealWorkspace = {
 			lawyerType: "guest_lawyer",
 		},
 		personas: {
-			admin: "admin",
-			buyer: "buyer",
-			lawyer: "lawyer",
-			seller: "seller",
+			assigned_broker: "assigned_broker",
+			broker_of_record: "broker_of_record",
+			fairlend_admin: "fairlend_admin",
+			primary_borrower: "primary_borrower",
+			primary_lawyer: "primary_lawyer",
+			purchasing_lender: "purchasing_lender",
+			selling_lender: "selling_lender",
 		},
-		seller: {
-			accessRole: "borrower",
+		primary_borrower: {
 			authId: "seller-auth",
 			borrowerId: "borrower_123" as never,
-			displayName: "Sam Seller",
+			displayName: "Sam Borrower",
+			email: "borrower@test.fairlend.ca",
+			persona: "primary_borrower",
+			userId: "user_789" as never,
+		},
+		primary_lawyer: {
+			authId: "lawyer-auth",
+			displayName: "Laura Lawyer",
+			email: "lawyer@test.fairlend.ca",
+			hasActiveDealAccess: true,
+			lawyerType: "guest_lawyer",
+			persona: "primary_lawyer",
+		},
+		purchasing_lender: {
+			accessRole: "lender",
+			authId: "buyer-auth",
+			displayName: "Bianca Purchasing",
+			email: "buyer@test.fairlend.ca",
+			lenderId: "lender_123" as never,
+			persona: "purchasing_lender",
+			userId: "user_123" as never,
+		},
+		seller: {
+			accessRole: "lender",
+			authId: "seller-auth",
+			borrowerId: null,
+			displayName: "Sam Selling",
 			email: "seller@test.fairlend.ca",
-			lenderId: null,
+			lenderId: "lender_456" as never,
+			userId: "user_456" as never,
+		},
+		selling_lender: {
+			accessRole: "lender",
+			authId: "seller-auth",
+			displayName: "Sam Selling",
+			email: "seller@test.fairlend.ca",
+			lenderId: "lender_456" as never,
+			persona: "selling_lender",
 			userId: "user_456" as never,
 		},
 	},
@@ -217,14 +254,14 @@ const baseWorkspace: ParticipantDealWorkspace = {
 		},
 		lender: {
 			email: "buyer@test.fairlend.ca",
-			name: "Bianca Buyer",
+			name: "Bianca Purchasing",
 		},
 		seller: {
 			email: "seller@test.fairlend.ca",
-			name: "Sam Seller",
+			name: "Sam Selling",
 		},
 	},
-	persona: "buyer",
+	persona: "purchasing_lender",
 	property: {
 		city: "Toronto",
 		propertyType: "residential",
@@ -236,17 +273,17 @@ const baseWorkspace: ParticipantDealWorkspace = {
 	signing: {
 		attemptId: "attempt_123" as never,
 		completedRequiredCount: 0,
-		embeddedSigningToken: "buyer-token",
+		embeddedSigningToken: "purchasing-lender-token",
 		exceptionMessage: null,
 		providerDocumentId: "doc_123",
 		providerEnvelopeId: "env_123",
-		recipientName: "Bianca Buyer",
+		recipientName: "Bianca Purchasing",
 		recipients: [
 			{
 				completedAt: null,
 				documensoRole: "SIGNER",
-				name: "Bianca Buyer",
-				platformRole: "lender_primary",
+				name: "Bianca Purchasing",
+				platformRole: "purchasing_lender",
 				required: true,
 				signingOrder: 1,
 				signingStatus: "not_started",
@@ -274,8 +311,8 @@ const baseWorkspace: ParticipantDealWorkspace = {
 
 export function E2eParticipantWorkspacesFixture() {
 	const scenario = new URLSearchParams(window.location.search).get("scenario");
-	if (scenario === "seller-queue") {
-		return <ParticipantDealsQueuePage queue={sellerQueue} />;
+	if (scenario === "selling-lender-queue") {
+		return <ParticipantDealsQueuePage queue={sellingLenderQueue} />;
 	}
 	if (scenario === "empty") {
 		return <ParticipantDealsQueuePage queue={emptyQueue} />;
@@ -313,7 +350,7 @@ export function E2eParticipantWorkspacesFixture() {
 					<CardContent className="space-y-2 p-6">
 						<h1 className="font-semibold text-2xl">Workspace unavailable</h1>
 						<p className="text-muted-foreground text-sm">
-							Forbidden: no buyer workspace access for this deal.
+							Forbidden: no participating_lender workspace access for this deal.
 						</p>
 					</CardContent>
 				</Card>
@@ -328,5 +365,5 @@ export function E2eParticipantWorkspacesFixture() {
 			/>
 		);
 	}
-	return <ParticipantDealsQueuePage queue={buyerQueue} />;
+	return <ParticipantDealsQueuePage queue={purchasingLenderQueue} />;
 }

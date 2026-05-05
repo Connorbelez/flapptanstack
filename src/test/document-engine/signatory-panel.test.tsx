@@ -20,7 +20,7 @@ const initialSignatories: SignatoryConfig[] = [
 	},
 	{
 		order: 1,
-		platformRole: "lawyer_primary",
+		platformRole: "primary_lawyer",
 		role: "signatory",
 	},
 ];
@@ -131,11 +131,11 @@ describe("SignatoryPanel", () => {
 		);
 
 		expect(onChange).toHaveBeenCalledWith([
-			{
-				order: 0,
-				platformRole: "lawyer_primary",
-				role: "signatory",
-			},
+				{
+					order: 0,
+					platformRole: "primary_lawyer",
+					role: "signatory",
+				},
 			{
 				order: 1,
 				platformRole: "broker_of_record",
@@ -166,11 +166,11 @@ describe("SignatoryPanel", () => {
 		);
 
 		expect(onChange).toHaveBeenCalledWith([
-			{
-				order: 0,
-				platformRole: "lawyer_primary",
-				role: "signatory",
-			},
+				{
+					order: 0,
+					platformRole: "primary_lawyer",
+					role: "signatory",
+				},
 			{
 				order: 1,
 				platformRole: "broker_of_record",

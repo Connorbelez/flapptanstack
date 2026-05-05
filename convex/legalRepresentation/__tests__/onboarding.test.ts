@@ -1,6 +1,6 @@
 import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { registerAuditLogComponent } from "../../../src/test/convex/registerAuditLogComponent";
 import type { Id } from "../../_generated/dataModel";
 import schema from "../../schema";
@@ -243,6 +243,95 @@ async function seedGuestOnboardingSession(t: ReturnType<typeof convexTest>) {
 	return { dealId, normalizedEmail, provisionalAccessId, sessionId };
 }
 
+async function seedGuestOnboardingSessionWithoutSelectedLso(
+	t: ReturnType<typeof convexTest>
+) {
+	return await t.run(async (ctx) => {
+		const normalizedEmail = normalizeLawyerEmail("guest@example.test");
+		const brokerUserId = await ctx.db.insert("users", {
+			authId: "broker-auth",
+			email: "broker@example.test",
+			firstName: "Broker",
+			lastName: "User",
+		});
+		const propertyId = await ctx.db.insert("properties", {
+			city: "Toronto",
+			createdAt: NOW,
+			postalCode: "M5V 1A1",
+			propertyType: "residential",
+			province: "ON",
+			streetAddress: "123 Onboarding St",
+		});
+		const brokerId = await ctx.db.insert("brokers", {
+			createdAt: NOW,
+			status: "active",
+			userId: brokerUserId,
+		});
+		const mortgageId = await ctx.db.insert("mortgages", {
+			amortizationMonths: 300,
+			brokerOfRecordId: brokerId,
+			createdAt: NOW,
+			firstPaymentDate: "2026-02-01",
+			interestAdjustmentDate: "2026-01-01",
+			interestRate: 9.5,
+			lienPosition: 1,
+			loanType: "conventional",
+			maturityDate: "2031-01-01",
+			paymentAmount: 2500,
+			paymentFrequency: "monthly",
+			principal: 500_000,
+			propertyId,
+			rateType: "fixed",
+			status: "funded",
+			termMonths: 60,
+			termStartDate: "2026-01-01",
+		});
+		const lsoLawyerId = await ctx.db.insert("lsoLawyers", {
+			barNumber: "1245R",
+			displayName: "Riley Registry",
+			entitledToPractise: true,
+			jurisdiction: "ON",
+			licenseeType: "lawyer",
+			licensingStatus: "licensed",
+			normalizedName: "riley registry",
+			restrictionStatus: "clear",
+			source: "lso_import",
+			sourceFetchedAt: NOW,
+			sourceSnapshot: { source: "test_fixture" },
+			updatedAt: NOW,
+		});
+		const dealId = await ctx.db.insert("deals", {
+			buyerId: "buyer-auth",
+			createdAt: NOW,
+			createdBy: "system:test",
+			fractionalShare: 10,
+			lawyerId: normalizedEmail,
+			lawyerType: "guest_lawyer",
+			mortgageId,
+			selectedLawyer: {
+				type: "guest_lawyer",
+				source: "manual",
+				name: "Riley Registry",
+				email: "guest@example.test",
+			},
+			sellerId: "seller-auth",
+			status: "lawyerOnboarding.pending",
+		});
+		const sessionId = await ctx.db.insert("lawyerOnboardingSessions", {
+			createdAt: NOW,
+			currentStep: "auth",
+			dealId,
+			nextRoute: "/lawyer/onboarding/test",
+			normalizedTargetEmail: normalizedEmail,
+			path: "guest_invited",
+			returnPath: `/deals/${String(dealId)}`,
+			status: "auth_pending",
+			updatedAt: NOW,
+		});
+		return { lsoLawyerId, sessionId };
+	});
+}
+
 async function seedGuestOnboardingSessionWithSelectedLso(
 	t: ReturnType<typeof convexTest>,
 	lsoLawyerId: Id<"lsoLawyers">
@@ -292,6 +381,25 @@ async function progressSessionToReadyForCompletion(
 			updatedAt: NOW + 2,
 		})
 	);
+}
+
+async function acceptRepresentationEngagementAndDrain(
+	auth: ReturnType<ReturnType<typeof createHarness>["withIdentity"]>,
+	t: ReturnType<typeof createHarness>,
+	sessionId: Id<"lawyerOnboardingSessions">
+) {
+	vi.useFakeTimers();
+	try {
+		const session = await auth.mutation(
+			onboardingApi.acceptRepresentationEngagement,
+			{ sessionId }
+		);
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+		return session;
+	} finally {
+		vi.clearAllTimers();
+		vi.useRealTimers();
+	}
 }
 
 describe("lawyer onboarding sessions", () => {
@@ -585,9 +693,7 @@ describe("lawyer onboarding sessions", () => {
 			sessionId,
 		});
 		await auth.mutation(onboardingApi.completeMockIdv, { sessionId });
-		await auth.mutation(onboardingApi.acceptRepresentationEngagement, {
-			sessionId,
-		});
+		await acceptRepresentationEngagementAndDrain(auth, t, sessionId);
 		const completed = await auth.mutation(onboardingApi.completeSession, {
 			sessionId,
 		});
@@ -618,6 +724,12 @@ describe("lawyer onboarding sessions", () => {
 				.withIndex("by_deal", (query) => query.eq("dealId", dealId))
 				.first()
 		);
+		const transitionState = await t.run(async (ctx) => ({
+			auditEvents: (await ctx.db.query("auditJournal").collect())
+				.filter((entry) => entry.entityId === String(dealId))
+				.map((entry) => entry.eventType),
+			deal: await ctx.db.get(dealId),
+		}));
 
 		expect(access).toMatchObject({
 			role: "guest_lawyer",
@@ -652,6 +764,10 @@ describe("lawyer onboarding sessions", () => {
 			provider: "manual_admin",
 			status: "signed",
 		});
+		expect(transitionState.deal?.status).toBe("documentReview.pending");
+		expect(transitionState.auditEvents).toEqual(
+			expect.arrayContaining(["LAWYER_VERIFIED", "REPRESENTATION_CONFIRMED"])
+		);
 	});
 
 	it("progresses platform checkpoints to complete without a deal and activates the platform lawyer", async () => {
@@ -756,11 +872,18 @@ describe("lawyer onboarding sessions", () => {
 				updatedAt: NOW + 1,
 			})
 		);
-		await progressSessionToReadyForCompletion(auth, t, started.session._id);
-
-		await auth.mutation(onboardingApi.completeSession, {
+		await auth.mutation(onboardingApi.confirmIdentity, {
 			sessionId: started.session._id,
 		});
+		await auth.mutation(onboardingApi.submitLsoLicense, {
+			barNumber: "L12345",
+			jurisdiction: "ON",
+			sessionId: started.session._id,
+		});
+		await auth.mutation(onboardingApi.completeMockIdv, {
+			sessionId: started.session._id,
+		});
+		await acceptRepresentationEngagementAndDrain(auth, t, started.session._id);
 		const invitation = await t.run((ctx) => ctx.db.get(invitationId));
 
 		expect(invitation).toMatchObject({
@@ -836,6 +959,40 @@ describe("lawyer onboarding sessions", () => {
 		);
 
 		expect(verifications.map((row) => row.checkType)).toEqual(["manual_admin"]);
+	});
+
+	it("accepts submitted registry LSO evidence when no lawyer was preselected from LSO", async () => {
+		const t = createHarness();
+		const auth = t.withIdentity(lawyerIdentity());
+		const { lsoLawyerId, sessionId } =
+			await seedGuestOnboardingSessionWithoutSelectedLso(t);
+
+		await auth.mutation(onboardingApi.confirmIdentity, { sessionId });
+		const session = await auth.mutation(onboardingApi.submitLsoLicense, {
+			barNumber: "1245r",
+			jurisdiction: "ON",
+			sessionId,
+		});
+		const lsoVerification = await t.run((ctx) =>
+			ctx.db
+				.query("lawyerVerifications")
+				.withIndex("by_lso_lawyer", (query) =>
+					query.eq("lsoLawyerId", lsoLawyerId)
+				)
+				.first()
+		);
+
+		expect(session).toMatchObject({
+			currentStep: "idv",
+			status: "idv_pending",
+		});
+		expect(lsoVerification).toMatchObject({
+			barNumber: "1245R",
+			checkType: "initial_lso",
+			jurisdiction: "ON",
+			lsoLawyerId,
+			outcome: "eligible",
+		});
 	});
 
 	it("rejects restricted LSO registry rows before recording eligible evidence", async () => {

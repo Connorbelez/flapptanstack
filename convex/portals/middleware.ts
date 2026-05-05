@@ -194,8 +194,25 @@ export async function resolvePortalLender(
 	const matchesBroker =
 		context.portal.brokerId !== undefined &&
 		lender?.brokerId === context.portal.brokerId;
+	const debugContext = {
+		isFairLendAdmin: context.viewer.isFairLendAdmin,
+		lenderBrokerId: lender?.brokerId ? String(lender.brokerId) : null,
+		lenderFound: Boolean(lender),
+		lenderId: lender?._id ? String(lender._id) : null,
+		matchesBroker,
+		portalBrokerId: context.portal.brokerId
+			? String(context.portal.brokerId)
+			: null,
+		portalId: String(context.portal.portalId),
+		portalOrgId: context.portal.orgId,
+		portalSlug: context.portal.slug,
+		portalType: context.portal.portalType,
+		viewerAuthId: context.viewer.authId,
+	};
+	console.info("[portal-lender] resolved context", debugContext);
 
 	if (!(lender && matchesBroker)) {
+		console.warn("[portal-lender] rejecting viewer", debugContext);
 		throw new ConvexError("Forbidden: lender does not belong to this portal");
 	}
 

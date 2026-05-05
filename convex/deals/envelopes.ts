@@ -22,7 +22,7 @@ type EnvelopeQueryCtx = Pick<QueryCtx, "db">;
 
 type RecipientRow = Doc<"dealEnvelopeRecipients">;
 
-const DEFAULT_REQUIRED_PLATFORM_ROLES = ["lender_primary", "lawyer_primary"];
+const DEFAULT_REQUIRED_PLATFORM_ROLES = ["purchasing_lender", "primary_lawyer"];
 
 export interface RecipientCompletionSummary {
 	completedRequiredCount: number;
@@ -110,6 +110,28 @@ function normalizeEmail(value: string | null | undefined) {
 	return value?.trim().toLowerCase() ?? "";
 }
 
+function canonicalPlatformRole(platformRole: string) {
+	switch (platformRole) {
+		case "lender":
+		case "lender_primary":
+			return "purchasing_lender";
+		case "borrower":
+		case "borrower_primary":
+			return "primary_borrower";
+		case "borrower_co_1":
+			return "co_borrower_1";
+		case "borrower_co_2":
+			return "co_borrower_2";
+		case "lawyer_primary":
+		case "borrower_lawyer":
+		case "lender_lawyer":
+		case "seller_lawyer":
+			return "primary_lawyer";
+		default:
+			return platformRole;
+	}
+}
+
 function recipientForPlatformRole(
 	participants: DealParticipantProjection,
 	platformRole: string
@@ -118,29 +140,36 @@ function recipientForPlatformRole(
 	email: string;
 	name: string;
 } | null {
-	if (platformRole === "lender_primary") {
+	const canonicalRole = canonicalPlatformRole(platformRole);
+	if (canonicalRole === "purchasing_lender") {
 		return {
-			authId: participants.buyer.authId,
-			email: normalizeEmail(participants.buyer.email),
-			name: participants.buyer.displayName,
+			authId: participants.purchasing_lender.authId,
+			email: normalizeEmail(participants.purchasing_lender.email),
+			name: participants.purchasing_lender.displayName,
+		};
+	}
+	if (canonicalRole === "selling_lender") {
+		return {
+			authId: participants.selling_lender.authId,
+			email: normalizeEmail(participants.selling_lender.email),
+			name: participants.selling_lender.displayName,
+		};
+	}
+	if (canonicalRole === "primary_borrower") {
+		return {
+			authId: participants.primary_borrower.authId ?? undefined,
+			email: normalizeEmail(participants.primary_borrower.email),
+			name: participants.primary_borrower.displayName ?? "Primary borrower",
 		};
 	}
 	if (
-		platformRole === "borrower_primary" ||
-		platformRole === "borrower_co_1" ||
-		platformRole === "borrower_co_2"
+		canonicalRole === "primary_lawyer" &&
+		participants.primary_lawyer.authId
 	) {
 		return {
-			authId: participants.seller.authId,
-			email: normalizeEmail(participants.seller.email),
-			name: participants.seller.displayName,
-		};
-	}
-	if (platformRole === "lawyer_primary" && participants.lawyer.authId) {
-		return {
-			authId: participants.lawyer.authId,
-			email: normalizeEmail(participants.lawyer.email),
-			name: participants.lawyer.displayName ?? "Assigned lawyer",
+			authId: participants.primary_lawyer.authId,
+			email: normalizeEmail(participants.primary_lawyer.email),
+			name: participants.primary_lawyer.displayName ?? "Assigned lawyer",
 		};
 	}
 	return null;
@@ -155,7 +184,9 @@ function uniqueRequiredPlatformRoles(
 }
 
 function documensoRoleForPlatformRole(platformRole: string) {
-	return platformRole === "lawyer_primary" ? "APPROVER" : "SIGNER";
+	return canonicalPlatformRole(platformRole) === "primary_lawyer"
+		? "APPROVER"
+		: "SIGNER";
 }
 
 function buildRecipientRoster(args: {
@@ -185,7 +216,8 @@ function buildRecipientRoster(args: {
 			name: recipient.name,
 			platformRole,
 			documensoRole: documensoRoleForPlatformRole(platformRole),
-			signingOrder: platformRole === "lawyer_primary" ? 2 : 1,
+			signingOrder:
+				canonicalPlatformRole(platformRole) === "primary_lawyer" ? 2 : 1,
 			required: true,
 			providerRecipientId: tokenInput?.providerRecipientId,
 			tokenAvailableAt: tokenInput?.embeddedSigningToken

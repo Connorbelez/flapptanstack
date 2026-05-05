@@ -4,11 +4,12 @@ import type { MutationCtx } from "../_generated/server";
 import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { executeTransition } from "../engine/transition";
 import type { CommandSource, TransitionResult } from "../engine/types";
-import { lawyerMutation, type Viewer } from "../fluent";
+import { authedMutation, lawyerMutation, type Viewer } from "../fluent";
 import {
 	evaluateDealLegalGate,
 	type LegalGateResult,
 } from "../legalRepresentation/gates";
+import { progressDealLegalRepresentationState } from "../legalRepresentation/progression";
 
 type LawyerMutationCtx = MutationCtx & { viewer: Viewer };
 type PackageSurface = Awaited<
@@ -57,6 +58,20 @@ async function requireActiveLawyerDeal(
 	throw new ConvexError(
 		`Forbidden: no active lawyer access for ${String(dealId)}`
 	);
+}
+
+async function requireAdminOrActiveLawyerDeal(
+	ctx: LawyerMutationCtx,
+	dealId: Id<"deals">
+) {
+	const deal = await ctx.db.get(dealId);
+	if (!deal) {
+		throw new ConvexError(`Deal not found: ${String(dealId)}`);
+	}
+	if (ctx.viewer.isFairLendAdmin) {
+		return deal;
+	}
+	return requireActiveLawyerDeal(ctx, dealId);
 }
 
 function requireDealStatus(deal: Doc<"deals">, expectedStatus: string) {
@@ -163,6 +178,22 @@ export const confirmRepresentation = lawyerMutation
 			args.dealId,
 			"REPRESENTATION_CONFIRMED"
 		);
+	})
+	.public();
+
+export const progressLegalRepresentation = authedMutation
+	.input({ dealId: v.id("deals") })
+	.handler(async (ctx, args) => {
+		await requireAdminOrActiveLawyerDeal(ctx, args.dealId);
+		const isAdmin = ctx.viewer.isFairLendAdmin;
+		return progressDealLegalRepresentationState(ctx, {
+			dealId: args.dealId,
+			source: {
+				actorId: ctx.viewer.authId,
+				channel: isAdmin ? "admin_dashboard" : "lawyer_portal",
+			},
+			sourceActorId: isAdmin ? undefined : ctx.viewer.authId,
+		});
 	})
 	.public();
 

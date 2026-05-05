@@ -159,6 +159,41 @@ async function seedDealAccessRecord(
 	});
 }
 
+async function seedActiveLawyerReadiness(
+	t: TestHarness,
+	dealId: Id<"deals">,
+	lawyerAuthId = LAWYER_IDENTITY.subject
+) {
+	await t.run(async (ctx) => {
+		const now = Date.now();
+		await ctx.db.insert("lawyerVerifications", {
+			authId: lawyerAuthId,
+			checkType: "idv",
+			createdAt: now,
+			createdBy: "test-admin",
+			dealId,
+			expiresAt: now + 86_400_000,
+			normalizedEmail: LAWYER_IDENTITY.user_email,
+			outcome: "eligible",
+			provider: "manual_admin",
+			reasonCodes: ["identity_confirmed"],
+			sourceSnapshot: {
+				source: "deal-access-test",
+			},
+		});
+		await ctx.db.insert("representationEngagements", {
+			createdAt: now,
+			dealId,
+			evidenceHash: "sha256:test-engagement",
+			lawyerAuthId,
+			provider: "manual_admin",
+			signedAt: now,
+			status: "signed",
+			updatedAt: now,
+		});
+	});
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 describe("dealAccess mutations", () => {
@@ -203,6 +238,56 @@ describe("dealAccess mutations", () => {
 			assert(record, "dealAccess record should exist");
 			expect(record.role).toBe("broker_of_record");
 			expect(record.status).toBe("active");
+		});
+
+		it("rejects borrower deal access grants without mortgage borrower ownership", async () => {
+			await expect(
+				t.mutation(internal.deals.mutations.grantAccess, {
+					userId: "seller-auth",
+					dealId,
+					role: "borrower",
+					grantedBy: "test-admin",
+				})
+			).rejects.toThrow(
+				"Cannot grant borrower deal access without mortgage borrower record"
+			);
+		});
+
+		it("stores borrower deal access as primary_borrower only for mortgage borrower records", async () => {
+			await t.run(async (ctx) => {
+				const userId = await ctx.db.insert("users", {
+					authId: "borrower-auth",
+					email: "borrower@test.fairlend.ca",
+					firstName: "Bonnie",
+					lastName: "Borrower",
+				});
+				const borrowerId = await ctx.db.insert("borrowers", {
+					createdAt: Date.now(),
+					status: "active",
+					userId,
+					workflowSourceKey: "deal-access-test",
+				});
+				const deal = await ctx.db.get(dealId);
+				assert(deal, "seeded deal should exist");
+				await ctx.db.insert("mortgageBorrowers", {
+					addedAt: Date.now(),
+					borrowerId,
+					mortgageId: deal.mortgageId,
+					role: "primary",
+				});
+			});
+
+			const accessId = await t.mutation(internal.deals.mutations.grantAccess, {
+				userId: "borrower-auth",
+				dealId,
+				role: "borrower",
+				grantedBy: "test-admin",
+			});
+
+			const record = await t.run(async (ctx) => ctx.db.get(accessId));
+			assert(record, "dealAccess record should exist");
+			expect(record.role).toBe("borrower");
+			expect(record.persona).toBe("primary_borrower");
 		});
 
 		it("is idempotent — returns existing active record", async () => {
@@ -563,6 +648,7 @@ describe("activeDealAccessRecords query", () => {
 			LAWYER_IDENTITY.subject,
 			"platform_lawyer"
 		);
+		await seedActiveLawyerReadiness(t, dealId);
 
 		const asLawyer = t.withIdentity(LAWYER_IDENTITY);
 		const result = await asLawyer.query(
@@ -619,6 +705,7 @@ describe("activeDealAccessRecords query", () => {
 			LAWYER_IDENTITY.subject,
 			"platform_lawyer"
 		);
+		await seedActiveLawyerReadiness(t, dealId);
 
 		// Create a second deal
 		const seed2 = await seedDealWithLawyer(t, {
@@ -652,6 +739,7 @@ describe("activeDealAccessRecords query", () => {
 			LAWYER_IDENTITY.subject,
 			"guest_lawyer"
 		);
+		await seedActiveLawyerReadiness(t, guestSeed.dealId);
 
 		const detail = await t
 			.withIdentity(LAWYER_IDENTITY)

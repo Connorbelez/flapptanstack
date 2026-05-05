@@ -1,3 +1,4 @@
+import { resolveDealAccessDecision } from "../../src/lib/deals/access-policy/resolve";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import type { Viewer } from "../fluent";
@@ -8,7 +9,6 @@ import {
 	getBrokerByAuthId,
 	getLenderByAuthId,
 } from "./actorResolution";
-import { normalizeGuestLawyerEmail } from "./guestLawyerIdentity";
 import { hasPermissionGrant } from "./permissionCatalog";
 
 /** The 4 entity types that generatedDocuments can be linked to. */
@@ -157,59 +157,12 @@ export async function canAccessDeal(
 	viewer: Viewer,
 	dealId: Id<"deals">
 ): Promise<boolean> {
-	if (viewer.isFairLendAdmin) {
-		return true;
-	}
-
-	const deal = await ctx.db.get(dealId);
-	if (!deal) {
-		return false;
-	}
-
-	// Buyer / Seller check: buyerId or sellerId match viewer.authId
-	if (deal.buyerId === viewer.authId || deal.sellerId === viewer.authId) {
-		return true;
-	}
-
-	// Lawyer check: closingTeamAssignment for the deal's mortgage
-	const assignments = await ctx.db
-		.query("closingTeamAssignments")
-		.withIndex("by_user", (q) => q.eq("userId", viewer.authId))
-		.collect();
-	if (assignments.some((a) => a.mortgageId === deal.mortgageId)) {
-		return true;
-	}
-
-	// Explicit dealAccess record with active status
-	const dealAccessRecords = await ctx.db
-		.query("dealAccess")
-		.withIndex("by_user_and_deal", (q) =>
-			q.eq("userId", viewer.authId).eq("dealId", dealId)
-		)
-		.collect();
-	if (dealAccessRecords.some((r) => r.status === "active")) {
-		return true;
-	}
-
-	const viewerEmail = viewer.email;
-	if (viewerEmail) {
-		const normalizedViewerEmail = normalizeGuestLawyerEmail(viewerEmail);
-		const guestLawyerAccessRecords = await ctx.db
-			.query("dealAccess")
-			.withIndex("by_user_and_deal", (q) =>
-				q.eq("userId", normalizedViewerEmail).eq("dealId", dealId)
-			)
-			.collect();
-		if (
-			guestLawyerAccessRecords.some(
-				(r) => r.status === "active" && r.role === "guest_lawyer"
-			)
-		) {
-			return true;
-		}
-	}
-
-	return false;
+	const decision = await resolveDealAccessDecision(ctx, {
+		dealId,
+		intent: "deal.portal.view",
+		viewer,
+	});
+	return decision?.allowed === true;
 }
 
 // ── T-006: canAccessLedgerPosition ──────────────────────────────────
@@ -397,8 +350,15 @@ export async function canAccessTransferRequest(
 		return false;
 	}
 
-	if (transfer.dealId && (await canAccessDeal(ctx, viewer, transfer.dealId))) {
-		return true;
+	if (transfer.dealId) {
+		const dealDecision = await resolveDealAccessDecision(ctx, {
+			dealId: transfer.dealId,
+			intent: "deal.transfer.view",
+			viewer,
+		});
+		if (dealDecision?.allowed) {
+			return true;
+		}
 	}
 
 	if (
@@ -514,26 +474,25 @@ export async function canAccessWorkoutPlan(
 // entityType/entityId linkage, then applies the three-tier sensitivity
 // model from ENG-144:
 //   public    → entity-level access is sufficient
-//   private   → entity access + dealAccess record required
-//   sensitive → entity access + dealAccess + explicit `document:review`
+//   private   → entity access + deal document-view policy access required
+//   sensitive → entity access + deal document-view policy access + explicit `document:review`
 //               permission. This boundary intentionally ignores the
 //               `admin:access` wildcard so external org admins do not inherit
 //               access to sensitive documents.
 
-async function hasActiveDealAccess(
+async function hasDealDocumentAccess(
 	ctx: { db: QueryCtx["db"] },
 	viewer: Viewer,
 	entityType: DocumentEntityType,
 	entityId: string
 ): Promise<boolean> {
 	if (entityType === "deal") {
-		const records = await ctx.db
-			.query("dealAccess")
-			.withIndex("by_user_and_deal", (q) =>
-				q.eq("userId", viewer.authId).eq("dealId", entityId as Id<"deals">)
-			)
-			.collect();
-		return records.some((r) => r.status === "active");
+		const decision = await resolveDealAccessDecision(ctx, {
+			dealId: entityId as Id<"deals">,
+			intent: "deal.document.view",
+			viewer,
+		});
+		return decision?.allowed === true;
 	}
 
 	if (entityType === "mortgage") {
@@ -544,13 +503,12 @@ async function hasActiveDealAccess(
 			)
 			.collect();
 		for (const deal of deals) {
-			const records = await ctx.db
-				.query("dealAccess")
-				.withIndex("by_user_and_deal", (q) =>
-					q.eq("userId", viewer.authId).eq("dealId", deal._id)
-				)
-				.collect();
-			if (records.some((r) => r.status === "active")) {
+			const decision = await resolveDealAccessDecision(ctx, {
+				dealId: deal._id,
+				intent: "deal.document.view",
+				viewer,
+			});
+			if (decision?.allowed === true) {
 				return true;
 			}
 		}
@@ -631,8 +589,8 @@ export async function canAccessDocument(
 		return true;
 	}
 
-	// Step 3: private/sensitive — require dealAccess for deal-scoped entities
-	const hasDealAccessResult = await hasActiveDealAccess(
+	// Step 3: private/sensitive — require deal policy access for deal-scoped entities
+	const hasDealAccessResult = await hasDealDocumentAccess(
 		ctx,
 		viewer,
 		doc.entityType,

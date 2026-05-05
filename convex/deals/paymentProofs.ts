@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { resolveDealAccessDecision } from "../../src/lib/deals/access-policy/resolve";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
@@ -28,9 +29,12 @@ interface DbContext {
 }
 type PaymentProofSubmitterRole =
 	| "admin"
+	| "fairlend_admin"
 	| "guest_lawyer"
 	| "lender"
-	| "platform_lawyer";
+	| "platform_lawyer"
+	| "primary_lawyer"
+	| "purchasing_lender";
 
 interface NormalizedPaymentProofInput {
 	amount: number;
@@ -74,56 +78,42 @@ function assertFundsPending(deal: Doc<"deals"> | null): Doc<"deals"> {
 	return deal;
 }
 
-async function activeDealAccessRows(
-	ctx: DbContext,
-	args: { dealId: Id<"deals">; userId: string }
-): Promise<Doc<"dealAccess">[]> {
-	return await ctx.db
-		.query("dealAccess")
-		.withIndex("by_user_and_deal", (query) =>
-			query.eq("userId", args.userId).eq("dealId", args.dealId)
-		)
-		.filter((query) => query.eq(query.field("status"), "active"))
-		.collect();
-}
-
-function isPaymentProofSubmitterRole(
-	role: Doc<"dealAccess">["role"]
-): role is Exclude<PaymentProofSubmitterRole, "admin"> {
-	return (
-		role === "lender" || role === "platform_lawyer" || role === "guest_lawyer"
-	);
-}
-
 async function resolveUploaderRole(
 	ctx: DbContext,
 	args: { dealId: Id<"deals">; viewer: Viewer }
 ): Promise<PaymentProofSubmitterRole> {
-	if (args.viewer.isFairLendAdmin) {
-		return "admin";
-	}
-
-	const accessRows = await activeDealAccessRows(ctx, {
+	const decision = await resolveDealAccessDecision(ctx, {
 		dealId: args.dealId,
-		userId: args.viewer.authId,
+		intent: "deal.payment_proof.upload",
+		viewer: args.viewer,
 	});
-	const allowedRole = accessRows
-		.map((row) => row.role)
-		.find(isPaymentProofSubmitterRole);
-	if (allowedRole) {
-		return allowedRole;
+	if (
+		decision?.allowed &&
+		canUploadManualPaymentProof(decision.persona as DealPortalPersona)
+	) {
+		return decision.persona as PaymentProofSubmitterRole;
 	}
 
 	throw new ConvexError(
-		"Only lender, selected lawyer, or admin can upload proof"
+		"Only purchasing lender, ready primary lawyer, or admin can upload proof"
 	);
 }
 
 function personaForRole(role: PaymentProofSubmitterRole): DealPortalPersona {
-	if (role === "platform_lawyer" || role === "guest_lawyer") {
-		return "selected_lawyer";
+	switch (role) {
+		case "admin":
+		case "fairlend_admin":
+			return "fairlend_admin";
+		case "guest_lawyer":
+		case "platform_lawyer":
+		case "primary_lawyer":
+			return "primary_lawyer";
+		case "lender":
+		case "purchasing_lender":
+			return "purchasing_lender";
+		default:
+			return role satisfies never;
 	}
-	return role;
 }
 
 function assertValidTransferDate(transferDate: number, now = Date.now()) {
@@ -170,6 +160,7 @@ async function assertAttachmentSet(
 	}
 
 	const requiredUploaderUserId =
+		args.submittedByRole === "fairlend_admin" ||
 		args.submittedByRole === "admin"
 			? null
 			: await viewerUserId(ctx, args.viewer);
@@ -705,7 +696,7 @@ export const uploadManualPaymentProof = authedMutation
 		});
 		if (!canUploadManualPaymentProof(personaForRole(submittedByRole))) {
 			throw new ConvexError(
-				"Only lender, selected lawyer, or admin can upload proof"
+				"Only purchasing lender, ready primary lawyer, or admin can upload proof"
 			);
 		}
 		await assertAttachmentSet(ctx, {
@@ -729,6 +720,7 @@ export const uploadManualPaymentProof = authedMutation
 			dealId: args.dealId,
 			submittedBy: ctx.viewer.authId,
 			submittedByRole,
+			submittedByPersona: personaForRole(submittedByRole),
 			status: "pending_review",
 			amount: normalizedInput.amount,
 			currency: normalizedInput.currency,

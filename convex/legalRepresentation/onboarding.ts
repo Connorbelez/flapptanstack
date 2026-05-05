@@ -5,8 +5,8 @@ import { grantDealAccess } from "../deals/mutations";
 import {
 	authedMutation,
 	convex,
-	lawyerMutation,
-	lawyerQuery,
+	lawyerOnboardingMutation,
+	lawyerOnboardingQuery,
 	type Viewer,
 } from "../fluent";
 import { recordSignedRepresentationEngagementRow } from "./engagements";
@@ -16,10 +16,11 @@ import {
 	normalizeLawyerEmail,
 	normalizeLegalSourceSnapshot,
 } from "./normalization";
+import { progressDealLegalRepresentationState } from "./progression";
 import { recordLawyerVerificationRow } from "./verifications";
 
 type OnboardingMutationCtx = Pick<MutationCtx, "db">;
-type OwnedOnboardingMutationCtx = OnboardingMutationCtx & {
+type OwnedOnboardingMutationCtx = MutationCtx & {
 	readonly viewer: Viewer;
 };
 type OwnedSessionResult =
@@ -44,6 +45,20 @@ function onboardingRoute(sessionId: Id<"lawyerOnboardingSessions">) {
 
 function dealRoute(dealId: Id<"deals">) {
 	return `/deals/${String(dealId)}`;
+}
+
+async function completeDealStateMachineAfterOnboarding(
+	ctx: OwnedOnboardingMutationCtx,
+	dealId: Id<"deals">
+) {
+	await progressDealLegalRepresentationState(ctx, {
+		dealId,
+		source: {
+			actorId: ctx.viewer.authId,
+			channel: "onboarding_portal",
+		},
+		sourceActorId: ctx.viewer.authId,
+	});
 }
 
 function viewerEmail(viewer: Viewer) {
@@ -479,7 +494,34 @@ async function assertSubmittedLsoMatchesSelection(
 		args.now
 	);
 	if (!(selected.barNumber && selected.jurisdiction)) {
-		throw new ConvexError("Selected lawyer LSO evidence is required");
+		const normalizedSubmittedBar = normalizeBarNumber(args.barNumber);
+		const normalizedSubmittedJurisdiction = normalizeJurisdiction(
+			args.jurisdiction
+		);
+		const lsoLawyer = await ctx.db
+			.query("lsoLawyers")
+			.withIndex("by_bar_jurisdiction", (query) =>
+				query
+					.eq("barNumber", normalizedSubmittedBar)
+					.eq("jurisdiction", normalizedSubmittedJurisdiction)
+			)
+			.first();
+		if (!lsoLawyer) {
+			throw new ConvexError("LSO lawyer not found for submitted license");
+		}
+		if (
+			lsoLawyer.licenseeType !== "lawyer" ||
+			!lsoLawyer.entitledToPractise ||
+			lsoLawyer.licensingStatus !== "licensed" ||
+			lsoLawyer.restrictionStatus !== "clear"
+		) {
+			throw new ConvexError("Submitted LSO lawyer is not selectable");
+		}
+		return {
+			barNumber: normalizedSubmittedBar,
+			jurisdiction: normalizedSubmittedJurisdiction,
+			lsoLawyerId: lsoLawyer._id,
+		};
 	}
 	const normalizedSubmittedBar = normalizeBarNumber(args.barNumber);
 	const normalizedSubmittedJurisdiction = normalizeJurisdiction(
@@ -577,6 +619,9 @@ export async function completeSessionInternal(
 		return session;
 	}
 	if (session.completedAt !== undefined && session.status === "complete") {
+		if (!isPlatformOnboardingSession(session) && session.dealId !== undefined) {
+			await completeDealStateMachineAfterOnboarding(ctx, session.dealId);
+		}
 		return session;
 	}
 	requireCheckpoint(
@@ -668,6 +713,7 @@ export async function completeSessionInternal(
 		updatedAt: now,
 		workosUserId: ctx.viewer.authId,
 	});
+	await completeDealStateMachineAfterOnboarding(ctx, session.dealId);
 	return await getSessionAfterPatch(ctx, session._id);
 }
 
@@ -775,7 +821,7 @@ export const startOrResumeForPlatformInvitationInternal = convex
 	})
 	.internal();
 
-export const getLawyerOnboardingSession = lawyerQuery
+export const getLawyerOnboardingSession = lawyerOnboardingQuery
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(async (ctx, args) => {
 		const session = await ctx.db.get(args.sessionId);
@@ -802,7 +848,7 @@ export const getLawyerOnboardingSession = lawyerQuery
 	})
 	.public();
 
-export const confirmIdentity = lawyerMutation
+export const confirmIdentity = lawyerOnboardingMutation
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(async (ctx, args) => {
 		const now = Date.now();
@@ -864,7 +910,7 @@ export const confirmIdentity = lawyerMutation
 	})
 	.public();
 
-export const submitLsoLicense = lawyerMutation
+export const submitLsoLicense = lawyerOnboardingMutation
 	.input({
 		barNumber: v.string(),
 		jurisdiction: v.string(),
@@ -929,7 +975,7 @@ export const submitLsoLicense = lawyerMutation
 	})
 	.public();
 
-export const completeMockIdv = lawyerMutation
+export const completeMockIdv = lawyerOnboardingMutation
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(async (ctx, args) => {
 		const now = Date.now();
@@ -978,7 +1024,7 @@ export const completeMockIdv = lawyerMutation
 	})
 	.public();
 
-export const acceptRepresentationEngagement = lawyerMutation
+export const acceptRepresentationEngagement = lawyerOnboardingMutation
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(async (ctx, args) => {
 		const now = Date.now();
@@ -1036,7 +1082,7 @@ export const acceptRepresentationEngagement = lawyerMutation
 	})
 	.public();
 
-export const completeSession = lawyerMutation
+export const completeSession = lawyerOnboardingMutation
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(
 		async (ctx, args) => await completeSessionInternal(ctx, args.sessionId)

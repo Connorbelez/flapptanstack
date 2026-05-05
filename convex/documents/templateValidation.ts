@@ -4,6 +4,8 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import {
 	ALLOWED_MORTGAGE_SIGNATORY_PLATFORM_ROLES,
 	isSupportedMortgageDocumentVariableKey,
+	LEGACY_MORTGAGE_DOCUMENT_VARIABLE_KEY_ALIASES,
+	LEGACY_MORTGAGE_SIGNATORY_ROLE_ALIASES,
 	type MortgageDocumentBlueprintClass,
 	type MortgageDocumentValidationSummary,
 } from "./contracts";
@@ -77,10 +79,11 @@ export function buildMortgageDocumentValidationSummary(args: {
 		ALLOWED_MORTGAGE_SIGNATORY_PLATFORM_ROLES
 	);
 	const unsupportedPlatformRoles = requiredPlatformRoles.filter(
-		(role) => !supportedRoles.has(role)
+		(role) => !supportedRoles.has(canonicalMortgageSignatoryRole(role))
 	);
 	const unsupportedVariableKeys = requiredVariableKeys.filter(
-		(key) => !isSupportedMortgageDocumentVariableKey(key)
+		(key) =>
+			!isSupportedMortgageDocumentVariableKey(canonicalMortgageVariableKey(key))
 	);
 
 	if (
@@ -124,4 +127,20 @@ export function buildMortgageDocumentValidationSummary(args: {
 		unsupportedPlatformRoles,
 		unsupportedVariableKeys,
 	};
+}
+
+function canonicalMortgageSignatoryRole(role: string) {
+	return (
+		LEGACY_MORTGAGE_SIGNATORY_ROLE_ALIASES[
+			role as keyof typeof LEGACY_MORTGAGE_SIGNATORY_ROLE_ALIASES
+		] ?? role
+	);
+}
+
+function canonicalMortgageVariableKey(key: string) {
+	return (
+		LEGACY_MORTGAGE_DOCUMENT_VARIABLE_KEY_ALIASES[
+			key as keyof typeof LEGACY_MORTGAGE_DOCUMENT_VARIABLE_KEY_ALIASES
+		] ?? key
+	);
 }
