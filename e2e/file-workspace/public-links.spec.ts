@@ -29,7 +29,7 @@ test.describe("File Workspace public and magic links", () => {
 				timeout: 20_000,
 			});
 			await expect(
-				publicPage.getByRole("heading", { name: "FairLend File Share" })
+				publicPage.getByRole("heading", { name: "Shared files" })
 			).toBeVisible({ timeout: 20_000 });
 			await expect(publicPage.getByText("Public clean package.txt")).toBeVisible();
 			await expect(publicPage.getByText("Downloads enabled")).toBeVisible();
@@ -82,7 +82,9 @@ test.describe("File Workspace public and magic links", () => {
 					timeout: 20_000,
 				});
 				await expect(
-					publicPage.getByRole("heading", { name: "Share unavailable" })
+					publicPage.getByRole("heading", {
+						name: "This file share is unavailable",
+					})
 				).toBeVisible({ timeout: 20_000 });
 				await expect(
 					publicPage.getByText(

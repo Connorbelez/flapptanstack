@@ -11,9 +11,12 @@ import {
 test.setTimeout(90_000);
 
 function fileRow(page: Page, name: string) {
-	return page
-		.getByRole("button", { name, exact: true })
+	return fileRowButton(page, name)
 		.locator("xpath=ancestor::div[contains(@class, 'grid')][1]");
+}
+
+function fileRowButton(page: Page, name: string) {
+	return page.getByRole("button", { name, exact: true }).nth(1);
 }
 
 test.describe("File Workspace authenticated journeys", () => {
@@ -38,14 +41,18 @@ test.describe("File Workspace authenticated journeys", () => {
 			await expect(page.locator("h1", { hasText: boxName })).toBeVisible({
 				timeout: 20_000,
 			});
-			await expect(page.getByRole("button", { name: "Upload" })).toBeEnabled();
+			await expect(
+				page.getByRole("button", { name: "Upload", exact: true })
+			).toBeEnabled();
 			await expect(
 				page.getByRole("button", { name: "Share settings" })
 			).toBeEnabled();
 
 			await page.getByRole("button", { name: "Create folder" }).click();
 			await expect(
-				page.getByRole("button", { name: "New folder", exact: true })
+				page
+					.getByLabel("Files", { exact: true })
+					.getByRole("button", { name: "New folder", exact: true })
 			).toBeVisible({ timeout: 20_000 });
 
 			await page.getByLabel("Upload file to workspace").setInputFiles({
@@ -53,7 +60,11 @@ test.describe("File Workspace authenticated journeys", () => {
 				mimeType: "text/plain",
 				name: uploadedName,
 			});
-			await expect(page.getByText(uploadedName)).toBeVisible({
+			await expect(
+				page
+					.getByLabel("Files", { exact: true })
+					.getByRole("button", { name: uploadedName, exact: true })
+			).toBeVisible({
 				timeout: 20_000,
 			});
 			await expect(
@@ -82,12 +93,35 @@ test.describe("File Workspace authenticated journeys", () => {
 			await openManagerWorkspace(page, fixture);
 
 			await expect(page.getByText("Funding Conditions").first()).toBeVisible();
-			await expect(page.getByText("Pending scan package.txt")).toBeVisible();
-			await expect(page.getByText("Rejected executable.txt")).toBeVisible();
-			await expect(page.getByText("Released by admin.txt")).toBeVisible();
-			await expect(page.getByText("Pending Scan")).toBeVisible();
-			await expect(page.getByText("Rejected")).toBeVisible();
-			await expect(page.getByText("Released By Admin")).toBeVisible();
+			await expect(
+				page
+					.getByLabel("Files", { exact: true })
+					.getByRole("button", {
+						name: "Pending scan package.txt",
+						exact: true,
+					})
+			).toBeVisible();
+			await expect(
+				page
+					.getByLabel("Files", { exact: true })
+					.getByRole("button", {
+						name: "Rejected executable.txt",
+						exact: true,
+					})
+			).toBeVisible();
+			await expect(
+				page
+					.getByLabel("Files", { exact: true })
+					.getByRole("button", {
+						name: "Released by admin.txt",
+						exact: true,
+					})
+			).toBeVisible();
+			await expect(page.getByText("Pending Scan", { exact: true })).toBeVisible();
+			await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
+			await expect(
+				page.getByText("Released By Admin", { exact: true })
+			).toBeVisible();
 			await testInfo.attach("manager-workspace-desktop", {
 				body: await page.screenshot({ fullPage: true }),
 				contentType: "image/png",
@@ -114,7 +148,7 @@ test.describe("File Workspace authenticated journeys", () => {
 				})
 			).toBeDisabled();
 
-			await fileRow(page, "Commitment letter clean.txt").click();
+			await fileRowButton(page, "Commitment letter clean.txt").click();
 			await client.replaceFile({
 				body: "replacement pending body",
 				boxId: fixture.boxes.manager.boxId,
@@ -122,12 +156,17 @@ test.describe("File Workspace authenticated journeys", () => {
 				nodeId: fixture.files.clean.nodeId,
 			});
 			await page.reload();
-			await fileRow(page, "Commitment letter clean.txt").click();
+			await fileRowButton(page, "Commitment letter clean.txt").click();
 
+			const inspector = page.getByRole("complementary").last();
 			await expect(page.getByText("v1")).toBeVisible();
 			await expect(page.getByText("v2")).toBeVisible();
-			await expect(page.getByText("Clean")).toBeVisible();
-			await expect(page.getByText("Pending Scan")).toBeVisible();
+			await expect(
+				inspector.getByText("Clean", { exact: true }).first()
+			).toBeVisible();
+			await expect(
+				inspector.getByText("Pending Scan", { exact: true }).first()
+			).toBeVisible();
 
 			await page
 				.getByRole("tree", { name: "Files" })
@@ -135,10 +174,12 @@ test.describe("File Workspace authenticated journeys", () => {
 				.focus();
 			await page.keyboard.press("Enter");
 			await expect(
-				page.getByRole("button", {
-					name: "2026 Closing Package With Long Folder Name",
-					exact: true,
-				})
+				page
+					.getByRole("tree", { name: "Files" })
+					.getByRole("button", {
+						name: "2026 Closing Package With Long Folder Name",
+						exact: true,
+					})
 			).toBeVisible({ timeout: 20_000 });
 			await page
 				.getByRole("tree", { name: "Files" })
@@ -149,16 +190,20 @@ test.describe("File Workspace authenticated journeys", () => {
 				.focus();
 			await page.keyboard.press("Enter");
 			await expect(
-				page.getByRole("button", {
-					name: "Nested Review Level Three",
-					exact: true,
-				})
+				page
+					.getByRole("tree", { name: "Files" })
+					.getByRole("button", {
+						name: "Nested Review Level Three",
+						exact: true,
+					})
 			).toBeVisible({ timeout: 20_000 });
 
 			await page.setViewportSize({ width: 390, height: 844 });
 			await page.reload();
 			await page.getByRole("button", { name: "List view" }).click();
-			await expect(page.getByText("Commitment letter clean.txt")).toBeVisible({
+			await expect(
+				fileRowButton(page, "Commitment letter clean.txt")
+			).toBeVisible({
 				timeout: 20_000,
 			});
 			await expectNoTextOverlap(page);
@@ -208,12 +253,14 @@ test.describe("File Workspace authenticated journeys", () => {
 
 			await page.goto(`/files/${fixture.boxes.suspended.boxId}`);
 			await expect(
-				page.getByRole("heading", { name: "Something went wrong" })
+				page.getByRole("heading", { name: "Access denied" })
 			).toBeVisible({ timeout: 20_000 });
 			await expect(
 				page.getByText("Box not found or access denied.")
 			).toBeVisible();
-			await expect(page.getByRole("button", { name: "Upload" })).toHaveCount(0);
+			await expect(
+				page.getByRole("button", { name: "Upload", exact: true })
+			).toHaveCount(0);
 		} finally {
 			await client.cleanupFixture(runId);
 		}

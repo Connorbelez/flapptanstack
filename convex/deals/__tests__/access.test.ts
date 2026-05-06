@@ -171,6 +171,44 @@ describe("dealAccess mutations", () => {
 		dealId = seed.dealId;
 	});
 
+	it("accepts legacy persona metadata on dealAccess rows", async () => {
+		const accessId = await t.run((ctx) =>
+			ctx.db.insert("dealAccess", {
+				userId: "legacy-broker",
+				dealId,
+				persona: "broker_of_record",
+				role: "broker_of_record",
+				grantedAt: Date.now(),
+				grantedBy: "test-admin",
+				status: "active",
+			})
+		);
+
+		const record = await t.run((ctx) => ctx.db.get(accessId));
+		expect(record?.persona).toBe("broker_of_record");
+		expect(record?.role).toBe("broker_of_record");
+	});
+
+	it("accepts legacy lawyer source metadata on dealAccess rows", async () => {
+		const accessId = await t.run((ctx) =>
+			ctx.db.insert("dealAccess", {
+				userId: "legacy-lawyer",
+				dealId,
+				lawyerSource: "guest_lawyer",
+				persona: "primary_lawyer",
+				role: "guest_lawyer",
+				grantedAt: Date.now(),
+				grantedBy: "test-admin",
+				status: "active",
+			})
+		);
+
+		const record = await t.run((ctx) => ctx.db.get(accessId));
+		expect(record?.lawyerSource).toBe("guest_lawyer");
+		expect(record?.persona).toBe("primary_lawyer");
+		expect(record?.role).toBe("guest_lawyer");
+	});
+
 	describe("grantAccess", () => {
 		it("creates a dealAccess record with correct fields", async () => {
 			const accessId = await t.mutation(internal.deals.mutations.grantAccess, {

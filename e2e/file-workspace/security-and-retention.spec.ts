@@ -45,7 +45,9 @@ test.describe("File Workspace security and retention journeys", () => {
 			await expect(page.getByText(invitedEmail)).toHaveCount(0);
 
 			await page.goto(`/files/${fixture.boxes.viewer.boxId}`);
-			await expect(page.getByRole("button", { name: "Upload" })).toBeDisabled({
+			await expect(
+				page.getByRole("button", { name: "Upload", exact: true })
+			).toBeDisabled({
 				timeout: 20_000,
 			});
 			await expect(
@@ -61,7 +63,9 @@ test.describe("File Workspace security and retention journeys", () => {
 			).rejects.toThrow();
 
 			await page.goto(`/files/${fixture.boxes.editor.boxId}`);
-			await expect(page.getByRole("button", { name: "Upload" })).toBeEnabled({
+			await expect(
+				page.getByRole("button", { name: "Upload", exact: true })
+			).toBeEnabled({
 				timeout: 20_000,
 			});
 			await expect(
@@ -98,7 +102,7 @@ test.describe("File Workspace security and retention journeys", () => {
 			});
 			await openManagerWorkspace(page, fixture);
 			await expect(page.getByText("Trash retention")).toBeVisible();
-			await expect(page.getByText("30 days")).toBeVisible();
+			await expect(page.getByText("14 days")).toBeVisible();
 
 			const retentionEvents = await client.getSecurityEvents({
 				boxId: fixture.boxes.manager.boxId,
