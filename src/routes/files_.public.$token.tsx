@@ -5,10 +5,10 @@ import {
 	PublicFileViewPage,
 	type PublicFileViewState,
 } from "#/components/file-workspace/PublicFileViewPage";
-import { api } from "../../../../convex/_generated/api";
-import type { Id } from "../../../../convex/_generated/dataModel";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
-export const Route = createFileRoute("/files/public/$token")({
+export const Route = createFileRoute("/files_/public/$token")({
 	component: PublicFileWorkspaceRoutePage,
 });
 

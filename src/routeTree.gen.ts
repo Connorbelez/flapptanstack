@@ -97,7 +97,7 @@ import { Route as DemoAuditTraceabilityIndexRouteImport } from './routes/demo/au
 import { Route as DemoAmpsIndexRouteImport } from './routes/demo/amps/index'
 import { Route as AdminDocumentEngineIndexRouteImport } from './routes/admin.document-engine.index'
 import { Route as LenderDealsDealIdRouteImport } from './routes/lender.deals.$dealId'
-import { Route as FilesPublicTokenRouteImport } from './routes/files/public/$token'
+import { Route as FilesPublicTokenRouteImport } from './routes/files_.public.$token'
 import { Route as DemoRbacAuthRolesRouteImport } from './routes/demo/rbac-auth/roles'
 import { Route as DemoRbacAuthOnboardingRouteImport } from './routes/demo/rbac-auth/onboarding'
 import { Route as DemoRbacAuthAuditRouteImport } from './routes/demo/rbac-auth/audit'
@@ -606,9 +606,9 @@ const LenderDealsDealIdRoute = LenderDealsDealIdRouteImport.update({
   getParentRoute: () => LenderDealsRoute,
 } as any)
 const FilesPublicTokenRoute = FilesPublicTokenRouteImport.update({
-  id: '/public/$token',
-  path: '/public/$token',
-  getParentRoute: () => FilesRouteRoute,
+  id: '/files_/public/$token',
+  path: '/files/public/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DemoRbacAuthRolesRoute = DemoRbacAuthRolesRouteImport.update({
   id: '/roles',
@@ -1312,7 +1312,7 @@ export interface FileRoutesById {
   '/demo/rbac-auth/audit': typeof DemoRbacAuthAuditRoute
   '/demo/rbac-auth/onboarding': typeof DemoRbacAuthOnboardingRoute
   '/demo/rbac-auth/roles': typeof DemoRbacAuthRolesRoute
-  '/files/public/$token': typeof FilesPublicTokenRoute
+  '/files_/public/$token': typeof FilesPublicTokenRoute
   '/lender/deals/$dealId': typeof LenderDealsDealIdRoute
   '/admin/document-engine/': typeof AdminDocumentEngineIndexRoute
   '/demo/amps/': typeof DemoAmpsIndexRoute
@@ -1735,7 +1735,7 @@ export interface FileRouteTypes {
     | '/demo/rbac-auth/audit'
     | '/demo/rbac-auth/onboarding'
     | '/demo/rbac-auth/roles'
-    | '/files/public/$token'
+    | '/files_/public/$token'
     | '/lender/deals/$dealId'
     | '/admin/document-engine/'
     | '/demo/amps/'
@@ -1813,6 +1813,7 @@ export interface RootRouteChildren {
   E2eSwitchOrgRoute: typeof E2eSwitchOrgRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
   DemoFormSimpleRoute: typeof DemoFormSimpleRoute
+  FilesPublicTokenRoute: typeof FilesPublicTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -2433,12 +2434,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LenderDealsDealIdRouteImport
       parentRoute: typeof LenderDealsRoute
     }
-    '/files/public/$token': {
-      id: '/files/public/$token'
-      path: '/public/$token'
+    '/files_/public/$token': {
+      id: '/files_/public/$token'
+      path: '/files/public/$token'
       fullPath: '/files/public/$token'
       preLoaderRoute: typeof FilesPublicTokenRouteImport
-      parentRoute: typeof FilesRouteRoute
+      parentRoute: typeof rootRouteImport
     }
     '/demo/rbac-auth/roles': {
       id: '/demo/rbac-auth/roles'
@@ -3004,13 +3005,11 @@ const BrokerRouteRouteWithChildren = BrokerRouteRoute._addFileChildren(
 interface FilesRouteRouteChildren {
   FilesBoxIdRoute: typeof FilesBoxIdRoute
   FilesIndexRoute: typeof FilesIndexRoute
-  FilesPublicTokenRoute: typeof FilesPublicTokenRoute
 }
 
 const FilesRouteRouteChildren: FilesRouteRouteChildren = {
   FilesBoxIdRoute: FilesBoxIdRoute,
   FilesIndexRoute: FilesIndexRoute,
-  FilesPublicTokenRoute: FilesPublicTokenRoute,
 }
 
 const FilesRouteRouteWithChildren = FilesRouteRoute._addFileChildren(
@@ -3341,6 +3340,7 @@ const rootRouteChildren: RootRouteChildren = {
   E2eSwitchOrgRoute: E2eSwitchOrgRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,
   DemoFormSimpleRoute: DemoFormSimpleRoute,
+  FilesPublicTokenRoute: FilesPublicTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

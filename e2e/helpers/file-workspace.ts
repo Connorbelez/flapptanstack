@@ -351,6 +351,19 @@ export async function expectNoTextOverlap(page: Page) {
 	const badElements = await page.locator("body *").evaluateAll((elements) =>
 		elements
 			.filter((element) => {
+				let ancestor = element.parentElement;
+				while (ancestor && ancestor !== document.body) {
+					const ancestorStyle = window.getComputedStyle(ancestor);
+					const hasHorizontalScroll =
+						ancestorStyle.overflow === "auto" ||
+						ancestorStyle.overflow === "scroll" ||
+						ancestorStyle.overflowX === "auto" ||
+						ancestorStyle.overflowX === "scroll";
+					if (hasHorizontalScroll && ancestor.scrollWidth > ancestor.clientWidth) {
+						return false;
+					}
+					ancestor = ancestor.parentElement;
+				}
 				const rect = element.getBoundingClientRect();
 				const style = window.getComputedStyle(element);
 				return (

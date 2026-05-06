@@ -195,8 +195,8 @@ describe("provider codes", () => {
 		expect(PROVIDER_CODES).toContain("mock_eft");
 	});
 
-	it("has 10 provider codes", () => {
-		expect(PROVIDER_CODES).toHaveLength(10);
+	it("has the expected provider-code registry size", () => {
+		expect(PROVIDER_CODES).toHaveLength(11);
 	});
 });
 

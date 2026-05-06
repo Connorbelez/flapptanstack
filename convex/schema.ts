@@ -2044,6 +2044,20 @@ export default defineSchema({
 	dealAccess: defineTable({
 		userId: v.string(),
 		dealId: v.id("deals"),
+		persona: v.optional(
+			v.union(
+				v.literal("platform_lawyer"),
+				v.literal("guest_lawyer"),
+				v.literal("primary_lawyer"),
+				v.literal("broker_of_record"),
+				v.literal("assigned_broker"),
+				v.literal("lender"),
+				v.literal("borrower")
+			)
+		),
+		lawyerSource: v.optional(
+			v.union(v.literal("platform_lawyer"), v.literal("guest_lawyer"))
+		),
 		role: v.union(
 			v.literal("platform_lawyer"),
 			v.literal("guest_lawyer"),
@@ -2713,7 +2727,7 @@ export default defineSchema({
 		name: v.string(),
 		description: v.optional(v.string()),
 		originalFilename: v.string(),
-		mimeType: v.literal("application/pdf"),
+		mimeType: v.union(v.literal("application/pdf"), v.literal("image/jpeg")),
 		fileRef: v.id("_storage"),
 		fileHash: v.string(),
 		fileSize: v.number(),
@@ -2723,6 +2737,7 @@ export default defineSchema({
 		source: v.union(
 			v.literal("admin_upload"),
 			v.literal("external_import"),
+			v.literal("payment_proof_upload"),
 			v.literal("signature_archive")
 		),
 	})
