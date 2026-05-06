@@ -1,7 +1,9 @@
 import {
 	defaultFileWorkspaceScanPolicy,
 	type FileWorkspacePolicyFailure,
+	type FileWorkspacePolicyReasonCode,
 	isOpenXmlOrOpenDocumentContentType,
+	normalizeFileWorkspaceContentType,
 	validateFileWorkspaceBoxQuota,
 	validateFileWorkspaceContentType,
 	validateFileWorkspaceExtension,
@@ -27,6 +29,22 @@ export interface FileScannerInput {
 	storageId: string;
 }
 
+export const FILE_WORKSPACE_SCAN_REASON_CODES = {
+	contentTypeMismatch: "content_type_mismatch",
+	declaredSizeMismatch: "declared_size_mismatch",
+	invalidFilename: "invalid_filename",
+	officeContainerInvalid: "office_container_invalid",
+	scannerException: "scanner_exception",
+	storageBlobMissing: "storage_blob_missing",
+	unknownBinaryFormat: "unknown_binary_format",
+} as const;
+
+type ValueOf<T> = T[keyof T];
+
+export type FileWorkspaceScanReasonCode = ValueOf<
+	typeof FILE_WORKSPACE_SCAN_REASON_CODES
+>;
+
 export type FileScanResult =
 	| {
 			detectedContentType: string;
@@ -39,14 +57,14 @@ export type FileScanResult =
 	| {
 			displayName?: string;
 			message: string;
-			reasonCode: string;
+			reasonCode: FileWorkspacePolicyReasonCode | FileWorkspaceScanReasonCode;
 			sha256?: string;
 			state: "rejected";
 	  }
 	| {
 			displayName?: string;
 			message: string;
-			reasonCode: string;
+			reasonCode: FileWorkspacePolicyReasonCode | FileWorkspaceScanReasonCode;
 			sha256?: string;
 			state: "scan_error";
 	  };
@@ -69,6 +87,33 @@ const OFFICE_LEGACY_CONTENT_TYPES = new Set([
 	"application/vnd.ms-powerpoint",
 ]);
 
+const OFFICE_CONTAINER_REQUIRED_ENTRIES = new Map<string, readonly string[]>([
+	[
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		["[Content_Types].xml", "_rels/.rels", "word/document.xml"],
+	],
+	[
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		["[Content_Types].xml", "_rels/.rels", "xl/workbook.xml"],
+	],
+	[
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		["[Content_Types].xml", "_rels/.rels", "ppt/presentation.xml"],
+	],
+	[
+		"application/vnd.oasis.opendocument.text",
+		["mimetype", "content.xml", "META-INF/manifest.xml"],
+	],
+	[
+		"application/vnd.oasis.opendocument.spreadsheet",
+		["mimetype", "content.xml", "META-INF/manifest.xml"],
+	],
+	[
+		"application/vnd.oasis.opendocument.presentation",
+		["mimetype", "content.xml", "META-INF/manifest.xml"],
+	],
+]);
+
 function bytesStartWith(bytes: Uint8Array, signature: readonly number[]) {
 	if (bytes.length < signature.length) {
 		return false;
@@ -85,6 +130,19 @@ function bytesEqualAt(
 		return false;
 	}
 	return signature.every((value, index) => bytes[offset + index] === value);
+}
+
+function readUInt16LE(bytes: Uint8Array, offset: number): number {
+	return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readUInt32LE(bytes: Uint8Array, offset: number): number {
+	return (
+		bytes[offset] |
+		(bytes[offset + 1] << 8) |
+		(bytes[offset + 2] << 16) |
+		(bytes[offset + 3] << 24)
+	);
 }
 
 function isLikelyUtf8Text(bytes: Uint8Array): boolean {
@@ -144,6 +202,49 @@ export function detectFileWorkspaceContentType(
 		return { contentType: "text/plain", confidence: "text" };
 	}
 	return undefined;
+}
+
+function getZipLocalFileNames(bytes: Uint8Array): Set<string> {
+	const decoder = new TextDecoder("utf-8", { fatal: false });
+	const fileNames = new Set<string>();
+	let offset = 0;
+	while (offset + 30 <= bytes.byteLength) {
+		if (!bytesEqualAt(bytes, offset, [0x50, 0x4b, 0x03, 0x04])) {
+			break;
+		}
+		const compressedSize = readUInt32LE(bytes, offset + 18);
+		const fileNameLength = readUInt16LE(bytes, offset + 26);
+		const extraFieldLength = readUInt16LE(bytes, offset + 28);
+		const fileNameStart = offset + 30;
+		const fileNameEnd = fileNameStart + fileNameLength;
+		const dataStart = fileNameEnd + extraFieldLength;
+		const nextOffset = dataStart + compressedSize;
+		if (
+			fileNameLength === 0 ||
+			fileNameEnd > bytes.byteLength ||
+			dataStart > bytes.byteLength ||
+			nextOffset <= offset
+		) {
+			break;
+		}
+		fileNames.add(decoder.decode(bytes.slice(fileNameStart, fileNameEnd)));
+		offset = nextOffset;
+	}
+	return fileNames;
+}
+
+function isValidZipBackedOfficeContainer(args: {
+	bytes: Uint8Array;
+	declaredContentType: string;
+}): boolean {
+	const requiredEntries = OFFICE_CONTAINER_REQUIRED_ENTRIES.get(
+		args.declaredContentType
+	);
+	if (!requiredEntries) {
+		return false;
+	}
+	const fileNames = getZipLocalFileNames(args.bytes);
+	return requiredEntries.every((entryName) => fileNames.has(entryName));
 }
 
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -219,7 +320,7 @@ export class StructuralFileScanner implements FileScanner {
 			return {
 				message:
 					error instanceof Error ? error.message : "File name is not allowed.",
-				reasonCode: "invalid_filename",
+				reasonCode: FILE_WORKSPACE_SCAN_REASON_CODES.invalidFilename,
 				state: "rejected",
 			};
 		}
@@ -247,7 +348,7 @@ export class StructuralFileScanner implements FileScanner {
 				return {
 					displayName,
 					message: "Declared file size does not match stored blob size.",
-					reasonCode: "declared_size_mismatch",
+					reasonCode: FILE_WORKSPACE_SCAN_REASON_CODES.declaredSizeMismatch,
 					state: "rejected",
 				};
 			}
@@ -258,7 +359,7 @@ export class StructuralFileScanner implements FileScanner {
 				return {
 					displayName,
 					message: "Unknown binary file format is not allowed.",
-					reasonCode: "unknown_binary_format",
+					reasonCode: FILE_WORKSPACE_SCAN_REASON_CODES.unknownBinaryFormat,
 					sha256,
 					state: "rejected",
 				};
@@ -271,7 +372,9 @@ export class StructuralFileScanner implements FileScanner {
 			if (!declaredPolicyResult.allowed) {
 				return rejection(declaredPolicyResult, { displayName, sha256 });
 			}
-			const declaredContentType = input.declaredContentType;
+			const declaredContentType = normalizeFileWorkspaceContentType(
+				input.declaredContentType
+			);
 			if (!declaredContentType) {
 				return rejection(
 					{
@@ -283,6 +386,24 @@ export class StructuralFileScanner implements FileScanner {
 			}
 
 			if (
+				detected.contentType === "application/zip" &&
+				isOpenXmlOrOpenDocumentContentType(declaredContentType) &&
+				!isValidZipBackedOfficeContainer({
+					bytes: input.bytes,
+					declaredContentType,
+				})
+			) {
+				return {
+					displayName,
+					message:
+						"ZIP-backed Office documents must contain the required document structure.",
+					reasonCode: FILE_WORKSPACE_SCAN_REASON_CODES.officeContainerInvalid,
+					sha256,
+					state: "rejected",
+				};
+			}
+
+			if (
 				!contentTypesCompatible({
 					declaredContentType,
 					detectedContentType: detected.contentType,
@@ -291,7 +412,7 @@ export class StructuralFileScanner implements FileScanner {
 				return {
 					displayName,
 					message: "Declared content type does not match file signature.",
-					reasonCode: "content_type_mismatch",
+					reasonCode: FILE_WORKSPACE_SCAN_REASON_CODES.contentTypeMismatch,
 					sha256,
 					state: "rejected",
 				};
@@ -326,7 +447,7 @@ export class StructuralFileScanner implements FileScanner {
 					error instanceof Error
 						? error.message
 						: "File scan failed unexpectedly.",
-				reasonCode: "scanner_exception",
+				reasonCode: FILE_WORKSPACE_SCAN_REASON_CODES.scannerException,
 				sha256,
 				state: "scan_error",
 			};

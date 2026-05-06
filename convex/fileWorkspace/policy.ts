@@ -82,10 +82,26 @@ export const defaultFileWorkspaceStorageLimits = {
 	maxFileBytes: DEFAULT_FILE_WORKSPACE_MAX_FILE_SIZE_BYTES,
 } as const satisfies FileWorkspaceStorageLimits;
 
+export const FILE_WORKSPACE_POLICY_REASON_CODES = {
+	archivesDisabled: "archives_disabled",
+	blockedExtension: "blocked_extension",
+	boxQuotaExceeded: "box_quota_exceeded",
+	contentTypeNotAllowed: "content_type_not_allowed",
+	fileTooLarge: "file_too_large",
+	invalidSize: "invalid_size",
+	missingContentType: "missing_content_type",
+} as const;
+
+type ValueOf<T> = T[keyof T];
+
+export type FileWorkspacePolicyReasonCode = ValueOf<
+	typeof FILE_WORKSPACE_POLICY_REASON_CODES
+>;
+
 export interface FileWorkspacePolicyFailure {
 	message: string;
 	normalizedExtension?: string;
-	reasonCode: string;
+	reasonCode: FileWorkspacePolicyReasonCode;
 }
 
 export interface FileWorkspacePolicySuccess {
@@ -119,6 +135,16 @@ export function normalizeFileWorkspaceExtension(
 	return lastSegment.slice(dotIndex).toLocaleLowerCase("en-CA");
 }
 
+export function normalizeFileWorkspaceContentType(
+	contentType: string | undefined
+): string | undefined {
+	const mediaType = contentType?.split(";")[0]?.trim();
+	if (!mediaType) {
+		return undefined;
+	}
+	return mediaType.toLocaleLowerCase("en-CA");
+}
+
 export function isFileWorkspaceArchiveExtension(
 	extension: string | undefined
 ): boolean {
@@ -133,10 +159,11 @@ export function isFileWorkspaceArchiveExtension(
 export function isOpenXmlOrOpenDocumentContentType(
 	contentType: string | undefined
 ): boolean {
+	const normalizedContentType = normalizeFileWorkspaceContentType(contentType);
 	return (
-		contentType !== undefined &&
-		(OPENXML_CONTENT_TYPES.has(contentType) ||
-			ODF_CONTENT_TYPES.has(contentType))
+		normalizedContentType !== undefined &&
+		(OPENXML_CONTENT_TYPES.has(normalizedContentType) ||
+			ODF_CONTENT_TYPES.has(normalizedContentType))
 	);
 }
 
@@ -157,7 +184,7 @@ export function validateFileWorkspaceFileSize(args: {
 		return {
 			allowed: false,
 			message: "File size metadata is invalid.",
-			reasonCode: "invalid_size",
+			reasonCode: FILE_WORKSPACE_POLICY_REASON_CODES.invalidSize,
 		};
 	}
 	const maxFileSizeBytes = Math.min(
@@ -168,7 +195,7 @@ export function validateFileWorkspaceFileSize(args: {
 		return {
 			allowed: false,
 			message: "File exceeds the workspace file size limit.",
-			reasonCode: "file_too_large",
+			reasonCode: FILE_WORKSPACE_POLICY_REASON_CODES.fileTooLarge,
 		};
 	}
 	return { allowed: true, normalizedExtension: undefined };
@@ -192,7 +219,7 @@ export function validateFileWorkspaceBoxQuota(args: {
 		return {
 			allowed: false,
 			message: "File would exceed the box storage quota.",
-			reasonCode: "box_quota_exceeded",
+			reasonCode: FILE_WORKSPACE_POLICY_REASON_CODES.boxQuotaExceeded,
 		};
 	}
 	return { allowed: true, normalizedExtension: undefined };
@@ -217,7 +244,7 @@ export function validateFileWorkspaceExtension(args: {
 			allowed: false,
 			message: "This file type is blocked by workspace policy.",
 			normalizedExtension,
-			reasonCode: "blocked_extension",
+			reasonCode: FILE_WORKSPACE_POLICY_REASON_CODES.blockedExtension,
 		};
 	}
 	if (
@@ -229,7 +256,7 @@ export function validateFileWorkspaceExtension(args: {
 			allowed: false,
 			message: "Archive uploads are disabled by workspace policy.",
 			normalizedExtension,
-			reasonCode: "archives_disabled",
+			reasonCode: FILE_WORKSPACE_POLICY_REASON_CODES.archivesDisabled,
 		};
 	}
 	return { allowed: true, normalizedExtension };
@@ -239,18 +266,25 @@ export function validateFileWorkspaceContentType(args: {
 	contentType: string | undefined;
 	policy: Pick<FileWorkspaceScanPolicy, "allowedContentTypes">;
 }): FileWorkspacePolicyResult {
-	if (!args.contentType) {
+	const normalizedContentType = normalizeFileWorkspaceContentType(
+		args.contentType
+	);
+	if (!normalizedContentType) {
 		return {
 			allowed: false,
 			message: "File content type is required.",
-			reasonCode: "missing_content_type",
+			reasonCode: FILE_WORKSPACE_POLICY_REASON_CODES.missingContentType,
 		};
 	}
-	if (!args.policy.allowedContentTypes.includes(args.contentType)) {
+	const allowed = args.policy.allowedContentTypes.some(
+		(contentType) =>
+			normalizeFileWorkspaceContentType(contentType) === normalizedContentType
+	);
+	if (!allowed) {
 		return {
 			allowed: false,
 			message: "This file type is not allowed by workspace policy.",
-			reasonCode: "content_type_not_allowed",
+			reasonCode: FILE_WORKSPACE_POLICY_REASON_CODES.contentTypeNotAllowed,
 		};
 	}
 	return { allowed: true, normalizedExtension: undefined };

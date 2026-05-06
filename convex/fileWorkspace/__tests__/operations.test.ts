@@ -491,6 +491,10 @@ describe("File Workspace operations", () => {
 			boxId: box.boxId,
 			nodeId: folder.nodeId,
 		});
+		await t.withIdentity(MANAGER).mutation(nodesApi.softDeleteNode, {
+			boxId: box.boxId,
+			nodeId: uploaded.nodeId,
+		});
 
 		const blockedDelete = await t
 			.withIdentity(MANAGER)
@@ -514,10 +518,34 @@ describe("File Workspace operations", () => {
 			});
 		});
 
-		await t.withIdentity(MANAGER).mutation(nodesApi.permanentlyDeleteNode, {
-			boxId: box.boxId,
-			nodeId: folder.nodeId,
+		const retainedDescendantDelete = await t
+			.withIdentity(MANAGER)
+			.mutation(nodesApi.permanentlyDeleteNode, {
+				boxId: box.boxId,
+				nodeId: folder.nodeId,
+			});
+		const retainedDescendantState = await t.run(async (ctx) => ({
+			childNode: await ctx.db.get(uploaded.nodeId),
+			folderNode: await ctx.db.get(folder.nodeId),
+			versions: await ctx.db
+				.query("fileVersions")
+				.withIndex("by_node_version", (query) =>
+					query.eq("nodeId", uploaded.nodeId)
+				)
+				.collect(),
+		}));
+		await t.run(async (ctx) => {
+			await ctx.db.patch(uploaded.nodeId, {
+				deletedAt: Date.now() - 31 * 24 * 60 * 60 * 1000,
+			});
 		});
+
+		const deleted = await t
+			.withIdentity(MANAGER)
+			.mutation(nodesApi.permanentlyDeleteNode, {
+				boxId: box.boxId,
+				nodeId: folder.nodeId,
+			});
 		const remaining = await t.run(async (ctx) => ({
 			childNode: await ctx.db.get(uploaded.nodeId),
 			folderNode: await ctx.db.get(folder.nodeId),
@@ -534,6 +562,14 @@ describe("File Workspace operations", () => {
 			reasonCode: "retention_window_active",
 		});
 		expect(blockedEvents).toHaveLength(1);
+		expect(retainedDescendantDelete).toMatchObject({
+			permanentlyDeleted: false,
+			reasonCode: "retention_window_active",
+		});
+		expect(retainedDescendantState.folderNode).not.toBeNull();
+		expect(retainedDescendantState.childNode).not.toBeNull();
+		expect(retainedDescendantState.versions).toHaveLength(1);
+		expect(deleted).toMatchObject({ permanentlyDeleted: true });
 		expect(remaining.folderNode).toBeNull();
 		expect(remaining.childNode).toBeNull();
 		expect(remaining.versions).toHaveLength(0);

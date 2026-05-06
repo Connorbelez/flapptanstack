@@ -3,6 +3,7 @@ import {
 	defaultFileWorkspaceScanPolicy,
 	isFileWorkspaceScanStateVisible,
 	validateFileWorkspaceBoxQuota,
+	validateFileWorkspaceContentType,
 	validateFileWorkspaceExtension,
 	validateFileWorkspaceFileSize,
 } from "../policy";
@@ -56,6 +57,18 @@ describe("File Workspace policy", () => {
 		expect(result).toEqual({
 			allowed: true,
 			normalizedExtension: ".docx",
+		});
+	});
+
+	it("normalizes MIME parameters before allowlist checks", () => {
+		expect(
+			validateFileWorkspaceContentType({
+				contentType: " Text/Plain; charset=utf-8 ",
+				policy: defaultFileWorkspaceScanPolicy,
+			})
+		).toEqual({
+			allowed: true,
+			normalizedExtension: undefined,
 		});
 	});
 
