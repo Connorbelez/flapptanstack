@@ -18,6 +18,11 @@ const pngBytes = new Uint8Array([
 ]);
 const zipBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
 const binaryBytes = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
+const docxBytes = zipWithEntries([
+	"[Content_Types].xml",
+	"_rels/.rels",
+	"word/document.xml",
+]);
 
 function scan(args: {
 	bytes: Uint8Array;
@@ -33,6 +38,28 @@ function scan(args: {
 		policy: defaultFileWorkspaceScanPolicy,
 		storageId: "storage_test",
 	});
+}
+
+function zipWithEntries(entryNames: string[]) {
+	const encoder = new TextEncoder();
+	const chunks = entryNames.map((entryName) => {
+		const nameBytes = encoder.encode(entryName);
+		const header = new Uint8Array(30 + nameBytes.byteLength);
+		header.set([0x50, 0x4b, 0x03, 0x04], 0);
+		header[4] = 20;
+		header[26] = nameBytes.byteLength & 0xff;
+		header[27] = (nameBytes.byteLength >> 8) & 0xff;
+		header.set(nameBytes, 30);
+		return header;
+	});
+	const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+	const bytes = new Uint8Array(totalLength);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return bytes;
 }
 
 describe("File Workspace structural scanner", () => {
@@ -128,7 +155,7 @@ describe("File Workspace structural scanner", () => {
 		});
 	});
 
-	it("rejects generic archives while allowing OpenXML zip containers", async () => {
+	it("rejects generic archives and spoofed ZIP-backed Office payloads", async () => {
 		await expect(
 			scan({
 				bytes: zipBytes,
@@ -145,6 +172,20 @@ describe("File Workspace structural scanner", () => {
 				bytes: zipBytes,
 				contentType:
 					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				filename: "commitment.docx",
+			})
+		).resolves.toMatchObject({
+			reasonCode: "office_container_invalid",
+			state: "rejected",
+		});
+	});
+
+	it("allows structurally valid ZIP-backed Office documents", async () => {
+		await expect(
+			scan({
+				bytes: docxBytes,
+				contentType:
+					"application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=binary",
 				filename: "commitment.docx",
 			})
 		).resolves.toMatchObject({

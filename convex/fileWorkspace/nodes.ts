@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { Viewer } from "../fluent";
 import { authedMutation } from "../fluent";
@@ -277,9 +277,10 @@ export const permanentlyDeleteNode = authedMutation
 			throw new ConvexError(FILE_WORKSPACE_SAFE_ERRORS.ACCESS_DENIED);
 		}
 		const node = await requireNodeInBox(ctx, args);
+		const now = Date.now();
 		const retention = canPermanentlyDelete({
 			deletedAt: node.deletedAt,
-			now: Date.now(),
+			now,
 			policy: resolved.box.retentionPolicy,
 		});
 		if (!retention.allowed) {
@@ -301,6 +302,31 @@ export const permanentlyDeleteNode = authedMutation
 			boxId: args.boxId,
 			rootNodeId: args.nodeId,
 		});
+		const subtreeRetention = evaluatePermanentDeleteSubtree({
+			nodes: nodesToDelete,
+			now,
+			policy: resolved.box.retentionPolicy,
+			rootNodeId: args.nodeId,
+		});
+		if (!subtreeRetention.allowed) {
+			await insertFileWorkspaceSecurityEvent(ctx, {
+				boxId: args.boxId,
+				eventType: "retention_delete_blocked",
+				metadata: {
+					blockedNodeId: subtreeRetention.blockedNode._id,
+					blockedNodeName: subtreeRetention.blockedNode.displayName,
+				},
+				nodeId: args.nodeId,
+				outcome: "blocked",
+				principal: resolved.principal,
+				reasonCode: subtreeRetention.reasonCode,
+			});
+			return {
+				nodeId: args.nodeId,
+				permanentlyDeleted: false,
+				reasonCode: subtreeRetention.reasonCode,
+			};
+		}
 		const versions = (
 			await Promise.all(
 				nodesToDelete.map((nodeToDelete) =>
@@ -374,4 +400,49 @@ async function collectSubtreeNodes(
 		queue.push(...children);
 	}
 	return nodes;
+}
+
+function evaluatePermanentDeleteSubtree(args: {
+	nodes: Doc<"fileNodes">[];
+	now: number;
+	policy: Parameters<typeof canPermanentlyDelete>[0]["policy"];
+	rootNodeId: Id<"fileNodes">;
+}) {
+	const nodesById = new Map(args.nodes.map((node) => [node._id, node]));
+	const effectiveDeletedAtById = new Map<Id<"fileNodes">, number>();
+
+	for (const node of args.nodes) {
+		const parentDeletedAt = node.parentId
+			? effectiveDeletedAtById.get(node.parentId)
+			: undefined;
+		const effectiveDeletedAt = node.deletedAt ?? parentDeletedAt;
+		if (effectiveDeletedAt !== undefined) {
+			effectiveDeletedAtById.set(node._id, effectiveDeletedAt);
+		}
+		const retention = canPermanentlyDelete({
+			deletedAt: effectiveDeletedAt,
+			now: args.now,
+			policy: args.policy,
+		});
+		if (!retention.allowed) {
+			return {
+				allowed: false,
+				blockedNode: node,
+				reasonCode: retention.reasonCode,
+			} as const;
+		}
+		if (
+			node._id !== args.rootNodeId &&
+			node.parentId &&
+			!nodesById.has(node.parentId)
+		) {
+			return {
+				allowed: false,
+				blockedNode: node,
+				reasonCode: "node_not_deleted",
+			} as const;
+		}
+	}
+
+	return { allowed: true } as const;
 }
