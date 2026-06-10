@@ -31,9 +31,13 @@ export const MARKETPLACE_PROPERTY_TYPES = [
 export type MarketplaceSortKey = (typeof MARKETPLACE_SORT_KEYS)[number];
 
 export interface MarketplaceListingsSearchState {
+	availableMax?: number;
+	availableMin?: number;
 	ltvMax?: number;
 	ltvMin?: number;
 	maturityBefore?: string;
+	minimumInvestmentMax?: number;
+	minimumInvestmentMin?: number;
 	mortgageTypes?: MortgageType[];
 	principalMax?: number;
 	principalMin?: number;
@@ -82,6 +86,7 @@ export interface MarketplaceListingCardItem {
 	lockedPercent: number;
 	ltv: number;
 	maturityDate: Date;
+	minimumInvestment: number;
 	mortgageType: MortgageType;
 	principal: number;
 	propertyType: PropertyType;

@@ -79,6 +79,12 @@ export interface ListingDocumentItem {
 	url?: string | null;
 }
 
+export interface ListingAdminQuickLink {
+	entityType: string;
+	id: string;
+	label: string;
+}
+
 export interface ListingLawyerOption {
 	activeDealCount?: number;
 	availability?: Array<{
@@ -153,6 +159,7 @@ export interface ListingSimilarCard {
 }
 
 export interface ListingDetailData {
+	adminQuickLinks?: ListingAdminQuickLink[];
 	appraisal: {
 		asIf: ListingAppraisalRecord;
 		asIs: ListingAppraisalRecord;

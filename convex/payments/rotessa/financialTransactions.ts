@@ -21,6 +21,23 @@ function parseRotessaAmountToCents(amount: string) {
 	return Math.round((parsed + Number.EPSILON) * 100);
 }
 
+function normalizeRotessaProviderReference(
+	value: number | string | null | undefined
+) {
+	if (value === null || value === undefined) {
+		return undefined;
+	}
+	const normalized = String(value).trim();
+	if (!normalized) {
+		return undefined;
+	}
+	const lowercase = normalized.toLowerCase();
+	if (lowercase === "null" || lowercase === "undefined") {
+		return undefined;
+	}
+	return normalized;
+}
+
 export function mapRotessaFinancialStatusToTransferEvent(
 	status: RotessaTransactionReportRow["status"]
 ):
@@ -96,10 +113,16 @@ export function buildNormalizedOccurrenceFromRotessaRow(args: {
 	if (!mappedTransferEvent) {
 		return null;
 	}
+	const financialTransactionId = normalizeRotessaProviderReference(args.row.id);
+	const providerRef =
+		normalizeRotessaProviderReference(args.row.transaction_number) ??
+		financialTransactionId;
 
 	return {
 		amount: parseRotessaAmountToCents(args.row.amount),
-		externalOccurrenceRef: `rotessa_financial_transaction:${args.row.id}`,
+		externalOccurrenceRef: financialTransactionId
+			? `rotessa_financial_transaction:${financialTransactionId}`
+			: undefined,
 		externalScheduleRef: args.externalScheduleRef,
 		mappedTransferEvent,
 		occurredAt:
@@ -120,7 +143,7 @@ export function buildNormalizedOccurrenceFromRotessaRow(args: {
 			settlementDate: args.row.settlement_date,
 			earliestApprovalDate: args.row.earliest_approval_date,
 		},
-		providerRef: args.row.transaction_number ?? String(args.row.id),
+		providerRef,
 		rawProviderReason: args.row.status_reason ?? undefined,
 		rawProviderStatus: args.row.status,
 		receivedVia: args.receivedVia,

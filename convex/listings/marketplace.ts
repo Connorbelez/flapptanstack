@@ -15,7 +15,9 @@ import {
 	getListingAppraisalsByProperty,
 	getListingEncumbrancesByProperty,
 	lienPositionToMortgageType,
+	type MarketplaceAvailabilitySummary,
 } from "./marketplaceShared";
+import { buildPaymentHistoryMonthsFromObligations } from "./paymentHistory";
 import { getRequiredPortalPricingPolicy } from "./portalProjection";
 import {
 	clampMarketplaceFiltersToLenderConstraints,
@@ -38,11 +40,20 @@ type MarketplacePropertyType = NonNullable<
 >;
 type MortgageTypeLabel = "First" | "Second" | "Other";
 type MarketplaceUpcomingPaymentStatus = "due" | "none" | "overdue" | "planned";
+interface MarketplacePaymentHistory {
+	byStatus: Record<string, number>;
+	lastDueDate: number | null;
+	months?: unknown[];
+	totalObligations: number;
+	totalOutstanding: number;
+}
 
 export interface MarketplaceFilters {
+	availabilityPercent?: { max?: number; min?: number };
 	interestRate?: { max?: number; min?: number };
 	ltv?: { max?: number; min?: number };
 	maturityDate?: { end?: string };
+	minimumInvestmentAmount?: { max?: number; min?: number };
 	mortgageTypes?: MortgageTypeLabel[];
 	principalAmount?: { max?: number; min?: number };
 	propertyTypes?: MarketplacePropertyType[];
@@ -51,10 +62,22 @@ export interface MarketplaceFilters {
 
 export const marketplaceFiltersValidator = v.object({
 	searchQuery: v.optional(v.string()),
+	availabilityPercent: v.optional(
+		v.object({
+			max: v.optional(v.number()),
+			min: v.optional(v.number()),
+		})
+	),
 	mortgageTypes: v.optional(
 		v.array(
 			v.union(v.literal("First"), v.literal("Second"), v.literal("Other"))
 		)
+	),
+	minimumInvestmentAmount: v.optional(
+		v.object({
+			max: v.optional(v.number()),
+			min: v.optional(v.number()),
+		})
 	),
 	propertyTypes: v.optional(v.array(marketplaceListingPropertyTypeValidator)),
 	ltv: v.optional(
@@ -143,7 +166,8 @@ function paginateResults<T>(
 
 export function matchesMarketplaceFilters(
 	listing: ListingDoc,
-	filters: MarketplaceFilters | undefined
+	filters: MarketplaceFilters | undefined,
+	availability?: MarketplaceAvailabilitySummary
 ) {
 	if (!filters) {
 		return true;
@@ -151,6 +175,7 @@ export function matchesMarketplaceFilters(
 
 	const searchQuery = filters.searchQuery?.trim().toLowerCase();
 	const mortgageType = lienPositionToMortgageType(listing.lienPosition);
+	const minimumInvestmentAmount = listing.principal / 10;
 
 	return [
 		!searchQuery ||
@@ -170,13 +195,30 @@ export function matchesMarketplaceFilters(
 			listing.interestRate >= filters.interestRate.min,
 		filters.interestRate?.max === undefined ||
 			listing.interestRate <= filters.interestRate.max,
+		filters.minimumInvestmentAmount?.min === undefined ||
+			minimumInvestmentAmount >= filters.minimumInvestmentAmount.min,
+		filters.minimumInvestmentAmount?.max === undefined ||
+			minimumInvestmentAmount <= filters.minimumInvestmentAmount.max,
 		filters.principalAmount?.min === undefined ||
 			listing.principal >= filters.principalAmount.min,
 		filters.principalAmount?.max === undefined ||
 			listing.principal <= filters.principalAmount.max,
 		filters.maturityDate?.end === undefined ||
 			listing.maturityDate <= filters.maturityDate.end,
+		filters.availabilityPercent?.min === undefined ||
+			availability === undefined ||
+			availability.availablePercent >= filters.availabilityPercent.min,
+		filters.availabilityPercent?.max === undefined ||
+			availability === undefined ||
+			availability.availablePercent <= filters.availabilityPercent.max,
 	].every(Boolean);
+}
+
+function filtersRequireAvailability(filters: MarketplaceFilters | undefined) {
+	return (
+		filters?.availabilityPercent?.min !== undefined ||
+		filters?.availabilityPercent?.max !== undefined
+	);
 }
 
 export function compareMarketplaceListings(
@@ -236,6 +278,75 @@ function toMarketplaceUpcomingPaymentStatus(
 	}
 }
 
+function readProjectedPaymentHistoryMonths(
+	paymentHistory: unknown
+): unknown[] | undefined {
+	if (
+		typeof paymentHistory !== "object" ||
+		paymentHistory === null ||
+		!("months" in paymentHistory)
+	) {
+		return undefined;
+	}
+
+	const months = paymentHistory.months;
+	return Array.isArray(months) ? months : undefined;
+}
+
+async function loadMarketplacePaymentHistory(
+	ctx: Pick<QueryCtx, "db">,
+	mortgageId: ListingDoc["mortgageId"],
+	projectedPaymentHistory: unknown
+): Promise<MarketplacePaymentHistory | null> {
+	if (!mortgageId) {
+		return null;
+	}
+
+	const obligations = (
+		await ctx.db
+			.query("obligations")
+			.withIndex("by_mortgage_and_date", (q) => q.eq("mortgageId", mortgageId))
+			.collect()
+	).filter((obligation) => obligation.archivedAt === undefined);
+
+	if (obligations.length === 0) {
+		return null;
+	}
+
+	const byStatus = obligations.reduce<Record<string, number>>(
+		(summary, obligation) => {
+			summary[obligation.status] = (summary[obligation.status] ?? 0) + 1;
+			return summary;
+		},
+		{}
+	);
+	const lastDueDate = obligations.reduce<number | null>(
+		(latest, obligation) =>
+			latest === null
+				? obligation.dueDate
+				: Math.max(latest, obligation.dueDate),
+		null
+	);
+	const liveMonths = buildPaymentHistoryMonthsFromObligations(obligations);
+	const months =
+		liveMonths.length > 0
+			? liveMonths
+			: readProjectedPaymentHistoryMonths(projectedPaymentHistory);
+
+	return {
+		byStatus,
+		lastDueDate,
+		...(months ? { months } : {}),
+		totalObligations: obligations.length,
+		totalOutstanding: obligations.reduce((total, obligation) => {
+			if (obligation.status === "settled" || obligation.status === "waived") {
+				return total;
+			}
+			return total + Math.max(0, obligation.amount - obligation.amountSettled);
+		}, 0),
+	};
+}
+
 async function loadMarketplaceNextPaymentDue(
 	ctx: Pick<QueryCtx, "db">,
 	mortgageId: ListingDoc["mortgageId"]
@@ -260,13 +371,32 @@ async function loadMarketplaceNextPaymentDue(
 		return {
 			amount: null,
 			date: null,
+			obligationId: null,
+			planEntryId: null,
 			status: "none" satisfies MarketplaceUpcomingPaymentStatus,
 		};
 	}
 
+	const planEntriesByStatus = await Promise.all(
+		(["planned", "provider_scheduled", "executing"] as const).map((status) =>
+			ctx.db
+				.query("collectionPlanEntries")
+				.withIndex("by_mortgage_status_scheduled", (q) =>
+					q.eq("mortgageId", mortgageId).eq("status", status)
+				)
+				.collect()
+		)
+	);
+	const planEntry =
+		planEntriesByStatus
+			.flat()
+			.find((entry) => entry.obligationIds.includes(obligation._id)) ?? null;
+
 	return {
 		amount: obligation.amount,
 		date: obligation.dueDate,
+		obligationId: String(obligation._id),
+		planEntryId: planEntry ? String(planEntry._id) : null,
 		status: toMarketplaceUpcomingPaymentStatus(obligation),
 	};
 }
@@ -432,24 +562,53 @@ export async function listMarketplaceListingsSnapshot(
 	const filtered = candidates
 		.filter((listing) => matchesMarketplaceFilters(listing, args.filters))
 		.sort(compareMarketplaceListings);
-	const paginated = paginateResults(
-		filtered,
-		args.cursor ?? null,
-		resolveRequestedPageSize({
-			numItems: args.numItems,
-			pageSizeCap: options?.pageSizeCap,
-		})
-	);
-	const page = await attachMarketplaceAvailabilityToListings(
-		ctx,
-		paginated.page
-	);
+
+	const pageSize = resolveRequestedPageSize({
+		numItems: args.numItems,
+		pageSizeCap: options?.pageSizeCap,
+	});
+	const pageWithAvailability = await (async () => {
+		if (filtersRequireAvailability(args.filters)) {
+			const availableCandidates = await attachMarketplaceAvailabilityToListings(
+				ctx,
+				filtered
+			);
+			const filteredByAvailability = availableCandidates.filter(
+				({ availability, listing }) =>
+					matchesMarketplaceFilters(listing, args.filters, availability)
+			);
+			const paginatedWithAvailability = paginateResults(
+				filteredByAvailability,
+				args.cursor ?? null,
+				pageSize
+			);
+			return {
+				continueCursor: paginatedWithAvailability.continueCursor,
+				isDone: paginatedWithAvailability.isDone,
+				page: paginatedWithAvailability.page,
+			};
+		}
+
+		const paginatedListings = paginateResults(
+			filtered,
+			args.cursor ?? null,
+			pageSize
+		);
+		return {
+			continueCursor: paginatedListings.continueCursor,
+			isDone: paginatedListings.isDone,
+			page: await attachMarketplaceAvailabilityToListings(
+				ctx,
+				paginatedListings.page
+			),
+		};
+	})();
 
 	return {
-		continueCursor: paginated.continueCursor,
-		isDone: paginated.isDone,
+		continueCursor: pageWithAvailability.continueCursor,
+		isDone: pageWithAvailability.isDone,
 		page: await Promise.all(
-			page.map(async ({ availability, listing }) => {
+			pageWithAvailability.page.map(async ({ availability, listing }) => {
 				const projectedListing = options?.pricingPolicy
 					? projectListingForPortal(listing, options.pricingPolicy)
 					: listing;
@@ -565,6 +724,7 @@ export const getMarketplaceListingDetail = listingQuery
 			platformLawyers,
 			paymentSnapshots,
 			nextPaymentDue,
+			livePaymentHistory,
 		] = await Promise.all([
 			buildMarketplaceAvailabilitySummary(ctx, listing.mortgageId),
 			readListingPublicDocuments(ctx, {
@@ -582,6 +742,11 @@ export const getMarketplaceListingDetail = listingQuery
 				? loadMortgagePaymentSnapshots(ctx, [listing.mortgageId])
 				: Promise.resolve(new Map()),
 			loadMarketplaceNextPaymentDue(ctx, listing.mortgageId),
+			loadMarketplacePaymentHistory(
+				ctx,
+				listing.mortgageId,
+				listing.paymentHistory
+			),
 		]);
 		const paymentSnapshot = listing.mortgageId
 			? (paymentSnapshots.get(String(listing.mortgageId)) ?? null)
@@ -620,10 +785,11 @@ export const getMarketplaceListingDetail = listingQuery
 				ltvRatio: listing.ltvRatio,
 				marketplaceCopy: buildListingSummary(listing),
 				maturityDate: listing.maturityDate,
+				mortgageId: listing.mortgageId ? String(listing.mortgageId) : null,
 				mortgageTypeLabel: lienPositionToMortgageType(listing.lienPosition),
 				monthlyPayment: projectedListing.monthlyPayment,
 				paymentFrequency: listing.paymentFrequency,
-				paymentHistory: listing.paymentHistory ?? null,
+				paymentHistory: livePaymentHistory ?? listing.paymentHistory ?? null,
 				nextPaymentDue,
 				paymentSnapshot,
 				principal: listing.principal,

@@ -273,6 +273,7 @@ import type * as listings_lifecycle from "../listings/lifecycle.js";
 import type * as listings_marketplace from "../listings/marketplace.js";
 import type * as listings_marketplaceShared from "../listings/marketplaceShared.js";
 import type * as listings_math from "../listings/math.js";
+import type * as listings_paymentHistory from "../listings/paymentHistory.js";
 import type * as listings_portalProjection from "../listings/portalProjection.js";
 import type * as listings_portalQueries from "../listings/portalQueries.js";
 import type * as listings_portalVisibility from "../listings/portalVisibility.js";
@@ -398,6 +399,7 @@ import type * as payments_recurringSchedules_poller from "../payments/recurringS
 import type * as payments_recurringSchedules_providers_registry from "../payments/recurringSchedules/providers/registry.js";
 import type * as payments_recurringSchedules_providers_rotessaRecurring from "../payments/recurringSchedules/providers/rotessaRecurring.js";
 import type * as payments_recurringSchedules_queries from "../payments/recurringSchedules/queries.js";
+import type * as payments_recurringSchedules_repair from "../payments/recurringSchedules/repair.js";
 import type * as payments_recurringSchedules_rotessaCustomerReference from "../payments/recurringSchedules/rotessaCustomerReference.js";
 import type * as payments_recurringSchedules_types from "../payments/recurringSchedules/types.js";
 import type * as payments_recurringSchedules_validators from "../payments/recurringSchedules/validators.js";
@@ -779,6 +781,7 @@ declare const fullApi: ApiFromModules<{
   "listings/marketplace": typeof listings_marketplace;
   "listings/marketplaceShared": typeof listings_marketplaceShared;
   "listings/math": typeof listings_math;
+  "listings/paymentHistory": typeof listings_paymentHistory;
   "listings/portalProjection": typeof listings_portalProjection;
   "listings/portalQueries": typeof listings_portalQueries;
   "listings/portalVisibility": typeof listings_portalVisibility;
@@ -904,6 +907,7 @@ declare const fullApi: ApiFromModules<{
   "payments/recurringSchedules/providers/registry": typeof payments_recurringSchedules_providers_registry;
   "payments/recurringSchedules/providers/rotessaRecurring": typeof payments_recurringSchedules_providers_rotessaRecurring;
   "payments/recurringSchedules/queries": typeof payments_recurringSchedules_queries;
+  "payments/recurringSchedules/repair": typeof payments_recurringSchedules_repair;
   "payments/recurringSchedules/rotessaCustomerReference": typeof payments_recurringSchedules_rotessaCustomerReference;
   "payments/recurringSchedules/types": typeof payments_recurringSchedules_types;
   "payments/recurringSchedules/validators": typeof payments_recurringSchedules_validators;

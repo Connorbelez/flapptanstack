@@ -57,20 +57,6 @@ interface FilterModalProps {
 	onFiltersChange: (filters: FilterState) => void;
 }
 
-function FilterTriggerButton() {
-	return (
-		<Button
-			aria-label="Open listing filters"
-			className="h-10 rounded-[14px] bg-[#0B1220] px-3 text-white shadow-none hover:bg-[#0B1220]/90 sm:rounded-full sm:bg-transparent sm:text-foreground sm:shadow-sm sm:hover:bg-accent"
-			size="lg"
-			variant="outline"
-		>
-			<span className="hidden sm:inline">Filters</span>
-			<Filter className="h-4 w-4 sm:ml-2" />
-		</Button>
-	);
-}
-
 function PropertyTypeIcon({ type }: { type: PropertyType }) {
 	switch (type) {
 		case "Detached Home":
@@ -121,7 +107,12 @@ export default function FilterModal({
 
 	const calculateHistogram = useCallback(
 		(
-			field: "ltv" | "apr" | "principal",
+			field:
+				| "availablePercent"
+				| "apr"
+				| "ltv"
+				| "minimumInvestment"
+				| "principal",
 			min: number,
 			max: number,
 			barCount: number
@@ -178,6 +169,28 @@ export default function FilterModal({
 		[calculateHistogram]
 	);
 
+	const availablePercentHistogram = useMemo(
+		() =>
+			calculateHistogram(
+				"availablePercent",
+				FILTER_BOUNDS.availablePercentRange[0],
+				FILTER_BOUNDS.availablePercentRange[1],
+				10
+			),
+		[calculateHistogram]
+	);
+
+	const minimumInvestmentHistogram = useMemo(
+		() =>
+			calculateHistogram(
+				"minimumInvestment",
+				FILTER_BOUNDS.minimumInvestmentRange[0],
+				FILTER_BOUNDS.minimumInvestmentRange[1],
+				20
+			),
+		[calculateHistogram]
+	);
+
 	const handleOpenChange = (nextOpen: boolean) => {
 		if (nextOpen) {
 			setDraftFilters(filters);
@@ -217,10 +230,18 @@ export default function FilterModal({
 	};
 
 	const hasActiveFilters =
+		draftFilters.availablePercentRange[0] >
+			FILTER_BOUNDS.availablePercentRange[0] ||
+		draftFilters.availablePercentRange[1] <
+			FILTER_BOUNDS.availablePercentRange[1] ||
 		draftFilters.ltvRange[0] > FILTER_BOUNDS.ltvRange[0] ||
 		draftFilters.ltvRange[1] < FILTER_BOUNDS.ltvRange[1] ||
 		draftFilters.interestRateRange[0] > FILTER_BOUNDS.interestRateRange[0] ||
 		draftFilters.interestRateRange[1] < FILTER_BOUNDS.interestRateRange[1] ||
+		draftFilters.minimumInvestmentRange[0] >
+			FILTER_BOUNDS.minimumInvestmentRange[0] ||
+		draftFilters.minimumInvestmentRange[1] <
+			FILTER_BOUNDS.minimumInvestmentRange[1] ||
 		draftFilters.principalRange[0] > FILTER_BOUNDS.principalRange[0] ||
 		draftFilters.principalRange[1] < FILTER_BOUNDS.principalRange[1] ||
 		draftFilters.mortgageTypes.length > 0 ||
@@ -348,6 +369,71 @@ export default function FilterModal({
 
 			<div className="space-y-2">
 				<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg max-sm:justify-start max-sm:text-left max-sm:font-semibold max-sm:text-[12px] max-sm:uppercase sm:text-xl">
+					<Percent className="h-5 w-5" />
+					Fractions available
+				</h2>
+				<div className="relative z-[105] w-full overflow-x-hidden">
+					<RangeSliderWithHistogram
+						className="w-full"
+						defaultValue={draftFilters.availablePercentRange}
+						formatBucketLabel={({ end, start }) =>
+							end >= FILTER_BOUNDS.availablePercentRange[1]
+								? `${FILTER_BOUNDS.availablePercentRange[1]}%`
+								: `${start}% – ${end}%`
+						}
+						formatValue={(value) => `${value}%`}
+						histogramData={availablePercentHistogram}
+						max={FILTER_BOUNDS.availablePercentRange[1]}
+						min={FILTER_BOUNDS.availablePercentRange[0]}
+						onValueChange={(values) =>
+							setDraftFilters((current) => ({
+								...current,
+								availablePercentRange: values,
+							}))
+						}
+						showCard={false}
+						showTitle={false}
+						step={10}
+						targetBarCount={10}
+						variant="compact"
+					/>
+				</div>
+			</div>
+
+			<Separator />
+
+			<div className="space-y-2">
+				<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg max-sm:justify-start max-sm:text-left max-sm:font-semibold max-sm:text-[12px] max-sm:uppercase sm:text-xl">
+					<DollarSign className="h-5 w-5" />
+					Minimum investment
+				</h2>
+				<div className="relative z-[105] w-full overflow-x-hidden">
+					<RangeSliderWithHistogram
+						className="w-full"
+						defaultValue={draftFilters.minimumInvestmentRange}
+						formatValue={(value) => `$${value.toLocaleString()}`}
+						histogramData={minimumInvestmentHistogram}
+						max={FILTER_BOUNDS.minimumInvestmentRange[1]}
+						min={FILTER_BOUNDS.minimumInvestmentRange[0]}
+						onValueChange={(values) =>
+							setDraftFilters((current) => ({
+								...current,
+								minimumInvestmentRange: values,
+							}))
+						}
+						showCard={false}
+						showTitle={false}
+						step={5000}
+						targetBarCount={20}
+						variant="compact"
+					/>
+				</div>
+			</div>
+
+			<Separator />
+
+			<div className="space-y-2">
+				<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg max-sm:justify-start max-sm:text-left max-sm:font-semibold max-sm:text-[12px] max-sm:uppercase sm:text-xl">
 					<FileText className="h-5 w-5" />
 					Mortgage Type
 				</h2>
@@ -453,7 +539,15 @@ export default function FilterModal({
 		return (
 			<Drawer onOpenChange={handleOpenChange} open={isOpen}>
 				<DrawerTrigger asChild>
-					<FilterTriggerButton />
+					<Button
+						aria-label="Open listing filters"
+						className="h-10 rounded-[14px] bg-[#0B1220] px-3 text-white shadow-none hover:bg-[#0B1220]/90 sm:rounded-full sm:bg-transparent sm:text-foreground sm:shadow-sm sm:hover:bg-accent"
+						size="lg"
+						variant="outline"
+					>
+						<span className="hidden sm:inline">Filters</span>
+						<Filter className="h-4 w-4 sm:ml-2" />
+					</Button>
 				</DrawerTrigger>
 				<TooltipProvider delayDuration={0}>
 					<DrawerContent className="h-[86dvh] max-h-[86dvh] rounded-t-[22px]">
@@ -463,7 +557,8 @@ export default function FilterModal({
 							</DrawerTitle>
 							<DrawerDescription className="sr-only">
 								Adjust investor listing filters by LTV, rate, principal,
-								mortgage type, property type, and maturity date.
+								availability, minimum investment, mortgage type, property type,
+								and maturity date.
 							</DrawerDescription>
 						</DrawerHeader>
 						<div className="min-h-0 flex-1 overflow-y-auto">
@@ -481,7 +576,15 @@ export default function FilterModal({
 	return (
 		<Dialog onOpenChange={handleOpenChange} open={isOpen}>
 			<DialogTrigger asChild>
-				<FilterTriggerButton />
+				<Button
+					aria-label="Open listing filters"
+					className="h-10 rounded-[14px] bg-[#0B1220] px-3 text-white shadow-none hover:bg-[#0B1220]/90 sm:rounded-full sm:bg-transparent sm:text-foreground sm:shadow-sm sm:hover:bg-accent"
+					size="lg"
+					variant="outline"
+				>
+					<span className="hidden sm:inline">Filters</span>
+					<Filter className="h-4 w-4 sm:ml-2" />
+				</Button>
 			</DialogTrigger>
 			<TooltipProvider delayDuration={0}>
 				<DialogContent
@@ -493,8 +596,9 @@ export default function FilterModal({
 							Filters
 						</DialogTitle>
 						<DialogDescription className="sr-only">
-							Adjust investor listing filters by LTV, rate, principal, mortgage
-							type, property type, and maturity date.
+							Adjust investor listing filters by LTV, rate, principal,
+							availability, minimum investment, mortgage type, property type,
+							and maturity date.
 						</DialogDescription>
 					</DialogHeader>
 

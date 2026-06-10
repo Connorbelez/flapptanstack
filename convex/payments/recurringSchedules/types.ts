@@ -114,7 +114,7 @@ export interface RotessaTransactionReportRow {
 	custom_identifier: string | null;
 	customer_id: number;
 	earliest_approval_date: string | null;
-	id: number;
+	id: number | null;
 	institution_number: string | null;
 	process_date: string;
 	settlement_date: string | null;

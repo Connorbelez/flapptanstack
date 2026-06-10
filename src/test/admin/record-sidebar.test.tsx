@@ -145,6 +145,7 @@ function renderSurface(args: {
 				record?: UnifiedRecord;
 		  }
 		| undefined;
+	variant?: "page" | "sheet";
 }) {
 	const objectDef = buildBorrowerObjectDef();
 	const useQueryMock = useQuery as unknown as QueryMock;
@@ -157,7 +158,7 @@ function renderSurface(args: {
 		<AdminRecordDetailSurface
 			adapters={{ borrowers: args.adapter }}
 			reference={REFERENCE}
-			variant="sheet"
+			variant={args.variant ?? "sheet"}
 		/>
 	);
 }
@@ -212,6 +213,44 @@ describe("AdminRecordDetailSurface", () => {
 		expect(screen.getByText("Adapter details ready")).toBeTruthy();
 		expect(adapterSpy).toHaveBeenCalledTimes(1);
 		expect(adapterSpy.mock.calls[0]?.[0]?.record).toBe(record);
+	});
+
+	it("lets dedicated page details expand in normal flow while sheet details scroll internally", () => {
+		const record = buildBorrowerRecord();
+		const adapter: RecordSidebarEntityAdapter = {
+			renderDetailsTab: () => <div>Adapter details ready</div>,
+		};
+
+		const sheetRender = renderSurface({
+			adapter,
+			detailSurface: {
+				adapterContract: buildAdapterContract(),
+				fields: [],
+				objectDef: buildBorrowerObjectDef(),
+				record,
+			},
+			variant: "sheet",
+		});
+
+		expect(
+			sheetRender.getByTestId("admin-record-detail-tabs-region").className
+		).toContain("overflow-y-auto");
+		sheetRender.unmount();
+
+		const pageRender = renderSurface({
+			adapter,
+			detailSurface: {
+				adapterContract: buildAdapterContract(),
+				fields: [],
+				objectDef: buildBorrowerObjectDef(),
+				record,
+			},
+			variant: "page",
+		});
+
+		const tabsRegion = pageRender.getByTestId("admin-record-detail-tabs-region");
+		expect(tabsRegion.className).not.toContain("overflow-y-auto");
+		expect(tabsRegion.className).toContain("border-t");
 	});
 
 	it("opens lender portfolio from the sheet as a full-page portfolio view", () => {

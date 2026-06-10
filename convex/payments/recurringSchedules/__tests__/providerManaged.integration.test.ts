@@ -214,11 +214,12 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 
 function createRotessaTransactionRow(args: {
 	amountCents?: number;
+	financialTransactionId?: number | null;
 	processDate: string;
 	scheduleId: number;
 	status: RotessaTransactionReportRow["status"];
 	transactionId: string;
-	transactionNumber?: string;
+	transactionNumber?: string | null;
 	updatedAt: string;
 	statusReason?: string | null;
 }) {
@@ -230,13 +231,19 @@ function createRotessaTransactionRow(args: {
 		custom_identifier: "borrower-rotessa-001",
 		customer_id: 42,
 		earliest_approval_date: null,
-		id: Number(args.transactionId.replace(/\D/g, "")) || 1,
+		id:
+			args.financialTransactionId === undefined
+				? Number(args.transactionId.replace(/\D/g, "")) || 1
+				: args.financialTransactionId,
 		institution_number: "001",
 		process_date: args.processDate,
 		settlement_date: args.status === "Approved" ? args.processDate : null,
 		status: args.status,
 		status_reason: args.statusReason ?? null,
-		transaction_number: args.transactionNumber ?? args.transactionId,
+		transaction_number:
+			args.transactionNumber === undefined
+				? args.transactionId
+				: args.transactionNumber,
 		transaction_schedule_id: args.scheduleId,
 		transit_number: "00011",
 		updated_at: args.updatedAt,
@@ -285,6 +292,12 @@ function installRotessaFetchHarness() {
 
 	return {
 		fetchMock,
+		setScheduleResponse(overrides: Partial<typeof scheduleResponse>) {
+			scheduleResponse = {
+				...scheduleResponse,
+				...overrides,
+			};
+		},
 		setNextProcessDate(nextProcessDate: string | null) {
 			scheduleResponse = {
 				...scheduleResponse,
@@ -297,8 +310,9 @@ function installRotessaFetchHarness() {
 	};
 }
 
-async function seedProviderManagedFixture() {
-	const t = createDynamicConvexHarness();
+type DynamicConvexHarness = ReturnType<typeof createDynamicConvexHarness>;
+
+async function seedProviderManagedMortgage(t: DynamicConvexHarness) {
 	const borrowerId = await seedBorrowerProfile(t);
 	const mortgageId = await seedMortgage(t);
 
@@ -326,7 +340,7 @@ async function seedProviderManagedFixture() {
 			currency: "CAD",
 			createdAt: Date.now(),
 			metadata: {
-				rotessaCustomerCustomIdentifier: "borrower-rotessa-001",
+				rotessaCustomerCustomIdentifier: `borrower-rotessa-${borrowerId}`,
 			},
 		})
 	);
@@ -364,13 +378,21 @@ async function seedProviderManagedFixture() {
 	);
 
 	return {
-		t,
 		bankAccountId,
 		borrowerId,
 		mortgageId,
 		planEntries: planEntries.sort(
 			(left, right) => left.scheduledDate - right.scheduledDate
 		),
+	};
+}
+
+async function seedProviderManagedFixture() {
+	const t = createDynamicConvexHarness();
+	const seeded = await seedProviderManagedMortgage(t);
+	return {
+		t,
+		...seeded,
 	};
 }
 
@@ -1817,6 +1839,28 @@ describe("provider-managed recurring schedules", () => {
 		});
 		await drainScheduledWork(fixture.t);
 
+		const laterFutureWebhookEventId = await createWebhookEvent(
+			fixture.t,
+			"txn-stale"
+		);
+		rotessa.setTransactionRows([
+			createRotessaTransactionRow({
+				amountCents: firstPlanEntry.amount,
+				processDate,
+				scheduleId: 987,
+				status: "Future",
+				transactionId: "7777",
+				transactionNumber: "txn-stale",
+				updatedAt: "2026-02-04T12:00:00.000Z",
+			}),
+		]);
+		await fixture.t.action(processRotessaPadWebhookRef, {
+			eventType: "Future",
+			transactionId: "txn-stale",
+			webhookEventId: laterFutureWebhookEventId,
+		});
+		await drainScheduledWork(fixture.t);
+
 		const hydratedPlanEntry = await fixture.t.run((ctx) =>
 			ctx.db.get(firstPlanEntry._id)
 		);
@@ -2008,6 +2052,258 @@ describe("provider-managed recurring schedules", () => {
 
 		expect(transfer?.providerRef).toBe("txn-nullable");
 		expect(webhookEvent?.status).toBe("processed");
+	});
+
+	it("does not persist Rotessa placeholder provider refs as real transfer refs", async () => {
+		const rotessa = installRotessaFetchHarness();
+		const fixture = await seedProviderManagedFixture();
+		const activationAsOf = fullScheduleActivationAsOf(fixture.planEntries);
+		await activateRotessaSchedule(fixture.t, {
+			asOf: activationAsOf,
+			bankAccountId: fixture.bankAccountId,
+			mortgageId: fixture.mortgageId,
+			planEntryIds: fixture.planEntries.map((entry) => entry._id),
+		});
+		const firstPlanEntry = fixture.planEntries[0];
+		if (!firstPlanEntry) {
+			throw new Error("expected first plan entry");
+		}
+		const processDate = new Date(firstPlanEntry.scheduledDate)
+			.toISOString()
+			.slice(0, 10);
+		const webhookEventId = await createWebhookEvent(fixture.t, "null");
+
+		rotessa.setTransactionRows([
+			createRotessaTransactionRow({
+				amountCents: firstPlanEntry.amount,
+				financialTransactionId: null,
+				processDate,
+				scheduleId: 987,
+				status: "Future",
+				transactionId: "1001",
+				transactionNumber: null,
+				updatedAt: "2026-02-01T12:00:00.000Z",
+			}),
+		]);
+
+		await fixture.t.action(processRotessaPadWebhookRef, {
+			eventType: "Future",
+			transactionId: "null",
+			webhookEventId,
+		});
+		await drainScheduledWork(fixture.t);
+
+		const hydratedPlanEntry = await fixture.t.run((ctx) =>
+			ctx.db.get(firstPlanEntry._id)
+		);
+		const attempt = hydratedPlanEntry?.collectionAttemptId
+			? await fixture.t.run((ctx) =>
+					ctx.db.get(hydratedPlanEntry.collectionAttemptId)
+				)
+			: null;
+		const transfer = attempt?.transferRequestId
+			? await fixture.t.run((ctx) => ctx.db.get(attempt.transferRequestId))
+			: null;
+
+		expect(transfer?.providerRef).toBe(`provider-managed:${transfer?._id}`);
+		expect(transfer?.providerRef).not.toBe("null");
+	});
+
+	it("keeps placeholder-provider-ref occurrence ingestion scoped to the event schedule", async () => {
+		const rotessa = installRotessaFetchHarness();
+		const fixture = await seedProviderManagedFixture();
+		const activationAAsOf = fullScheduleActivationAsOf(fixture.planEntries);
+		const activationA = await activateRotessaSchedule(fixture.t, {
+			asOf: activationAAsOf,
+			bankAccountId: fixture.bankAccountId,
+			mortgageId: fixture.mortgageId,
+			planEntryIds: fixture.planEntries.map((entry) => entry._id),
+		});
+		const firstPlanEntryA = fixture.planEntries[0];
+		if (!firstPlanEntryA) {
+			throw new Error("expected first plan entry for first mortgage");
+		}
+
+		const secondMortgage = await seedProviderManagedMortgage(fixture.t);
+		rotessa.setScheduleResponse({
+			id: 654,
+			next_process_date: "2026-02-15",
+			process_date: "2026-02-15",
+		});
+		const activationBAsOf = fullScheduleActivationAsOf(
+			secondMortgage.planEntries
+		);
+		const activationB = await activateRotessaSchedule(fixture.t, {
+			asOf: activationBAsOf,
+			bankAccountId: secondMortgage.bankAccountId,
+			mortgageId: secondMortgage.mortgageId,
+			planEntryIds: secondMortgage.planEntries.map((entry) => entry._id),
+		});
+		const firstPlanEntryB = secondMortgage.planEntries[0];
+		if (!firstPlanEntryB) {
+			throw new Error("expected first plan entry for second mortgage");
+		}
+
+		const processDateA = new Date(firstPlanEntryA.scheduledDate)
+			.toISOString()
+			.slice(0, 10);
+		const firstWebhookEventId = await createWebhookEvent(fixture.t, "null");
+		rotessa.setTransactionRows([
+			createRotessaTransactionRow({
+				amountCents: firstPlanEntryA.amount,
+				financialTransactionId: null,
+				processDate: processDateA,
+				scheduleId: 987,
+				status: "Future",
+				transactionId: "1001",
+				transactionNumber: null,
+				updatedAt: "2026-02-01T12:00:00.000Z",
+			}),
+		]);
+		await fixture.t.action(processRotessaPadWebhookRef, {
+			eventType: "Future",
+			transactionId: "null",
+			webhookEventId: firstWebhookEventId,
+		});
+		await drainScheduledWork(fixture.t);
+
+		const processDateB = new Date(firstPlanEntryB.scheduledDate)
+			.toISOString()
+			.slice(0, 10);
+		const secondWebhookEventId = await createWebhookEvent(fixture.t, "null");
+		rotessa.setTransactionRows([
+			createRotessaTransactionRow({
+				amountCents: firstPlanEntryB.amount,
+				financialTransactionId: null,
+				processDate: processDateB,
+				scheduleId: 654,
+				status: "Future",
+				transactionId: "2001",
+				transactionNumber: null,
+				updatedAt: "2026-02-01T12:00:00.000Z",
+			}),
+		]);
+		await fixture.t.action(processRotessaPadWebhookRef, {
+			eventType: "Future",
+			transactionId: "null",
+			webhookEventId: secondWebhookEventId,
+		});
+		await drainScheduledWork(fixture.t);
+
+		const [hydratedPlanEntryA, hydratedPlanEntryB] = await Promise.all([
+			fixture.t.run((ctx) => ctx.db.get(firstPlanEntryA._id)),
+			fixture.t.run((ctx) => ctx.db.get(firstPlanEntryB._id)),
+		]);
+		const [attemptA, attemptB] = await Promise.all([
+			hydratedPlanEntryA?.collectionAttemptId
+				? fixture.t.run((ctx) =>
+						ctx.db.get(hydratedPlanEntryA.collectionAttemptId)
+					)
+				: null,
+			hydratedPlanEntryB?.collectionAttemptId
+				? fixture.t.run((ctx) =>
+						ctx.db.get(hydratedPlanEntryB.collectionAttemptId)
+					)
+				: null,
+		]);
+		const [transferA, transferB] = await Promise.all([
+			attemptA?.transferRequestId
+				? fixture.t.run((ctx) => ctx.db.get(attemptA.transferRequestId))
+				: null,
+			attemptB?.transferRequestId
+				? fixture.t.run((ctx) => ctx.db.get(attemptB.transferRequestId))
+				: null,
+		]);
+
+		expect(hydratedPlanEntryA?.externalCollectionScheduleId).toBe(
+			activationA.scheduleId
+		);
+		expect(hydratedPlanEntryB?.externalCollectionScheduleId).toBe(
+			activationB.scheduleId
+		);
+		expect(hydratedPlanEntryA?.mortgageId).toBe(fixture.mortgageId);
+		expect(hydratedPlanEntryB?.mortgageId).toBe(secondMortgage.mortgageId);
+		expect(transferA?._id).toBeTruthy();
+		expect(transferB?._id).toBeTruthy();
+		expect(transferA?._id).not.toBe(transferB?._id);
+		expect(transferA?.providerRef).not.toBe("null");
+		expect(transferB?.providerRef).not.toBe("null");
+	});
+
+	it("fails closed when a provider occurrence matches a plan entry from another mortgage", async () => {
+		const rotessa = installRotessaFetchHarness();
+		const fixture = await seedProviderManagedFixture();
+		const activationAAsOf = fullScheduleActivationAsOf(fixture.planEntries);
+		await activateRotessaSchedule(fixture.t, {
+			asOf: activationAAsOf,
+			bankAccountId: fixture.bankAccountId,
+			mortgageId: fixture.mortgageId,
+			planEntryIds: fixture.planEntries.map((entry) => entry._id),
+		});
+		const firstPlanEntryA = fixture.planEntries[0];
+		if (!firstPlanEntryA) {
+			throw new Error("expected first plan entry for first mortgage");
+		}
+
+		const secondMortgage = await seedProviderManagedMortgage(fixture.t);
+		rotessa.setScheduleResponse({
+			id: 654,
+			next_process_date: "2026-02-15",
+			process_date: "2026-02-15",
+		});
+		const activationBAsOf = fullScheduleActivationAsOf(
+			secondMortgage.planEntries
+		);
+		const activationB = await activateRotessaSchedule(fixture.t, {
+			asOf: activationBAsOf,
+			bankAccountId: secondMortgage.bankAccountId,
+			mortgageId: secondMortgage.mortgageId,
+			planEntryIds: secondMortgage.planEntries.map((entry) => entry._id),
+		});
+		const firstPlanEntryB = secondMortgage.planEntries[0];
+		if (!firstPlanEntryB) {
+			throw new Error("expected first plan entry for second mortgage");
+		}
+
+		await fixture.t.run(async (ctx) => {
+			await ctx.db.patch(firstPlanEntryA._id, {
+				externalCollectionScheduleId: activationB.scheduleId,
+				externalOccurrenceRef: "rotessa_financial_transaction:9999",
+			});
+		});
+
+		const webhookEventId = await createWebhookEvent(
+			fixture.t,
+			"txn-cross-guard"
+		);
+		rotessa.setTransactionRows([
+			createRotessaTransactionRow({
+				amountCents: firstPlanEntryB.amount,
+				financialTransactionId: 9999,
+				processDate: new Date(firstPlanEntryB.scheduledDate)
+					.toISOString()
+					.slice(0, 10),
+				scheduleId: 654,
+				status: "Future",
+				transactionId: "9999",
+				transactionNumber: "txn-cross-guard",
+				updatedAt: "2026-02-01T12:00:00.000Z",
+			}),
+		]);
+
+		await expect(
+			fixture.t.action(processRotessaPadWebhookRef, {
+				eventType: "Future",
+				transactionId: "txn-cross-guard",
+				webhookEventId,
+			})
+		).rejects.toThrow("belongs to mortgage");
+
+		const webhookEvent = await fixture.t.run((ctx) =>
+			ctx.db.get(webhookEventId)
+		);
+		expect(webhookEvent?.status).toBe("failed");
+		expect(webhookEvent?.error).toContain("belongs to mortgage");
 	});
 
 	it("fails provider-managed lifecycle webhooks when the occurrence cannot be matched locally", async () => {

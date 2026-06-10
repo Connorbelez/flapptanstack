@@ -74,7 +74,9 @@ export function clampMarketplaceFiltersToLenderConstraints(
 	}
 
 	return {
+		availabilityPercent: requested?.availabilityPercent,
 		searchQuery: requested?.searchQuery?.trim() || undefined,
+		minimumInvestmentAmount: requested?.minimumInvestmentAmount,
 		mortgageTypes: clampEnumValues(
 			requested?.mortgageTypes,
 			constraints.allowedMortgageTypes

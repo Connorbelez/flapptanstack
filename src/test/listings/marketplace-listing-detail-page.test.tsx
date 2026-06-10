@@ -173,6 +173,7 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 			marketplaceCopy:
 				"Strong first-position opportunity with disciplined underwriting.",
 			maturityDate: "2028-03-15",
+			mortgageId: "mortgage_123456",
 			mortgageTypeLabel: "First",
 			monthlyPayment: 318_700,
 			paymentFrequency: "monthly",
@@ -203,6 +204,8 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 			nextPaymentDue: {
 				amount: 318_700,
 				date: Date.parse("2026-05-01T00:00:00.000Z"),
+				obligationId: "obligation_123456",
+				planEntryId: "plan_entry_123456",
 				status: "planned",
 			},
 			principal: 45_000_000,
@@ -238,6 +241,28 @@ describe("marketplace listing detail adapter", () => {
 		expect(model.investment.availableFractions).toBe(4);
 		expect(model.investment.totalFractions).toBe(10);
 		expect(model.investment.perFractionAmount).toBe(45_000);
+		expect(model.adminQuickLinks).toEqual([
+			{
+				entityType: "listings",
+				id: "listing_123456",
+				label: "Listing",
+			},
+			{
+				entityType: "mortgages",
+				id: "mortgage_123456",
+				label: "Mortgage",
+			},
+			{
+				entityType: "collectionPlanEntries",
+				id: "plan_entry_123456",
+				label: "Payment schedule",
+			},
+			{
+				entityType: "obligations",
+				id: "obligation_123456",
+				label: "Current obligation",
+			},
+		]);
 		expect(model.investment.availabilityLabel).toBe("4.2 of 10 available");
 		expect(model.atAGlance).toContainEqual({
 			label: "Principal",
@@ -273,6 +298,30 @@ describe("marketplace listing detail adapter", () => {
 			{ id: "Feb", label: "Feb", status: "late" },
 			{ id: "Mar", label: "Mar", status: "missed" },
 		]);
+	});
+
+	it("does not count future obligations as on-time collections", () => {
+		const detail = createDetailSnapshot();
+		const model = buildMarketplaceListingDetailModel({
+			...detail,
+			listing: {
+				...detail.listing,
+				paymentHistory: {
+					byStatus: {
+						overdue: 1,
+						settled: 1,
+						upcoming: 11,
+					},
+					totalObligations: 13,
+				},
+			},
+		});
+
+		expect(model.paymentHistory).toMatchObject({
+			lateCount: 1,
+			missedCount: 0,
+			onTimeRate: "50%",
+		});
 	});
 
 	it("marks the as-if appraisal unpublished when no as-if valuation exists", () => {

@@ -82,29 +82,28 @@ function MarketplaceListingNotFoundComponent() {
 
 	return (
 		<div className="min-h-full px-4 py-16 text-foreground sm:px-6">
-			<div className="mx-auto max-w-2xl rounded-3xl border border-[#E7E5E4] bg-white px-8 py-10 shadow-sm">
+			<div className="mx-auto max-w-2xl rounded-3xl border border-border bg-card px-8 py-10 text-card-foreground shadow-sm">
 				<div className="flex items-center gap-3">
-					<div className="flex size-10 items-center justify-center rounded-full bg-[#F8EAEA] text-[#B42318]">
+					<div className="flex size-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
 						<AlertCircle className="size-5" />
 					</div>
 					<div>
 						<h1 className="font-semibold text-2xl tracking-tight">
-							Unable to load listing
+							Listing unavailable
 						</h1>
-						<p className="mt-1 text-[#6B6B68] text-sm">
-							We could not find a published listing for <code>{listingId}</code>
-							.
+						<p className="mt-1 text-muted-foreground text-sm">
+							No published listing matches <code>{listingId}</code>.
 						</p>
 					</div>
 				</div>
 
 				<Link
-					className="mt-8 inline-flex items-center gap-2 rounded-full border border-[#E7E5E4] px-4 py-2 font-medium text-sm hover:bg-[#FBFAF8]"
+					className="mt-8 inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 font-medium text-sm hover:bg-muted/50"
 					to="/listings"
 					viewTransition
 				>
 					<ArrowLeft className="size-4" />
-					Back to Listings
+					Back to listings
 				</Link>
 			</div>
 		</div>

@@ -179,22 +179,19 @@ export function Horizontal({
 									</p>
 								</div>
 								<div className="min-w-0 flex-1">
-									<div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-										<span>Available</span>
-										<span className="font-semibold text-primary tabular-nums">
+									<div className="flex min-w-0 items-center gap-2">
+										<span className="w-9 shrink-0 font-semibold text-[13px] text-primary tabular-nums">
 											{availablePercent}%
 										</span>
+										<div className="min-w-0 flex-1">
+											<OwnershipBar
+												availablePercent={availablePercent}
+												lockedPercent={lockedPercent}
+												showDetails={false}
+												soldPercent={soldPercent}
+											/>
+										</div>
 									</div>
-									<OwnershipBar
-										availablePercent={availablePercent}
-										lockedPercent={lockedPercent}
-										soldPercent={soldPercent}
-									/>
-									{fractionsSummary ? (
-										<p className="mt-1 truncate text-[10px] text-muted-foreground tabular-nums">
-											{fractionsSummary}
-										</p>
-									) : null}
 								</div>
 							</div>
 						</div>

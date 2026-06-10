@@ -75,6 +75,7 @@ export function ListingMap<T extends LatLng>({
 	const onViewportChangeRef = useRef(onViewportChange);
 	const renderPopupRef = useRef(renderPopup);
 	const [isMapLoaded, setIsMapLoaded] = useState(false);
+	const [isMapUnavailable, setIsMapUnavailable] = useState(false);
 	const hasSetInitialViewRef = useRef(false);
 	/** Ignore moveend until the first intentional camera + bounds emit (avoids filtering the grid to initialCenter/initialZoom before fitBounds). */
 	const suppressViewportMoveEndRef = useRef(true);
@@ -89,16 +90,28 @@ export function ListingMap<T extends LatLng>({
 			return;
 		}
 
+		if (!mapboxgl.supported()) {
+			setIsMapUnavailable(true);
+			return;
+		}
+
 		mapboxgl.accessToken = MAPBOX_TOKEN;
 
-		const map = new mapboxgl.Map({
-			container: mapContainerRef.current,
-			style: "mapbox://styles/mapbox/streets-v12",
-			center: [initialCenter.lng, initialCenter.lat],
-			zoom: initialZoom,
-		});
+		let map: mapboxgl.Map;
+		try {
+			map = new mapboxgl.Map({
+				container: mapContainerRef.current,
+				style: "mapbox://styles/mapbox/streets-v12",
+				center: [initialCenter.lng, initialCenter.lat],
+				zoom: initialZoom,
+			});
+		} catch {
+			setIsMapUnavailable(true);
+			return;
+		}
 
 		mapRef.current = map;
+		setIsMapUnavailable(false);
 		map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
 		map.on("load", () => {
@@ -122,6 +135,7 @@ export function ListingMap<T extends LatLng>({
 			}
 			markersRef.current = [];
 			setIsMapLoaded(false);
+			setIsMapUnavailable(false);
 
 			if (mapRef.current) {
 				mapRef.current.remove();
@@ -233,7 +247,7 @@ export function ListingMap<T extends LatLng>({
 		}
 	}, [items, isMapLoaded]);
 
-	if (!MAPBOX_TOKEN) {
+	if (!MAPBOX_TOKEN || isMapUnavailable) {
 		return (
 			<div
 				className={cn(
@@ -245,8 +259,9 @@ export function ListingMap<T extends LatLng>({
 				<div className="relative max-w-sm space-y-2">
 					<p className="font-semibold text-lg">Map unavailable</p>
 					<p className="text-muted-foreground text-sm">
-						Set <code>VITE_MAPBOX_TOKEN</code> to enable maps in the
-						marketplace.
+						{MAPBOX_TOKEN
+							? "Map rendering is not available in this browser."
+							: "Set VITE_MAPBOX_TOKEN to enable maps in the marketplace."}
 					</p>
 				</div>
 			</div>

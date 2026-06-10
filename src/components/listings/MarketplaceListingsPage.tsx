@@ -1,11 +1,16 @@
 import { Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import { MarketplaceFilterBar } from "./filter-bar";
+import {
+	MarketplaceFilterBar,
+	type MarketplaceFilterChangeMode,
+} from "./filter-bar";
 import { ListingGridShell } from "./ListingGridShell";
 import { Horizontal } from "./listing-card-horizontal";
 import { ListingMapPopup } from "./listing-map-popup";
 import {
+	applyMarketplaceListingFilters,
 	buildFilterMetricItems,
 	buildMarketplaceListingCardItems,
 	filterStateToSearchState,
@@ -17,6 +22,8 @@ import type {
 	MarketplaceListingsSnapshot,
 } from "./marketplace-types";
 import type { MobileListingSection } from "./mobile-listing-scroller";
+
+const FILTER_SYNC_DEBOUNCE_MS = 350;
 
 function groupItemsForMobile(items: readonly MarketplaceListingCardItem[]) {
 	const firstMortgages = items.filter((item) => item.mortgageType === "First");
@@ -65,9 +72,67 @@ export function MarketplaceListingsPage({
 	eyebrow = "Lender Marketplace",
 	heading = "Browse fractional mortgage opportunities",
 }: MarketplaceListingsPageProps) {
-	const filterState = searchStateToFilterState(search);
+	const committedFilterState = useMemo(
+		() => searchStateToFilterState(search),
+		[search]
+	);
+	const [draftFilters, setDraftFilters] = useState(committedFilterState);
+	const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	useEffect(() => {
+		setDraftFilters(committedFilterState);
+	}, [committedFilterState]);
+
+	useEffect(
+		() => () => {
+			if (syncTimerRef.current) {
+				clearTimeout(syncTimerRef.current);
+			}
+		},
+		[]
+	);
+
 	const filterMetrics = buildFilterMetricItems(snapshot.page);
-	const items = buildMarketplaceListingCardItems(snapshot.page);
+	const allItems = useMemo(
+		() => buildMarketplaceListingCardItems(snapshot.page),
+		[snapshot.page]
+	);
+	const items = useMemo(
+		() => applyMarketplaceListingFilters(allItems, draftFilters),
+		[allItems, draftFilters]
+	);
+
+	const commitFilters = useCallback(
+		(nextFilters: typeof draftFilters) => {
+			setSearch(() => filterStateToSearchState(nextFilters, search.sort));
+		},
+		[search.sort, setSearch]
+	);
+
+	const handleFiltersChange = useCallback(
+		(
+			nextFilters: typeof draftFilters,
+			options?: { mode?: MarketplaceFilterChangeMode }
+		) => {
+			setDraftFilters(nextFilters);
+
+			if (syncTimerRef.current) {
+				clearTimeout(syncTimerRef.current);
+				syncTimerRef.current = null;
+			}
+
+			if (options?.mode === "debounced") {
+				syncTimerRef.current = setTimeout(() => {
+					commitFilters(nextFilters);
+					syncTimerRef.current = null;
+				}, FILTER_SYNC_DEBOUNCE_MS);
+				return;
+			}
+
+			commitFilters(nextFilters);
+		},
+		[commitFilters]
+	);
 
 	const toolbar = (
 		<div className="space-y-3">
@@ -77,11 +142,9 @@ export function MarketplaceListingsPage({
 				</Badge>
 			</div>
 			<MarketplaceFilterBar
-				filters={filterState}
+				filters={draftFilters}
 				items={filterMetrics}
-				onFiltersChange={(nextFilters) =>
-					setSearch(() => filterStateToSearchState(nextFilters, search.sort))
-				}
+				onFiltersChange={handleFiltersChange}
 			/>
 		</div>
 	);

@@ -11,6 +11,10 @@ export function marketplaceListingsQueryOptions(
 	return convexQuery(api.listings.marketplace.listMarketplaceListings, {
 		cursor: null,
 		filters: {
+			availabilityPercent:
+				search.availableMin !== undefined || search.availableMax !== undefined
+					? { max: search.availableMax, min: search.availableMin }
+					: undefined,
 			interestRate:
 				search.rateMin !== undefined || search.rateMax !== undefined
 					? { max: search.rateMax, min: search.rateMin }
@@ -23,6 +27,20 @@ export function marketplaceListingsQueryOptions(
 				? { end: search.maturityBefore }
 				: undefined,
 			mortgageTypes: search.mortgageTypes,
+			minimumInvestmentAmount:
+				search.minimumInvestmentMin !== undefined ||
+				search.minimumInvestmentMax !== undefined
+					? {
+							max:
+								search.minimumInvestmentMax !== undefined
+									? principalDollarsToCents(search.minimumInvestmentMax)
+									: undefined,
+							min:
+								search.minimumInvestmentMin !== undefined
+									? principalDollarsToCents(search.minimumInvestmentMin)
+									: undefined,
+						}
+					: undefined,
 			principalAmount:
 				search.principalMin !== undefined || search.principalMax !== undefined
 					? {

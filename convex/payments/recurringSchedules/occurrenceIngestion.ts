@@ -32,14 +32,30 @@ function buildOccurrenceKey(args: {
 	providerRef?: string;
 	scheduledDate?: string;
 }) {
+	const providerRef = normalizeProviderRefForIdentity(args.providerRef);
 	return [
 		args.providerCode,
 		args.externalScheduleRef,
 		args.externalOccurrenceRef ?? "no-occurrence-ref",
-		args.providerRef ?? "no-provider-ref",
+		providerRef ?? "no-provider-ref",
 		args.externalOccurrenceOrdinal ?? "no-ordinal",
 		args.scheduledDate ?? "no-date",
 	].join(":");
+}
+
+function normalizeProviderRefForIdentity(providerRef?: string | null) {
+	if (providerRef === undefined || providerRef === null) {
+		return undefined;
+	}
+	const normalized = providerRef.trim();
+	if (!normalized) {
+		return undefined;
+	}
+	const lowercase = normalized.toLowerCase();
+	if (lowercase === "null" || lowercase === "undefined") {
+		return undefined;
+	}
+	return normalized;
 }
 
 function buildOccurrenceSource(
@@ -69,14 +85,36 @@ function canReplaceTransferProviderRef(args: {
 	providerRef?: string | null;
 	transferId: Id<"transferRequests">;
 }) {
+	const providerRef = normalizeProviderRefForIdentity(args.providerRef);
 	return (
-		args.providerRef === undefined ||
-		args.providerRef === null ||
-		args.providerRef === `provider-managed:${args.transferId}`
+		providerRef === undefined ||
+		providerRef === `provider-managed:${args.transferId}`
+	);
+}
+
+function isTerminalProviderLifecycleStatus(status?: string) {
+	return (
+		status === "Approved" || status === "Declined" || status === "Chargeback"
+	);
+}
+
+function isNonTerminalProviderLifecycleStatus(status: string) {
+	return status === "Future" || status === "Pending";
+}
+
+function shouldPreserveTerminalProviderMirror(args: {
+	currentProviderLifecycleStatus?: string;
+	incomingProviderLifecycleStatus: string;
+}) {
+	return (
+		isTerminalProviderLifecycleStatus(args.currentProviderLifecycleStatus) &&
+		isNonTerminalProviderLifecycleStatus(args.incomingProviderLifecycleStatus)
 	);
 }
 
 function buildCollectionAttemptProviderMirrorPatch(args: {
+	currentProviderLifecycleStatus?: string;
+	currentProviderOccurrenceKey?: string;
 	currentReportedAt?: number;
 	event: IngestOccurrenceEvent;
 	providerOccurrenceKey?: string;
@@ -88,12 +126,23 @@ function buildCollectionAttemptProviderMirrorPatch(args: {
 		providerLastReportedAt?: number;
 		providerLastReportedVia?: "poller" | "webhook";
 	} = {};
+	const shouldPreserveTerminalMirror = shouldPreserveTerminalProviderMirror({
+		currentProviderLifecycleStatus: args.currentProviderLifecycleStatus,
+		incomingProviderLifecycleStatus: args.event.rawProviderStatus,
+	});
 
-	if (args.providerOccurrenceKey !== undefined) {
+	if (
+		args.providerOccurrenceKey !== undefined &&
+		!(
+			shouldPreserveTerminalMirror &&
+			args.currentProviderOccurrenceKey !== undefined
+		)
+	) {
 		patch.providerOccurrenceKey = args.providerOccurrenceKey;
 	}
 
 	if (
+		!shouldPreserveTerminalMirror &&
 		shouldApplyProviderMirrorUpdate({
 			currentReportedAt: args.currentReportedAt,
 			occurredAt: args.event.occurredAt,
@@ -280,18 +329,85 @@ async function resolveExistingTransfer(
 	ctx: IngestOccurrenceMutationCtx,
 	event: Pick<IngestOccurrenceEvent, "providerCode" | "providerRef">
 ): Promise<TransferRequestDoc | null> {
-	if (!event.providerRef) {
+	const providerRef = normalizeProviderRefForIdentity(event.providerRef);
+	if (!providerRef) {
 		return null;
 	}
 
 	return ctx.db
 		.query("transferRequests")
 		.withIndex("by_provider_ref", (q) =>
-			q
-				.eq("providerCode", event.providerCode)
-				.eq("providerRef", event.providerRef)
+			q.eq("providerCode", event.providerCode).eq("providerRef", providerRef)
 		)
 		.first();
+}
+
+function readMetadataString(
+	metadata: TransferRequestDoc["metadata"],
+	key: string
+) {
+	const value = metadata?.[key];
+	return typeof value === "string" ? value : undefined;
+}
+
+function assertOccurrenceGraphConsistency(args: {
+	attempt: CollectionAttemptDoc | null;
+	existingTransfer: TransferRequestDoc | null;
+	linkedSchedule: ExternalCollectionScheduleDoc | null;
+	planEntry: CollectionPlanEntryDoc;
+}) {
+	const linkedSchedule = args.linkedSchedule;
+	if (!linkedSchedule) {
+		return;
+	}
+
+	if (args.planEntry.mortgageId !== linkedSchedule.mortgageId) {
+		throw new ConvexError(
+			`Provider-managed occurrence matched plan entry ${args.planEntry._id} for mortgage ${args.planEntry.mortgageId}, but external schedule ${linkedSchedule._id} belongs to mortgage ${linkedSchedule.mortgageId}.`
+		);
+	}
+
+	if (
+		args.planEntry.externalCollectionScheduleId &&
+		args.planEntry.externalCollectionScheduleId !== linkedSchedule._id
+	) {
+		throw new ConvexError(
+			`Provider-managed occurrence matched plan entry ${args.planEntry._id} bound to external schedule ${args.planEntry.externalCollectionScheduleId}, but the provider event belongs to external schedule ${linkedSchedule._id}.`
+		);
+	}
+
+	if (args.attempt && args.attempt.mortgageId !== linkedSchedule.mortgageId) {
+		throw new ConvexError(
+			`Provider-managed occurrence matched collection attempt ${args.attempt._id} for mortgage ${args.attempt.mortgageId}, but external schedule ${linkedSchedule._id} belongs to mortgage ${linkedSchedule.mortgageId}.`
+		);
+	}
+
+	const existingTransfer = args.existingTransfer;
+	if (!existingTransfer) {
+		return;
+	}
+
+	if (
+		existingTransfer.mortgageId &&
+		existingTransfer.mortgageId !== linkedSchedule.mortgageId
+	) {
+		throw new ConvexError(
+			`Provider-managed occurrence matched transfer ${existingTransfer._id} for mortgage ${existingTransfer.mortgageId}, but external schedule ${linkedSchedule._id} belongs to mortgage ${linkedSchedule.mortgageId}.`
+		);
+	}
+
+	const transferScheduleRef = readMetadataString(
+		existingTransfer.metadata,
+		"externalCollectionScheduleRef"
+	);
+	if (
+		transferScheduleRef &&
+		transferScheduleRef !== linkedSchedule.externalScheduleRef
+	) {
+		throw new ConvexError(
+			`Provider-managed occurrence matched transfer ${existingTransfer._id} for external schedule ref ${transferScheduleRef}, but the provider event belongs to external schedule ref ${linkedSchedule.externalScheduleRef}.`
+		);
+	}
 }
 
 async function ensureCollectionAttempt(args: {
@@ -310,6 +426,10 @@ async function ensureCollectionAttempt(args: {
 		await args.ctx.db.patch(
 			existingByOccurrenceKey._id,
 			buildCollectionAttemptProviderMirrorPatch({
+				currentProviderLifecycleStatus:
+					existingByOccurrenceKey.providerLifecycleStatus,
+				currentProviderOccurrenceKey:
+					existingByOccurrenceKey.providerOccurrenceKey,
 				currentReportedAt: existingByOccurrenceKey.providerLastReportedAt,
 				event: args.event,
 				providerOccurrenceKey: occurrenceKey,
@@ -326,6 +446,9 @@ async function ensureCollectionAttempt(args: {
 			await args.ctx.db.patch(
 				existingAttempt._id,
 				buildCollectionAttemptProviderMirrorPatch({
+					currentProviderLifecycleStatus:
+						existingAttempt.providerLifecycleStatus,
+					currentProviderOccurrenceKey: existingAttempt.providerOccurrenceKey,
 					currentReportedAt: existingAttempt.providerLastReportedAt,
 					event: args.event,
 					providerOccurrenceKey: occurrenceKey,
@@ -333,7 +456,13 @@ async function ensureCollectionAttempt(args: {
 			);
 			return {
 				...existingAttempt,
-				providerOccurrenceKey: occurrenceKey,
+				...(shouldPreserveTerminalProviderMirror({
+					currentProviderLifecycleStatus:
+						existingAttempt.providerLifecycleStatus,
+					incomingProviderLifecycleStatus: args.event.rawProviderStatus,
+				}) && existingAttempt.providerOccurrenceKey
+					? {}
+					: { providerOccurrenceKey: occurrenceKey }),
 			} as CollectionAttemptDoc;
 		}
 	}
@@ -390,6 +519,8 @@ async function syncCollectionAttemptProviderMirror(args: {
 	await args.ctx.db.patch(
 		args.attempt._id,
 		buildCollectionAttemptProviderMirrorPatch({
+			currentProviderLifecycleStatus: args.attempt.providerLifecycleStatus,
+			currentProviderOccurrenceKey: args.attempt.providerOccurrenceKey,
 			currentReportedAt: args.attempt.providerLastReportedAt,
 			event: args.event,
 			providerOccurrenceKey,
@@ -548,8 +679,13 @@ async function patchPlanEntryProviderMirror(args: {
 		externalOccurrenceRef:
 			args.event.externalOccurrenceRef ?? args.planEntry.externalOccurrenceRef,
 	};
+	const shouldPreserveTerminalMirror = shouldPreserveTerminalProviderMirror({
+		currentProviderLifecycleStatus: args.planEntry.externalProviderEventStatus,
+		incomingProviderLifecycleStatus: args.event.rawProviderStatus,
+	});
 
 	if (
+		!shouldPreserveTerminalMirror &&
 		shouldApplyProviderMirrorUpdate({
 			currentReportedAt: args.planEntry.externalLastReportedAt,
 			occurredAt: args.event.occurredAt,
@@ -784,11 +920,25 @@ export const ingestExternalOccurrenceEvent = convex
 			};
 		}
 
-		attempt ??= await ensureCollectionAttempt({
-			ctx,
-			event: args.event,
+		const linkedPlanEntryAttempt =
+			attempt ??
+			(planEntry.collectionAttemptId
+				? await ctx.db.get(planEntry.collectionAttemptId)
+				: null);
+		assertOccurrenceGraphConsistency({
+			attempt: linkedPlanEntryAttempt,
+			existingTransfer,
+			linkedSchedule,
 			planEntry,
 		});
+
+		attempt =
+			linkedPlanEntryAttempt ??
+			(await ensureCollectionAttempt({
+				ctx,
+				event: args.event,
+				planEntry,
+			}));
 		attempt = await syncCollectionAttemptProviderMirror({
 			ctx,
 			attempt,
@@ -813,10 +963,10 @@ export const ingestExternalOccurrenceEvent = convex
 			planEntry,
 		});
 
-		if (
-			args.event.providerRef &&
-			transfer.providerRef !== args.event.providerRef
-		) {
+		const incomingProviderRef = normalizeProviderRefForIdentity(
+			args.event.providerRef
+		);
+		if (incomingProviderRef && transfer.providerRef !== incomingProviderRef) {
 			if (
 				!canReplaceTransferProviderRef({
 					providerRef: transfer.providerRef,
@@ -824,23 +974,26 @@ export const ingestExternalOccurrenceEvent = convex
 				})
 			) {
 				throw new ConvexError(
-					`Provider-managed occurrence attempted to overwrite transfer ${transfer._id} providerRef from "${transfer.providerRef}" to "${args.event.providerRef}".`
+					`Provider-managed occurrence attempted to overwrite transfer ${transfer._id} providerRef from "${transfer.providerRef}" to "${incomingProviderRef}".`
 				);
 			}
 
 			await ctx.db.patch(transfer._id, {
-				providerRef: args.event.providerRef,
+				providerRef: incomingProviderRef,
 			});
 			transfer = {
 				...transfer,
-				providerRef: args.event.providerRef,
+				providerRef: incomingProviderRef,
 			} as TransferRequestDoc;
 		}
 
 		await ensurePendingBaseline({
 			attempt,
 			ctx,
-			event: args.event,
+			event: {
+				...args.event,
+				providerRef: incomingProviderRef,
+			},
 			transfer,
 		});
 

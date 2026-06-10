@@ -238,12 +238,13 @@ export function AdminRecordDetailSurface({
 	const tabsContent = (
 		<div
 			className={cn(
-				"min-h-0 flex-1 overflow-y-auto",
+				variant === "sheet" && "min-h-0 flex-1 overflow-y-auto",
 				variant === "page" && "border-border/70 border-t"
 			)}
+			data-testid="admin-record-detail-tabs-region"
 		>
 			<Tabs
-				className="min-h-0 flex-1"
+				className={cn(variant === "sheet" && "min-h-0 flex-1")}
 				onValueChange={(value) => setActiveTab(value as AdminDetailTab)}
 				value={activeTab}
 			>

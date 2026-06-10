@@ -362,7 +362,6 @@ function buildPaymentHistory(
 ): ListingDetailData["paymentHistory"] {
 	const paymentHistory = asRecord(detail.listing.paymentHistory);
 	const byStatus = asRecord(paymentHistory?.byStatus) ?? {};
-	const totalObligations = readNumber(paymentHistory?.totalObligations) ?? 0;
 	const lateCount =
 		(readNumber(byStatus.overdue) ?? 0) +
 		(readNumber(byStatus.partially_settled) ?? 0);
@@ -370,13 +369,9 @@ function buildPaymentHistory(
 		(readNumber(byStatus.missed) ?? 0) +
 		(readNumber(byStatus.defaulted) ?? 0) +
 		(readNumber(byStatus.failed) ?? 0);
-	const pendingCount =
-		(readNumber(byStatus.pending) ?? 0) + (readNumber(byStatus.scheduled) ?? 0);
-	const completedObligations = Math.max(0, totalObligations - pendingCount);
-	const onTimeCount = Math.max(
-		0,
-		completedObligations - lateCount - missedCount
-	);
+	const onTimeCount =
+		(readNumber(byStatus.settled) ?? 0) + (readNumber(byStatus.waived) ?? 0);
+	const rateDenominator = onTimeCount + lateCount + missedCount;
 
 	return {
 		lateCount,
@@ -384,8 +379,8 @@ function buildPaymentHistory(
 		months: buildPaymentHistoryMonths(paymentHistory),
 		nextUpcoming: buildNextUpcomingPayment(detail),
 		onTimeRate:
-			completedObligations > 0
-				? `${Math.round((onTimeCount / completedObligations) * 100)}%`
+			rateDenominator > 0
+				? `${Math.round((onTimeCount / rateDenominator) * 100)}%`
 				: "N/A",
 	};
 }
@@ -568,6 +563,44 @@ function buildCheckoutContract(
 	};
 }
 
+function buildAdminQuickLinks(
+	detail: NonNullable<MarketplaceListingDetailSnapshot>
+): ListingDetailData["adminQuickLinks"] {
+	const links: NonNullable<ListingDetailData["adminQuickLinks"]> = [
+		{
+			entityType: "listings",
+			id: detail.listing.id,
+			label: "Listing",
+		},
+	];
+
+	if (detail.listing.mortgageId) {
+		links.push({
+			entityType: "mortgages",
+			id: detail.listing.mortgageId,
+			label: "Mortgage",
+		});
+	}
+
+	if (detail.listing.nextPaymentDue?.planEntryId) {
+		links.push({
+			entityType: "collectionPlanEntries",
+			id: detail.listing.nextPaymentDue.planEntryId,
+			label: "Payment schedule",
+		});
+	}
+
+	if (detail.listing.nextPaymentDue?.obligationId) {
+		links.push({
+			entityType: "obligations",
+			id: detail.listing.nextPaymentDue.obligationId,
+			label: "Current obligation",
+		});
+	}
+
+	return links;
+}
+
 export function buildMarketplaceListingDetailModel(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>
 ): ListingDetailData {
@@ -590,6 +623,7 @@ export function buildMarketplaceListingDetailModel(
 			: null;
 
 	return {
+		adminQuickLinks: buildAdminQuickLinks(detail),
 		appraisal: {
 			asIf: asIfAppraisal
 				? {

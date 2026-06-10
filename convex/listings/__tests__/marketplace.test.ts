@@ -418,6 +418,57 @@ describe("marketplace listings", () => {
 		expect(result.page[1]?.mortgageTypeLabel).toBe("Second");
 	});
 
+	it("filters marketplace rows by availability percent and derived minimum investment", async () => {
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+
+		await t.run(async (ctx) => {
+			await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					principal: 250_000,
+					title: "Low minimum investment",
+				})
+			);
+			await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					principal: 500_000,
+					title: "High minimum investment",
+				})
+			);
+		});
+
+		const affordable = await auth.query(listingApi.listMarketplaceListings, {
+			cursor: null,
+			filters: {
+				availabilityPercent: { min: 90 },
+				minimumInvestmentAmount: { max: 30_000 },
+			},
+			numItems: 20,
+			portalId,
+		});
+
+		expect(affordable.page.map((listing) => listing.title)).toEqual([
+			"Low minimum investment",
+		]);
+
+		const belowFullAvailability = await auth.query(
+			listingApi.listMarketplaceListings,
+			{
+				cursor: null,
+				filters: {
+					availabilityPercent: { max: 90 },
+				},
+				numItems: 20,
+				portalId,
+			}
+		);
+
+		expect(belowFullAvailability.page).toHaveLength(0);
+	});
+
 	it("paginates marketplace listings with a stable cursor", async () => {
 		const t = createHarness();
 		const portalId = await insertBrokerPortalPricingFixture(t);
@@ -788,6 +839,8 @@ describe("marketplace listings", () => {
 		const nextPaymentDate = now + 14 * 24 * 60 * 60 * 1000;
 		const nextCollectionDate = nextPaymentDate - 5 * 24 * 60 * 60 * 1000;
 		let listingId!: Doc<"listings">["_id"];
+		let upcomingObligationId!: Doc<"obligations">["_id"];
+		let planEntryId!: Doc<"collectionPlanEntries">["_id"];
 
 		await t.run(async (ctx) => {
 			const borrowerUser = await ctx.db.query("users").first();
@@ -818,7 +871,7 @@ describe("marketplace listings", () => {
 				type: "regular_interest",
 			});
 
-			const upcomingObligationId = await ctx.db.insert("obligations", {
+			upcomingObligationId = await ctx.db.insert("obligations", {
 				amount: 125_000,
 				amountSettled: 0,
 				borrowerId,
@@ -835,7 +888,7 @@ describe("marketplace listings", () => {
 				type: "regular_interest",
 			});
 
-			await ctx.db.insert("collectionPlanEntries", {
+			planEntryId = await ctx.db.insert("collectionPlanEntries", {
 				amount: 125_000,
 				createdAt: now,
 				method: "manual",
@@ -851,7 +904,7 @@ describe("marketplace listings", () => {
 				buildListingDoc({
 					mortgageId,
 					paymentHistory: {
-						byStatus: { settled: 1, upcoming: 1 },
+						byStatus: { upcoming: 2 },
 						months: [{ label: "Mar", status: "settled" }],
 						totalObligations: 2,
 					},
@@ -866,22 +919,31 @@ describe("marketplace listings", () => {
 			portalId,
 		});
 
-		expect(result?.listing.paymentHistory).toEqual({
+		expect(result?.listing.paymentHistory).toMatchObject({
 			byStatus: { settled: 1, upcoming: 1 },
-			months: [{ label: "Mar", status: "settled" }],
+			lastDueDate: nextPaymentDate,
 			totalObligations: 2,
+			totalOutstanding: 125_000,
 		});
+		expect(result?.listing.paymentHistory?.months).toEqual([
+			expect.objectContaining({
+				label: expect.any(String),
+				status: "settled",
+			}),
+		]);
 		expect(result?.listing.paymentSnapshot).toMatchObject({
 			mostRecentPaymentAmount: 125_000,
 			mostRecentPaymentDate: lastPaymentDate,
 			mostRecentPaymentStatus: "settled",
 			nextUpcomingPaymentAmount: 125_000,
-			nextUpcomingPaymentDate: nextCollectionDate,
+			nextUpcomingPaymentDate: nextPaymentDate,
 			nextUpcomingPaymentStatus: "planned",
 		});
 		expect(result?.listing.nextPaymentDue).toEqual({
 			amount: 125_000,
 			date: nextPaymentDate,
+			obligationId: String(upcomingObligationId),
+			planEntryId: String(planEntryId),
 			status: "planned",
 		});
 	});
