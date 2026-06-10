@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { EMPTY_ADMIN_DETAIL_SEARCH } from "#/lib/admin-detail-search";
+import { buildAdminNavigationHref } from "#/lib/portal/admin-navigation";
+import type { RootPortalContext } from "#/lib/portal/host-resolution";
 import ThemeToggle from "./theme-toggle";
 import WorkOSHeader from "./workos-user.tsx";
 
@@ -72,7 +73,13 @@ const demoSections: DemoSection[] = [
 const demoLinkClassName =
 	"block rounded-lg px-3 py-2 text-sm !text-[var(--sea-ink-soft)] no-underline transition hover:bg-[var(--link-bg-hover)] hover:!text-[var(--sea-ink)]";
 
-export default function Header() {
+interface HeaderProps {
+	portalContext: Pick<RootPortalContext, "canonicalHost">;
+}
+
+export default function Header({ portalContext }: HeaderProps) {
+	const adminHref = buildAdminNavigationHref(portalContext.canonicalHost);
+
 	return (
 		<header className="sticky top-0 z-50 shrink-0 border-(--line) border-b bg-(--header-bg) px-4 backdrop-blur-lg">
 			<nav className="page-wrap flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 py-3 sm:py-4">
@@ -137,15 +144,9 @@ export default function Header() {
 					>
 						Listings
 					</Link>
-					<Link
-						activeProps={{ className: "nav-link is-active" }}
-						className="nav-link"
-						search={EMPTY_ADMIN_DETAIL_SEARCH}
-						to="/admin"
-						viewTransition
-					>
+					<a className="nav-link" href={adminHref}>
 						Admin
-					</Link>
+					</a>
 					<Link
 						activeProps={{ className: "nav-link is-active" }}
 						className="nav-link"

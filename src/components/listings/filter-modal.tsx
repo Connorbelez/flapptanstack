@@ -28,8 +28,18 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "#/components/ui/dialog";
+import {
+	Drawer,
+	DrawerContent,
+	DrawerDescription,
+	DrawerFooter,
+	DrawerHeader,
+	DrawerTitle,
+	DrawerTrigger,
+} from "#/components/ui/drawer";
 import { Separator } from "#/components/ui/separator";
 import { TooltipProvider } from "#/components/ui/tooltip";
+import { useIsMobile } from "#/hooks/use-mobile";
 import { DatePicker } from "./date-picker";
 import RangeSliderWithHistogram from "./range-slider-with-histogram";
 import {
@@ -45,6 +55,20 @@ interface FilterModalProps {
 	filters: FilterState;
 	items?: readonly FilterMetricItem[];
 	onFiltersChange: (filters: FilterState) => void;
+}
+
+function FilterTriggerButton() {
+	return (
+		<Button
+			aria-label="Open listing filters"
+			className="h-10 rounded-[14px] bg-[#0B1220] px-3 text-white shadow-none hover:bg-[#0B1220]/90 sm:rounded-full sm:bg-transparent sm:text-foreground sm:shadow-sm sm:hover:bg-accent"
+			size="lg"
+			variant="outline"
+		>
+			<span className="hidden sm:inline">Filters</span>
+			<Filter className="h-4 w-4 sm:ml-2" />
+		</Button>
+	);
 }
 
 function PropertyTypeIcon({ type }: { type: PropertyType }) {
@@ -227,16 +251,243 @@ export default function FilterModal({
 		{ value: "Other", label: "Other" },
 	];
 
+	const isMobile = useIsMobile();
+	const filterSections = (
+		<div className="flex flex-col gap-3 px-1 py-1 max-sm:px-4 max-sm:pb-6 sm:px-0">
+			<Separator />
+
+			<div className="space-y-2">
+				<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg max-sm:justify-start max-sm:text-left max-sm:font-semibold max-sm:text-[12px] max-sm:uppercase sm:text-xl">
+					<Percent className="h-5 w-5" />
+					LTV
+				</h2>
+				<div className="relative z-[105] w-full overflow-x-hidden">
+					<RangeSliderWithHistogram
+						className="w-full"
+						defaultValue={draftFilters.ltvRange}
+						formatValue={(value) => `${value}%`}
+						histogramData={ltvHistogram}
+						max={FILTER_BOUNDS.ltvRange[1]}
+						min={FILTER_BOUNDS.ltvRange[0]}
+						onValueChange={(values) =>
+							setDraftFilters((current) => ({
+								...current,
+								ltvRange: values,
+							}))
+						}
+						showCard={false}
+						showTitle={false}
+						step={1}
+						targetBarCount={20}
+						variant="compact"
+					/>
+				</div>
+			</div>
+
+			<Separator />
+
+			<div className="space-y-2">
+				<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg max-sm:justify-start max-sm:text-left max-sm:font-semibold max-sm:text-[12px] max-sm:uppercase sm:text-xl">
+					<TrendingUp className="h-5 w-5" />
+					Interest Rate
+				</h2>
+				<div className="relative z-[105] w-full overflow-x-hidden">
+					<RangeSliderWithHistogram
+						className="w-full"
+						defaultValue={draftFilters.interestRateRange}
+						formatValue={(value) => `${value}%`}
+						histogramData={aprHistogram}
+						max={FILTER_BOUNDS.interestRateRange[1]}
+						min={FILTER_BOUNDS.interestRateRange[0]}
+						onValueChange={(values) =>
+							setDraftFilters((current) => ({
+								...current,
+								interestRateRange: values,
+							}))
+						}
+						showCard={false}
+						showTitle={false}
+						step={0.1}
+						targetBarCount={20}
+						variant="compact"
+					/>
+				</div>
+			</div>
+
+			<Separator />
+
+			<div className="space-y-2">
+				<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg max-sm:justify-start max-sm:text-left max-sm:font-semibold max-sm:text-[12px] max-sm:uppercase sm:text-xl">
+					<DollarSign className="h-5 w-5" />
+					Principal
+				</h2>
+				<div className="relative z-[105] w-full overflow-x-hidden">
+					<RangeSliderWithHistogram
+						className="w-full"
+						defaultValue={draftFilters.principalRange}
+						formatValue={(value) => `$${value.toLocaleString()}`}
+						histogramData={principalHistogram}
+						max={FILTER_BOUNDS.principalRange[1]}
+						min={FILTER_BOUNDS.principalRange[0]}
+						onValueChange={(values) =>
+							setDraftFilters((current) => ({
+								...current,
+								principalRange: values,
+							}))
+						}
+						showCard={false}
+						showTitle={false}
+						step={10_000}
+						targetBarCount={20}
+						variant="compact"
+					/>
+				</div>
+			</div>
+
+			<Separator />
+
+			<div className="space-y-2">
+				<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg max-sm:justify-start max-sm:text-left max-sm:font-semibold max-sm:text-[12px] max-sm:uppercase sm:text-xl">
+					<FileText className="h-5 w-5" />
+					Mortgage Type
+				</h2>
+				<div className="grid grid-cols-1 items-center justify-center gap-2 py-4 sm:grid-cols-3 sm:gap-3">
+					{mortgageTypeOptions.map((option) => (
+						<CheckboxRoot
+							checked={draftFilters.mortgageTypes.includes(option.value)}
+							className="relative rounded-lg px-2 py-2 text-center text-muted-foreground ring-[1px] ring-border transition-all data-[state=checked]:text-primary data-[state=checked]:ring-2 data-[state=checked]:ring-primary sm:px-4 sm:py-3"
+							key={option.value}
+							onCheckedChange={() => handleMortgageTypeToggle(option.value)}
+						>
+							<div className="flex flex-col items-center gap-2">
+								<span className="font-semibold text-2xl">{option.label}</span>
+								<span
+									aria-hidden="true"
+									className="font-medium text-sm tracking-tight"
+								>
+									{option.displayLabel}
+								</span>
+							</div>
+							<CheckboxIndicator className="absolute top-2 right-2">
+								<CircleCheck className="h-5 w-5 fill-primary text-primary-foreground" />
+							</CheckboxIndicator>
+						</CheckboxRoot>
+					))}
+				</div>
+			</div>
+
+			<Separator />
+
+			<div className="space-y-2">
+				<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg max-sm:justify-start max-sm:text-left max-sm:font-semibold max-sm:text-[12px] max-sm:uppercase sm:text-xl">
+					<Building className="h-5 w-5" />
+					Property Type
+				</h2>
+				<div className="grid grid-cols-1 items-center justify-center gap-2 py-4 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4">
+					{propertyTypeOptions.map((option) => (
+						<CheckboxRoot
+							checked={draftFilters.propertyTypes.includes(option.value)}
+							className="relative h-16 rounded-lg px-4 py-3 text-center text-muted-foreground ring-[1px] ring-border transition-all data-[state=checked]:text-primary data-[state=checked]:ring-2 data-[state=checked]:ring-primary"
+							key={option.value}
+							onCheckedChange={() => handlePropertyTypeToggle(option.value)}
+						>
+							<div className="flex h-full flex-col items-center justify-center gap-2">
+								<PropertyTypeIcon type={option.value} />
+								<span className="font-semibold text-xs leading-tight sm:text-sm">
+									{option.label}
+								</span>
+							</div>
+							<CheckboxIndicator className="absolute top-2 right-2">
+								<CircleCheck className="h-4 w-4 fill-primary text-primary-foreground" />
+							</CheckboxIndicator>
+						</CheckboxRoot>
+					))}
+				</div>
+			</div>
+
+			<Separator />
+
+			<div className="space-y-2">
+				<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg max-sm:justify-start max-sm:text-left max-sm:font-semibold max-sm:text-[12px] max-sm:uppercase sm:text-xl">
+					<Calendar className="h-5 w-5" />
+					Maturity Date
+				</h2>
+				<div className="flex justify-center">
+					<DatePicker
+						date={draftFilters.maturityDate}
+						onDateChange={(date) =>
+							setDraftFilters((current) => ({
+								...current,
+								maturityDate: date,
+							}))
+						}
+					/>
+				</div>
+			</div>
+		</div>
+	);
+	const filterActions = (
+		<>
+			<Button onClick={() => setIsOpen(false)} size="sm" variant="outline">
+				Close
+			</Button>
+			{hasActiveFilters ? (
+				<Button onClick={handleClearFilters} size="sm" variant="destructive">
+					<X className="mr-2 h-4 w-4" />
+					Clear Filters
+				</Button>
+			) : null}
+			<Button
+				onClick={() => {
+					onFiltersChange(draftFilters);
+					setIsOpen(false);
+				}}
+				size="sm"
+			>
+				Apply
+			</Button>
+		</>
+	);
+
+	if (isMobile) {
+		return (
+			<Drawer onOpenChange={handleOpenChange} open={isOpen}>
+				<DrawerTrigger asChild>
+					<FilterTriggerButton />
+				</DrawerTrigger>
+				<TooltipProvider delayDuration={0}>
+					<DrawerContent className="h-[86dvh] max-h-[86dvh] rounded-t-[22px]">
+						<DrawerHeader className="px-4 pt-2 pb-3 text-left">
+							<DrawerTitle className="text-center font-medium text-[17px]">
+								Filters
+							</DrawerTitle>
+							<DrawerDescription className="sr-only">
+								Adjust investor listing filters by LTV, rate, principal,
+								mortgage type, property type, and maturity date.
+							</DrawerDescription>
+						</DrawerHeader>
+						<div className="min-h-0 flex-1 overflow-y-auto">
+							{filterSections}
+						</div>
+						<DrawerFooter className="border-t bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+							{filterActions}
+						</DrawerFooter>
+					</DrawerContent>
+				</TooltipProvider>
+			</Drawer>
+		);
+	}
+
 	return (
 		<Dialog onOpenChange={handleOpenChange} open={isOpen}>
 			<DialogTrigger asChild>
-				<Button className="rounded-full" size="lg" variant="outline">
-					Filters
-					<Filter className="ml-2 h-4 w-4" />
-				</Button>
+				<FilterTriggerButton />
 			</DialogTrigger>
 			<TooltipProvider delayDuration={0}>
-				<DialogContent className="z-[101] max-h-[80vh] min-w-[300px] max-w-[calc(100vw-1rem)] overflow-y-auto px-2 sm:max-w-4xl sm:px-6">
+				<DialogContent
+					className="z-[101] max-h-[80vh] min-w-[300px] max-w-4xl overflow-y-auto px-6"
+					showCloseButton={false}
+				>
 					<DialogHeader>
 						<DialogTitle className="text-center font-medium text-2xl">
 							Filters
@@ -247,212 +498,10 @@ export default function FilterModal({
 						</DialogDescription>
 					</DialogHeader>
 
-					<div className="flex flex-col gap-3 px-1 py-1 sm:px-0">
-						<Separator />
-
-						<div className="space-y-2">
-							<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg sm:text-xl">
-								<Percent className="h-5 w-5" />
-								LTV
-							</h2>
-							<div className="relative z-[105] w-full overflow-x-hidden">
-								<RangeSliderWithHistogram
-									className="w-full"
-									defaultValue={draftFilters.ltvRange}
-									formatValue={(value) => `${value}%`}
-									histogramData={ltvHistogram}
-									max={FILTER_BOUNDS.ltvRange[1]}
-									min={FILTER_BOUNDS.ltvRange[0]}
-									onValueChange={(values) =>
-										setDraftFilters((current) => ({
-											...current,
-											ltvRange: values,
-										}))
-									}
-									showCard={false}
-									showTitle={false}
-									step={1}
-									targetBarCount={20}
-									variant="compact"
-								/>
-							</div>
-						</div>
-
-						<Separator />
-
-						<div className="space-y-2">
-							<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg sm:text-xl">
-								<TrendingUp className="h-5 w-5" />
-								Interest Rate
-							</h2>
-							<div className="relative z-[105] w-full overflow-x-hidden">
-								<RangeSliderWithHistogram
-									className="w-full"
-									defaultValue={draftFilters.interestRateRange}
-									formatValue={(value) => `${value}%`}
-									histogramData={aprHistogram}
-									max={FILTER_BOUNDS.interestRateRange[1]}
-									min={FILTER_BOUNDS.interestRateRange[0]}
-									onValueChange={(values) =>
-										setDraftFilters((current) => ({
-											...current,
-											interestRateRange: values,
-										}))
-									}
-									showCard={false}
-									showTitle={false}
-									step={0.1}
-									targetBarCount={20}
-									variant="compact"
-								/>
-							</div>
-						</div>
-
-						<Separator />
-
-						<div className="space-y-2">
-							<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg sm:text-xl">
-								<DollarSign className="h-5 w-5" />
-								Principal
-							</h2>
-							<div className="relative z-[105] w-full overflow-x-hidden">
-								<RangeSliderWithHistogram
-									className="w-full"
-									defaultValue={draftFilters.principalRange}
-									formatValue={(value) => `$${value.toLocaleString()}`}
-									histogramData={principalHistogram}
-									max={FILTER_BOUNDS.principalRange[1]}
-									min={FILTER_BOUNDS.principalRange[0]}
-									onValueChange={(values) =>
-										setDraftFilters((current) => ({
-											...current,
-											principalRange: values,
-										}))
-									}
-									showCard={false}
-									showTitle={false}
-									step={10_000}
-									targetBarCount={20}
-									variant="compact"
-								/>
-							</div>
-						</div>
-
-						<Separator />
-
-						<div className="space-y-2">
-							<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg sm:text-xl">
-								<FileText className="h-5 w-5" />
-								Mortgage Type
-							</h2>
-							<div className="grid grid-cols-1 items-center justify-center gap-2 py-4 sm:grid-cols-3 sm:gap-3">
-								{mortgageTypeOptions.map((option) => (
-									<CheckboxRoot
-										checked={draftFilters.mortgageTypes.includes(option.value)}
-										className="relative rounded-lg px-2 py-2 text-center text-muted-foreground ring-[1px] ring-border transition-all data-[state=checked]:text-primary data-[state=checked]:ring-2 data-[state=checked]:ring-primary sm:px-4 sm:py-3"
-										key={option.value}
-										onCheckedChange={() =>
-											handleMortgageTypeToggle(option.value)
-										}
-									>
-										<div className="flex flex-col items-center gap-2">
-											<span className="font-semibold text-2xl">
-												{option.label}
-											</span>
-											<span
-												aria-hidden="true"
-												className="font-medium text-sm tracking-tight"
-											>
-												{option.displayLabel}
-											</span>
-										</div>
-										<CheckboxIndicator className="absolute top-2 right-2">
-											<CircleCheck className="h-5 w-5 fill-primary text-primary-foreground" />
-										</CheckboxIndicator>
-									</CheckboxRoot>
-								))}
-							</div>
-						</div>
-
-						<Separator />
-
-						<div className="space-y-2">
-							<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg sm:text-xl">
-								<Building className="h-5 w-5" />
-								Property Type
-							</h2>
-							<div className="grid grid-cols-1 items-center justify-center gap-2 py-4 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4">
-								{propertyTypeOptions.map((option) => (
-									<CheckboxRoot
-										checked={draftFilters.propertyTypes.includes(option.value)}
-										className="relative h-16 rounded-lg px-4 py-3 text-center text-muted-foreground ring-[1px] ring-border transition-all data-[state=checked]:text-primary data-[state=checked]:ring-2 data-[state=checked]:ring-primary"
-										key={option.value}
-										onCheckedChange={() =>
-											handlePropertyTypeToggle(option.value)
-										}
-									>
-										<div className="flex h-full flex-col items-center justify-center gap-2">
-											<PropertyTypeIcon type={option.value} />
-											<span className="font-semibold text-xs leading-tight sm:text-sm">
-												{option.label}
-											</span>
-										</div>
-										<CheckboxIndicator className="absolute top-2 right-2">
-											<CircleCheck className="h-4 w-4 fill-primary text-primary-foreground" />
-										</CheckboxIndicator>
-									</CheckboxRoot>
-								))}
-							</div>
-						</div>
-
-						<Separator />
-
-						<div className="space-y-2">
-							<h2 className="flex items-center justify-center gap-2 text-center font-medium text-foreground/50 text-lg sm:text-xl">
-								<Calendar className="h-5 w-5" />
-								Maturity Date
-							</h2>
-							<div className="flex justify-center">
-								<DatePicker
-									date={draftFilters.maturityDate}
-									onDateChange={(date) =>
-										setDraftFilters((current) => ({
-											...current,
-											maturityDate: date,
-										}))
-									}
-								/>
-							</div>
-						</div>
-					</div>
+					{filterSections}
 
 					<DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-						<Button
-							onClick={() => setIsOpen(false)}
-							size="sm"
-							variant="outline"
-						>
-							Close
-						</Button>
-						{hasActiveFilters ? (
-							<Button
-								onClick={handleClearFilters}
-								size="sm"
-								variant="destructive"
-							>
-								<X className="mr-2 h-4 w-4" />
-								Clear Filters
-							</Button>
-						) : null}
-						<Button
-							onClick={() => {
-								onFiltersChange(draftFilters);
-								setIsOpen(false);
-							}}
-							size="sm"
-						>
-							Apply
-						</Button>
+						{filterActions}
 					</DialogFooter>
 				</DialogContent>
 			</TooltipProvider>

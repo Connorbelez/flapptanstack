@@ -71,7 +71,7 @@ export function MarketplaceListingsPage({
 
 	const toolbar = (
 		<div className="space-y-3">
-			<div className="flex flex-wrap items-center gap-2">
+			<div className="hidden flex-wrap items-center gap-2 md:flex">
 				<Badge className="rounded-full px-3 py-1" variant="secondary">
 					{snapshot.page.length} opportunities
 				</Badge>
@@ -117,12 +117,25 @@ export function MarketplaceListingsPage({
 	}
 
 	return (
-		<div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-4 overflow-hidden">
-			<div className="shrink-0 space-y-3 px-4 sm:px-8">
-				<p className="font-medium text-[11px] text-muted-foreground uppercase tracking-[0.24em]">
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-4 overflow-hidden bg-[#F4F5F7] md:bg-transparent">
+			<div className="shrink-0 space-y-3 px-4 pt-3 sm:px-8 md:pt-0">
+				<div className="md:hidden">
+					<p className="font-semibold text-[11px] text-muted-foreground uppercase">
+						FairLend MIC
+					</p>
+					<div className="mt-0.5 flex items-end justify-between gap-3">
+						<h1 className="font-semibold text-[28px] leading-none tracking-normal">
+							Listings
+						</h1>
+						<Badge className="rounded-full px-3 py-1" variant="secondary">
+							{snapshot.page.length} live
+						</Badge>
+					</div>
+				</div>
+				<p className="hidden font-medium text-[11px] text-muted-foreground uppercase tracking-[0.24em] md:block">
 					{eyebrow}
 				</p>
-				<div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
+				<div className="hidden flex-col gap-2 md:flex xl:flex-row xl:items-end xl:justify-between">
 					<div className="space-y-2">
 						<h1 className="font-semibold text-3xl tracking-tight sm:text-4xl">
 							{heading}
@@ -151,20 +164,47 @@ export function MarketplaceListingsPage({
 					initialCenter: { lat: 43.6532, lng: -79.3832 },
 					initialZoom: 10,
 				}}
+				mobilePresentation="nativeList"
 				renderCard={(listing) => (
 					<Link
-						className="block"
+						className="block w-full min-w-0 max-w-full"
 						params={{ listingId: listing.id }}
 						search={{ checkout: undefined }}
 						to={detailRoute}
 					>
-						<Horizontal
-							address={listing.address}
-							apr={listing.apr}
-							imageSrc={listing.imageSrc}
-							principal={listing.principal}
-							title={listing.title}
-						/>
+						<div className="md:hidden">
+							<Horizontal
+								address={listing.address}
+								apr={listing.apr}
+								availablePercent={listing.availablePercent}
+								fractionsSummary={listing.fractionsSummary}
+								imageSrc={listing.imageSrc}
+								lockedPercent={listing.lockedPercent}
+								ltv={listing.ltv}
+								maturityDate={listing.maturityDate.toLocaleDateString("en-CA")}
+								principal={listing.principal}
+								propertyType={listing.propertyType}
+								soldPercent={listing.soldPercent}
+								title={listing.title}
+								variant="nativeMobile"
+							/>
+						</div>
+						<div className="hidden md:block">
+							<Horizontal
+								address={listing.address}
+								apr={listing.apr}
+								availablePercent={listing.availablePercent}
+								fractionsSummary={listing.fractionsSummary}
+								imageSrc={listing.imageSrc}
+								lockedPercent={listing.lockedPercent}
+								ltv={listing.ltv}
+								maturityDate={listing.maturityDate.toLocaleDateString("en-CA")}
+								principal={listing.principal}
+								propertyType={listing.propertyType}
+								soldPercent={listing.soldPercent}
+								title={listing.title}
+							/>
+						</div>
 					</Link>
 				)}
 				renderMapPopup={(listing) => (

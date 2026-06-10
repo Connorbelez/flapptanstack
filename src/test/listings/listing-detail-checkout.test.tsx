@@ -150,6 +150,41 @@ function firstCheckoutButton(): HTMLButtonElement {
 	})[0] as HTMLButtonElement;
 }
 
+describe("listing detail appraisal sections", () => {
+	it("does not render projected appraisal or as-if comparables without an as-if appraisal", () => {
+		const listing = getListing();
+
+		renderInteractiveListing({
+			listing: {
+				...listing,
+				appraisal: {
+					...listing.appraisal,
+					asIf: {
+						label: "Projected Value",
+						note: "No as-if-complete valuation has been published.",
+						value: "Unavailable",
+					},
+					hasAsIf: false,
+				},
+				comparables: {
+					...listing.comparables,
+					asIf: [],
+				},
+			},
+		});
+
+		expect(screen.queryByText("Projected Value")).toBeNull();
+		expect(screen.queryByText("Unavailable")).toBeNull();
+		expect(
+			screen.queryByText("No as-if-complete valuation has been published.")
+		).toBeNull();
+		expect(screen.queryByText("As-If Comparables")).toBeNull();
+		expect(
+			screen.queryByText("No comparable sales are published for this appraisal.")
+		).toBeNull();
+	});
+});
+
 describe("listing detail hosted checkout launcher", () => {
 	it("starts hosted checkout and redirects only to the returned URL", async () => {
 		const { onStartCheckout, redirectToHostedCheckout } =

@@ -116,6 +116,7 @@ import type * as deals_envelopeWebhooks from "../deals/envelopeWebhooks.js";
 import type * as deals_envelopes from "../deals/envelopes.js";
 import type * as deals_lawyerMutations from "../deals/lawyerMutations.js";
 import type * as deals_lawyerQueries from "../deals/lawyerQueries.js";
+import type * as deals_migrations from "../deals/migrations.js";
 import type * as deals_mutations from "../deals/mutations.js";
 import type * as deals_participantProjection from "../deals/participantProjection.js";
 import type * as deals_paymentProofs from "../deals/paymentProofs.js";
@@ -621,6 +622,7 @@ declare const fullApi: ApiFromModules<{
   "deals/envelopes": typeof deals_envelopes;
   "deals/lawyerMutations": typeof deals_lawyerMutations;
   "deals/lawyerQueries": typeof deals_lawyerQueries;
+  "deals/migrations": typeof deals_migrations;
   "deals/mutations": typeof deals_mutations;
   "deals/participantProjection": typeof deals_participantProjection;
   "deals/paymentProofs": typeof deals_paymentProofs;

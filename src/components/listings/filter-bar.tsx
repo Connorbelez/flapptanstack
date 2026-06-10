@@ -47,12 +47,12 @@ export function MarketplaceFilterBar({
 	return (
 		<div className="z-10 flex flex-col justify-center gap-x-4">
 			<div className="flex flex-nowrap items-center justify-start gap-2">
-				<div className="relative md:w-64">
-					<Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-foreground" />
+				<div className="relative min-w-0 flex-1 md:w-64 md:flex-none">
+					<Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground md:text-foreground" />
 					<Input
-						className="rounded-full border-input pl-10 shadow-md"
+						className="h-10 rounded-[14px] border-transparent bg-[#EEF0F3] pl-10 shadow-none placeholder:text-muted-foreground md:rounded-full md:border-input md:bg-background md:shadow-md"
 						onChange={handleSearchChange}
-						placeholder="Search ..."
+						placeholder="Search address, city, type"
 						type="text"
 						value={filters.searchQuery}
 					/>
@@ -67,7 +67,7 @@ export function MarketplaceFilterBar({
 				{hasActiveFilters ? (
 					<Button
 						aria-label="Clear filters"
-						className="px-2"
+						className="h-10 rounded-[14px] px-2 md:rounded-md"
 						onClick={handleClearFilters}
 						size="sm"
 						variant="destructive"

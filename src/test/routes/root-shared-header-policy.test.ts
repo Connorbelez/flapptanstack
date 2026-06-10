@@ -52,4 +52,13 @@ describe("root shared header policy", () => {
 			shouldRenderSharedHeader({ pathname: "/", portalContext: marketingContext })
 		).toBe(true);
 	});
+
+	it("suppresses shared app chrome on e2e routes", () => {
+		expect(
+			shouldRenderSharedHeader({
+				pathname: "/e2e/marketplace-listings-mobile",
+				portalContext: marketingContext,
+			})
+		).toBe(false);
+	});
 });

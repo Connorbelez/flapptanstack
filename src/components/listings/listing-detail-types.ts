@@ -156,6 +156,7 @@ export interface ListingDetailData {
 	appraisal: {
 		asIf: ListingAppraisalRecord;
 		asIs: ListingAppraisalRecord;
+		hasAsIf?: boolean;
 	};
 	atAGlance: ListingAtAGlanceItem[];
 	badges: ListingBadge[];

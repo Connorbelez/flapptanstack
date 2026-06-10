@@ -94,7 +94,7 @@ const RangeSliderWithHistogram: React.FC<RangeSliderWithHistogramProps> = ({
 	const valueClass = isCompact
 		? "font-medium text-primary text-sm"
 		: "text-primary text-xl";
-	const histogramHeight = isCompact ? "h-28" : "h-32";
+	const histogramHeight = isCompact ? "h-14 sm:h-28" : "h-32";
 
 	return (
 		<TooltipProvider delayDuration={0}>

@@ -134,6 +134,10 @@ function asArray(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];
 }
 
+function readArray<T>(value: readonly T[] | null | undefined): readonly T[] {
+	return Array.isArray(value) ? value : [];
+}
+
 function readString(value: unknown): string | null {
 	return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
@@ -187,7 +191,8 @@ function buildBadges(detail: NonNullable<MarketplaceListingDetailSnapshot>) {
 function buildHeroImages(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>
 ): ListingHeroImage[] {
-	if (detail.listing.heroImages.length === 0) {
+	const heroImages = readArray(detail.listing.heroImages);
+	if (heroImages.length === 0) {
 		return [
 			{
 				alt: detail.listing.title,
@@ -199,7 +204,7 @@ function buildHeroImages(
 		];
 	}
 
-	return detail.listing.heroImages.map((image, index) => ({
+	return heroImages.map((image, index) => ({
 		alt: image.caption ?? detail.listing.title,
 		id: image.id,
 		label: image.caption ?? `Photo ${index + 1}`,
@@ -211,7 +216,7 @@ function buildHeroImages(
 function buildComparables(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>
 ): ListingDetailData["comparables"] {
-	const latestAppraisal = detail.appraisals[0];
+	const latestAppraisal = readArray(detail.appraisals)[0];
 	const rows: ListingComparable[] = (latestAppraisal?.comparables ?? []).map(
 		(comparable) => ({
 			address: comparable.address,
@@ -473,7 +478,7 @@ function normalizePaymentHistoryMonthStatus(
 function buildDocuments(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>
 ): ListingDocumentItem[] {
-	return detail.documents.map((document) => ({
+	return readArray(detail.documents).map((document) => ({
 		assetId: String(document.assetId),
 		contentType: document.contentType ?? null,
 		description: document.description,
@@ -489,7 +494,7 @@ function buildDocuments(
 function buildSimilarListings(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>
 ): ListingSimilarCard[] {
-	return detail.similarListings.map((listing, index) => ({
+	return readArray(detail.similarListings).map((listing, index) => ({
 		badges: [
 			{
 				id: `${listing.id}-mortgage-type`,
@@ -518,7 +523,7 @@ function buildCheckoutContract(
 	const availableFractions = wholeDecilesFromLedger(
 		detail.investment.availableFractions
 	);
-	if (availableFractions <= 0) {
+	if (!detail.investment.checkoutReady || availableFractions <= 0) {
 		return undefined;
 	}
 
@@ -529,7 +534,7 @@ function buildCheckoutContract(
 		disabledReason:
 			availableFractions > 0 ? null : "No fractions are currently available.",
 		isEligible: availableFractions > 0,
-		lawyers: detail.lawyers.map((lawyer) => ({
+		lawyers: readArray(detail.lawyers).map((lawyer) => ({
 			activeDealCount: lawyer.activeDealCount ?? 0,
 			availability: [...(lawyer.availability ?? [])],
 			barNumber: lawyer.barNumber,
@@ -566,7 +571,7 @@ function buildCheckoutContract(
 export function buildMarketplaceListingDetailModel(
 	detail: NonNullable<MarketplaceListingDetailSnapshot>
 ): ListingDetailData {
-	const latestAppraisal = detail.appraisals[0];
+	const latestAppraisal = readArray(detail.appraisals)[0];
 	const availableLedger = detail.investment.availableFractions;
 	const totalLedger = detail.investment.totalFractions;
 	const totalDecilesExact = ledgerUnitsToDecilesExact(totalLedger);
@@ -576,18 +581,23 @@ export function buildMarketplaceListingDetailModel(
 	);
 	const availableDecilesWhole = wholeDecilesFromLedger(availableLedger);
 	const totalDecilesWhole = wholeDecilesFromLedger(totalLedger);
-	const encumbranceCount = detail.encumbrances.length;
+	const encumbranceCount = readArray(detail.encumbrances).length;
 	const positionLabel = ordinal(detail.listing.lienPosition);
+	const valueAsIfComplete = latestAppraisal?.valueAsIfComplete;
+	const asIfAppraisal =
+		latestAppraisal != null && valueAsIfComplete != null
+			? { appraisal: latestAppraisal, value: valueAsIfComplete }
+			: null;
 
 	return {
 		appraisal: {
-			asIf: latestAppraisal?.valueAsIfComplete
+			asIf: asIfAppraisal
 				? {
 						label: "As-If Complete",
 						note: "Projected value from the latest published appraisal package.",
 						secondaryLabel: "Effective",
-						secondaryValue: formatDate(latestAppraisal.effectiveDate),
-						value: formatCentsAsCurrency(latestAppraisal.valueAsIfComplete),
+						secondaryValue: formatDate(asIfAppraisal.appraisal.effectiveDate),
+						value: formatCentsAsCurrency(asIfAppraisal.value),
 					}
 				: {
 						label: "Projected Value",
@@ -608,6 +618,7 @@ export function buildMarketplaceListingDetailModel(
 						note: "No appraisal has been published for this listing.",
 						value: "Unavailable",
 					},
+			hasAsIf: asIfAppraisal != null,
 		},
 		atAGlance: [
 			{

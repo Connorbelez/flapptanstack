@@ -6,9 +6,11 @@
  *
  * Uses convex-test with direct DB seeding (no full seed pipeline).
  */
+import { makeFunctionReference } from "convex/server";
 import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { assert, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestConvex } from "../../../src/test/auth/helpers";
 import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
@@ -17,6 +19,37 @@ import { convexModules } from "../../test/moduleMaps";
 
 // ── Module glob ─────────────────────────────────────────────────────
 const modules = convexModules;
+
+const runClearLegacyDealAccessProjectionFieldsRef = makeFunctionReference<
+	"mutation",
+	Record<string, never>,
+	null
+>("deals/migrations:runClearLegacyDealAccessProjectionFields");
+
+const getLegacyDealAccessProjectionFieldStatusRef = makeFunctionReference<
+	"query",
+	Record<string, never>,
+	{
+		dealAccessCount: number;
+		legacyProjectionFieldCount: number;
+		legacyProjectionFieldIds: Id<"dealAccess">[];
+	}
+>("deals/migrations:getLegacyDealAccessProjectionFieldStatus");
+
+const runNormalizeLegacyDealPaymentProofSubmitterRolesRef =
+	makeFunctionReference<"mutation", Record<string, never>, null>(
+		"deals/migrations:runNormalizeLegacyDealPaymentProofSubmitterRoles"
+	);
+
+const getLegacyDealPaymentProofSubmitterRoleStatusRef = makeFunctionReference<
+	"query",
+	Record<string, never>,
+	{
+		dealPaymentProofCount: number;
+		legacySubmitterRoleCount: number;
+		legacySubmitterRoleIds: Id<"dealPaymentProofs">[];
+	}
+>("deals/migrations:getLegacyDealPaymentProofSubmitterRoleStatus");
 
 // ── Identity fixtures ───────────────────────────────────────────────
 const ADMIN_IDENTITY = {
@@ -363,6 +396,101 @@ describe("dealAccess mutations", () => {
 			assert(record, "dealAccess record should exist");
 			expect(record.status).toBe("revoked");
 		});
+	});
+});
+
+describe("dealAccess migrations", () => {
+	it("clears legacy projection fields from dealAccess rows", async () => {
+		const t = createTestConvex();
+		const seed = await seedDealWithLawyer(t);
+		const legacyAccessId = await t.run(async (ctx) => {
+			return await ctx.db.insert("dealAccess", {
+				userId: "legacy-broker-auth",
+				dealId: seed.dealId,
+				role: "broker_of_record",
+				grantedAt: Date.now(),
+				grantedBy: "legacy-seed",
+				status: "active",
+				lawyerSource: "guest_lawyer",
+				persona: "broker_of_record",
+			});
+		});
+		const asAdmin = t.withIdentity(ADMIN_IDENTITY);
+
+		expect(
+			await asAdmin.query(getLegacyDealAccessProjectionFieldStatusRef, {})
+		).toMatchObject({
+			dealAccessCount: 1,
+			legacyProjectionFieldCount: 1,
+			legacyProjectionFieldIds: [legacyAccessId],
+		});
+
+		await asAdmin.mutation(runClearLegacyDealAccessProjectionFieldsRef, {});
+
+		expect(
+			await asAdmin.query(getLegacyDealAccessProjectionFieldStatusRef, {})
+		).toMatchObject({
+			dealAccessCount: 1,
+			legacyProjectionFieldCount: 0,
+			legacyProjectionFieldIds: [],
+		});
+		const record = await t.run(async (ctx) => ctx.db.get(legacyAccessId));
+		expect(record?.lawyerSource).toBeUndefined();
+		expect(record?.persona).toBeUndefined();
+	});
+
+	it("normalizes legacy primary lawyer payment proof submitter roles", async () => {
+		const t = createTestConvex();
+		const seed = await seedDealWithLawyer(t);
+		const proofId = await t.run(async (ctx) => {
+			await ctx.db.insert("dealAccess", {
+				userId: "legacy-lawyer-auth",
+				dealId: seed.dealId,
+				role: "guest_lawyer",
+				grantedAt: Date.now(),
+				grantedBy: "legacy-seed",
+				status: "active",
+			});
+			return await ctx.db.insert("dealPaymentProofs", {
+				dealId: seed.dealId,
+				submittedBy: "legacy-lawyer-auth",
+				submittedByPersona: "primary_lawyer",
+				submittedByRole: "primary_lawyer",
+				status: "pending_review",
+				amount: 125_000,
+				currency: "CAD",
+				transferDate: Date.now(),
+				sendingParty: "Legacy Lawyer",
+				attachmentIds: [],
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+		});
+		const asAdmin = t.withIdentity(ADMIN_IDENTITY);
+
+		expect(
+			await asAdmin.query(getLegacyDealPaymentProofSubmitterRoleStatusRef, {})
+		).toMatchObject({
+			dealPaymentProofCount: 1,
+			legacySubmitterRoleCount: 1,
+			legacySubmitterRoleIds: [proofId],
+		});
+
+		await asAdmin.mutation(
+			runNormalizeLegacyDealPaymentProofSubmitterRolesRef,
+			{}
+		);
+
+		expect(
+			await asAdmin.query(getLegacyDealPaymentProofSubmitterRoleStatusRef, {})
+		).toMatchObject({
+			dealPaymentProofCount: 1,
+			legacySubmitterRoleCount: 0,
+			legacySubmitterRoleIds: [],
+		});
+		const proof = await t.run(async (ctx) => ctx.db.get(proofId));
+		expect(proof?.submittedByPersona).toBeUndefined();
+		expect(proof?.submittedByRole).toBe("guest_lawyer");
 	});
 });
 

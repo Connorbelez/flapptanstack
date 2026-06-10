@@ -255,6 +255,30 @@ describe("root route blocked-host handling", () => {
 		});
 	});
 
+	it("allows e2e routes to pass through the blocked-host guard", async () => {
+		fetchWorkosAuthMock.mockResolvedValue(buildFetchWorkosAuthResult());
+
+		const rootRouteModule = await import("#/routes/__root");
+
+		await expect(
+			rootRouteModule.Route.options.beforeLoad?.({
+				context: {
+					convexQueryClient: {
+						serverHttpClient: {
+							setAuth: vi.fn(),
+						},
+					},
+					setPortalCacheScope: vi.fn(),
+				},
+				location: { pathname: "/e2e/marketplace-listings-mobile" },
+			} as never)
+		).resolves.toMatchObject({
+			portalContext: {
+				kind: "unknown",
+			},
+		});
+	});
+
 	it("redirects marketing-host portal routes to the host boundary before child loaders run", async () => {
 		fetchWorkosAuthMock.mockResolvedValue(buildMarketingFetchWorkosAuthResult());
 

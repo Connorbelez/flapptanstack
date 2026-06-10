@@ -244,6 +244,8 @@ describe("marketplace listing detail adapter", () => {
 			value: "$450,000",
 		});
 		expect(model.appraisal.asIs.value).toBe("$675,000");
+		expect(model.appraisal.hasAsIf).toBe(true);
+		expect(model.appraisal.asIf.value).toBe("$705,000");
 		expect(model.keyFinancials).toContainEqual({
 			label: "Monthly Payment",
 			note: "Monthly",
@@ -273,7 +275,25 @@ describe("marketplace listing detail adapter", () => {
 		]);
 	});
 
-	it("keeps the lock workflow visible when provider readiness is false but fractions are available", () => {
+	it("marks the as-if appraisal unpublished when no as-if valuation exists", () => {
+		const detail = createDetailSnapshot();
+		const model = buildMarketplaceListingDetailModel({
+			...detail,
+			appraisals: detail.appraisals.map((appraisal) => ({
+				...appraisal,
+				valueAsIfComplete: null,
+			})),
+		});
+
+		expect(model.appraisal.hasAsIf).toBe(false);
+		expect(model.appraisal.asIf).toMatchObject({
+			label: "Projected Value",
+			note: "No as-if-complete valuation has been published.",
+			value: "Unavailable",
+		});
+	});
+
+	it("hides the lock workflow when provider readiness is false even if fractions are available", () => {
 		const detail = createDetailSnapshot();
 		const model = buildMarketplaceListingDetailModel({
 			...detail,
@@ -283,9 +303,22 @@ describe("marketplace listing detail adapter", () => {
 			},
 		});
 
+		expect(model.checkout).toBeUndefined();
+	});
+
+	it("keeps checkout renderable when a stale marketplace snapshot omits lawyers", () => {
+		const detail = createDetailSnapshot();
+		const snapshotWithoutLawyers: Record<string, unknown> = { ...detail };
+		delete snapshotWithoutLawyers.lawyers;
+
+		const model = buildMarketplaceListingDetailModel(
+			snapshotWithoutLawyers as NonNullable<MarketplaceListingDetailSnapshot>
+		);
+
 		expect(model.checkout).toMatchObject({
 			defaultFractions: 1,
 			isEligible: true,
+			lawyers: [],
 			maximumFractions: 4,
 			minimumFractions: 1,
 		});

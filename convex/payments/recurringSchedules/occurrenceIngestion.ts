@@ -66,11 +66,12 @@ function shouldApplyProviderMirrorUpdate(args: {
 }
 
 function canReplaceTransferProviderRef(args: {
-	providerRef?: string;
+	providerRef?: string | null;
 	transferId: Id<"transferRequests">;
 }) {
 	return (
 		args.providerRef === undefined ||
+		args.providerRef === null ||
 		args.providerRef === `provider-managed:${args.transferId}`
 	);
 }

@@ -484,9 +484,17 @@ export const createDispersalEntries = internalMutation({
 		const ledgerMortgageId = mortgage.simulationId ?? String(args.mortgageId);
 		const activePositions = await loadActivePositions(ctx, ledgerMortgageId);
 		if (activePositions.length === 0) {
-			throw new ConvexError(
-				`createDispersalEntries: no active positions for mortgage ${args.mortgageId}`
+			if (existingFee || existingEntries.length > 0) {
+				return buildReplayResult(existingEntries, existingFee);
+			}
+			console.warn(
+				`[createDispersalEntries] Skipping dispersal for mortgage=${args.mortgageId}; no active lender positions found.`
 			);
+			return {
+				created: false,
+				entries: [],
+				servicingFeeEntryId: null,
+			};
 		}
 
 		const reroutesAppliedCount = await applyDealReroutes(

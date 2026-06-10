@@ -44,6 +44,7 @@ import { Route as FinancingPreApprovalRouteImport } from './routes/financing.pre
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
 import { Route as E2eSessionRouteImport } from './routes/e2e/session'
 import { Route as E2eMarketplacePublicDocumentsRouteImport } from './routes/e2e/marketplace-public-documents'
+import { Route as E2eMarketplaceListingsMobileRouteImport } from './routes/e2e/marketplace-listings-mobile'
 import { Route as DemoWorkosRouteImport } from './routes/demo/workos'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoTableRouteImport } from './routes/demo/table'
@@ -353,6 +354,12 @@ const E2eMarketplacePublicDocumentsRoute =
   E2eMarketplacePublicDocumentsRouteImport.update({
     id: '/e2e/marketplace-public-documents',
     path: '/e2e/marketplace-public-documents',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const E2eMarketplaceListingsMobileRoute =
+  E2eMarketplaceListingsMobileRouteImport.update({
+    id: '/e2e/marketplace-listings-mobile',
+    path: '/e2e/marketplace-listings-mobile',
     getParentRoute: () => rootRouteImport,
   } as any)
 const DemoWorkosRoute = DemoWorkosRouteImport.update({
@@ -1150,6 +1157,7 @@ export interface FileRoutesByFullPath {
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/e2e/marketplace-listings-mobile': typeof E2eMarketplaceListingsMobileRoute
   '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
@@ -1306,6 +1314,7 @@ export interface FileRoutesByTo {
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/e2e/marketplace-listings-mobile': typeof E2eMarketplaceListingsMobileRoute
   '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
@@ -1477,6 +1486,7 @@ export interface FileRoutesById {
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/e2e/marketplace-listings-mobile': typeof E2eMarketplaceListingsMobileRoute
   '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
@@ -1650,6 +1660,7 @@ export interface FileRouteTypes {
     | '/demo/table'
     | '/demo/tanstack-query'
     | '/demo/workos'
+    | '/e2e/marketplace-listings-mobile'
     | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
@@ -1806,6 +1817,7 @@ export interface FileRouteTypes {
     | '/demo/table'
     | '/demo/tanstack-query'
     | '/demo/workos'
+    | '/e2e/marketplace-listings-mobile'
     | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
@@ -1976,6 +1988,7 @@ export interface FileRouteTypes {
     | '/demo/table'
     | '/demo/tanstack-query'
     | '/demo/workos'
+    | '/e2e/marketplace-listings-mobile'
     | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
@@ -2129,6 +2142,7 @@ export interface RootRouteChildren {
   DemoTableRoute: typeof DemoTableRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   DemoWorkosRoute: typeof DemoWorkosRoute
+  E2eMarketplaceListingsMobileRoute: typeof E2eMarketplaceListingsMobileRoute
   E2eMarketplacePublicDocumentsRoute: typeof E2eMarketplacePublicDocumentsRoute
   E2eSessionRoute: typeof E2eSessionRoute
   E2eSwitchOrgRoute: typeof E2eSwitchOrgRoute
@@ -2383,6 +2397,13 @@ declare module '@tanstack/react-router' {
       path: '/e2e/marketplace-public-documents'
       fullPath: '/e2e/marketplace-public-documents'
       preLoaderRoute: typeof E2eMarketplacePublicDocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/e2e/marketplace-listings-mobile': {
+      id: '/e2e/marketplace-listings-mobile'
+      path: '/e2e/marketplace-listings-mobile'
+      fullPath: '/e2e/marketplace-listings-mobile'
+      preLoaderRoute: typeof E2eMarketplaceListingsMobileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/workos': {
@@ -3944,6 +3965,7 @@ const rootRouteChildren: RootRouteChildren = {
   DemoTableRoute: DemoTableRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   DemoWorkosRoute: DemoWorkosRoute,
+  E2eMarketplaceListingsMobileRoute: E2eMarketplaceListingsMobileRoute,
   E2eMarketplacePublicDocumentsRoute: E2eMarketplacePublicDocumentsRoute,
   E2eSessionRoute: E2eSessionRoute,
   E2eSwitchOrgRoute: E2eSwitchOrgRoute,

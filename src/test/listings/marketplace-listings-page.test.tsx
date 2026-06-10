@@ -2,9 +2,10 @@
  * @vitest-environment jsdom
  */
 
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Horizontal } from "#/components/listings/listing-card-horizontal";
 import { MarketplaceListingsPage } from "#/components/listings/MarketplaceListingsPage";
 import { parseMarketplaceListingsSearch } from "#/components/listings/search";
 
@@ -15,16 +16,21 @@ vi.mock("#/components/listings/filter-modal", () => ({
 vi.mock("#/components/listings/ListingGridShell", () => ({
 	ListingGridShell: ({
 		items,
+		mobilePresentation,
 		renderCard,
 		toolbar,
 	}: {
 		items: Array<{ id: string }>;
+		mobilePresentation?: string;
 		renderCard: (item: { id: string }) => ReactNode;
 		toolbar?: ReactNode;
 	}) => (
 		<div>
 			{toolbar}
-			<div data-testid="listing-grid-shell">
+			<div
+				data-mobile-presentation={mobilePresentation}
+				data-testid="listing-grid-shell"
+			>
 				{items.map((item) => (
 					<div key={item.id}>{renderCard(item)}</div>
 				))}
@@ -58,6 +64,10 @@ vi.mock("@tanstack/react-router", async () => {
 			</a>
 		),
 	};
+});
+
+afterEach(() => {
+	cleanup();
 });
 
 describe("marketplace listings search", () => {
@@ -130,5 +140,32 @@ describe("marketplace listings page", () => {
 				"href"
 			)
 		).toBe("/listings/listing_1");
+		expect(screen.getByTestId("listing-grid-shell").dataset.mobilePresentation).toBe(
+			"nativeList"
+		);
+	});
+
+	it("renders the native mobile card variant with marketplace economics", () => {
+		render(
+			<Horizontal
+				address="Toronto, ON"
+				apr={9.6}
+				availablePercent={42}
+				fractionsSummary="4.2 / 10 fractions (10% each)"
+				ltv={0.64}
+				maturityDate="2027-04-30"
+				principal={240_000}
+				propertyType="Detached Home"
+				title="King West bridge opportunity"
+				variant="nativeMobile"
+			/>
+		);
+
+		expect(screen.getByText("King West bridge opportunity")).toBeTruthy();
+		expect(screen.getByText("64%")).toBeTruthy();
+		expect(screen.getByText("9.6%")).toBeTruthy();
+		expect(screen.getByText("$240K")).toBeTruthy();
+		expect(screen.getByText("$2K")).toBeTruthy();
+		expect(screen.getByText("42%")).toBeTruthy();
 	});
 });

@@ -253,6 +253,7 @@ export function ListingDetailPage({
 	const referenceLabel =
 		listing.referenceLabel ??
 		(listing.mlsId ? `MLS #${listing.mlsId}` : undefined);
+	const hasAsIfAppraisal = hasPublishedAsIfAppraisal(listing);
 
 	const parsedFractionInput = useMemo(() => {
 		const parsed = Number.parseInt(fractionInput, 10);
@@ -733,22 +734,24 @@ export function ListingDetailPage({
 							</div>
 						</WhiteSurface>
 
-						<WhiteSurface className="border-dashed px-5 py-5">
-							<div className="flex items-center gap-2">
-								<h2 className="font-semibold text-[22px] leading-none">
-									{listing.appraisal.asIf.label}
-								</h2>
-								<span className="font-semibold text-[10px] text-amber-800 uppercase tracking-[0.24em] dark:text-amber-400">
-									Projected
-								</span>
-							</div>
-							<p className="mt-4 font-semibold text-[40px] leading-none tracking-[-0.04em]">
-								{listing.appraisal.asIf.value}
-							</p>
-							<p className="mt-3 max-w-[24ch] text-foreground/90 text-sm leading-6">
-								{listing.appraisal.asIf.note}
-							</p>
-						</WhiteSurface>
+						{hasAsIfAppraisal ? (
+							<WhiteSurface className="border-dashed px-5 py-5">
+								<div className="flex items-center gap-2">
+									<h2 className="font-semibold text-[22px] leading-none">
+										{listing.appraisal.asIf.label}
+									</h2>
+									<span className="font-semibold text-[10px] text-amber-800 uppercase tracking-[0.24em] dark:text-amber-400">
+										Projected
+									</span>
+								</div>
+								<p className="mt-4 font-semibold text-[40px] leading-none tracking-[-0.04em]">
+									{listing.appraisal.asIf.value}
+								</p>
+								<p className="mt-3 max-w-[24ch] text-foreground/90 text-sm leading-6">
+									{listing.appraisal.asIf.note}
+								</p>
+							</WhiteSurface>
+						) : null}
 					</div>
 				</ListingScrollReveal>
 
@@ -1025,11 +1028,24 @@ function DesktopFinancials({ listing }: { listing: ListingDetailData }) {
 	);
 }
 
+function hasPublishedAsIfAppraisal(listing: ListingDetailData) {
+	return (
+		listing.appraisal.hasAsIf ?? listing.appraisal.asIf.value !== "Unavailable"
+	);
+}
+
 function DesktopAppraisal({ listing }: { listing: ListingDetailData }) {
+	const hasAsIfAppraisal = hasPublishedAsIfAppraisal(listing);
+
 	return (
 		<ListingScrollReveal className="px-16 pt-10">
 			<SectionLabel>Appraisal</SectionLabel>
-			<div className="mt-5 grid grid-cols-[minmax(0,1fr)_320px] gap-6">
+			<div
+				className={cn(
+					"mt-5 grid gap-6",
+					hasAsIfAppraisal ? "grid-cols-[minmax(0,1fr)_320px]" : "grid-cols-1"
+				)}
+			>
 				<WhiteSurface className="px-7 py-6">
 					<div className="flex items-start justify-between">
 						<div>
@@ -1060,40 +1076,51 @@ function DesktopAppraisal({ listing }: { listing: ListingDetailData }) {
 					</div>
 				</WhiteSurface>
 
-				<WhiteSurface className="border-dashed px-6 py-6">
-					<div className="flex items-center gap-2">
-						<h2 className="font-semibold text-[24px]">
-							{listing.appraisal.asIf.label}
-						</h2>
-						<span className="font-semibold text-[10px] text-amber-800 uppercase tracking-[0.24em] dark:text-amber-400">
-							Projected
-						</span>
-					</div>
-					<p className="mt-5 font-semibold text-[44px] leading-none tracking-[-0.04em]">
-						{listing.appraisal.asIf.value}
-					</p>
-					<p className="mt-4 text-foreground/90 text-sm leading-6">
-						{listing.appraisal.asIf.note}
-					</p>
-				</WhiteSurface>
+				{hasAsIfAppraisal ? (
+					<WhiteSurface className="border-dashed px-6 py-6">
+						<div className="flex items-center gap-2">
+							<h2 className="font-semibold text-[24px]">
+								{listing.appraisal.asIf.label}
+							</h2>
+							<span className="font-semibold text-[10px] text-amber-800 uppercase tracking-[0.24em] dark:text-amber-400">
+								Projected
+							</span>
+						</div>
+						<p className="mt-5 font-semibold text-[44px] leading-none tracking-[-0.04em]">
+							{listing.appraisal.asIf.value}
+						</p>
+						<p className="mt-4 text-foreground/90 text-sm leading-6">
+							{listing.appraisal.asIf.note}
+						</p>
+					</WhiteSurface>
+				) : null}
 			</div>
 		</ListingScrollReveal>
 	);
 }
 
 function DesktopComparables({ listing }: { listing: ListingDetailData }) {
+	const hasAsIfAppraisal = hasPublishedAsIfAppraisal(listing);
+
 	return (
 		<ListingScrollReveal className="px-16 pt-4">
-			<div className="grid grid-cols-2 gap-6">
+			<div
+				className={cn(
+					"grid gap-6",
+					hasAsIfAppraisal ? "grid-cols-2" : "grid-cols-1"
+				)}
+			>
 				<ComparableTable
 					rows={listing.comparables.asIs}
 					title="As-Is Comparables"
 				/>
-				<ComparableTable
-					projected
-					rows={listing.comparables.asIf}
-					title="As-If Comparables"
-				/>
+				{hasAsIfAppraisal ? (
+					<ComparableTable
+						projected
+						rows={listing.comparables.asIf}
+						title="As-If Comparables"
+					/>
+				) : null}
 			</div>
 		</ListingScrollReveal>
 	);
