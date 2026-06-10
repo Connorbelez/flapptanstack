@@ -160,7 +160,10 @@ export async function attachMarketplaceAvailabilityToListings(
 }
 
 export async function getListingAppraisalsByProperty(
-	ctx: { db: Pick<QueryCtx["db"], "query"> },
+	ctx: {
+		db: Pick<QueryCtx["db"], "get" | "query">;
+		storage: Pick<QueryCtx["storage"], "getUrl">;
+	},
 	propertyId: NonNullable<Doc<"listings">["propertyId"]>
 ) {
 	const appraisals = await ctx.db
@@ -187,11 +190,18 @@ export async function getListingAppraisalsByProperty(
 				.collect();
 
 			comparables.sort((left, right) => left.sortOrder - right.sortOrder);
+			const comparableEvidenceAssets = await Promise.all(
+				comparables.map((comparable) =>
+					resolveComparableEvidenceAssets(ctx, comparable.evidenceAssetIds)
+				)
+			);
 
 			return {
-				comparables: comparables.map((comparable) => ({
+				comparables: comparables.map((comparable, index) => ({
 					address: comparable.address,
 					adjustedValue: comparable.adjustedValue ?? null,
+					evidenceAssetIds: (comparable.evidenceAssetIds ?? []).map(String),
+					evidenceAssets: comparableEvidenceAssets[index] ?? [],
 					id: String(comparable._id),
 					propertyType: comparable.propertyType ?? null,
 					saleDate: comparable.saleDate ?? null,
@@ -209,6 +219,40 @@ export async function getListingAppraisalsByProperty(
 	);
 
 	return appraisalsWithComparables;
+}
+
+async function resolveComparableEvidenceAssets(
+	ctx: {
+		db: Pick<QueryCtx["db"], "get">;
+		storage: Pick<QueryCtx["storage"], "getUrl">;
+	},
+	evidenceAssetIds: readonly Doc<"documentAssets">["_id"][] | undefined
+) {
+	if (!evidenceAssetIds?.length) {
+		return [];
+	}
+
+	return (
+		await Promise.all(
+			evidenceAssetIds.map(async (assetId) => {
+				const asset = await ctx.db.get(assetId);
+				if (!asset) {
+					return null;
+				}
+
+				return {
+					assetId: String(asset._id),
+					contentType: asset.mimeType,
+					fileName: asset.originalFilename,
+					kind: asset.mimeType.startsWith("image/")
+						? ("image" as const)
+						: ("file" as const),
+					label: asset.name,
+					url: await ctx.storage.getUrl(asset.fileRef),
+				};
+			})
+		)
+	).filter((asset): asset is NonNullable<typeof asset> => asset !== null);
 }
 
 export async function getListingEncumbrancesByProperty(

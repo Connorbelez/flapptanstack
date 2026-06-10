@@ -92,6 +92,18 @@ function createDetailSnapshot(): NonNullable<MarketplaceListingDetailSnapshot> {
 					{
 						address: "12 Mercer Street",
 						adjustedValue: 65_500_000,
+						evidenceAssets: [
+							{
+								kind: "image",
+								label: "Comparable frontage",
+								url: "https://example.com/comparable-frontage.jpg",
+							},
+							{
+								kind: "file",
+								label: "Comparable MLS sheet",
+								url: "https://example.com/comparable-mls.pdf",
+							},
+						],
 						id: "comp-1",
 						propertyType: "Condo",
 						saleDate: "2026-02-14",
@@ -237,6 +249,9 @@ describe("marketplace listing detail adapter", () => {
 	it("builds a read-only listing detail model from the marketplace snapshot", () => {
 		const detail = createDetailSnapshot();
 		const model = buildMarketplaceListingDetailModel(detail);
+		const firstComparable = model.comparables.asIs[0] as unknown as {
+			evidenceAssets?: Array<{ kind: string; label: string; url: string }>;
+		};
 
 		expect(model.investment.availableFractions).toBe(4);
 		expect(model.investment.totalFractions).toBe(10);
@@ -271,6 +286,18 @@ describe("marketplace listing detail adapter", () => {
 		expect(model.appraisal.asIs.value).toBe("$675,000");
 		expect(model.appraisal.hasAsIf).toBe(true);
 		expect(model.appraisal.asIf.value).toBe("$705,000");
+		expect(firstComparable.evidenceAssets).toEqual([
+			{
+				kind: "image",
+				label: "Comparable frontage",
+				url: "https://example.com/comparable-frontage.jpg",
+			},
+			{
+				kind: "file",
+				label: "Comparable MLS sheet",
+				url: "https://example.com/comparable-mls.pdf",
+			},
+		]);
 		expect(model.keyFinancials).toContainEqual({
 			label: "Monthly Payment",
 			note: "Monthly",

@@ -80,6 +80,7 @@ import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminRotessaReconciliationRouteImport } from './routes/admin/rotessa-reconciliation'
 import { Route as AdminPaymentOperationsRouteImport } from './routes/admin/payment-operations'
 import { Route as AdminOriginationsRouteImport } from './routes/admin/originations'
+import { Route as AdminOfflinePaymentOperationsRouteImport } from './routes/admin/offline-payment-operations'
 import { Route as AdminFinancialLedgerRouteImport } from './routes/admin/financial-ledger'
 import { Route as AdminFeesRouteImport } from './routes/admin/fees'
 import { Route as AdminDocumentEngineRouteImport } from './routes/admin.document-engine'
@@ -541,6 +542,12 @@ const AdminOriginationsRoute = AdminOriginationsRouteImport.update({
   path: '/originations',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminOfflinePaymentOperationsRoute =
+  AdminOfflinePaymentOperationsRouteImport.update({
+    id: '/offline-payment-operations',
+    path: '/offline-payment-operations',
+    getParentRoute: () => AdminRouteRoute,
+  } as any)
 const AdminFinancialLedgerRoute = AdminFinancialLedgerRouteImport.update({
   id: '/financial-ledger',
   path: '/financial-ledger',
@@ -1122,6 +1129,7 @@ export interface FileRoutesByFullPath {
   '/admin/document-engine': typeof AdminDocumentEngineRouteWithChildren
   '/admin/fees': typeof AdminFeesRoute
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
+  '/admin/offline-payment-operations': typeof AdminOfflinePaymentOperationsRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
@@ -1280,6 +1288,7 @@ export interface FileRoutesByTo {
   '/admin/$entitytype': typeof AdminEntitytypeRouteWithChildren
   '/admin/fees': typeof AdminFeesRoute
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
+  '/admin/offline-payment-operations': typeof AdminOfflinePaymentOperationsRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
@@ -1451,6 +1460,7 @@ export interface FileRoutesById {
   '/admin/document-engine': typeof AdminDocumentEngineRouteWithChildren
   '/admin/fees': typeof AdminFeesRoute
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
+  '/admin/offline-payment-operations': typeof AdminOfflinePaymentOperationsRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
@@ -1625,6 +1635,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine'
     | '/admin/fees'
     | '/admin/financial-ledger'
+    | '/admin/offline-payment-operations'
     | '/admin/originations'
     | '/admin/payment-operations'
     | '/admin/rotessa-reconciliation'
@@ -1783,6 +1794,7 @@ export interface FileRouteTypes {
     | '/admin/$entitytype'
     | '/admin/fees'
     | '/admin/financial-ledger'
+    | '/admin/offline-payment-operations'
     | '/admin/originations'
     | '/admin/payment-operations'
     | '/admin/rotessa-reconciliation'
@@ -1953,6 +1965,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine'
     | '/admin/fees'
     | '/admin/financial-ledger'
+    | '/admin/offline-payment-operations'
     | '/admin/originations'
     | '/admin/payment-operations'
     | '/admin/rotessa-reconciliation'
@@ -2649,6 +2662,13 @@ declare module '@tanstack/react-router' {
       path: '/originations'
       fullPath: '/admin/originations'
       preLoaderRoute: typeof AdminOriginationsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/offline-payment-operations': {
+      id: '/admin/offline-payment-operations'
+      path: '/offline-payment-operations'
+      fullPath: '/admin/offline-payment-operations'
+      preLoaderRoute: typeof AdminOfflinePaymentOperationsRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/financial-ledger': {
@@ -3495,6 +3515,7 @@ interface AdminRouteRouteChildren {
   AdminDocumentEngineRoute: typeof AdminDocumentEngineRouteWithChildren
   AdminFeesRoute: typeof AdminFeesRoute
   AdminFinancialLedgerRoute: typeof AdminFinancialLedgerRoute
+  AdminOfflinePaymentOperationsRoute: typeof AdminOfflinePaymentOperationsRoute
   AdminOriginationsRoute: typeof AdminOriginationsRouteWithChildren
   AdminPaymentOperationsRoute: typeof AdminPaymentOperationsRoute
   AdminRotessaReconciliationRoute: typeof AdminRotessaReconciliationRoute
@@ -3517,6 +3538,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminDocumentEngineRoute: AdminDocumentEngineRouteWithChildren,
   AdminFeesRoute: AdminFeesRoute,
   AdminFinancialLedgerRoute: AdminFinancialLedgerRoute,
+  AdminOfflinePaymentOperationsRoute: AdminOfflinePaymentOperationsRoute,
   AdminOriginationsRoute: AdminOriginationsRouteWithChildren,
   AdminPaymentOperationsRoute: AdminPaymentOperationsRoute,
   AdminRotessaReconciliationRoute: AdminRotessaReconciliationRoute,

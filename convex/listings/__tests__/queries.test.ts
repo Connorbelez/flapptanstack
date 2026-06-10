@@ -532,9 +532,36 @@ describe("listing queries", () => {
 	it("returns appraisals with comparables and encumbrances by property", async () => {
 		const t = createHarness();
 		const auth = asAuthedUser(t);
+		await seedFromIdentity(t, LENDER);
 
 		let propertyId!: Id<"properties">;
+		let comparablePhotoAssetId!: Id<"documentAssets">;
 		await t.run(async (ctx) => {
+			const lenderUser = await ctx.db
+				.query("users")
+				.withIndex("authId", (query) => query.eq("authId", LENDER.subject))
+				.unique();
+			if (!lenderUser) {
+				throw new Error("Expected seeded lender user for comparable evidence");
+			}
+			const comparablePhotoFileRef = await (
+				ctx.storage as unknown as {
+					store: (blob: Blob) => Promise<Id<"_storage">>;
+				}
+			).store(new Blob(["comparable photo"], { type: "image/jpeg" }));
+			comparablePhotoAssetId = await ctx.db.insert("documentAssets", {
+				description: "Comparable frontage image.",
+				fileHash: "comparable-photo",
+				fileRef: comparablePhotoFileRef,
+				fileSize: 64,
+				mimeType: "image/jpeg",
+				name: "Comparable photo",
+				originalFilename: "comparable-photo.jpg",
+				source: "admin_upload",
+				uploadedAt: 1_710_000_000_050,
+				uploadedByUserId: lenderUser._id,
+			});
+
 			propertyId = await ctx.db.insert("properties", {
 				city: "Hamilton",
 				createdAt: Date.now(),
@@ -565,6 +592,7 @@ describe("listing queries", () => {
 				address: "20 King St",
 				appraisalId,
 				createdAt: 1_710_000_000_200,
+				evidenceAssetIds: [comparablePhotoAssetId],
 				sortOrder: 1,
 			});
 
@@ -588,6 +616,16 @@ describe("listing queries", () => {
 		expect(appraisals[0]?.comparables.map((item) => item.address)).toEqual([
 			"20 King St",
 			"10 Bay St",
+		]);
+		expect(appraisals[0]?.comparables[0]?.evidenceAssets).toEqual([
+			expect.objectContaining({
+				assetId: String(comparablePhotoAssetId),
+				contentType: "image/jpeg",
+				fileName: "comparable-photo.jpg",
+				kind: "image",
+				label: "Comparable photo",
+				url: expect.any(String),
+			}),
 		]);
 		expect(encumbrances).toHaveLength(1);
 		expect(encumbrances[0]?.holder).toBe("Existing Bank");

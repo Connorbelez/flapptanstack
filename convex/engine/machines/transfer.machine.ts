@@ -81,6 +81,10 @@ export const transferMachine = setup({
 					target: "failed",
 					actions: ["publishTransferFailed"],
 				},
+				TRANSFER_CANCELLED: {
+					target: "cancelled",
+					actions: ["publishTransferCancelled"],
+				},
 			},
 		},
 		processing: {

@@ -115,6 +115,10 @@ export const ROUTE_AUTHORIZATION_RULES = {
 		kind: "operationalAdminPermission",
 		permission: "mortgage:originate",
 	},
+	adminOfflinePaymentOperations: {
+		kind: "operationalAdminPermission",
+		permission: "payment:view",
+	},
 	adminVelocityPackages: {
 		kind: "operationalAdminPermission",
 		permission: "mortgage:originate",
@@ -169,11 +173,18 @@ const ADMIN_PATH_AUTHORIZATION_RULES: ReadonlyArray<{
 	routeKey: Extract<
 		RouteAuthorizationKey,
 		| "adminOriginations"
+		| "adminOfflinePaymentOperations"
 		| "adminRotessaReconciliation"
 		| "adminUnderwriting"
 		| "adminVelocityPackages"
 	>;
 }> = [
+	{
+		matches: (pathname) =>
+			pathname === "/admin/offline-payment-operations" ||
+			pathname.startsWith("/admin/offline-payment-operations/"),
+		routeKey: "adminOfflinePaymentOperations",
+	},
 	{
 		matches: (pathname) =>
 			pathname === "/admin/underwriting" ||

@@ -7,6 +7,7 @@ import {
 	type DealEnvelopeRecipientSnapshot,
 	dealEnvelopeAttemptStatusValidator,
 	dealEnvelopeProviderValidator,
+	dealEnvelopeRecipientDocumensoRoleValidator,
 	dealEnvelopeRecipientReadStatusValidator,
 	dealEnvelopeRecipientSendStatusValidator,
 	dealEnvelopeRecipientSigningStatusValidator,
@@ -479,6 +480,19 @@ const recipientTokenInputValidator = v.object({
 	tokenExpiresAt: v.optional(v.number()),
 });
 
+const resolvedRecipientInputValidator = v.object({
+	authId: v.optional(v.string()),
+	email: v.string(),
+	name: v.string(),
+	platformRole: v.string(),
+	documensoRole: dealEnvelopeRecipientDocumensoRoleValidator,
+	signingOrder: v.number(),
+	required: v.boolean(),
+	providerRecipientId: v.optional(v.string()),
+	embeddedSigningToken: v.optional(v.string()),
+	tokenExpiresAt: v.optional(v.number()),
+});
+
 const createAttemptInput = {
 	dealId: v.id("deals"),
 	dealDocumentInstanceId: v.id("dealDocumentInstances"),
@@ -536,6 +550,117 @@ export const createEnvelopeAttemptInternal = convex
 			tokenInputs: args.recipientTokens ?? [],
 			now: Date.now(),
 		});
+	})
+	.internal();
+
+export const createResolvedEnvelopeAttemptInternal = convex
+	.mutation()
+	.input({
+		dealId: v.id("deals"),
+		dealDocumentInstanceId: v.id("dealDocumentInstances"),
+		provider: dealEnvelopeProviderValidator,
+		providerDocumentId: v.optional(v.string()),
+		providerEnvelopeId: v.optional(v.string()),
+		recipients: v.array(resolvedRecipientInputValidator),
+		status: v.optional(dealEnvelopeAttemptStatusValidator),
+	})
+	.handler(async (ctx, args) => {
+		const context = await requireAttemptCreationContext(ctx, args);
+		const existing = await getActiveAttemptForInstance(
+			ctx,
+			args.dealDocumentInstanceId
+		);
+		if (existing) {
+			return { attemptId: existing._id, status: existing.status };
+		}
+
+		const now = Date.now();
+		const attemptNumber = await nextAttemptNumber(ctx, context.instance._id);
+		const status = args.status ?? "draft";
+		const roster: DealEnvelopeRecipientSnapshot[] = args.recipients.map(
+			(recipient) => ({
+				authId: recipient.authId,
+				email: recipient.email,
+				name: recipient.name,
+				platformRole: recipient.platformRole,
+				documensoRole: recipient.documensoRole,
+				signingOrder: recipient.signingOrder,
+				required: recipient.required,
+				providerRecipientId: recipient.providerRecipientId,
+				tokenAvailableAt: recipient.embeddedSigningToken ? now : undefined,
+				tokenExpiresAt: recipient.tokenExpiresAt,
+				sendStatus: "pending",
+				readStatus: recipient.embeddedSigningToken
+					? "available"
+					: "not_available",
+				signingStatus: "not_started",
+				rejectionReason: undefined,
+				completedAt: undefined,
+			})
+		);
+
+		const attemptId = await ctx.db.insert("dealEnvelopeAttempts", {
+			dealId: context.deal._id,
+			packageId: context.packageRow._id,
+			dealDocumentInstanceId: context.instance._id,
+			generatedDocumentId: context.instance.generatedDocumentId,
+			provider: args.provider,
+			providerDocumentId: args.providerDocumentId,
+			providerEnvelopeId: args.providerEnvelopeId,
+			attemptNumber,
+			status,
+			recipientRoster: roster,
+			active: status !== "configuration_error",
+			idempotencyKey: [
+				args.provider,
+				context.instance._id,
+				attemptNumber,
+				args.providerDocumentId ?? args.providerEnvelopeId ?? "pending",
+			].join(":"),
+			supersedesAttemptId: undefined,
+			supersededByAttemptId: undefined,
+			terminalReason: undefined,
+			terminalAt: undefined,
+			completionTransitionRequestedAt: undefined,
+			completionTransitionEmittedAt: undefined,
+			completionJournalEntryId: undefined,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		for (const recipient of roster) {
+			const tokenInput = args.recipients.find(
+				(input) => input.platformRole === recipient.platformRole
+			);
+			await ctx.db.insert("dealEnvelopeRecipients", {
+				attemptId,
+				dealId: context.deal._id,
+				packageId: context.packageRow._id,
+				dealDocumentInstanceId: context.instance._id,
+				authId: recipient.authId,
+				email: recipient.email,
+				name: recipient.name,
+				platformRole: recipient.platformRole,
+				documensoRole: recipient.documensoRole,
+				signingOrder: recipient.signingOrder,
+				required: recipient.required,
+				providerRecipientId: recipient.providerRecipientId,
+				embeddedSigningToken: tokenInput?.embeddedSigningToken,
+				tokenAvailableAt: recipient.tokenAvailableAt,
+				tokenExpiresAt: recipient.tokenExpiresAt,
+				sendStatus: status === "sent" ? "sent" : recipient.sendStatus,
+				readStatus: recipient.readStatus,
+				signingStatus: recipient.signingStatus,
+				rejectionReason: undefined,
+				sentAt: status === "sent" ? now : undefined,
+				openedAt: undefined,
+				completedAt: undefined,
+				createdAt: now,
+				updatedAt: now,
+			});
+		}
+
+		return { attemptId, status };
 	})
 	.internal();
 

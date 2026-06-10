@@ -312,11 +312,50 @@ describe("listing detail polish", () => {
 	});
 
 	it("renders mobile comparable property evidence", () => {
-		renderInteractiveListing();
+		const listing = getListing();
+		renderInteractiveListing({
+			listing: {
+				...listing,
+				comparables: {
+					...listing.comparables,
+					asIs: [
+						{
+							...listing.comparables.asIs[0]!,
+							evidenceAssets: [
+								{
+									kind: "image",
+									label: "Frontage photo",
+									url: "https://example.com/frontage.jpg",
+								},
+								{
+									kind: "file",
+									label: "MLS sheet",
+									url: "https://example.com/mls.pdf",
+								},
+							],
+						},
+						...listing.comparables.asIs.slice(1),
+					],
+				},
+			},
+		});
 
 		expect(screen.getByText("Comparable Properties")).not.toBeNull();
 		expect(screen.getAllByText("As-is comparables").length).toBeGreaterThan(0);
 		expect(screen.getAllByText("47 Willowdale Ave").length).toBeGreaterThan(0);
+		expect(screen.getAllByRole("img", { name: "Frontage photo" })).toHaveLength(
+			1
+		);
+		expect(
+			screen.getAllByRole("link", { name: /Frontage photo/i })[0]?.getAttribute(
+				"href"
+			)
+		).toBe("https://example.com/frontage.jpg");
+		expect(
+			screen.getAllByRole("link", { name: /MLS sheet/i })[0]?.getAttribute(
+				"href"
+			)
+		).toBe("https://example.com/mls.pdf");
 	});
 
 	it("renders a polished comparable empty state when no comparables are published", () => {

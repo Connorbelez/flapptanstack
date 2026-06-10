@@ -11,6 +11,7 @@ import {
 	ChevronLeft,
 	ChevronRight,
 	ExternalLink,
+	FileText,
 	Heart,
 	ImageIcon,
 	Loader2,
@@ -2619,6 +2620,23 @@ function MobileComparableList({
 function ComparableMobileCard({ row }: { row: ListingComparable }) {
 	return (
 		<div className="rounded-lg border border-border/70 bg-background/35 px-3 py-3">
+			{row.evidenceAssets?.some((asset) => asset.kind === "image") ? (
+				<div className="mb-3 grid grid-cols-2 gap-2">
+					{row.evidenceAssets
+						.filter((asset) => asset.kind === "image")
+						.slice(0, 2)
+						.map((asset) => (
+							<img
+								alt={asset.label}
+								className="h-24 w-full rounded-md border border-border/60 object-cover"
+								height={96}
+								key={asset.url}
+								src={asset.url}
+								width={240}
+							/>
+						))}
+				</div>
+			) : null}
 			<div className="flex items-start justify-between gap-3">
 				<p className="min-w-0 font-medium text-[14px] leading-5">
 					{row.address}
@@ -2632,6 +2650,7 @@ function ComparableMobileCard({ row }: { row: ListingComparable }) {
 				<span>{row.distance}</span>
 				<span>{row.squareFeet}</span>
 			</div>
+			<ComparableEvidenceLinks row={row} />
 		</div>
 	);
 }
@@ -2689,7 +2708,10 @@ function ComparableTable({
 				{rows.length > 0 ? (
 					rows.map((row) => (
 						<div className={listingDetailSurfaceClasses.tableRow} key={row.id}>
-							<span>{row.address}</span>
+							<span>
+								<span>{row.address}</span>
+								<ComparableEvidenceLinks row={row} />
+							</span>
 							<span>{row.price}</span>
 							<span>{row.date}</span>
 							<span>{row.distance}</span>
@@ -2703,6 +2725,34 @@ function ComparableTable({
 				)}
 			</div>
 		</WhiteSurface>
+	);
+}
+
+function ComparableEvidenceLinks({ row }: { row: ListingComparable }) {
+	if (!row.evidenceAssets?.length) {
+		return null;
+	}
+
+	return (
+		<div className="mt-2 flex flex-wrap gap-1.5">
+			{row.evidenceAssets.map((asset) => (
+				<a
+					className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-2 py-1 text-[11px] text-foreground/80 transition hover:border-[var(--palm)] hover:text-[var(--palm)]"
+					href={asset.url}
+					key={`${asset.kind}:${asset.url}`}
+					rel="noopener noreferrer"
+					target="_blank"
+				>
+					{asset.kind === "image" ? (
+						<ImageIcon className="size-3" />
+					) : (
+						<FileText className="size-3" />
+					)}
+					<span>{asset.label}</span>
+					<ExternalLink className="size-3" />
+				</a>
+			))}
+		</div>
 	);
 }
 

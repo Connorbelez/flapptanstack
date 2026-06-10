@@ -101,7 +101,10 @@ export function classifyExecutionEligibility(args: {
 		});
 	}
 
-	if (planEntry.scheduledDate > request.requestedAt) {
+	if (
+		planEntry.scheduledDate > request.requestedAt &&
+		!request.allowEarlyStart
+	) {
 		return buildNotEligibleResult({
 			executionRecordedAt,
 			idempotencyKey,

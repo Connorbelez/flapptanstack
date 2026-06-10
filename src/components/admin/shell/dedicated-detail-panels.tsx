@@ -89,6 +89,10 @@ function formatCurrency(value: bigint | number, divisor = 1) {
 	}).format(normalizedValue);
 }
 
+function formatCentsCurrency(value: bigint | number) {
+	return formatCurrency(value, 100);
+}
+
 function formatDate(value: number | string | null | undefined) {
 	if (value == null) {
 		return null;
@@ -1605,7 +1609,7 @@ function ListingProjectedFactsSections({
 						{
 							label: "Principal",
 							value: detailContext?.mortgage
-								? formatCurrency(detailContext.mortgage.principal)
+								? formatCentsCurrency(detailContext.mortgage.principal)
 								: "Unavailable",
 						},
 						{
@@ -1625,7 +1629,7 @@ function ListingProjectedFactsSections({
 						{
 							label: "Payment Amount",
 							value: detailContext?.mortgage
-								? formatCurrency(detailContext.mortgage.paymentAmount)
+								? formatCentsCurrency(detailContext.mortgage.paymentAmount)
 								: "Unavailable",
 						},
 						{
@@ -1695,7 +1699,7 @@ function ListingProjectedFactsSections({
 						{
 							label: "As-Is Value",
 							value: detailContext?.latestValuationSnapshot
-								? formatCurrency(
+								? formatCentsCurrency(
 										detailContext.latestValuationSnapshot.valueAsIs
 									)
 								: "Unavailable",
@@ -3146,7 +3150,7 @@ export function MortgagesDedicatedDetailsContent({
 								value:
 									typeof record.fields.principal === "number" ||
 									typeof record.fields.principal === "bigint"
-										? formatCurrency(record.fields.principal)
+										? formatCentsCurrency(record.fields.principal)
 										: formatOptionalDisplayValue(record.fields.principal),
 							},
 							{
@@ -3321,7 +3325,7 @@ export function MortgagesDedicatedDetailsContent({
 							{
 								label: "Valuation",
 								value: detailContext?.latestValuationSnapshot
-									? formatCurrency(
+									? formatCentsCurrency(
 											detailContext.latestValuationSnapshot.valueAsIs
 										)
 									: "No valuation",
@@ -4321,7 +4325,7 @@ export function MortgagesDedicatedDetailsContent({
 							{
 								label: "Valuation",
 								value: detailContext?.latestValuationSnapshot
-									? formatCurrency(
+									? formatCentsCurrency(
 											detailContext.latestValuationSnapshot.valueAsIs
 										)
 									: "No valuation snapshot",
@@ -5218,7 +5222,7 @@ export function BorrowersDedicatedDetails({
 				metadata: [
 					formatEnumLabel(mortgage.role),
 					formatEnumLabel(mortgage.status),
-					formatCurrency(mortgage.principal),
+					formatCentsCurrency(mortgage.principal),
 					mortgage.broker
 						? `Broker: ${mortgage.broker.brokerageName ?? mortgage.broker.name}`
 						: null,
@@ -5466,7 +5470,7 @@ export function LendersDedicatedDetails({
 					deal.closingDate
 						? formatDateTime(deal.closingDate)
 						: "Closing date TBD",
-					formatCurrency(deal.mortgage.principal),
+					formatCentsCurrency(deal.mortgage.principal),
 				]
 					.filter(Boolean)
 					.join(" • "),
@@ -5496,7 +5500,7 @@ export function LendersDedicatedDetails({
 					formatPropertyLabel(mortgage.property) ??
 					`Mortgage ${String(mortgage.mortgageId)}`,
 				metadata: [
-					formatCurrency(mortgage.principal),
+					formatCentsCurrency(mortgage.principal),
 					formatDate(mortgage.maturityDate) ?? "Maturity unavailable",
 				]
 					.filter(Boolean)
@@ -5733,7 +5737,7 @@ export function BrokersDedicatedDetails({
 					formatPropertyLabel(mortgage.property) ??
 					`Mortgage ${String(mortgage.mortgageId)}`,
 				metadata: [
-					formatCurrency(mortgage.principal),
+					formatCentsCurrency(mortgage.principal),
 					`${mortgage.borrowerCount} borrower${mortgage.borrowerCount === 1 ? "" : "s"}`,
 					`${mortgage.activeDealCount} deal${mortgage.activeDealCount === 1 ? "" : "s"}`,
 				]

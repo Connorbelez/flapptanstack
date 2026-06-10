@@ -38,6 +38,8 @@ export interface Event {
 }
 
 export interface EventManagerProps {
+  allowCreate?: boolean
+  allowEdit?: boolean
   events?: Event[]
   onEventCreate?: (event: Omit<Event, "id">) => void
   onEventUpdate?: (id: string, event: Partial<Event>) => void
@@ -47,6 +49,8 @@ export interface EventManagerProps {
   defaultView?: "month" | "week" | "day" | "list"
   className?: string
   availableTags?: string[]
+  showFilters?: boolean
+  title?: string
 }
 
 const defaultColors = [
@@ -59,6 +63,8 @@ const defaultColors = [
 ]
 
 export function EventManager({
+  allowCreate = true,
+  allowEdit = true,
   events: initialEvents = [],
   onEventCreate,
   onEventUpdate,
@@ -68,6 +74,8 @@ export function EventManager({
   defaultView = "month",
   className,
   availableTags = ["Important", "Urgent", "Work", "Personal", "Team", "Client"],
+  showFilters = true,
+  title,
 }: EventManagerProps) {
   const [events, setEvents] = useState<Event[]>(initialEvents)
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -88,6 +96,27 @@ export function EventManager({
   const [selectedColors, setSelectedColors] = useState<string[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+
+  const headingTitle =
+    title ??
+    (view === "month"
+      ? currentDate.toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        })
+      : view === "week"
+        ? `Week of ${currentDate.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          })}`
+        : view === "day"
+          ? currentDate.toLocaleDateString("en-US", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })
+          : "All Events")
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
@@ -260,24 +289,7 @@ export function EventManager({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <h2 className="text-xl font-semibold sm:text-2xl">
-            {view === "month" &&
-              currentDate.toLocaleDateString("en-US", {
-                month: "long",
-                year: "numeric",
-              })}
-            {view === "week" &&
-              `Week of ${currentDate.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-              })}`}
-            {view === "day" &&
-              currentDate.toLocaleDateString("en-US", {
-                weekday: "long",
-                month: "long",
-                day: "numeric",
-                year: "numeric",
-              })}
-            {view === "list" && "All Events"}
+            {headingTitle}
           </h2>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" onClick={() => navigateDate("prev")} className="h-8 w-8">
@@ -368,20 +380,23 @@ export function EventManager({
             </Button>
           </div>
 
-          <Button
-            onClick={() => {
-              setIsCreating(true)
-              setIsDialogOpen(true)
-            }}
-            className="w-full sm:w-auto"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            New Event
-          </Button>
+          {allowCreate && (
+            <Button
+              onClick={() => {
+                setIsCreating(true)
+                setIsDialogOpen(true)
+              }}
+              className="w-full sm:w-auto"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Event
+            </Button>
+          )}
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
+      {showFilters && (
+        <div className="flex flex-col gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -622,9 +637,10 @@ export function EventManager({
             </Button>
           )}
         </div>
-      </div>
+        </div>
+      )}
 
-      {hasActiveFilters && (
+      {showFilters && hasActiveFilters && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-muted-foreground">Active filters:</span>
           {selectedColors.map((colorValue) => {
@@ -673,12 +689,14 @@ export function EventManager({
           currentDate={currentDate}
           events={filteredEvents}
           onEventClick={(event) => {
-            setSelectedEvent(event)
-            setIsDialogOpen(true)
+            if (allowEdit) {
+              setSelectedEvent(event)
+              setIsDialogOpen(true)
+            }
           }}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDrop={handleDrop}
+          onDragStart={allowEdit ? handleDragStart : () => {}}
+          onDragEnd={allowEdit ? handleDragEnd : () => {}}
+          onDrop={allowEdit ? handleDrop : () => {}}
           getColorClasses={getColorClasses}
         />
       )}
@@ -688,12 +706,14 @@ export function EventManager({
           currentDate={currentDate}
           events={filteredEvents}
           onEventClick={(event) => {
-            setSelectedEvent(event)
-            setIsDialogOpen(true)
+            if (allowEdit) {
+              setSelectedEvent(event)
+              setIsDialogOpen(true)
+            }
           }}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDrop={handleDrop}
+          onDragStart={allowEdit ? handleDragStart : () => {}}
+          onDragEnd={allowEdit ? handleDragEnd : () => {}}
+          onDrop={allowEdit ? handleDrop : () => {}}
           getColorClasses={getColorClasses}
         />
       )}
@@ -703,12 +723,14 @@ export function EventManager({
           currentDate={currentDate}
           events={filteredEvents}
           onEventClick={(event) => {
-            setSelectedEvent(event)
-            setIsDialogOpen(true)
+            if (allowEdit) {
+              setSelectedEvent(event)
+              setIsDialogOpen(true)
+            }
           }}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDrop={handleDrop}
+          onDragStart={allowEdit ? handleDragStart : () => {}}
+          onDragEnd={allowEdit ? handleDragEnd : () => {}}
+          onDrop={allowEdit ? handleDrop : () => {}}
           getColorClasses={getColorClasses}
         />
       )}
@@ -717,15 +739,17 @@ export function EventManager({
         <ListView
           events={filteredEvents}
           onEventClick={(event) => {
-            setSelectedEvent(event)
-            setIsDialogOpen(true)
+            if (allowEdit) {
+              setSelectedEvent(event)
+              setIsDialogOpen(true)
+            }
           }}
           getColorClasses={getColorClasses}
         />
       )}
 
       {/* Event Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      {(allowCreate || allowEdit) && <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isCreating ? "Create Event" : "Event Details"}</DialogTitle>
@@ -917,7 +941,7 @@ export function EventManager({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
     </div>
   )
 }

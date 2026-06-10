@@ -1,6 +1,6 @@
 import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { seedFromIdentity } from "../../../src/test/auth/helpers";
 import { LENDER } from "../../../src/test/auth/identities";
 import type { Doc } from "../../_generated/dataModel";
@@ -18,6 +18,7 @@ const publicDocumentsApi = anyApi.listings.publicDocuments;
 const CANONICAL_MIC_LENDER_AUTH_ID = seedAuthIdFromEmail(
 	FAIRLEND_MIC_LENDER_EMAIL
 );
+const originalStripeSecretKey = process.env.STRIPE_SECRET_KEY;
 
 function createHarness() {
 	return convexTest(schema, modules);
@@ -293,6 +294,18 @@ function buildListingDoc(
 		...overrides,
 	};
 }
+
+function restoreStripeSecretKey() {
+	if (originalStripeSecretKey === undefined) {
+		process.env.STRIPE_SECRET_KEY = undefined;
+		return;
+	}
+	process.env.STRIPE_SECRET_KEY = originalStripeSecretKey;
+}
+
+afterEach(() => {
+	restoreStripeSecretKey();
+});
 
 describe("marketplace listings", () => {
 	it("requires listing:view for marketplace reads", async () => {
@@ -626,6 +639,46 @@ describe("marketplace listings", () => {
 			"eligible",
 			"eligible",
 		]);
+	});
+
+	it("keeps marketplace checkout ready when Stripe and inventory are available without seeded platform lawyers", async () => {
+		process.env.STRIPE_SECRET_KEY = "sk_test_marketplace_checkout";
+
+		const t = createHarness();
+		const portalId = await insertBrokerPortalPricingFixture(t);
+		const auth = listingViewer(t);
+		const { mortgageId, propertyId } = await insertMortgageFixture(t);
+
+		let listingId!: Doc<"listings">["_id"];
+		await t.run(async (ctx) => {
+			await ctx.db.insert("ledger_accounts", {
+				createdAt: 1_710_000_000_000,
+				cumulativeCredits: 0n,
+				cumulativeDebits: 10_000n,
+				lenderId: CANONICAL_MIC_LENDER_AUTH_ID,
+				mortgageId: String(mortgageId),
+				pendingCredits: 0n,
+				pendingDebits: 0n,
+				type: "POSITION",
+			});
+			listingId = await ctx.db.insert(
+				"listings",
+				buildListingDoc({
+					mortgageId,
+					propertyId,
+					title: "Guest Lawyer Checkout Opportunity",
+				})
+			);
+		});
+
+		const result = await auth.query(listingApi.getMarketplaceListingDetail, {
+			listingId,
+			portalId,
+		});
+
+		expect(result?.investment.availableFractions).toBe(10_000);
+		expect(result?.investment.checkoutReady).toBe(true);
+		expect(result?.lawyers).toEqual([]);
 	});
 
 	it("defaults canonical MIC-owned mortgages to fully available for sale", async () => {

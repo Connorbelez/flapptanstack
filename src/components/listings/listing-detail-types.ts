@@ -42,9 +42,16 @@ export interface ListingComparable {
 	address: string;
 	date: string;
 	distance: string;
+	evidenceAssets?: ListingComparableEvidenceAsset[];
 	id: string;
 	price: string;
 	squareFeet: string;
+}
+
+export interface ListingComparableEvidenceAsset {
+	kind: "file" | "image";
+	label: string;
+	url: string;
 }
 
 export interface ListingBorrowerSignal {

@@ -1,7 +1,7 @@
 import { WorkflowManager } from "@convex-dev/workflow";
 import { v } from "convex/values";
 import { components, internal } from "../../_generated/api";
-import type { Id } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { internalMutation } from "../../_generated/server";
 import { safeBigintToNumber } from "../../payments/cashLedger/accounts";
@@ -109,6 +109,28 @@ async function scheduleCollectionFailedRuleEvaluation(
 	);
 }
 
+function compareOfflineSettlementObligations(
+	left: Doc<"obligations">,
+	right: Doc<"obligations">
+) {
+	if (left.dueDate !== right.dueDate) {
+		return left.dueDate - right.dueDate;
+	}
+	if ((left.paymentNumber ?? 0) !== (right.paymentNumber ?? 0)) {
+		return (left.paymentNumber ?? 0) - (right.paymentNumber ?? 0);
+	}
+	return String(left._id).localeCompare(String(right._id), "en");
+}
+
+function shouldUseOfflineSettlementOrder(
+	planEntry: Doc<"collectionPlanEntries">
+) {
+	return (
+		planEntry.obligationIds.length > 1 &&
+		(planEntry.method === "manual" || planEntry.method === "manual_review")
+	);
+}
+
 export async function runPaymentReversalCascadeForPlanEntry(
 	ctx: MutationCtx,
 	args: {
@@ -206,6 +228,7 @@ export const emitPaymentReceived = internalMutation({
 
 		let remainingAmount = attempt.amount;
 		const postingGroupId = `cash-receipt:${args.entityId}`;
+		const paymentObligations: Doc<"obligations">[] = [];
 
 		for (const obligationId of planEntry.obligationIds) {
 			const obligation = await ctx.db.get(obligationId);
@@ -215,7 +238,27 @@ export const emitPaymentReceived = internalMutation({
 				);
 				continue;
 			}
+			paymentObligations.push(obligation);
+		}
 
+		if (shouldUseOfflineSettlementOrder(planEntry)) {
+			paymentObligations.sort(compareOfflineSettlementObligations);
+			if (paymentObligations.length === planEntry.obligationIds.length) {
+				const orderedIds = paymentObligations.map(
+					(obligation) => obligation._id
+				);
+				if (
+					orderedIds.some(
+						(obligationId, index) =>
+							obligationId !== planEntry.obligationIds[index]
+					)
+				) {
+					await ctx.db.patch(planEntry._id, { obligationIds: orderedIds });
+				}
+			}
+		}
+
+		for (const obligation of paymentObligations) {
 			const outstandingAmount = Math.max(
 				0,
 				obligation.amount - (obligation.amountSettled ?? 0)
@@ -227,7 +270,7 @@ export const emitPaymentReceived = internalMutation({
 
 			const result = await executeTransition(ctx, {
 				entityType: "obligation",
-				entityId: obligationId,
+				entityId: obligation._id,
 				eventType: "PAYMENT_APPLIED",
 				payload: {
 					amount: appliedAmount,
@@ -242,13 +285,13 @@ export const emitPaymentReceived = internalMutation({
 
 			if (!result.success) {
 				console.warn(
-					`[emitPaymentReceived] PAYMENT_APPLIED skipped for obligation=${obligationId}: ${result.reason ?? "unknown reason"} (state=${result.previousState})`
+					`[emitPaymentReceived] PAYMENT_APPLIED skipped for obligation=${obligation._id}: ${result.reason ?? "unknown reason"} (state=${result.previousState})`
 				);
 				continue;
 			}
 
 			console.info(
-				`[emitPaymentReceived] attempt=${args.entityId} -> obligation=${obligationId}: ${result.previousState} -> ${result.newState}`
+				`[emitPaymentReceived] attempt=${args.entityId} -> obligation=${obligation._id}: ${result.previousState} -> ${result.newState}`
 			);
 
 			remainingAmount -= appliedAmount;

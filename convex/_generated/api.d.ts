@@ -384,6 +384,7 @@ import type * as payments_obligations_generate from "../payments/obligations/gen
 import type * as payments_obligations_generateImpl from "../payments/obligations/generateImpl.js";
 import type * as payments_obligations_monitoring from "../payments/obligations/monitoring.js";
 import type * as payments_obligations_queries from "../payments/obligations/queries.js";
+import type * as payments_offlineOperations from "../payments/offlineOperations.js";
 import type * as payments_origination_bootstrap from "../payments/origination/bootstrap.js";
 import type * as payments_payout_adminPayout from "../payments/payout/adminPayout.js";
 import type * as payments_payout_batchPayout from "../payments/payout/batchPayout.js";
@@ -892,6 +893,7 @@ declare const fullApi: ApiFromModules<{
   "payments/obligations/generateImpl": typeof payments_obligations_generateImpl;
   "payments/obligations/monitoring": typeof payments_obligations_monitoring;
   "payments/obligations/queries": typeof payments_obligations_queries;
+  "payments/offlineOperations": typeof payments_offlineOperations;
   "payments/origination/bootstrap": typeof payments_origination_bootstrap;
   "payments/payout/adminPayout": typeof payments_payout_adminPayout;
   "payments/payout/batchPayout": typeof payments_payout_batchPayout;

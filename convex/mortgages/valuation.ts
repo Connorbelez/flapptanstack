@@ -82,6 +82,7 @@ export async function createOriginationValuationSnapshot(
 			adjustments: comparable.adjustments,
 			appraisalId,
 			createdAt: args.createdAt,
+			evidenceAssetIds: comparable.evidenceAssetIds,
 			googlePlaceData: comparable.googlePlaceData,
 			latitude: comparable.latitude,
 			longitude: comparable.longitude,

@@ -10,6 +10,7 @@ import { getSignatureProvider } from "./provider";
 
 interface SignableEnvelopeRecipient {
 	providerRecipientId: string | null;
+	signingOrder: number;
 	status: "declined" | "opened" | "pending" | "signed";
 	userId: Id<"users"> | null;
 }
@@ -86,6 +87,17 @@ export const createEmbeddedSigningSession = authedAction
 		if (!recipient?.providerRecipientId) {
 			throw new ConvexError(
 				"Forbidden: no embedded signing recipient is available for this user"
+			);
+		}
+		if (
+			signableDocument.recipients.some(
+				(candidate: SignableEnvelopeRecipient) =>
+					candidate.signingOrder < recipient.signingOrder &&
+					candidate.status !== "signed"
+			)
+		) {
+			throw new ConvexError(
+				"Embedded signing is not available: previous signers must complete first"
 			);
 		}
 		if (

@@ -218,22 +218,33 @@ function buildComparables(
 ): ListingDetailData["comparables"] {
 	const latestAppraisal = readArray(detail.appraisals)[0];
 	const rows: ListingComparable[] = (latestAppraisal?.comparables ?? []).map(
-		(comparable) => ({
-			address: comparable.address,
-			date: comparable.saleDate
-				? formatDate(comparable.saleDate)
-				: "Unavailable",
-			distance: "—",
-			id: comparable.id,
-			price:
-				comparable.salePrice !== null
-					? formatCentsAsCurrency(comparable.salePrice)
+		(comparable) => {
+			const evidenceAssets = readArray(comparable.evidenceAssets)
+				.filter((asset) => asset.url)
+				.map((asset) => ({
+					kind: asset.kind,
+					label: asset.label,
+					url: asset.url ?? "",
+				}));
+
+			return {
+				address: comparable.address,
+				date: comparable.saleDate
+					? formatDate(comparable.saleDate)
 					: "Unavailable",
-			squareFeet:
-				comparable.squareFootage !== null
-					? comparable.squareFootage.toLocaleString("en-CA")
-					: "—",
-		})
+				distance: "—",
+				...(evidenceAssets.length > 0 ? { evidenceAssets } : {}),
+				id: comparable.id,
+				price:
+					comparable.salePrice !== null
+						? formatCentsAsCurrency(comparable.salePrice)
+						: "Unavailable",
+				squareFeet:
+					comparable.squareFootage !== null
+						? comparable.squareFootage.toLocaleString("en-CA")
+						: "—",
+			};
+		}
 	);
 
 	return {

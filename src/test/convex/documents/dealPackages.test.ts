@@ -582,6 +582,7 @@ async function seedDealPackageFixture(
 		borrowerUserId,
 		coBorrowerOneUserId,
 		coBorrowerTwoUserId,
+		lawyerUserId,
 	] =
 		await Promise.all([
 			ensureSeededIdentity(t, lenderIdentity),
@@ -590,8 +591,8 @@ async function seedDealPackageFixture(
 			ensureSeededIdentity(t, borrowerIdentity),
 			ensureSeededIdentity(t, coBorrowerOneIdentity),
 			ensureSeededIdentity(t, coBorrowerTwoIdentity),
+			ensureSeededIdentity(t, lawyerIdentity),
 		]);
-	await ensureSeededIdentity(t, lawyerIdentity);
 
 	await seedSystemVariable(
 		t,
@@ -912,6 +913,7 @@ async function seedDealPackageFixture(
 			lenderIdentity,
 			lenderUserId,
 			lawyerIdentity,
+			lawyerUserId,
 			mortgageId,
 			propertyId,
 		};
@@ -948,6 +950,140 @@ async function seedFailedCounselMemoPackage() {
 	});
 
 	return { failedInstance, fixture, t };
+}
+
+async function applyTwoTemplateSignableGroupPackage(
+	t: ReturnType<typeof createTestConvex>,
+	args: {
+		mortgageId: Id<"mortgages">;
+	}
+) {
+	const firstTemplateId = await seedPublishedTemplate(t, {
+		fields: [
+			{
+				id: "group_signature_1",
+				position: { height: 18, page: 0, width: 180, x: 72, y: 180 },
+				required: true,
+				signableType: "SIGNATURE",
+				signatoryPlatformRole: "borrower_primary",
+				type: "signable",
+			},
+		],
+		name: "Grouped borrower signature packet A",
+		signatories: [
+			{ order: 0, platformRole: "borrower_primary", role: "signatory" },
+		],
+	});
+	const secondTemplateId = await seedPublishedTemplate(t, {
+		fields: [
+			{
+				id: "group_signature_2",
+				position: { height: 18, page: 0, width: 180, x: 72, y: 220 },
+				required: true,
+				signableType: "SIGNATURE",
+				signatoryPlatformRole: "borrower_primary",
+				type: "signable",
+			},
+		],
+		name: "Grouped borrower signature packet B",
+		signatories: [
+			{ order: 0, platformRole: "borrower_primary", role: "signatory" },
+		],
+	});
+
+	await t.run(async (ctx) => {
+		const groupId = await ctx.db.insert("documentTemplateGroups", {
+			createdAt: Date.now(),
+			description: "Two generated PDFs that must be sent in one envelope",
+			name: "Borrower grouped closing envelope",
+			signatories: [
+				{ order: 0, platformRole: "borrower_primary", role: "signatory" },
+			],
+			templateRefs: [
+				{ order: 0, pinnedVersion: 1, templateId: firstTemplateId },
+				{ order: 1, pinnedVersion: 1, templateId: secondTemplateId },
+			],
+			updatedAt: Date.now(),
+		});
+		const groupVersionId = await ctx.db.insert("documentGroupVersions", {
+			groupId,
+			publishedAt: Date.now(),
+			publishedBy: "test-admin",
+			snapshot: {
+				description: "Two generated PDFs that must be sent in one envelope",
+				name: "Borrower grouped closing envelope",
+				requiredPlatformRoles: ["borrower_primary"],
+				requiredVariableKeys: [],
+				signatories: [
+					{ order: 0, platformRole: "borrower_primary", role: "signatory" },
+				],
+				templateRefs: [
+					{ order: 0, pinnedVersion: 1, templateId: firstTemplateId },
+					{ order: 1, pinnedVersion: 1, templateId: secondTemplateId },
+				],
+			},
+			version: 1,
+		});
+		const packageDefinitionId = await ctx.db.insert(
+			"documentPackageDefinitions",
+			{
+				createdAt: Date.now(),
+				currentPublishedVersion: 1,
+				description: "Grouped closing package",
+				draft: {
+					items: [{ groupVersionId, kind: "group", order: 0 }],
+				},
+				hasDraftChanges: false,
+				name: "Grouped closing package",
+				updatedAt: Date.now(),
+			}
+		);
+		const packageVersionId = await ctx.db.insert("documentPackageVersions", {
+			packageId: packageDefinitionId,
+			publishedAt: Date.now(),
+			publishedBy: "test-admin",
+			snapshot: {
+				description: "Grouped closing package",
+				envelopeBoundaries: [{ itemIndex: 0, kind: "group" }],
+				items: [
+					{
+						groupId,
+						groupVersion: 1,
+						groupVersionId,
+						kind: "group",
+						name: "Borrower grouped closing envelope",
+						order: 0,
+						requiredPlatformRoles: ["borrower_primary"],
+						requiredVariableKeys: [],
+						signatories: [
+							{
+								order: 0,
+								platformRole: "borrower_primary",
+								role: "signatory",
+							},
+						],
+						templateRefs: [
+							{ order: 0, pinnedVersion: 1, templateId: firstTemplateId },
+							{ order: 1, pinnedVersion: 1, templateId: secondTemplateId },
+						],
+					},
+				],
+				name: "Grouped closing package",
+				requiredPlatformRoles: ["borrower_primary"],
+				requiredVariableKeys: [],
+			},
+			version: 1,
+		});
+		await ctx.db.insert("mortgagePackageApplications", {
+			archivedAt: undefined,
+			archivedByUserId: undefined,
+			createdAt: Date.now(),
+			createdByUserId: undefined,
+			mortgageId: args.mortgageId,
+			packageVersionId,
+			status: "active",
+		});
+	});
 }
 
 describe("documents/dealPackages", () => {
@@ -1186,7 +1322,10 @@ describe("documents/dealPackages", () => {
 	});
 
 	it("materializes immutable deal packages from active private mortgage blueprints", async () => {
-		installMockDocumensoFetch();
+		installMockDocumensoFetch({
+			recipientEmail: "seller.phase7@test.fairlend.ca",
+			recipientName: "Sam Seller",
+		});
 		const t = createTestConvex({ includeWorkflowComponents: false });
 		const fixture = await seedDealPackageFixture(t, {
 			includeListing: true,
@@ -1233,6 +1372,12 @@ describe("documents/dealPackages", () => {
 		);
 		const signatureRecipients = await t.run((ctx) =>
 			ctx.db.query("signatureRecipients").collect()
+		);
+		const dealEnvelopeAttempts = await t.run((ctx) =>
+			ctx.db.query("dealEnvelopeAttempts").collect()
+		);
+		const dealEnvelopeRecipients = await t.run((ctx) =>
+			ctx.db.query("dealEnvelopeRecipients").collect()
 		);
 
 		expect(result.status).toBe("ready");
@@ -1336,6 +1481,42 @@ describe("documents/dealPackages", () => {
 				status: "pending",
 			}),
 		]);
+		expect(dealEnvelopeAttempts).toEqual([
+			expect.objectContaining({
+				active: true,
+				dealId: fixture.dealId,
+				packageId: packageSurface.package?.packageId,
+				provider: "documenso",
+				providerDocumentId: "doc_env_1",
+				providerEnvelopeId: "doc_env_1",
+				status: "sent",
+			}),
+		]);
+		expect(dealEnvelopeRecipients).toEqual([
+			expect.objectContaining({
+				attemptId: dealEnvelopeAttempts[0]?._id,
+				dealDocumentInstanceId: expect.any(String),
+				email: "seller.phase7@test.fairlend.ca",
+				name: "Sam Seller",
+				platformRole: "borrower_primary",
+				providerRecipientId: "doc_rcpt_1",
+				signingStatus: "not_started",
+			}),
+		]);
+		expect(packageSurface.instances).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					displayName: "Borrower signature packet",
+					signingState: expect.objectContaining({
+						activeAttemptId: dealEnvelopeAttempts[0]?._id,
+						providerDocumentId: "doc_env_1",
+						providerEnvelopeId: "doc_env_1",
+						recipientCount: 1,
+						status: "sent",
+					}),
+				}),
+			])
+		);
 		expect(dealDetail.documentPackage?.status).toBe("ready");
 		expect(dealDetail.deal.fractionalShareUnits).toBe(2500);
 		expect(dealDetail.deal.fractionalShareDisplayPercent).toBe(25);
@@ -1589,6 +1770,65 @@ describe("documents/dealPackages", () => {
 				(instance) => instance.displayName === "Late addendum"
 			)
 		).toBe(false);
+	});
+
+	it("materializes one signable envelope for every package group boundary", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "seller.phase7@test.fairlend.ca",
+			recipientName: "Sam Seller",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await applyTwoTemplateSignableGroupPackage(t, {
+			mortgageId: fixture.mortgageId,
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		const result = await t.action(
+			internal.documents.dealPackages.runCreateDocumentPackageInternal,
+			{
+				dealId: fixture.dealId,
+				retry: false,
+			}
+		);
+		const [signatureEnvelopes, dealEnvelopeAttempts, packageSurface] =
+			await Promise.all([
+				t.run((ctx) => ctx.db.query("signatureEnvelopes").collect()),
+				t.run((ctx) => ctx.db.query("dealEnvelopeAttempts").collect()),
+				t.withIdentity(FAIRLEND_ADMIN).query(
+					api.documents.dealPackages.getPortalDocumentPackage,
+					{
+						dealId: fixture.dealId,
+					}
+				),
+			]);
+
+		expect(result.status).toBe("ready");
+		expect(signatureEnvelopes).toHaveLength(1);
+		expect(dealEnvelopeAttempts).toHaveLength(1);
+		expect(packageSurface.instances).toEqual([
+			expect.objectContaining({
+				displayName: "Borrower grouped closing envelope",
+				signing: expect.objectContaining({
+					recipients: [
+						expect.objectContaining({
+							email: "seller.phase7@test.fairlend.ca",
+							platformRole: "borrower_primary",
+						}),
+					],
+					status: "sent",
+				}),
+				signingState: expect.objectContaining({
+					activeAttemptId: dealEnvelopeAttempts[0]?._id,
+					recipientCount: 1,
+					status: "sent",
+				}),
+				status: "signature_sent",
+			}),
+		]);
 	});
 
 	it("maps legacy FairLend broker signatory roles to deal broker data", async () => {
@@ -2079,6 +2319,12 @@ describe("documents/dealPackages", () => {
 		const recipients = await t.run((ctx) =>
 			ctx.db.query("signatureRecipients").collect()
 		);
+		const generatedDocuments = await t.run((ctx) =>
+			ctx.db.query("generatedDocuments").collect()
+		);
+		const signableGeneratedDocument = generatedDocuments.find(
+			(document) => document.name === "Borrower signature packet"
+		);
 
 		expect(variables).toMatchObject({
 			borrower_primary_full_name: "Ada Borrower",
@@ -2092,6 +2338,69 @@ describe("documents/dealPackages", () => {
 				name: "Lena Lender",
 				platformRole: "lender_primary",
 				userId: fixture.lenderUserId,
+			}),
+		]);
+		expect(signableGeneratedDocument?.metadata).toMatchObject({
+			interpolation: {
+				variables: expect.objectContaining({
+					borrower_primary_full_name: expect.objectContaining({
+						value: "Sam Seller",
+					}),
+					lender_primary_full_name: expect.objectContaining({
+						value: "Lena Lender",
+					}),
+				}),
+			},
+			preflight: expect.objectContaining({
+				documensoRecipientCount: 1,
+				requiredSignatoryPlatformRoles: ["lender_primary"],
+				signableFieldCount: 1,
+			}),
+			provenance: expect.objectContaining({
+				dealId: String(fixture.dealId),
+				mortgageId: String(fixture.mortgageId),
+				templateVersionUsed: 1,
+			}),
+		});
+	});
+
+	it("maps lawyer signers to their canonical user id", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "lawyer.phase7@test.fairlend.ca",
+			recipientName: "Layla Lawyer",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeFullVariableData: true,
+			includeListing: true,
+			requireLawyerSignatory: true,
+			signablePlatformRole: "lawyer_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const [signatureRecipients, dealEnvelopeRecipients] = await Promise.all([
+			t.run((ctx) => ctx.db.query("signatureRecipients").collect()),
+			t.run((ctx) => ctx.db.query("dealEnvelopeRecipients").collect()),
+		]);
+
+		expect(signatureRecipients).toEqual([
+			expect.objectContaining({
+				email: "lawyer.phase7@test.fairlend.ca",
+				platformRole: "lawyer_primary",
+				userId: fixture.lawyerUserId,
+			}),
+		]);
+		expect(dealEnvelopeRecipients).toEqual([
+			expect.objectContaining({
+				authId: fixture.lawyerIdentity.subject,
+				email: "lawyer.phase7@test.fairlend.ca",
+				platformRole: "lawyer_primary",
 			}),
 		]);
 	});
@@ -2491,6 +2800,139 @@ describe("documents/dealPackages", () => {
 
 		expect(unblockedInstance?.signing).toMatchObject({
 			canLaunchEmbeddedSigning: true,
+		});
+	});
+
+	it("rejects embedded signing sessions when lower signing orders are incomplete", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.signed");
+
+		const [signatureEnvelope] = await t.run((ctx) =>
+			ctx.db.query("signatureEnvelopes").collect()
+		);
+		const [lenderRecipient] = await t.run((ctx) =>
+			ctx.db.query("signatureRecipients").collect()
+		);
+		if (!(signatureEnvelope && lenderRecipient)) {
+			throw new Error("Expected a signable signature envelope");
+		}
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(lenderRecipient._id, {
+				signingOrder: 1,
+			});
+			await ctx.db.insert("signatureRecipients", {
+				createdAt: Date.now(),
+				declinedAt: undefined,
+				email: fixture.borrowerIdentity.user_email,
+				envelopeId: signatureEnvelope._id,
+				name: `${fixture.borrowerIdentity.user_first_name} ${fixture.borrowerIdentity.user_last_name}`,
+				openedAt: undefined,
+				platformRole: "borrower_primary",
+				providerRecipientId: "doc_rcpt_blocker",
+				providerRole: "SIGNER",
+				signedAt: undefined,
+				signingOrder: 0,
+				status: "pending",
+				updatedAt: Date.now(),
+				userId: fixture.borrowerUserId,
+			});
+		});
+
+		const packageSurface = await t.withIdentity(fixture.lenderIdentity).query(
+			api.documents.dealPackages.getPortalDocumentPackage,
+			{
+				dealId: fixture.dealId,
+			}
+		);
+		const signableInstance = packageSurface.instances.find(
+			(instance) => instance.class === "private_templated_signable"
+		);
+		if (!signableInstance) {
+			throw new Error("Expected a signable package instance");
+		}
+		expect(signableInstance.signing?.canLaunchEmbeddedSigning).toBe(false);
+
+		await expect(
+			t.withIdentity(fixture.lenderIdentity).action(
+				api.documents.signature.sessions.createEmbeddedSigningSession,
+				{
+					dealId: fixture.dealId,
+					instanceId: signableInstance.instanceId,
+				}
+			)
+		).rejects.toThrow(/previous signers must complete/i);
+	});
+
+	it("routes generated package Documenso completion webhooks through canonical attempts", async () => {
+		installMockDocumensoFetch({
+			recipientEmail: "lender.phase7@test.fairlend.ca",
+			recipientName: "Lena Lender",
+		});
+		const t = createTestConvex({ includeWorkflowComponents: false });
+		const fixture = await seedDealPackageFixture(t, {
+			includeListing: true,
+			signablePlatformRole: "lender_primary",
+			templatedVariableKey: "borrower_primary_full_name",
+		});
+		await setDealStatus(t, fixture.dealId, "documentReview.pending");
+
+		await t.action(internal.documents.dealPackages.runCreateDocumentPackageInternal, {
+			dealId: fixture.dealId,
+			retry: false,
+		});
+
+		const persisted = await t.mutation(
+			internal.deals.envelopeWebhooks.persistDocumensoProviderEvent,
+			{
+				providerEventId: "evt_generated_lender_done",
+				providerDocumentId: "doc_env_1",
+				providerRecipientId: "doc_rcpt_1",
+				rawBody: "{}",
+				rawEventType: "DOCUMENT_RECIPIENT_COMPLETED",
+				normalizedEventType: "recipient_completed",
+			}
+		);
+		const processed = await t.mutation(
+			internal.deals.envelopeWebhooks.processDocumensoProviderEvent,
+			{ webhookEventId: persisted.webhookEventId }
+		);
+
+		expect(processed.shouldEmitAllPartiesSigned).toBe(true);
+		const [attempt, instance] = await t.run(async (ctx) => {
+			const attemptRow = await ctx.db
+				.query("dealEnvelopeAttempts")
+				.withIndex("by_provider_document", (query) =>
+					query.eq("provider", "documenso").eq("providerDocumentId", "doc_env_1")
+				)
+				.first();
+			const packageInstance = attemptRow
+				? await ctx.db.get(attemptRow.dealDocumentInstanceId)
+				: null;
+			return [attemptRow, packageInstance] as const;
+		});
+
+		expect(attempt).toMatchObject({
+			status: "completed",
+			completionTransitionRequestedAt: expect.any(Number),
+		});
+		expect(instance).toMatchObject({
+			status: "signed",
 		});
 	});
 

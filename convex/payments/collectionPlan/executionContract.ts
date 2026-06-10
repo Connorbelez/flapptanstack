@@ -50,10 +50,12 @@ export const executePlanEntryInputValidator = {
 	requestedByActorId: v.optional(v.string()),
 	reason: v.optional(v.string()),
 	dryRun: v.optional(v.boolean()),
+	allowEarlyStart: v.optional(v.boolean()),
 	manualSettlement: v.optional(manualSettlementValidator),
 };
 
 export interface ExecutePlanEntryArgs {
+	allowEarlyStart?: boolean;
 	dryRun?: boolean;
 	idempotencyKey: string;
 	manualSettlement?: ManualSettlementDetails;

@@ -760,7 +760,6 @@ export const getMarketplaceListingDetail = listingQuery
 				availableFractions: investmentSummary.availableFractions,
 				checkoutReady:
 					investmentSummary.availableFractions > 0 &&
-					platformLawyers.length > 0 &&
 					isDealLockCheckoutProviderConfigured(),
 				investorCount: investmentSummary.totalInvestors,
 				lockedPercent: investmentSummary.lockedPercent,
