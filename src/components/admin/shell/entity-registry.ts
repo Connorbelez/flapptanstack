@@ -198,6 +198,13 @@ export const STATIC_ADMIN_NAV_ITEMS = [
 	},
 	{
 		kind: "route",
+		label: "Lawyers",
+		route: "/admin/lawyers",
+		domain: "system",
+		iconName: "scale",
+	},
+	{
+		kind: "route",
 		label: "Rotessa Reconciliation",
 		route: "/admin/rotessa-reconciliation",
 		domain: "payments",

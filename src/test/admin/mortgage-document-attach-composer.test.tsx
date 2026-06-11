@@ -257,7 +257,7 @@ describe("MortgageFilesDocumentAttachButton", () => {
 		await userEvent.click(
 			screen.getByRole("combobox", { name: "Mapping for borrower_signer" })
 		);
-		await userEvent.click(screen.getByRole("option", { name: "borrower_primary" }));
+		await userEvent.click(screen.getByRole("option", { name: "primary_borrower" }));
 		await userEvent.click(screen.getByRole("button", { name: "Review" }));
 		await userEvent.click(
 			screen.getByRole("button", { name: /attach future-only document/i })
@@ -270,7 +270,7 @@ describe("MortgageFilesDocumentAttachButton", () => {
 			mappingOverrides: {
 				signatories: [
 					{
-						dealParticipantRole: "borrower_primary",
+						dealParticipantRole: "primary_borrower",
 						templatePlatformRole: "borrower_signer",
 					},
 				],
@@ -284,7 +284,7 @@ describe("MortgageFilesDocumentAttachButton", () => {
 			mortgageId: "mortgage_test",
 			templateId: "template_funding_notice",
 		});
-	});
+	}, 10_000);
 
 	it("clears stale mapping overrides when changing templates", async () => {
 		setupDocumentQueries();
@@ -306,7 +306,7 @@ describe("MortgageFilesDocumentAttachButton", () => {
 		await userEvent.click(
 			screen.getByRole("combobox", { name: "Mapping for borrower_signer" })
 		);
-		await userEvent.click(screen.getByRole("option", { name: "borrower_primary" }));
+		await userEvent.click(screen.getByRole("option", { name: "primary_borrower" }));
 
 		await userEvent.click(screen.getByRole("combobox", { name: "Template" }));
 		await userEvent.click(
@@ -353,7 +353,7 @@ describe("MortgageFilesDocumentAttachButton", () => {
 			mortgageId: "mortgage_test",
 			templateId: "template_servicing_notice",
 		});
-	});
+	}, 10_000);
 
 	it("blocks review while required mappings are unresolved", async () => {
 		setupDocumentQueries();

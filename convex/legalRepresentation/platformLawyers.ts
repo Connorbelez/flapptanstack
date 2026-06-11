@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { ACTIVE_LAWYER_MATTER_STATUSES } from "../deals/status";
 import { adminMutation, adminQuery, listingQuery } from "../fluent";
 import { projectPlatformLawyerAvailability } from "./availability";
 import type { PlatformLawyerOption } from "./profiles";
@@ -18,13 +19,6 @@ type PlatformLawyerMutationCtx = Pick<MutationCtx, "db">;
 
 const CANONICAL_LAWYER_ROLE_SLUG = "lawyer";
 const DEFAULT_CAPACITY_LIMIT = 3;
-
-const ACTIVE_DEAL_STATUSES = [
-	"lawyerOnboarding.pending",
-	"lawyerOnboarding.verified",
-	"documentReview.pending",
-	"documentReview.signed",
-] as const;
 
 const platformLawyerInput = {
 	authId: v.optional(v.string()),
@@ -140,7 +134,7 @@ export async function countActivePlatformLawyerDeals(
 	args: { readonly lawyerAuthId: string }
 ): Promise<number> {
 	let count = 0;
-	for (const status of ACTIVE_DEAL_STATUSES) {
+	for (const status of ACTIVE_LAWYER_MATTER_STATUSES) {
 		const deals = await ctx.db
 			.query("deals")
 			.withIndex("by_status", (query) => query.eq("status", status))

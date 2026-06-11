@@ -522,12 +522,17 @@ function projectionContact(participant: {
 }
 
 const LEGACY_TEMPLATE_SIGNATORY_ROLE_ALIASES: Record<string, string> = {
-	borrower: "borrower_primary",
-	borrower_lawyer: "lawyer_primary",
+	borrower: "primary_borrower",
+	borrower_lawyer: "primary_lawyer",
+	borrower_primary: "primary_borrower",
+	borrower_co_1: "co_borrower_1",
+	borrower_co_2: "co_borrower_2",
 	fairlend_broker: "broker_of_record",
-	lender: "lender_primary",
-	lender_lawyer: "lawyer_primary",
-	seller_lawyer: "lawyer_primary",
+	lawyer_primary: "primary_lawyer",
+	lender: "purchasing_lender",
+	lender_lawyer: "primary_lawyer",
+	lender_primary: "purchasing_lender",
+	seller_lawyer: "primary_lawyer",
 };
 
 function hasResolvedSignatoryContact(entry: SignatoryMapping): boolean {
@@ -558,9 +563,18 @@ function appendLegacyTemplateRoleAliases<T extends SignatoryMapping>(
 }
 
 function buildDealVariableBag(snapshot: ParticipantSnapshot) {
-	const lenderPrimary = projectionContact(snapshot.dealParticipants.buyer);
-	const borrowerPrimary = projectionContact(snapshot.dealParticipants.seller);
-	const lawyerPrimary = projectionContact(snapshot.dealParticipants.lawyer);
+	const purchasingLender = projectionContact(
+		snapshot.dealParticipants.purchasing_lender
+	);
+	const sellingLender = projectionContact(
+		snapshot.dealParticipants.selling_lender
+	);
+	const borrowerPrimary = projectionContact(
+		snapshot.dealParticipants.primary_borrower
+	);
+	const lawyerPrimary = projectionContact(
+		snapshot.dealParticipants.primary_lawyer
+	);
 	const coBorrowers = snapshot.borrowers.filter(
 		(borrower) => borrower.role === "co_borrower"
 	);
@@ -569,27 +583,20 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 		(snapshot.mortgage.principal * selectedFractionUnits) / 10_000
 	);
 
-	return {
+	const bag = {
 		assigned_broker_email: snapshot.assignedBroker?.email ?? "",
 		assigned_broker_full_name: snapshot.assignedBroker?.fullName ?? "",
-		borrower_co_1_email: coBorrowers[0]?.email ?? "",
-		borrower_co_1_full_name: coBorrowers[0]?.fullName ?? "",
-		borrower_co_2_email: coBorrowers[1]?.email ?? "",
-		borrower_co_2_full_name: coBorrowers[1]?.fullName ?? "",
-		borrower_primary_email: borrowerPrimary?.email ?? "",
-		borrower_primary_full_name: borrowerPrimary?.fullName ?? "",
 		broker_of_record_email: snapshot.brokerOfRecord.email,
 		broker_of_record_full_name: snapshot.brokerOfRecord.fullName,
+		co_borrower_1_email: coBorrowers[0]?.email ?? "",
+		co_borrower_1_full_name: coBorrowers[0]?.fullName ?? "",
+		co_borrower_2_email: coBorrowers[1]?.email ?? "",
+		co_borrower_2_full_name: coBorrowers[1]?.fullName ?? "",
 		deal_investment_amount: String(investmentAmount),
 		deal_selected_fraction_units: String(selectedFractionUnits),
-		lawyer_primary_email: lawyerPrimary?.email ?? "",
-		lawyer_primary_full_name: lawyerPrimary?.fullName ?? "",
 		listing_description: snapshot.listing?.description ?? "",
 		listing_marketplace_copy: snapshot.listing?.marketplaceCopy ?? "",
 		listing_title: snapshot.listing?.title ?? "",
-		lender_primary_email: lenderPrimary?.email ?? "",
-		lender_primary_full_name: lenderPrimary?.fullName ?? "",
-		lender_primary_system_id: snapshot.dealParticipants.buyer.userId ?? "",
 		mortgage_amortization_months: String(snapshot.mortgage.amortizationMonths),
 		mortgage_amount: String(snapshot.mortgage.principal),
 		mortgage_first_payment_date: snapshot.mortgage.firstPaymentDate,
@@ -614,32 +621,75 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 		valuation_value_as_is: String(
 			snapshot.latestValuationSnapshot?.valueAsIs ?? 0
 		),
+		primary_borrower_email: borrowerPrimary?.email ?? "",
+		primary_borrower_full_name: borrowerPrimary?.fullName ?? "",
+		primary_lawyer_email: lawyerPrimary?.email ?? "",
+		primary_lawyer_full_name: lawyerPrimary?.fullName ?? "",
+		purchasing_lender_email: purchasingLender?.email ?? "",
+		purchasing_lender_full_name: purchasingLender?.fullName ?? "",
+		purchasing_lender_system_id:
+			snapshot.dealParticipants.purchasing_lender.userId ?? "",
+		selling_lender_email: sellingLender?.email ?? "",
+		selling_lender_full_name: sellingLender?.fullName ?? "",
 		test_str_n72b_pv2: "Demo package value",
+	};
+
+	return {
+		...bag,
+		borrower_co_1_email: bag.co_borrower_1_email,
+		borrower_co_1_full_name: bag.co_borrower_1_full_name,
+		borrower_co_2_email: bag.co_borrower_2_email,
+		borrower_co_2_full_name: bag.co_borrower_2_full_name,
+		borrower_primary_email: bag.primary_borrower_email,
+		borrower_primary_full_name: bag.primary_borrower_full_name,
+		lawyer_primary_email: bag.primary_lawyer_email,
+		lawyer_primary_full_name: bag.primary_lawyer_full_name,
+		lender_primary_email: bag.purchasing_lender_email,
+		lender_primary_full_name: bag.purchasing_lender_full_name,
+		lender_primary_system_id: bag.purchasing_lender_system_id,
 	};
 }
 
 function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
-	const lenderPrimary = projectionContact(snapshot.dealParticipants.buyer);
-	const borrowerPrimary = projectionContact(snapshot.dealParticipants.seller);
-	const lawyerPrimary = projectionContact(snapshot.dealParticipants.lawyer);
+	const purchasingLender = projectionContact(
+		snapshot.dealParticipants.purchasing_lender
+	);
+	const sellingLender = projectionContact(
+		snapshot.dealParticipants.selling_lender
+	);
+	const borrowerPrimary = projectionContact(
+		snapshot.dealParticipants.primary_borrower
+	);
+	const lawyerPrimary = projectionContact(
+		snapshot.dealParticipants.primary_lawyer
+	);
 	const coBorrowers = snapshot.borrowers.filter(
 		(borrower) => borrower.role === "co_borrower"
 	);
 
 	const mappings: SignatoryMapping[] = [
-		...(lenderPrimary
+		...(purchasingLender
 			? [
 					{
-						platformRole: "lender_primary",
-						name: lenderPrimary.fullName,
-						email: lenderPrimary.email,
+						platformRole: "purchasing_lender",
+						name: purchasingLender.fullName,
+						email: purchasingLender.email,
+					},
+				]
+			: []),
+		...(sellingLender
+			? [
+					{
+						platformRole: "selling_lender",
+						name: sellingLender.fullName,
+						email: sellingLender.email,
 					},
 				]
 			: []),
 		...(borrowerPrimary
 			? [
 					{
-						platformRole: "borrower_primary",
+						platformRole: "primary_borrower",
 						name: borrowerPrimary.fullName,
 						email: borrowerPrimary.email,
 					},
@@ -648,7 +698,7 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 		...(coBorrowers[0]
 			? [
 					{
-						platformRole: "borrower_co_1",
+						platformRole: "co_borrower_1",
 						name: coBorrowers[0].fullName,
 						email: coBorrowers[0].email,
 					},
@@ -657,7 +707,7 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 		...(coBorrowers[1]
 			? [
 					{
-						platformRole: "borrower_co_2",
+						platformRole: "co_borrower_2",
 						name: coBorrowers[1].fullName,
 						email: coBorrowers[1].email,
 					},
@@ -680,7 +730,7 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 		...(lawyerPrimary
 			? [
 					{
-						platformRole: "lawyer_primary",
+						platformRole: "primary_lawyer",
 						name: lawyerPrimary.fullName,
 						email: lawyerPrimary.email,
 					},
@@ -694,9 +744,18 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 function buildSignatoryParticipants(
 	snapshot: ParticipantSnapshot
 ): SignatoryParticipant[] {
-	const lenderPrimary = projectionContact(snapshot.dealParticipants.buyer);
-	const borrowerPrimary = projectionContact(snapshot.dealParticipants.seller);
-	const lawyerPrimary = projectionContact(snapshot.dealParticipants.lawyer);
+	const purchasingLender = projectionContact(
+		snapshot.dealParticipants.purchasing_lender
+	);
+	const sellingLender = projectionContact(
+		snapshot.dealParticipants.selling_lender
+	);
+	const borrowerPrimary = projectionContact(
+		snapshot.dealParticipants.primary_borrower
+	);
+	const lawyerPrimary = projectionContact(
+		snapshot.dealParticipants.primary_lawyer
+	);
 	const primaryBorrower =
 		snapshot.borrowers.find((borrower) => borrower.role === "primary") ??
 		snapshot.borrowers[0];
@@ -705,24 +764,36 @@ function buildSignatoryParticipants(
 	);
 
 	const participants: SignatoryParticipant[] = [
-		...(lenderPrimary
+		...(purchasingLender
 			? [
 					{
-						platformRole: "lender_primary",
-						name: lenderPrimary.fullName,
-						email: lenderPrimary.email,
-						userId: snapshot.dealParticipants.buyer.userId ?? undefined,
+						platformRole: "purchasing_lender",
+						name: purchasingLender.fullName,
+						email: purchasingLender.email,
+						userId:
+							snapshot.dealParticipants.purchasing_lender.userId ?? undefined,
+					},
+				]
+			: []),
+		...(sellingLender
+			? [
+					{
+						platformRole: "selling_lender",
+						name: sellingLender.fullName,
+						email: sellingLender.email,
+						userId:
+							snapshot.dealParticipants.selling_lender.userId ?? undefined,
 					},
 				]
 			: []),
 		...(borrowerPrimary
 			? [
 					{
-						platformRole: "borrower_primary",
+						platformRole: "primary_borrower",
 						name: borrowerPrimary.fullName,
 						email: borrowerPrimary.email,
 						userId:
-							snapshot.dealParticipants.seller.userId ??
+							snapshot.dealParticipants.primary_borrower.userId ??
 							primaryBorrower?.userId,
 					},
 				]
@@ -730,7 +801,7 @@ function buildSignatoryParticipants(
 		...(coBorrowers[0]
 			? [
 					{
-						platformRole: "borrower_co_1",
+						platformRole: "co_borrower_1",
 						name: coBorrowers[0].fullName,
 						email: coBorrowers[0].email,
 						userId: coBorrowers[0].userId,
@@ -740,7 +811,7 @@ function buildSignatoryParticipants(
 		...(coBorrowers[1]
 			? [
 					{
-						platformRole: "borrower_co_2",
+						platformRole: "co_borrower_2",
 						name: coBorrowers[1].fullName,
 						email: coBorrowers[1].email,
 						userId: coBorrowers[1].userId,
@@ -766,7 +837,7 @@ function buildSignatoryParticipants(
 		...(lawyerPrimary
 			? [
 					{
-						platformRole: "lawyer_primary",
+						platformRole: "primary_lawyer",
 						name: lawyerPrimary.fullName,
 						email: lawyerPrimary.email,
 					},

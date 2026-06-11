@@ -327,7 +327,7 @@ describe("legal representation management", () => {
 			.withIdentity(lenderIdentity())
 			.query(dealQueriesApi.getParticipantDealWorkspace, {
 				dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 
 		expect(workspace?.legalRepresentation).toMatchObject({
@@ -407,7 +407,7 @@ describe("legal representation management", () => {
 			.withIdentity(lenderIdentity())
 			.query(dealQueriesApi.getParticipantDealWorkspace, {
 				dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 		expect(before?.legalRepresentation.currentInvitation).toMatchObject({
 			status: "none",
@@ -700,7 +700,7 @@ describe("legal representation management", () => {
 			.withIdentity(lenderIdentity())
 			.query(dealQueriesApi.getParticipantDealWorkspace, {
 				dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 
 		expect(rows.deal).toMatchObject({

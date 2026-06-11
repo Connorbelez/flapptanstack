@@ -106,7 +106,8 @@ export function ParticipantDealWorkspacePage({
 				/>
 			</div>
 
-			{backTo === "/lender/deals" ? (
+			{backTo === "/lender/deals" &&
+			workspace.legalRepresentation.showInDealViews ? (
 				<LegalRepresentationStatusPanel
 					dealId={workspace.deal.dealId}
 					projection={workspace.legalRepresentation}
@@ -204,8 +205,14 @@ export function ParticipantDealWorkspacePage({
 					title="Parties & Counsel"
 				>
 					<div className="grid gap-3 sm:grid-cols-2">
-						<Snapshot label="Buyer" value={workspace.parties.lender.name} />
-						<Snapshot label="Seller" value={workspace.parties.seller.name} />
+						<Snapshot
+							label="Purchasing Lender"
+							value={workspace.parties.lender.name}
+						/>
+						<Snapshot
+							label="Selling Lender"
+							value={workspace.parties.seller.name}
+						/>
 						<Snapshot
 							label="Assigned Lawyer"
 							value={workspace.parties.assignedLawyer.name ?? "Unassigned"}

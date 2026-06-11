@@ -23,6 +23,7 @@ import { Route as OnboardRouteRouteImport } from './routes/onboard/route'
 import { Route as ListingsRouteRouteImport } from './routes/listings/route'
 import { Route as LenderRouteRouteImport } from './routes/lender/route'
 import { Route as LawyerRouteRouteImport } from './routes/lawyer/route'
+import { Route as DealsRouteRouteImport } from './routes/deals/route'
 import { Route as BrokerRouteRouteImport } from './routes/broker/route'
 import { Route as BorrowerRouteRouteImport } from './routes/borrower/route'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
@@ -94,6 +95,7 @@ import { Route as AdminPropertiesRouteRouteImport } from './routes/admin/propert
 import { Route as AdminObligationsRouteRouteImport } from './routes/admin/obligations/route'
 import { Route as AdminMortgagesRouteRouteImport } from './routes/admin/mortgages/route'
 import { Route as AdminListingsRouteRouteImport } from './routes/admin/listings/route'
+import { Route as AdminLawyersRouteRouteImport } from './routes/admin/lawyers/route'
 import { Route as AdminDealsRouteRouteImport } from './routes/admin/deals/route'
 import { Route as AdminBorrowersRouteRouteImport } from './routes/admin/borrowers/route'
 import { Route as DemoRbacIndexRouteImport } from './routes/demo/rbac/index'
@@ -149,6 +151,7 @@ import { Route as AdminObligationsRecordidRouteImport } from './routes/admin/obl
 import { Route as AdminMortgagesRecordidRouteImport } from './routes/admin/mortgages/$recordid'
 import { Route as AdminListingsRecordidRouteImport } from './routes/admin/listings/$recordid'
 import { Route as AdminLegalLsoRouteImport } from './routes/admin/legal/lso'
+import { Route as AdminLawyersRecordidRouteImport } from './routes/admin/lawyers/$recordid'
 import { Route as AdminDocumentEngineVariablesRouteImport } from './routes/admin.document-engine.variables'
 import { Route as AdminDocumentEngineTemplatesRouteImport } from './routes/admin.document-engine.templates'
 import { Route as AdminDocumentEnginePublishedTemplatesRouteImport } from './routes/admin.document-engine.published-templates'
@@ -242,6 +245,11 @@ const LenderRouteRoute = LenderRouteRouteImport.update({
 const LawyerRouteRoute = LawyerRouteRouteImport.update({
   id: '/lawyer',
   path: '/lawyer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DealsRouteRoute = DealsRouteRouteImport.update({
+  id: '/deals',
+  path: '/deals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BrokerRouteRoute = BrokerRouteRouteImport.update({
@@ -479,9 +487,9 @@ const DemoConvexRoute = DemoConvexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const DealsDealIdRoute = DealsDealIdRouteImport.update({
-  id: '/deals/$dealId',
-  path: '/deals/$dealId',
-  getParentRoute: () => rootRouteImport,
+  id: '/$dealId',
+  path: '/$dealId',
+  getParentRoute: () => DealsRouteRoute,
 } as any)
 const CheckoutCompleteRoute = CheckoutCompleteRouteImport.update({
   id: '/checkout/complete',
@@ -606,6 +614,11 @@ const AdminMortgagesRouteRoute = AdminMortgagesRouteRouteImport.update({
 const AdminListingsRouteRoute = AdminListingsRouteRouteImport.update({
   id: '/listings',
   path: '/listings',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminLawyersRouteRoute = AdminLawyersRouteRouteImport.update({
+  id: '/lawyers',
+  path: '/lawyers',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminDealsRouteRoute = AdminDealsRouteRouteImport.update({
@@ -907,6 +920,11 @@ const AdminLegalLsoRoute = AdminLegalLsoRouteImport.update({
   path: '/legal/lso',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminLawyersRecordidRoute = AdminLawyersRecordidRouteImport.update({
+  id: '/$recordid',
+  path: '/$recordid',
+  getParentRoute: () => AdminLawyersRouteRoute,
+} as any)
 const AdminDocumentEngineVariablesRoute =
   AdminDocumentEngineVariablesRouteImport.update({
     id: '/variables',
@@ -1049,6 +1067,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/borrower': typeof BorrowerRouteRouteWithChildren
   '/broker': typeof BrokerRouteRouteWithChildren
+  '/deals': typeof DealsRouteRouteWithChildren
   '/lawyer': typeof LawyerRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
   '/listings': typeof ListingsRouteRouteWithChildren
@@ -1065,6 +1084,7 @@ export interface FileRoutesByFullPath {
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
+  '/admin/lawyers': typeof AdminLawyersRouteRouteWithChildren
   '/admin/listings': typeof AdminListingsRouteRouteWithChildren
   '/admin/mortgages': typeof AdminMortgagesRouteRouteWithChildren
   '/admin/obligations': typeof AdminObligationsRouteRouteWithChildren
@@ -1148,6 +1168,7 @@ export interface FileRoutesByFullPath {
   '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
+  '/admin/lawyers/$recordid': typeof AdminLawyersRecordidRoute
   '/admin/legal/lso': typeof AdminLegalLsoRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
   '/admin/mortgages/$recordid': typeof AdminMortgagesRecordidRoute
@@ -1214,6 +1235,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/borrower': typeof BorrowerRouteRouteWithChildren
+  '/deals': typeof DealsRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
   '/onboard': typeof OnboardRouteRoute
   '/about': typeof AboutRoute
@@ -1227,6 +1249,7 @@ export interface FileRoutesByTo {
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
+  '/admin/lawyers': typeof AdminLawyersRouteRouteWithChildren
   '/admin/listings': typeof AdminListingsRouteRouteWithChildren
   '/admin/mortgages': typeof AdminMortgagesRouteRouteWithChildren
   '/admin/obligations': typeof AdminObligationsRouteRouteWithChildren
@@ -1299,6 +1322,7 @@ export interface FileRoutesByTo {
   '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
+  '/admin/lawyers/$recordid': typeof AdminLawyersRecordidRoute
   '/admin/legal/lso': typeof AdminLegalLsoRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
   '/admin/mortgages/$recordid': typeof AdminMortgagesRecordidRoute
@@ -1367,6 +1391,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteRouteWithChildren
   '/borrower': typeof BorrowerRouteRouteWithChildren
   '/broker': typeof BrokerRouteRouteWithChildren
+  '/deals': typeof DealsRouteRouteWithChildren
   '/lawyer': typeof LawyerRouteRouteWithChildren
   '/lender': typeof LenderRouteRouteWithChildren
   '/listings': typeof ListingsRouteRouteWithChildren
@@ -1383,6 +1408,7 @@ export interface FileRoutesById {
   '/unauthorized': typeof UnauthorizedRoute
   '/admin/borrowers': typeof AdminBorrowersRouteRouteWithChildren
   '/admin/deals': typeof AdminDealsRouteRouteWithChildren
+  '/admin/lawyers': typeof AdminLawyersRouteRouteWithChildren
   '/admin/listings': typeof AdminListingsRouteRouteWithChildren
   '/admin/mortgages': typeof AdminMortgagesRouteRouteWithChildren
   '/admin/obligations': typeof AdminObligationsRouteRouteWithChildren
@@ -1466,6 +1492,7 @@ export interface FileRoutesById {
   '/admin/document-engine/published-templates': typeof AdminDocumentEnginePublishedTemplatesRoute
   '/admin/document-engine/templates': typeof AdminDocumentEngineTemplatesRoute
   '/admin/document-engine/variables': typeof AdminDocumentEngineVariablesRoute
+  '/admin/lawyers/$recordid': typeof AdminLawyersRecordidRoute
   '/admin/legal/lso': typeof AdminLegalLsoRoute
   '/admin/listings/$recordid': typeof AdminListingsRecordidRoute
   '/admin/mortgages/$recordid': typeof AdminMortgagesRecordidRoute
@@ -1535,6 +1562,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/borrower'
     | '/broker'
+    | '/deals'
     | '/lawyer'
     | '/lender'
     | '/listings'
@@ -1551,6 +1579,7 @@ export interface FileRouteTypes {
     | '/unauthorized'
     | '/admin/borrowers'
     | '/admin/deals'
+    | '/admin/lawyers'
     | '/admin/listings'
     | '/admin/mortgages'
     | '/admin/obligations'
@@ -1634,6 +1663,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
+    | '/admin/lawyers/$recordid'
     | '/admin/legal/lso'
     | '/admin/listings/$recordid'
     | '/admin/mortgages/$recordid'
@@ -1700,6 +1730,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/borrower'
+    | '/deals'
     | '/lender'
     | '/onboard'
     | '/about'
@@ -1713,6 +1744,7 @@ export interface FileRouteTypes {
     | '/unauthorized'
     | '/admin/borrowers'
     | '/admin/deals'
+    | '/admin/lawyers'
     | '/admin/listings'
     | '/admin/mortgages'
     | '/admin/obligations'
@@ -1785,6 +1817,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
+    | '/admin/lawyers/$recordid'
     | '/admin/legal/lso'
     | '/admin/listings/$recordid'
     | '/admin/mortgages/$recordid'
@@ -1852,6 +1885,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/borrower'
     | '/broker'
+    | '/deals'
     | '/lawyer'
     | '/lender'
     | '/listings'
@@ -1868,6 +1902,7 @@ export interface FileRouteTypes {
     | '/unauthorized'
     | '/admin/borrowers'
     | '/admin/deals'
+    | '/admin/lawyers'
     | '/admin/listings'
     | '/admin/mortgages'
     | '/admin/obligations'
@@ -1951,6 +1986,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine/published-templates'
     | '/admin/document-engine/templates'
     | '/admin/document-engine/variables'
+    | '/admin/lawyers/$recordid'
     | '/admin/legal/lso'
     | '/admin/listings/$recordid'
     | '/admin/mortgages/$recordid'
@@ -2019,6 +2055,7 @@ export interface RootRouteChildren {
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   BorrowerRouteRoute: typeof BorrowerRouteRouteWithChildren
   BrokerRouteRoute: typeof BrokerRouteRouteWithChildren
+  DealsRouteRoute: typeof DealsRouteRouteWithChildren
   LawyerRouteRoute: typeof LawyerRouteRouteWithChildren
   LenderRouteRoute: typeof LenderRouteRouteWithChildren
   ListingsRouteRoute: typeof ListingsRouteRouteWithChildren
@@ -2043,7 +2080,6 @@ export interface RootRouteChildren {
   DemoRbacAuthRouteRoute: typeof DemoRbacAuthRouteRouteWithChildren
   AuthenticatedAuthenticatedRoute: typeof AuthenticatedAuthenticatedRoute
   CheckoutCompleteRoute: typeof CheckoutCompleteRoute
-  DealsDealIdRoute: typeof DealsDealIdRoute
   DemoConvexRoute: typeof DemoConvexRoute
   DemoConvexActionCacheRoute: typeof DemoConvexActionCacheRoute
   DemoConvexAggregateRoute: typeof DemoConvexAggregateRoute
@@ -2178,6 +2214,13 @@ declare module '@tanstack/react-router' {
       path: '/lawyer'
       fullPath: '/lawyer'
       preLoaderRoute: typeof LawyerRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deals': {
+      id: '/deals'
+      path: '/deals'
+      fullPath: '/deals'
+      preLoaderRoute: typeof DealsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/broker': {
@@ -2504,10 +2547,10 @@ declare module '@tanstack/react-router' {
     }
     '/deals/$dealId': {
       id: '/deals/$dealId'
-      path: '/deals/$dealId'
+      path: '/$dealId'
       fullPath: '/deals/$dealId'
       preLoaderRoute: typeof DealsDealIdRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof DealsRouteRoute
     }
     '/checkout/complete': {
       id: '/checkout/complete'
@@ -2675,6 +2718,13 @@ declare module '@tanstack/react-router' {
       path: '/listings'
       fullPath: '/admin/listings'
       preLoaderRoute: typeof AdminListingsRouteRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/lawyers': {
+      id: '/admin/lawyers'
+      path: '/lawyers'
+      fullPath: '/admin/lawyers'
+      preLoaderRoute: typeof AdminLawyersRouteRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/deals': {
@@ -3062,6 +3112,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLegalLsoRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/lawyers/$recordid': {
+      id: '/admin/lawyers/$recordid'
+      path: '/$recordid'
+      fullPath: '/admin/lawyers/$recordid'
+      preLoaderRoute: typeof AdminLawyersRecordidRouteImport
+      parentRoute: typeof AdminLawyersRouteRoute
+    }
     '/admin/document-engine/variables': {
       id: '/admin/document-engine/variables'
       path: '/variables'
@@ -3256,6 +3313,17 @@ const AdminDealsRouteRouteWithChildren = AdminDealsRouteRoute._addFileChildren(
   AdminDealsRouteRouteChildren,
 )
 
+interface AdminLawyersRouteRouteChildren {
+  AdminLawyersRecordidRoute: typeof AdminLawyersRecordidRoute
+}
+
+const AdminLawyersRouteRouteChildren: AdminLawyersRouteRouteChildren = {
+  AdminLawyersRecordidRoute: AdminLawyersRecordidRoute,
+}
+
+const AdminLawyersRouteRouteWithChildren =
+  AdminLawyersRouteRoute._addFileChildren(AdminLawyersRouteRouteChildren)
+
 interface AdminListingsRouteRouteChildren {
   AdminListingsRecordidRoute: typeof AdminListingsRecordidRoute
 }
@@ -3360,6 +3428,7 @@ const AdminOriginationsRouteWithChildren =
 interface AdminRouteRouteChildren {
   AdminBorrowersRouteRoute: typeof AdminBorrowersRouteRouteWithChildren
   AdminDealsRouteRoute: typeof AdminDealsRouteRouteWithChildren
+  AdminLawyersRouteRoute: typeof AdminLawyersRouteRouteWithChildren
   AdminListingsRouteRoute: typeof AdminListingsRouteRouteWithChildren
   AdminMortgagesRouteRoute: typeof AdminMortgagesRouteRouteWithChildren
   AdminObligationsRouteRoute: typeof AdminObligationsRouteRouteWithChildren
@@ -3379,6 +3448,7 @@ interface AdminRouteRouteChildren {
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminBorrowersRouteRoute: AdminBorrowersRouteRouteWithChildren,
   AdminDealsRouteRoute: AdminDealsRouteRouteWithChildren,
+  AdminLawyersRouteRoute: AdminLawyersRouteRouteWithChildren,
   AdminListingsRouteRoute: AdminListingsRouteRouteWithChildren,
   AdminMortgagesRouteRoute: AdminMortgagesRouteRouteWithChildren,
   AdminObligationsRouteRoute: AdminObligationsRouteRouteWithChildren,
@@ -3451,6 +3521,18 @@ const BrokerRouteRouteChildren: BrokerRouteRouteChildren = {
 
 const BrokerRouteRouteWithChildren = BrokerRouteRoute._addFileChildren(
   BrokerRouteRouteChildren,
+)
+
+interface DealsRouteRouteChildren {
+  DealsDealIdRoute: typeof DealsDealIdRoute
+}
+
+const DealsRouteRouteChildren: DealsRouteRouteChildren = {
+  DealsDealIdRoute: DealsDealIdRoute,
+}
+
+const DealsRouteRouteWithChildren = DealsRouteRoute._addFileChildren(
+  DealsRouteRouteChildren,
 )
 
 interface LawyerRouteRouteChildren {
@@ -3769,6 +3851,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRouteRoute: AdminRouteRouteWithChildren,
   BorrowerRouteRoute: BorrowerRouteRouteWithChildren,
   BrokerRouteRoute: BrokerRouteRouteWithChildren,
+  DealsRouteRoute: DealsRouteRouteWithChildren,
   LawyerRouteRoute: LawyerRouteRouteWithChildren,
   LenderRouteRoute: LenderRouteRouteWithChildren,
   ListingsRouteRoute: ListingsRouteRouteWithChildren,
@@ -3794,7 +3877,6 @@ const rootRouteChildren: RootRouteChildren = {
   DemoRbacAuthRouteRoute: DemoRbacAuthRouteRouteWithChildren,
   AuthenticatedAuthenticatedRoute: AuthenticatedAuthenticatedRoute,
   CheckoutCompleteRoute: CheckoutCompleteRoute,
-  DealsDealIdRoute: DealsDealIdRoute,
   DemoConvexRoute: DemoConvexRoute,
   DemoConvexActionCacheRoute: DemoConvexActionCacheRoute,
   DemoConvexAggregateRoute: DemoConvexAggregateRoute,

@@ -1,6 +1,7 @@
 import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveDealAccessDecision } from "../../../src/lib/deals/access-policy/resolve";
 import { FAIRLEND_ADMIN } from "../../../src/test/auth/identities";
 import { registerAuditLogComponent } from "../../../src/test/convex/registerAuditLogComponent";
 import { internal } from "../../_generated/api";
@@ -10,7 +11,8 @@ import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
 
 const paymentProofsApi = anyApi.deals.paymentProofs;
-const UPLOAD_FORBIDDEN_ERROR = /Only lender, selected lawyer, or admin/i;
+const UPLOAD_FORBIDDEN_ERROR =
+	/Only purchasing lender, ready primary lawyer, or admin/i;
 const ATTACHMENT_SOURCE_ERROR = /payment proof upload/i;
 const ATTACHMENT_OWNER_ERROR = /own uploaded payment proof/i;
 const INVALID_TRANSFER_DATE_ERROR = /Transfer date/i;
@@ -77,6 +79,24 @@ const GUEST_LAWYER_IDENTITY = {
 	user_email: "guest-lawyer@example.test",
 	user_email_verified: true,
 };
+
+function lawyerViewerFromIdentity(
+	identity: typeof GUEST_LAWYER_IDENTITY | typeof PLATFORM_LAWYER_IDENTITY
+) {
+	return {
+		authId: identity.subject,
+		email: identity.user_email,
+		firstName: undefined,
+		isFairLendAdmin: false,
+		lastName: undefined,
+		orgId: identity.org_id,
+		orgName: undefined,
+		permissions: new Set(["deal:view"]),
+		role: "lawyer",
+		roles: new Set(["lawyer"]),
+		verifiedEmail: identity.user_email,
+	};
+}
 
 function createHarness() {
 	process.env.DISABLE_GT_HASHCHAIN = "true";
@@ -216,11 +236,14 @@ async function seedFundsPendingDeal(t: ReturnType<typeof createHarness>) {
 			closingDate: 2,
 			createdAt: 1,
 			createdBy: "seed",
+			purchasingLenderAuthId: "lender-auth",
+			sellingLenderAuthId: "seller-auth",
 		});
 		await ctx.db.insert("dealAccess", {
 			dealId,
 			userId: "lender-auth",
 			role: "lender",
+			persona: "purchasing_lender",
 			status: "active",
 			grantedAt: 1,
 			grantedBy: "seed",
@@ -284,13 +307,64 @@ async function grantDealAccess(
 	}
 ) {
 	await t.run(async (ctx) => {
+		let persona: "broker_of_record" | "primary_lawyer" | "purchasing_lender";
+		if (args.role === "guest_lawyer" || args.role === "platform_lawyer") {
+			persona = "primary_lawyer";
+		} else if (args.role === "lender") {
+			persona = "purchasing_lender";
+		} else {
+			persona = "broker_of_record";
+		}
 		await ctx.db.insert("dealAccess", {
 			dealId: args.dealId,
 			userId: args.userId,
 			role: args.role,
+			persona,
 			status: "active",
 			grantedAt: 1,
 			grantedBy: "seed",
+		});
+	});
+}
+
+async function seedReadyPrimaryLawyer(
+	t: ReturnType<typeof createHarness>,
+	args: {
+		dealId: Id<"deals">;
+		identity: typeof GUEST_LAWYER_IDENTITY | typeof PLATFORM_LAWYER_IDENTITY;
+		role: "guest_lawyer" | "platform_lawyer";
+	}
+) {
+	await grantDealAccess(t, {
+		dealId: args.dealId,
+		role: args.role,
+		userId: args.identity.subject,
+	});
+	await t.run(async (ctx) => {
+		await ctx.db.patch(args.dealId, {
+			lawyerId: args.identity.subject,
+			lawyerType: args.role,
+		});
+		await ctx.db.insert("lawyerVerifications", {
+			authId: args.identity.subject,
+			checkType: "manual_admin",
+			createdAt: 1,
+			createdBy: "seed",
+			dealId: args.dealId,
+			outcome: "eligible",
+			provider: "manual_admin",
+			reasonCodes: ["manual_override"],
+			sourceSnapshot: { source: "payment_proof_test" },
+		});
+		await ctx.db.insert("representationEngagements", {
+			createdAt: 1,
+			dealId: args.dealId,
+			evidenceHash: `seed:${String(args.dealId)}:${args.identity.subject}`,
+			lawyerAuthId: args.identity.subject,
+			provider: "manual_admin",
+			signedAt: 1,
+			status: "signed",
+			updatedAt: 1,
 		});
 	});
 }
@@ -445,6 +519,71 @@ function expectNoFundsSideEffects(
 }
 
 describe("deal payment proof schema", () => {
+	it("lets ready lawyers create payment proof upload assets without document upload admin permissions", async () => {
+		const t = createHarness();
+		const seeded = await seedFundsPendingDeal(t);
+		await seedReadyPrimaryLawyer(t, {
+			dealId: seeded.dealId,
+			identity: GUEST_LAWYER_IDENTITY,
+			role: "guest_lawyer",
+		});
+		await seedUser(t, {
+			authId: GUEST_LAWYER_IDENTITY.subject,
+			email: GUEST_LAWYER_IDENTITY.user_email,
+		});
+		const fileRef = await t.run(async (ctx) => {
+			const stored = await (
+				ctx.storage as unknown as { store: (blob: Blob) => Promise<string> }
+			).store(
+				new Blob(["guest lawyer wire proof"], { type: "application/pdf" })
+			);
+			return stored as Id<"_storage">;
+		});
+
+		const uploadUrl = await t
+			.withIdentity(GUEST_LAWYER_IDENTITY)
+			.mutation(paymentProofsApi.generatePaymentProofUploadUrl, {
+				dealId: seeded.dealId,
+			});
+		const created = await t
+			.withIdentity(GUEST_LAWYER_IDENTITY)
+			.mutation(paymentProofsApi.createPaymentProofAsset, {
+				dealId: seeded.dealId,
+				fileHash: "guest-lawyer-wire-proof-hash",
+				fileRef,
+				fileSize: 23,
+				mimeType: "application/pdf",
+				name: "Guest lawyer wire proof",
+				originalFilename: "guest-lawyer-wire-proof.pdf",
+			});
+
+		expect(uploadUrl.uploadUrl).toEqual(expect.any(String));
+		const asset = await t.run((ctx) => ctx.db.get(created.assetId));
+		expect(asset).toMatchObject({
+			fileHash: "guest-lawyer-wire-proof-hash",
+			source: "payment_proof_upload",
+			uploadedByUserId: expect.any(String),
+		});
+	});
+
+	it("blocks non-upload personas from creating payment proof upload assets", async () => {
+		const t = createHarness();
+		const seeded = await seedFundsPendingDeal(t);
+		await grantDealAccess(t, {
+			dealId: seeded.dealId,
+			role: "broker_of_record",
+			userId: BROKER_IDENTITY.subject,
+		});
+
+		await expect(
+			t
+				.withIdentity(BROKER_IDENTITY)
+				.mutation(paymentProofsApi.generatePaymentProofUploadUrl, {
+					dealId: seeded.dealId,
+				})
+		).rejects.toThrow(UPLOAD_FORBIDDEN_ERROR);
+	});
+
 	it("creates a pending proof without advancing the deal", async () => {
 		const t = createHarness();
 		const seeded = await seedFundsPendingDeal(t);
@@ -464,7 +603,8 @@ describe("deal payment proof schema", () => {
 		expect(rows.proof).toMatchObject({
 			status: "pending_review",
 			submittedBy: "lender-auth",
-			submittedByRole: "lender",
+			submittedByPersona: "purchasing_lender",
+			submittedByRole: "purchasing_lender",
 			amount: 125_000,
 			currency: "CAD",
 		});
@@ -821,9 +961,9 @@ describe("deal payment proof schema", () => {
 	it("allows platform lawyer, guest lawyer, and admin uploads", async () => {
 		const t = createHarness();
 		const platformSeeded = await seedFundsPendingDeal(t);
-		await grantDealAccess(t, {
+		await seedReadyPrimaryLawyer(t, {
 			dealId: platformSeeded.dealId,
-			userId: PLATFORM_LAWYER_IDENTITY.subject,
+			identity: PLATFORM_LAWYER_IDENTITY,
 			role: "platform_lawyer",
 		});
 		const platformLawyerUserId = await seedUser(t, {
@@ -834,6 +974,40 @@ describe("deal payment proof schema", () => {
 			uploadedByUserId: platformLawyerUserId,
 			name: "platform-lawyer-proof.pdf",
 		});
+		const platformSeed = await t.run(async (ctx) => ({
+			access: await ctx.db
+				.query("dealAccess")
+				.withIndex("by_user_and_deal", (query) =>
+					query
+						.eq("userId", PLATFORM_LAWYER_IDENTITY.subject)
+						.eq("dealId", platformSeeded.dealId)
+				)
+				.collect(),
+			deal: await ctx.db.get(platformSeeded.dealId),
+		}));
+		expect(platformSeed.deal).toMatchObject({
+			lawyerId: PLATFORM_LAWYER_IDENTITY.subject,
+			lawyerType: "platform_lawyer",
+		});
+		expect(platformSeed.access).toEqual([
+			expect.objectContaining({
+				persona: "primary_lawyer",
+				role: "platform_lawyer",
+				status: "active",
+			}),
+		]);
+		const platformDecision = await t.run((ctx) =>
+			resolveDealAccessDecision(ctx, {
+				dealId: platformSeeded.dealId,
+				intent: "deal.payment_proof.upload",
+				viewer: lawyerViewerFromIdentity(PLATFORM_LAWYER_IDENTITY),
+			})
+		);
+		expect(platformDecision).toMatchObject({
+			allowed: true,
+			persona: "primary_lawyer",
+			readiness: "active",
+		});
 		const platformResult = await t
 			.withIdentity(PLATFORM_LAWYER_IDENTITY)
 			.mutation(paymentProofsApi.uploadManualPaymentProof, {
@@ -842,9 +1016,9 @@ describe("deal payment proof schema", () => {
 			});
 
 		const guestSeeded = await seedFundsPendingDeal(t);
-		await grantDealAccess(t, {
+		await seedReadyPrimaryLawyer(t, {
 			dealId: guestSeeded.dealId,
-			userId: GUEST_LAWYER_IDENTITY.subject,
+			identity: GUEST_LAWYER_IDENTITY,
 			role: "guest_lawyer",
 		});
 		const guestLawyerUserId = await seedUser(t, {
@@ -854,6 +1028,18 @@ describe("deal payment proof schema", () => {
 		const guestLawyerAssetId = await seedDocumentAsset(t, {
 			uploadedByUserId: guestLawyerUserId,
 			name: "guest-lawyer-proof.pdf",
+		});
+		const guestDecision = await t.run((ctx) =>
+			resolveDealAccessDecision(ctx, {
+				dealId: guestSeeded.dealId,
+				intent: "deal.payment_proof.upload",
+				viewer: lawyerViewerFromIdentity(GUEST_LAWYER_IDENTITY),
+			})
+		);
+		expect(guestDecision).toMatchObject({
+			allowed: true,
+			persona: "primary_lawyer",
+			readiness: "active",
 		});
 		const guestResult = await t
 			.withIdentity(GUEST_LAWYER_IDENTITY)
@@ -875,9 +1061,18 @@ describe("deal payment proof schema", () => {
 			guestProof: await ctx.db.get(guestResult.proofId),
 			adminProof: await ctx.db.get(adminResult.proofId),
 		}));
-		expect(rows.platformProof?.submittedByRole).toBe("platform_lawyer");
-		expect(rows.guestProof?.submittedByRole).toBe("guest_lawyer");
-		expect(rows.adminProof?.submittedByRole).toBe("admin");
+		expect(rows.platformProof).toMatchObject({
+			submittedByPersona: "primary_lawyer",
+			submittedByRole: "primary_lawyer",
+		});
+		expect(rows.guestProof).toMatchObject({
+			submittedByPersona: "primary_lawyer",
+			submittedByRole: "primary_lawyer",
+		});
+		expect(rows.adminProof).toMatchObject({
+			submittedByPersona: "fairlend_admin",
+			submittedByRole: "fairlend_admin",
+		});
 	});
 
 	it("rejects attachments that are not payment proof uploads", async () => {

@@ -2,22 +2,29 @@ import { describe, expect, it } from "vitest";
 import {
 	CANONICAL_DOCUMENT_VARIABLES,
 	getCanonicalDocumentVariable,
+	getLegacyDocumentVariableAlias,
 	isCanonicalDocumentVariableKey,
 } from "../variableRegistry";
 
 describe("canonical document variable registry", () => {
-	it("includes deal-lock lender, lawyer, fraction, and investment variables", () => {
-		expect(isCanonicalDocumentVariableKey("lender_primary_full_name")).toBe(
+	it("includes canonical deal persona variables for lenders, lawyer, fraction, and investment values", () => {
+		expect(isCanonicalDocumentVariableKey("purchasing_lender_full_name")).toBe(
 			true
 		);
-		expect(isCanonicalDocumentVariableKey("lender_primary_email")).toBe(true);
-		expect(isCanonicalDocumentVariableKey("lender_primary_system_id")).toBe(
+		expect(isCanonicalDocumentVariableKey("purchasing_lender_email")).toBe(
 			true
 		);
-		expect(isCanonicalDocumentVariableKey("lawyer_primary_full_name")).toBe(
+		expect(isCanonicalDocumentVariableKey("purchasing_lender_system_id")).toBe(
 			true
 		);
-		expect(isCanonicalDocumentVariableKey("lawyer_primary_email")).toBe(true);
+		expect(isCanonicalDocumentVariableKey("selling_lender_full_name")).toBe(
+			true
+		);
+		expect(isCanonicalDocumentVariableKey("selling_lender_email")).toBe(true);
+		expect(isCanonicalDocumentVariableKey("primary_lawyer_full_name")).toBe(
+			true
+		);
+		expect(isCanonicalDocumentVariableKey("primary_lawyer_email")).toBe(true);
 		expect(isCanonicalDocumentVariableKey("deal_selected_fraction_units")).toBe(
 			true
 		);
@@ -28,12 +35,12 @@ describe("canonical document variable registry", () => {
 		const expectedMortgageAttachmentKeys = [
 			"assigned_broker_email",
 			"assigned_broker_full_name",
-			"borrower_co_1_email",
-			"borrower_co_1_full_name",
-			"borrower_co_2_email",
-			"borrower_co_2_full_name",
-			"borrower_primary_email",
-			"borrower_primary_full_name",
+			"co_borrower_1_email",
+			"co_borrower_1_full_name",
+			"co_borrower_2_email",
+			"co_borrower_2_full_name",
+			"primary_borrower_email",
+			"primary_borrower_full_name",
 			"broker_of_record_email",
 			"broker_of_record_full_name",
 			"listing_description",
@@ -75,6 +82,36 @@ describe("canonical document variable registry", () => {
 			readOnly: true,
 			sourcePath: "deal.fractionalShare * mortgage.principal",
 			type: "currency",
+		});
+	});
+
+	it("keeps legacy broad variables as explicit aliases, not canonical authoring variables", () => {
+		expect(isCanonicalDocumentVariableKey("lender_primary_email")).toBe(false);
+		expect(isCanonicalDocumentVariableKey("borrower_co_1_email")).toBe(false);
+		expect(isCanonicalDocumentVariableKey("borrower_primary_email")).toBe(
+			false
+		);
+		expect(isCanonicalDocumentVariableKey("lawyer_primary_email")).toBe(false);
+
+		expect(getLegacyDocumentVariableAlias("lender_primary_email")).toEqual({
+			canonicalKey: "purchasing_lender_email",
+			legacyKey: "lender_primary_email",
+			removal: "Migrate published templates to purchasing_lender_email.",
+		});
+		expect(getLegacyDocumentVariableAlias("borrower_primary_email")).toEqual({
+			canonicalKey: "primary_borrower_email",
+			legacyKey: "borrower_primary_email",
+			removal: "Migrate published templates to primary_borrower_email.",
+		});
+		expect(getLegacyDocumentVariableAlias("lawyer_primary_email")).toEqual({
+			canonicalKey: "primary_lawyer_email",
+			legacyKey: "lawyer_primary_email",
+			removal: "Migrate published templates to primary_lawyer_email.",
+		});
+		expect(getLegacyDocumentVariableAlias("borrower_co_1_email")).toEqual({
+			canonicalKey: "co_borrower_1_email",
+			legacyKey: "borrower_co_1_email",
+			removal: "Migrate published templates to co_borrower_1_email.",
 		});
 	});
 

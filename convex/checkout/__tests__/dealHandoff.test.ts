@@ -884,7 +884,7 @@ describe("paid checkout to deal handoff", () => {
 				}),
 			])
 		);
-		expect(guestLawyerCanAccess).toBe(true);
+		expect(guestLawyerCanAccess).toBe(false);
 	});
 
 	it("does not duplicate guest lawyer WorkOS invitations on handoff replay", async () => {

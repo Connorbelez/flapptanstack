@@ -645,6 +645,37 @@ export const lawyerMutation = authedMutation
 	.use(requireOrgContext)
 	.use(requirePermission("lawyer:access"));
 
+const requireLawyerOnboardingIdentity = convex
+	.$context<{ db: GenericDatabaseReader<DataModel>; viewer: Viewer }>()
+	.createMiddleware(async (context, next) => {
+		const canUseLawyerOnboarding =
+			context.viewer.roles.has("lawyer") ||
+			hasEffectivePermission(
+				{
+					orgId: context.viewer.orgId,
+					permissions: context.viewer.permissions,
+					role: context.viewer.role,
+					roles: context.viewer.roles,
+				},
+				"lawyer:access"
+			);
+		if (!canUseLawyerOnboarding) {
+			await auditAuthFailure(context, context.viewer, {
+				middleware: "requireLawyerOnboardingIdentity",
+				reason: "Lawyer onboarding requires a lawyer identity",
+			});
+			throw new ConvexError("Forbidden: lawyer onboarding identity required");
+		}
+		return next(context);
+	});
+
+export const lawyerOnboardingQuery = authedQuery.use(
+	requireLawyerOnboardingIdentity
+);
+export const lawyerOnboardingMutation = authedMutation.use(
+	requireLawyerOnboardingIdentity
+);
+
 export const adminQuery = authedQuery.use(requireFairLendAdmin);
 
 type WithoutPortalId<T extends PropertyValidators> = Omit<T, "portalId">;

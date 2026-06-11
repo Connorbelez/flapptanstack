@@ -87,7 +87,9 @@ export function LawyerWorkosInvitationRouteContent({
 			.then((nextResult) => {
 				setResolveResult(nextResult);
 				if (nextResult.status === "not_found") {
-					setError("This WorkOS invitation is not linked to an active deal.");
+					setError(
+						"This WorkOS invitation is not linked to an active lawyer invitation."
+					);
 				}
 			})
 			.catch((unknownError: unknown) => {
@@ -163,7 +165,7 @@ export function LawyerWorkosInvitationRouteContent({
 	if (auth.loading || !(resolveResult || error)) {
 		return (
 			<LawyerInvitationShell
-				body="Checking your WorkOS session before connecting this deal."
+				body="Checking your WorkOS session before connecting lawyer access."
 				title="Preparing invitation"
 			/>
 		);

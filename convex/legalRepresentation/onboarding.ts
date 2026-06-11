@@ -5,8 +5,8 @@ import { grantDealAccess } from "../deals/mutations";
 import {
 	authedMutation,
 	convex,
-	lawyerMutation,
-	lawyerQuery,
+	lawyerOnboardingMutation,
+	lawyerOnboardingQuery,
 	type Viewer,
 } from "../fluent";
 import { recordSignedRepresentationEngagementRow } from "./engagements";
@@ -15,11 +15,14 @@ import {
 	normalizeJurisdiction,
 	normalizeLawyerEmail,
 	normalizeLegalSourceSnapshot,
+	normalizeLegalWhitespace,
 } from "./normalization";
+import { upsertGuestLawyerProfile } from "./profiles";
+import { progressDealLegalRepresentationState } from "./progression";
 import { recordLawyerVerificationRow } from "./verifications";
 
 type OnboardingMutationCtx = Pick<MutationCtx, "db">;
-type OwnedOnboardingMutationCtx = OnboardingMutationCtx & {
+type OwnedOnboardingMutationCtx = MutationCtx & {
 	readonly viewer: Viewer;
 };
 type OwnedSessionResult =
@@ -35,6 +38,8 @@ type OwnedSessionResult =
 const LSO_VERIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 90;
 const IDV_VERIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 365;
 const IDENTITY_CONFIRMATION_TTL_MS = 1000 * 60 * 60 * 24 * 365;
+const PLATFORM_RETURN_PATH = "/lawyer";
+const PLATFORM_AGREEMENT_VERSION = "platform-lawyer-v1";
 
 function onboardingRoute(sessionId: Id<"lawyerOnboardingSessions">) {
 	return `/lawyer/onboarding/${String(sessionId)}`;
@@ -44,8 +49,30 @@ function dealRoute(dealId: Id<"deals">) {
 	return `/deals/${String(dealId)}`;
 }
 
+async function completeDealStateMachineAfterOnboarding(
+	ctx: OwnedOnboardingMutationCtx,
+	dealId: Id<"deals">
+) {
+	await progressDealLegalRepresentationState(ctx, {
+		dealId,
+		source: {
+			actorId: ctx.viewer.authId,
+			channel: "onboarding_portal",
+		},
+		sourceActorId: ctx.viewer.authId,
+	});
+}
+
 function viewerEmail(viewer: Viewer) {
 	return viewer.verifiedEmail ?? viewer.email;
+}
+
+function optionalNormalizedText(value: string | undefined) {
+	if (value === undefined) {
+		return undefined;
+	}
+	const normalized = normalizeLegalWhitespace(value);
+	return normalized.length > 0 ? normalized : undefined;
 }
 
 function isActiveInvitationStatus(status: Doc<"lawyerInvitations">["status"]) {
@@ -66,6 +93,19 @@ function latestSession(
 			return String(right._id).localeCompare(String(left._id));
 		})[0] ?? null
 	);
+}
+
+function isPlatformOnboardingSession(session: Doc<"lawyerOnboardingSessions">) {
+	return (
+		session.path === "platform_assigned" ||
+		session.path === "platform_application"
+	);
+}
+
+function isActivePlatformInvitationStatus(
+	status: Doc<"platformLawyerInvitations">["status"]
+) {
+	return status === "pending" || status === "sent";
 }
 
 async function assertActiveInvitation(
@@ -90,6 +130,23 @@ async function assertActiveInvitation(
 	}
 	if (!isActiveInvitationStatus(invitation.status)) {
 		throw new ConvexError("Lawyer invitation is not active");
+	}
+}
+
+function assertActivePlatformInvitation(
+	invitation: Doc<"platformLawyerInvitations">
+) {
+	if (invitation.status === "canceled") {
+		throw new ConvexError("Platform lawyer invitation canceled");
+	}
+	if (invitation.status === "failed") {
+		throw new ConvexError("Platform lawyer invitation delivery failed");
+	}
+	if (
+		!isActivePlatformInvitationStatus(invitation.status) &&
+		invitation.status !== "accepted"
+	) {
+		throw new ConvexError("Platform lawyer invitation is not active");
 	}
 }
 
@@ -185,6 +242,45 @@ export async function startOrResumeForInvitationInMutation(
 		path: "guest_invited",
 		status: "auth_pending",
 	});
+}
+
+export async function startOrResumeForPlatformInvitationInMutation(
+	ctx: OnboardingMutationCtx,
+	args: {
+		readonly invitationId: Id<"platformLawyerInvitations">;
+		readonly now?: number;
+	}
+): Promise<Doc<"lawyerOnboardingSessions">> {
+	const invitation = await ctx.db.get(args.invitationId);
+	if (!invitation) {
+		throw new ConvexError("Platform lawyer invitation not found");
+	}
+	assertActivePlatformInvitation(invitation);
+	const existing = await ctx.db
+		.query("lawyerOnboardingSessions")
+		.withIndex("by_platform_invitation", (query) =>
+			query.eq("platformLawyerInvitationId", args.invitationId)
+		)
+		.first();
+	if (existing) {
+		return existing;
+	}
+	const now = args.now ?? Date.now();
+	const sessionId = await ctx.db.insert("lawyerOnboardingSessions", {
+		createdAt: now,
+		currentStep: "auth",
+		lawyerProfileId: invitation.lawyerProfileId,
+		normalizedTargetEmail: invitation.normalizedEmail,
+		path: "platform_application",
+		platformLawyerInvitationId: invitation._id,
+		returnPath: PLATFORM_RETURN_PATH,
+		status: "auth_pending",
+		updatedAt: now,
+	});
+	await ctx.db.patch(sessionId, {
+		nextRoute: onboardingRoute(sessionId),
+	});
+	return await getSessionAfterPatch(ctx, sessionId);
 }
 
 async function getOwnedSession(
@@ -359,6 +455,28 @@ async function selectedLsoEvidenceForSession(
 			lsoLawyerId: invitation?.lsoLawyerId ?? invitationLso.lsoLawyerId,
 		};
 	}
+	if (isPlatformOnboardingSession(session)) {
+		const platformInvitation =
+			session.platformLawyerInvitationId === undefined
+				? null
+				: await ctx.db.get(session.platformLawyerInvitationId);
+		const profile =
+			session.lawyerProfileId === undefined
+				? null
+				: await ctx.db.get(session.lawyerProfileId);
+		return {
+			barNumber: platformInvitation?.barNumber ?? profile?.barNumber,
+			jurisdiction: platformInvitation?.jurisdiction ?? profile?.jurisdiction,
+			lsoLawyerId: undefined,
+		};
+	}
+	if (session.dealId === undefined) {
+		return {
+			barNumber: undefined,
+			jurisdiction: undefined,
+			lsoLawyerId: undefined,
+		};
+	}
 	const deal = await ctx.db.get(session.dealId);
 	const dealLso =
 		deal?.selectedLawyer?.type === "guest_lawyer"
@@ -386,7 +504,34 @@ async function assertSubmittedLsoMatchesSelection(
 		args.now
 	);
 	if (!(selected.barNumber && selected.jurisdiction)) {
-		throw new ConvexError("Selected lawyer LSO evidence is required");
+		const normalizedSubmittedBar = normalizeBarNumber(args.barNumber);
+		const normalizedSubmittedJurisdiction = normalizeJurisdiction(
+			args.jurisdiction
+		);
+		const lsoLawyer = await ctx.db
+			.query("lsoLawyers")
+			.withIndex("by_bar_jurisdiction", (query) =>
+				query
+					.eq("barNumber", normalizedSubmittedBar)
+					.eq("jurisdiction", normalizedSubmittedJurisdiction)
+			)
+			.first();
+		if (!lsoLawyer) {
+			throw new ConvexError("LSO lawyer not found for submitted license");
+		}
+		if (
+			lsoLawyer.licenseeType !== "lawyer" ||
+			!lsoLawyer.entitledToPractise ||
+			lsoLawyer.licensingStatus !== "licensed" ||
+			lsoLawyer.restrictionStatus !== "clear"
+		) {
+			throw new ConvexError("Submitted LSO lawyer is not selectable");
+		}
+		return {
+			barNumber: normalizedSubmittedBar,
+			jurisdiction: normalizedSubmittedJurisdiction,
+			lsoLawyerId: lsoLawyer._id,
+		};
 	}
 	const normalizedSubmittedBar = normalizeBarNumber(args.barNumber);
 	const normalizedSubmittedJurisdiction = normalizeJurisdiction(
@@ -427,6 +572,134 @@ async function assertSubmittedLsoMatchesSelection(
 		jurisdiction: normalizedSubmittedJurisdiction,
 		lsoLawyerId: selected.lsoLawyerId,
 	};
+}
+
+function guestDisplayName(args: {
+	readonly email: string;
+	readonly selectedLawyer: Extract<
+		Doc<"deals">["selectedLawyer"],
+		{ type: "guest_lawyer" }
+	> | null;
+	readonly viewer: Viewer;
+}) {
+	const selectedName = optionalNormalizedText(args.selectedLawyer?.name);
+	if (selectedName) {
+		return selectedName;
+	}
+	const viewerName = optionalNormalizedText(
+		[args.viewer.firstName, args.viewer.lastName]
+			.filter((part): part is string => typeof part === "string")
+			.join(" ")
+	);
+	return viewerName ?? args.email;
+}
+
+async function linkGuestEvidenceToProfile(
+	ctx: OnboardingMutationCtx,
+	args: {
+		readonly profileId: Id<"lawyerProfiles">;
+		readonly session: Doc<"lawyerOnboardingSessions">;
+		readonly viewer: Viewer;
+	}
+) {
+	if (args.session.lawyerProfileId !== args.profileId) {
+		await ctx.db.patch(args.session._id, {
+			lawyerProfileId: args.profileId,
+			updatedAt: Date.now(),
+		});
+	}
+	if (args.session.dealId === undefined) {
+		return;
+	}
+	const dealId = args.session.dealId;
+	const normalizedEmail =
+		args.session.normalizedTargetEmail ??
+		(viewerEmail(args.viewer) === undefined
+			? undefined
+			: normalizeLawyerEmail(viewerEmail(args.viewer) ?? ""));
+	const verifications = await ctx.db
+		.query("lawyerVerifications")
+		.withIndex("by_deal_created", (query) => query.eq("dealId", dealId))
+		.collect();
+	const matchingVerifications = verifications.filter(
+		(row) =>
+			row.authId === args.viewer.authId ||
+			(normalizedEmail !== undefined && row.normalizedEmail === normalizedEmail)
+	);
+	for (const row of matchingVerifications) {
+		if (row.lawyerProfileId !== args.profileId) {
+			await ctx.db.patch(row._id, { lawyerProfileId: args.profileId });
+		}
+	}
+	const latestEligibleVerification = matchingVerifications
+		.filter((row) => row.outcome === "eligible")
+		.sort((left, right) => right.createdAt - left.createdAt)[0];
+	if (latestEligibleVerification) {
+		await ctx.db.patch(args.profileId, {
+			latestVerificationId: latestEligibleVerification._id,
+			updatedAt: Date.now(),
+		});
+	}
+	const engagements = await ctx.db
+		.query("representationEngagements")
+		.withIndex("by_deal", (query) => query.eq("dealId", dealId))
+		.collect();
+	for (const engagement of engagements) {
+		if (
+			engagement.lawyerAuthId === args.viewer.authId &&
+			engagement.lawyerProfileId !== args.profileId
+		) {
+			await ctx.db.patch(engagement._id, {
+				lawyerProfileId: args.profileId,
+			});
+		}
+	}
+}
+
+async function ensureGuestLawyerProfileForSession(
+	ctx: OnboardingMutationCtx,
+	args: {
+		readonly barNumber?: string;
+		readonly jurisdiction?: string;
+		readonly session: Doc<"lawyerOnboardingSessions">;
+		readonly viewer: Viewer;
+	}
+): Promise<Id<"lawyerProfiles">> {
+	const email = viewerEmail(args.viewer) ?? args.session.normalizedTargetEmail;
+	if (email === undefined) {
+		throw new ConvexError("Guest lawyer profile requires a verified email");
+	}
+	const normalizedEmail = normalizeLawyerEmail(email);
+	const [deal, lsoEvidence] = await Promise.all([
+		args.session.dealId === undefined ? null : ctx.db.get(args.session.dealId),
+		selectedLsoEvidenceForSession(ctx, args.session, Date.now()),
+	]);
+	const selectedLawyer =
+		deal?.selectedLawyer?.type === "guest_lawyer" ? deal.selectedLawyer : null;
+	const profileId = await upsertGuestLawyerProfile(ctx, {
+		authId: args.viewer.authId,
+		barNumber:
+			args.barNumber === undefined
+				? lsoEvidence.barNumber
+				: normalizeBarNumber(args.barNumber),
+		displayName: guestDisplayName({
+			email: normalizedEmail,
+			selectedLawyer,
+			viewer: args.viewer,
+		}),
+		email: normalizedEmail,
+		firmName: optionalNormalizedText(selectedLawyer?.firm),
+		jurisdiction:
+			args.jurisdiction === undefined
+				? lsoEvidence.jurisdiction
+				: normalizeJurisdiction(args.jurisdiction),
+	});
+	await linkGuestEvidenceToProfile(ctx, {
+		profileId,
+		session: args.session,
+		viewer: args.viewer,
+	});
+	return profileId;
 }
 
 function requireCheckpoint(
@@ -484,14 +757,66 @@ export async function completeSessionInternal(
 		return session;
 	}
 	if (session.completedAt !== undefined && session.status === "complete") {
+		if (!isPlatformOnboardingSession(session) && session.dealId !== undefined) {
+			await completeDealStateMachineAfterOnboarding(ctx, session.dealId);
+		}
 		return session;
 	}
-	const invitation = await loadActiveInvitationForSession(ctx, session, now);
 	requireCheckpoint(
 		session,
 		"engagementAcceptedAt",
 		"Representation engagement checkpoint is required before completion"
 	);
+	if (isPlatformOnboardingSession(session)) {
+		if (session.lawyerProfileId === undefined) {
+			throw new ConvexError("Platform lawyer profile is required");
+		}
+		const profile = await ctx.db.get(session.lawyerProfileId);
+		if (!profile) {
+			throw new ConvexError("Platform lawyer profile not found");
+		}
+		const latestVerification = await ctx.db
+			.query("lawyerVerifications")
+			.withIndex("by_profile_check_created", (query) =>
+				query.eq("lawyerProfileId", session.lawyerProfileId)
+			)
+			.collect();
+		const eligibleVerification = latestVerification
+			.filter((row) => row.outcome === "eligible")
+			.sort((a, b) => b.createdAt - a.createdAt)[0];
+		const latestVerificationId = eligibleVerification?._id;
+		await ctx.db.patch(profile._id, {
+			authId: ctx.viewer.authId,
+			latestVerificationId,
+			platformStatus: "active",
+			updatedAt: now,
+		});
+		if (session.platformLawyerInvitationId !== undefined) {
+			await ctx.db.patch(session.platformLawyerInvitationId, {
+				acceptedAt: session.platformAgreementAcceptedAt ?? now,
+				onboardingSessionId: session._id,
+				status: "accepted",
+				updatedAt: now,
+			});
+		}
+		await ctx.db.patch(session._id, {
+			completedAt: now,
+			currentStep: "complete",
+			nextRoute: PLATFORM_RETURN_PATH,
+			status: "complete",
+			updatedAt: now,
+			workosUserId: ctx.viewer.authId,
+		});
+		return await getSessionAfterPatch(ctx, session._id);
+	}
+	if (session.dealId === undefined) {
+		throw new ConvexError("Deal-bound lawyer onboarding session requires deal");
+	}
+	await ensureGuestLawyerProfileForSession(ctx, {
+		session,
+		viewer: ctx.viewer,
+	});
+	const invitation = await loadActiveInvitationForSession(ctx, session, now);
 	await grantDealAccess(ctx.db, {
 		dealId: session.dealId,
 		grantedBy: `lawyer-onboarding:${String(session._id)}`,
@@ -530,6 +855,7 @@ export async function completeSessionInternal(
 		updatedAt: now,
 		workosUserId: ctx.viewer.authId,
 	});
+	await completeDealStateMachineAfterOnboarding(ctx, session.dealId);
 	return await getSessionAfterPatch(ctx, session._id);
 }
 
@@ -625,7 +951,19 @@ export const startOrResumeForDeal = authedMutation
 	})
 	.public();
 
-export const getLawyerOnboardingSession = lawyerQuery
+export const startOrResumeForPlatformInvitationInternal = convex
+	.mutation()
+	.input({ invitationId: v.id("platformLawyerInvitations") })
+	.handler(async (ctx, args) => {
+		const session = await startOrResumeForPlatformInvitationInMutation(
+			ctx,
+			args
+		);
+		return { session };
+	})
+	.internal();
+
+export const getLawyerOnboardingSession = lawyerOnboardingQuery
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(async (ctx, args) => {
 		const session = await ctx.db.get(args.sessionId);
@@ -652,7 +990,7 @@ export const getLawyerOnboardingSession = lawyerQuery
 	})
 	.public();
 
-export const confirmIdentity = lawyerMutation
+export const confirmIdentity = lawyerOnboardingMutation
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(async (ctx, args) => {
 		const now = Date.now();
@@ -684,13 +1022,19 @@ export const confirmIdentity = lawyerMutation
 				? {}
 				: { userVerifiedEmail: ctx.viewer.verifiedEmail }),
 		};
+		const lawyerProfileId = isPlatformOnboardingSession(session)
+			? session.lawyerProfileId
+			: await ensureGuestLawyerProfileForSession(ctx, {
+					session,
+					viewer: ctx.viewer,
+				});
 		await recordLawyerVerificationRow(ctx, {
 			authId: ctx.viewer.authId,
 			checkType: "manual_admin",
 			createdAt: now,
 			createdBy: `lawyer-onboarding:${String(session._id)}`,
 			dealId: session.dealId,
-			lawyerProfileId: session.lawyerProfileId,
+			lawyerProfileId,
 			normalizedEmail,
 			providerResult: {
 				evidenceHash: `sha256:onboarding-identity:${String(session._id)}:${ctx.viewer.authId}:${now}`,
@@ -714,7 +1058,7 @@ export const confirmIdentity = lawyerMutation
 	})
 	.public();
 
-export const submitLsoLicense = lawyerMutation
+export const submitLsoLicense = lawyerOnboardingMutation
 	.input({
 		barNumber: v.string(),
 		jurisdiction: v.string(),
@@ -741,6 +1085,14 @@ export const submitLsoLicense = lawyerMutation
 			now,
 			session,
 		});
+		const lawyerProfileId = isPlatformOnboardingSession(session)
+			? session.lawyerProfileId
+			: await ensureGuestLawyerProfileForSession(ctx, {
+					barNumber: submittedLso.barNumber,
+					jurisdiction: submittedLso.jurisdiction,
+					session,
+					viewer: ctx.viewer,
+				});
 		await recordLawyerVerificationRow(ctx, {
 			authId: ctx.viewer.authId,
 			barNumber: submittedLso.barNumber,
@@ -749,7 +1101,7 @@ export const submitLsoLicense = lawyerMutation
 			createdBy: `lawyer-onboarding:${String(session._id)}`,
 			dealId: session.dealId,
 			jurisdiction: submittedLso.jurisdiction,
-			lawyerProfileId: session.lawyerProfileId,
+			lawyerProfileId,
 			lsoLawyerId: submittedLso.lsoLawyerId,
 			normalizedEmail: viewerEmail(ctx.viewer),
 			providerResult: {
@@ -779,7 +1131,7 @@ export const submitLsoLicense = lawyerMutation
 	})
 	.public();
 
-export const completeMockIdv = lawyerMutation
+export const completeMockIdv = lawyerOnboardingMutation
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(async (ctx, args) => {
 		const now = Date.now();
@@ -796,13 +1148,19 @@ export const completeMockIdv = lawyerMutation
 			"lsoVerifiedAt",
 			"LSO checkpoint is required before IDV"
 		);
+		const lawyerProfileId = isPlatformOnboardingSession(session)
+			? session.lawyerProfileId
+			: await ensureGuestLawyerProfileForSession(ctx, {
+					session,
+					viewer: ctx.viewer,
+				});
 		await recordLawyerVerificationRow(ctx, {
 			authId: ctx.viewer.authId,
 			checkType: "idv",
 			createdAt: now,
 			createdBy: `lawyer-onboarding:${String(session._id)}`,
 			dealId: session.dealId,
-			lawyerProfileId: session.lawyerProfileId,
+			lawyerProfileId,
 			normalizedEmail: viewerEmail(ctx.viewer),
 			providerResult: {
 				evidenceHash: `sha256:onboarding-idv:${String(session._id)}:${ctx.viewer.authId}:${now}`,
@@ -828,7 +1186,7 @@ export const completeMockIdv = lawyerMutation
 	})
 	.public();
 
-export const acceptRepresentationEngagement = lawyerMutation
+export const acceptRepresentationEngagement = lawyerOnboardingMutation
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(async (ctx, args) => {
 		const now = Date.now();
@@ -845,12 +1203,36 @@ export const acceptRepresentationEngagement = lawyerMutation
 			"idvCompletedAt",
 			"IDV checkpoint is required before engagement acceptance"
 		);
+		if (isPlatformOnboardingSession(session)) {
+			const evidenceHash = `sha256:platform-lawyer-agreement:${String(session._id)}:${ctx.viewer.authId}:${now}`;
+			await ctx.db.patch(session._id, {
+				acceptedEngagementAt: now,
+				currentStep: "complete",
+				engagementAcceptedAt: now,
+				platformAgreementAcceptedAt: now,
+				platformAgreementEvidenceHash: evidenceHash,
+				platformAgreementVersion: PLATFORM_AGREEMENT_VERSION,
+				status: "complete",
+				updatedAt: now,
+				workosUserId: ctx.viewer.authId,
+			});
+			return await completeSessionInternal(ctx, session._id);
+		}
+		if (session.dealId === undefined) {
+			throw new ConvexError(
+				"Deal-bound lawyer onboarding session requires deal"
+			);
+		}
+		const lawyerProfileId = await ensureGuestLawyerProfileForSession(ctx, {
+			session,
+			viewer: ctx.viewer,
+		});
 		await recordSignedRepresentationEngagementRow(ctx, {
 			createdAt: now,
 			dealId: session.dealId,
 			evidenceHash: `sha256:onboarding-engagement:${String(session._id)}:${ctx.viewer.authId}:${now}`,
 			lawyerAuthId: ctx.viewer.authId,
-			lawyerProfileId: session.lawyerProfileId,
+			lawyerProfileId,
 			provider: "manual_admin",
 			signedAt: now,
 		});
@@ -866,7 +1248,7 @@ export const acceptRepresentationEngagement = lawyerMutation
 	})
 	.public();
 
-export const completeSession = lawyerMutation
+export const completeSession = lawyerOnboardingMutation
 	.input({ sessionId: v.id("lawyerOnboardingSessions") })
 	.handler(
 		async (ctx, args) => await completeSessionInternal(ctx, args.sessionId)

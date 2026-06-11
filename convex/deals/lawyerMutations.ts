@@ -4,11 +4,12 @@ import type { MutationCtx } from "../_generated/server";
 import { readDealDocumentPackageSurface } from "../documents/dealPackages";
 import { executeTransition } from "../engine/transition";
 import type { CommandSource, TransitionResult } from "../engine/types";
-import { lawyerMutation, type Viewer } from "../fluent";
+import { authedMutation, lawyerMutation, type Viewer } from "../fluent";
 import {
 	evaluateDealLegalGate,
 	type LegalGateResult,
 } from "../legalRepresentation/gates";
+import { progressDealLegalRepresentationState } from "../legalRepresentation/progression";
 
 type LawyerMutationCtx = MutationCtx & { viewer: Viewer };
 type PackageSurface = Awaited<
@@ -57,6 +58,20 @@ async function requireActiveLawyerDeal(
 	throw new ConvexError(
 		`Forbidden: no active lawyer access for ${String(dealId)}`
 	);
+}
+
+async function requireAdminOrActiveLawyerDeal(
+	ctx: LawyerMutationCtx,
+	dealId: Id<"deals">
+) {
+	const deal = await ctx.db.get(dealId);
+	if (!deal) {
+		throw new ConvexError(`Deal not found: ${String(dealId)}`);
+	}
+	if (ctx.viewer.isFairLendAdmin) {
+		return deal;
+	}
+	return requireActiveLawyerDeal(ctx, dealId);
 }
 
 function requireDealStatus(deal: Doc<"deals">, expectedStatus: string) {
@@ -130,14 +145,31 @@ async function transitionDealFromLawyerPortal(
 	dealId: Id<"deals">,
 	eventType: "REPRESENTATION_CONFIRMED" | "LAWYER_APPROVED_DOCUMENTS"
 ): Promise<TransitionResult> {
-	const result = await executeTransition(ctx, {
-		entityId: dealId,
-		entityType: "deal",
+	return transitionDeal(ctx, {
+		dealId,
 		eventType,
 		source: lawyerSource(ctx.viewer),
 	});
+}
+
+async function transitionDeal(
+	ctx: LawyerMutationCtx,
+	args: {
+		dealId: Id<"deals">;
+		eventType: "REPRESENTATION_CONFIRMED" | "LAWYER_APPROVED_DOCUMENTS";
+		source: CommandSource;
+	}
+): Promise<TransitionResult> {
+	const result = await executeTransition(ctx, {
+		entityId: args.dealId,
+		entityType: "deal",
+		eventType: args.eventType,
+		source: args.source,
+	});
 	if (!result.success) {
-		throw new ConvexError(result.reason ?? `Transition rejected: ${eventType}`);
+		throw new ConvexError(
+			result.reason ?? `Transition rejected: ${args.eventType}`
+		);
 	}
 	return result;
 }
@@ -163,6 +195,22 @@ export const confirmRepresentation = lawyerMutation
 			args.dealId,
 			"REPRESENTATION_CONFIRMED"
 		);
+	})
+	.public();
+
+export const progressLegalRepresentation = authedMutation
+	.input({ dealId: v.id("deals") })
+	.handler(async (ctx, args) => {
+		await requireAdminOrActiveLawyerDeal(ctx, args.dealId);
+		const isAdmin = ctx.viewer.isFairLendAdmin;
+		return progressDealLegalRepresentationState(ctx, {
+			dealId: args.dealId,
+			source: {
+				actorId: ctx.viewer.authId,
+				channel: isAdmin ? "admin_dashboard" : "lawyer_portal",
+			},
+			sourceActorId: isAdmin ? undefined : ctx.viewer.authId,
+		});
 	})
 	.public();
 

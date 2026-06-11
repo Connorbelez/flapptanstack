@@ -375,6 +375,24 @@ describe("admin shell helpers", () => {
 		});
 	});
 
+	it("includes Lawyers in the System admin navigation", () => {
+		const sections = getAdminNavigationSections();
+		const system = sections.find((section) => section.domain === "system");
+
+		expect(system?.items).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					label: "Lawyers",
+					route: "/admin/lawyers",
+				}),
+			])
+		);
+	});
+
+	it("marks the Lawyers route active under System", () => {
+		expect(isAdminRouteActive("/admin/lawyers", "/admin/lawyers")).toBe(true);
+	});
+
 	it("identifies admin pathnames for root header suppression", () => {
 		expect(isAdminPathname("/admin")).toBe(true);
 		expect(isAdminPathname("/admin/listings")).toBe(true);

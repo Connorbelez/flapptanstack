@@ -68,6 +68,16 @@ export interface UpsertPlatformLawyerProfileArgs
 	readonly platformStatus?: LegalRepresentationPlatformStatus;
 }
 
+export interface UpsertGuestLawyerProfileArgs {
+	readonly authId?: string;
+	readonly barNumber?: string;
+	readonly createdAt?: number;
+	readonly displayName: string;
+	readonly email: string;
+	readonly firmName?: string;
+	readonly jurisdiction?: string;
+}
+
 export interface StatusEvidenceArgs {
 	readonly actorId: string;
 	readonly note?: string;
@@ -127,6 +137,12 @@ function mergeProfileKindForPlatform(
 	profileKind: Doc<"lawyerProfiles">["profileKind"]
 ): Doc<"lawyerProfiles">["profileKind"] {
 	return profileKind === "guest" ? "both" : "platform";
+}
+
+function mergeProfileKindForGuest(
+	profileKind: Doc<"lawyerProfiles">["profileKind"]
+): Doc<"lawyerProfiles">["profileKind"] {
+	return profileKind === "platform" ? "both" : profileKind;
 }
 
 async function getProfileByAuthId(
@@ -418,6 +434,43 @@ export async function upsertPlatformLawyerProfile(
 		...normalized,
 		profileKind: mergeProfileKindForPlatform(existing.profileKind),
 		platformStatus: existingNextPlatformStatus,
+		updatedAt: now,
+	});
+	return existing._id;
+}
+
+export async function upsertGuestLawyerProfile(
+	ctx: LegalRepresentationMutationCtx,
+	args: UpsertGuestLawyerProfileArgs
+): Promise<Id<"lawyerProfiles">> {
+	const now = args.createdAt ?? Date.now();
+	const normalized = normalizeProfileInput(args);
+	const existingByAuth = await getProfileByAuthId(ctx, normalized.authId);
+	const existingByEmail = await getProfileByNormalizedEmail(
+		ctx,
+		normalized.normalizedEmail
+	);
+	const existing = existingByAuth ?? existingByEmail;
+	if (
+		existingByAuth &&
+		existingByEmail &&
+		existingByAuth._id !== existingByEmail._id
+	) {
+		throw new ConvexError(
+			"Guest lawyer authId and email resolve to different profiles"
+		);
+	}
+	if (!existing) {
+		return await ctx.db.insert("lawyerProfiles", {
+			...normalized,
+			createdAt: now,
+			profileKind: "guest",
+			updatedAt: now,
+		});
+	}
+	await ctx.db.patch(existing._id, {
+		...normalized,
+		profileKind: mergeProfileKindForGuest(existing.profileKind),
 		updatedAt: now,
 	});
 	return existing._id;

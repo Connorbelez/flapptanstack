@@ -203,6 +203,40 @@ async function insertGuestDeal(
 	});
 }
 
+async function insertPlatformInvitation(t: ReturnType<typeof createHarness>) {
+	return await t.run(async (ctx) => {
+		const profileId = await ctx.db.insert("lawyerProfiles", {
+			barNumber: "LSO-777777",
+			createdAt: NOW,
+			displayName: "Pending Platform",
+			email: "platform.pending@example.test",
+			firmName: "Platform LLP",
+			jurisdiction: "ON",
+			normalizedEmail: "platform.pending@example.test",
+			platformStatus: "invited",
+			profileKind: "platform",
+			updatedAt: NOW,
+		});
+		const invitationId = await ctx.db.insert("platformLawyerInvitations", {
+			barNumber: "LSO-777777",
+			createdAt: NOW,
+			createdBy: "user_fairlend_admin",
+			deliveredAt: NOW,
+			deliveryStatus: "sent",
+			displayName: "Pending Platform",
+			email: "platform.pending@example.test",
+			firmName: "Platform LLP",
+			jurisdiction: "ON",
+			lawyerProfileId: profileId,
+			normalizedEmail: "platform.pending@example.test",
+			status: "sent",
+			updatedAt: NOW,
+			workosInvitationId: "workos_platform_invitation",
+		});
+		return { invitationId, profileId };
+	});
+}
+
 describe("guest lawyer invitations", () => {
 	it("creates scoped hash-only invite records and exposes only the raw token at creation", async () => {
 		const t = createHarness();
@@ -406,6 +440,75 @@ describe("guest lawyer invitations", () => {
 			throw new Error("Expected onboarding session result");
 		}
 		expect(reloaded.onboardingSessionId).toBe(accepted.onboardingSessionId);
+	});
+
+	it("routes a matching platform WorkOS invitation token into deal-less lawyer onboarding", async () => {
+		const t = createHarness();
+		installWorkosInvitationLookup({
+			email: "platform.pending@example.test",
+			invitationId: "workos_platform_invitation",
+		});
+		await insertSyncedLawyerIdentity(t, {
+			authId: "user_platform_pending",
+			email: "platform.pending@example.test",
+		});
+		const { invitationId, profileId } = await insertPlatformInvitation(t);
+
+		const resolved = await t.action(
+			workosInvitationsApi.resolveWorkosInvitationToken,
+			{
+				invitationToken: "workos_platform_token",
+			}
+		);
+		const accepted = await t
+			.withIdentity(
+				lawyerIdentity({
+					authId: "user_platform_pending",
+					email: "platform.pending@example.test",
+				})
+			)
+			.action(workosInvitationsApi.completeWorkosGuestInvitation, {
+				invitationToken: "workos_platform_token",
+				now: NOW + 1,
+			});
+
+		expect(resolved).toMatchObject({
+			emailMatches: true,
+			invitationKind: "platform",
+			status: "sent",
+			targetEmail: "platform.pending@example.test",
+		});
+		expect(resolved.dealId).toBeUndefined();
+		expect(resolved.nextRoute).toContain("/lawyer/onboarding/");
+		expect(accepted).toMatchObject({
+			invitationKind: "platform",
+			status: "onboarding_required",
+			targetEmail: "platform.pending@example.test",
+		});
+		expect(accepted.dealId).toBeUndefined();
+		const rows = await t.run(async (ctx) => ({
+			invitation: await ctx.db.get(invitationId),
+			onboardingSession:
+				"onboardingSessionId" in accepted
+					? await ctx.db.get(accepted.onboardingSessionId)
+					: null,
+			profile: await ctx.db.get(profileId),
+		}));
+		expect(rows.invitation).toMatchObject({
+			status: "sent",
+		});
+		expect(rows.onboardingSession).toMatchObject({
+			lawyerProfileId: profileId,
+			normalizedTargetEmail: "platform.pending@example.test",
+			path: "platform_application",
+			platformLawyerInvitationId: invitationId,
+			returnPath: "/lawyer",
+			status: "auth_pending",
+		});
+		expect(rows.onboardingSession?.dealId).toBeUndefined();
+		expect(rows.profile).toMatchObject({
+			platformStatus: "invited",
+		});
 	});
 
 	it("keeps legacy WorkOS internal acceptance on onboarding without granting final access", async () => {

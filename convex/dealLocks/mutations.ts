@@ -375,11 +375,13 @@ export const prepareCheckoutSession = internalMutation({
 			lockFeeAmountCents: DEAL_LOCK_FEE_AMOUNT_CENTS,
 			lockFeeCurrency: DEAL_LOCK_FEE_CURRENCY,
 			mortgageId: listing.mortgageId,
+			purchasingLenderAuthId: args.buyerAuthId,
 			refundStatus: "none",
 			reservationId: reservation.reservationId,
 			selectedLawyerAuthId,
 			selectedLawyerType: args.selectedLawyerType,
 			sellerAuthId: seller.lenderId,
+			sellingLenderAuthId: seller.lenderId,
 			status: "created",
 			updatedAt: now,
 		});
@@ -572,8 +574,10 @@ export const processStripeCheckoutSuccess = internalMutation({
 			lockFeeCollectionStatus: "collected",
 			lockingFeeAmount: session.lockFeeAmountCents,
 			mortgageId: session.mortgageId,
+			purchasingLenderAuthId: session.buyerAuthId,
 			reservationId: session.reservationId,
 			sellerId: session.sellerAuthId,
+			sellingLenderAuthId: session.sellerAuthId,
 			status: "initiated",
 			stripeCheckoutSessionId: args.stripeCheckoutSessionId,
 			stripePaymentIntentId: args.stripePaymentIntentId,
@@ -590,7 +594,7 @@ export const processStripeCheckoutSuccess = internalMutation({
 		await grantDealAccess(ctx.db, {
 			dealId,
 			grantedBy: "stripe_webhook",
-			role: "borrower",
+			role: "lender",
 			userId: session.sellerAuthId,
 		});
 		if (session.selectedLawyerType) {

@@ -4,7 +4,7 @@ const DATA_LOAD_TIMEOUT = 15_000;
 const FIXTURE_PATH = "/e2e/participant-workspaces.html";
 
 test.describe("Deal Closing Participant Workspaces", () => {
-	test("renders buyer and seller acceptance queues without admin auth", async ({
+	test("renders lender acceptance queues without admin auth", async ({
 		page,
 	}) => {
 		await page.goto(FIXTURE_PATH);
@@ -12,17 +12,17 @@ test.describe("Deal Closing Participant Workspaces", () => {
 		await expect(
 			page.getByRole("heading", { name: "My Closings" })
 		).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-		await expect(page.getByText("Buyer Closings")).toBeVisible();
+		await expect(page.getByText("Lender Closings")).toBeVisible();
 		await expect(page.getByText("Needs Action")).toBeVisible();
 		await expect(page.getByText("In Progress")).toBeVisible();
 		await expect(page.getByRole("heading", { name: "Completed" })).toBeVisible();
 
-		await page.goto(`${FIXTURE_PATH}?scenario=seller-queue`);
+		await page.goto(`${FIXTURE_PATH}?scenario=selling-lender-queue`);
 
 		await expect(
 			page.getByRole("heading", { name: "My Closings" })
 		).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-		await expect(page.getByText("Seller Closings")).toBeVisible();
+		await expect(page.getByText("Selling Lender Closings")).toBeVisible();
 		await expect(page.getByText("Needs Action")).toBeVisible();
 		await expect(page.getByText("In Progress")).toBeVisible();
 		await expect(page.getByRole("heading", { name: "Completed" })).toBeVisible();
@@ -46,7 +46,7 @@ test.describe("Deal Closing Participant Workspaces", () => {
 		await expect(
 			page.getByRole("link", { name: "Open signing" })
 		).toHaveCount(0);
-		await expect(page.locator('a[href="buyer-token"]')).toHaveCount(0);
+			await expect(page.locator('a[href="purchasing-lender-token"]')).toHaveCount(0);
 	});
 
 	test("covers completed receipt and unauthorized denial states", async ({
@@ -63,9 +63,11 @@ test.describe("Deal Closing Participant Workspaces", () => {
 		await expect(
 			page.getByRole("heading", { name: "Workspace unavailable" })
 		).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-		await expect(
-			page.getByText("Forbidden: no buyer workspace access for this deal.")
-		).toBeVisible();
+			await expect(
+				page.getByText(
+					"Forbidden: no participating_lender workspace access for this deal."
+				)
+			).toBeVisible();
 	});
 
 	test("covers the no-active-closings empty state", async ({ page }) => {

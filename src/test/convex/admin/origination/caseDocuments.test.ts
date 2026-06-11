@@ -328,7 +328,7 @@ describe("admin origination case documents", () => {
 					id: "field_signature",
 					position: { height: 24, page: 0, width: 120, x: 12, y: 18 },
 					signableType: "SIGNATURE",
-					signatoryPlatformRole: "primary_borrower",
+					signatoryPlatformRole: "external_reviewer",
 					type: "signable",
 				},
 			],
@@ -336,7 +336,7 @@ describe("admin origination case documents", () => {
 			signatories: [
 				{
 					order: 0,
-					platformRole: "primary_borrower",
+					platformRole: "external_reviewer",
 					role: "signatory",
 				},
 			],

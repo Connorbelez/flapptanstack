@@ -444,20 +444,28 @@ describe("deal lock checkout start", () => {
 			lockFeeCollectionProvider: "stripe_checkout",
 			lockFeeCollectionStatus: "collected",
 			lockingFeeAmount: DEAL_LOCK_FEE_AMOUNT_CENTS,
+			purchasingLenderAuthId: "buyer-auth",
 			reservationId: session.reservationId,
 			sellerId: CANONICAL_MIC_LENDER_AUTH_ID,
+			sellingLenderAuthId: CANONICAL_MIC_LENDER_AUTH_ID,
 			status: "lawyerOnboarding.pending",
 			stripeCheckoutSessionId: "cs_test_listing_lock",
 		});
 		expect(state.reservation?.dealId).toBe(String(state.deals[0]?._id));
 		expect(state.access).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({ role: "lender", userId: "buyer-auth" }),
 				expect.objectContaining({
-					role: "borrower",
+					persona: "purchasing_lender",
+					role: "lender",
+					userId: "buyer-auth",
+				}),
+				expect.objectContaining({
+					persona: "selling_lender",
+					role: "lender",
 					userId: CANONICAL_MIC_LENDER_AUTH_ID,
 				}),
 				expect.objectContaining({
+					persona: "primary_lawyer",
 					role: "platform_lawyer",
 					userId: "lawyer-auth",
 				}),

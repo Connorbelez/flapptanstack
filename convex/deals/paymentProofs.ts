@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { resolveDealAccessDecision } from "../../src/lib/deals/access-policy/resolve";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
@@ -20,6 +21,12 @@ const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
 	"image/png",
 	"image/webp",
 ]);
+const paymentProofMimeTypeValidator = v.union(
+	v.literal("application/pdf"),
+	v.literal("image/jpeg"),
+	v.literal("image/png"),
+	v.literal("image/webp")
+);
 const MIN_TRANSFER_DATE_MS = Date.UTC(2000, 0, 1);
 const MAX_TRANSFER_DATE_FUTURE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -28,9 +35,12 @@ interface DbContext {
 }
 type PaymentProofSubmitterRole =
 	| "admin"
+	| "fairlend_admin"
 	| "guest_lawyer"
 	| "lender"
-	| "platform_lawyer";
+	| "platform_lawyer"
+	| "primary_lawyer"
+	| "purchasing_lender";
 
 interface NormalizedPaymentProofInput {
 	amount: number;
@@ -74,56 +84,42 @@ function assertFundsPending(deal: Doc<"deals"> | null): Doc<"deals"> {
 	return deal;
 }
 
-async function activeDealAccessRows(
-	ctx: DbContext,
-	args: { dealId: Id<"deals">; userId: string }
-): Promise<Doc<"dealAccess">[]> {
-	return await ctx.db
-		.query("dealAccess")
-		.withIndex("by_user_and_deal", (query) =>
-			query.eq("userId", args.userId).eq("dealId", args.dealId)
-		)
-		.filter((query) => query.eq(query.field("status"), "active"))
-		.collect();
-}
-
-function isPaymentProofSubmitterRole(
-	role: Doc<"dealAccess">["role"]
-): role is Exclude<PaymentProofSubmitterRole, "admin"> {
-	return (
-		role === "lender" || role === "platform_lawyer" || role === "guest_lawyer"
-	);
-}
-
 async function resolveUploaderRole(
 	ctx: DbContext,
 	args: { dealId: Id<"deals">; viewer: Viewer }
 ): Promise<PaymentProofSubmitterRole> {
-	if (args.viewer.isFairLendAdmin) {
-		return "admin";
-	}
-
-	const accessRows = await activeDealAccessRows(ctx, {
+	const decision = await resolveDealAccessDecision(ctx, {
 		dealId: args.dealId,
-		userId: args.viewer.authId,
+		intent: "deal.payment_proof.upload",
+		viewer: args.viewer,
 	});
-	const allowedRole = accessRows
-		.map((row) => row.role)
-		.find(isPaymentProofSubmitterRole);
-	if (allowedRole) {
-		return allowedRole;
+	if (
+		decision?.allowed &&
+		canUploadManualPaymentProof(decision.persona as DealPortalPersona)
+	) {
+		return decision.persona as PaymentProofSubmitterRole;
 	}
 
 	throw new ConvexError(
-		"Only lender, selected lawyer, or admin can upload proof"
+		"Only purchasing lender, ready primary lawyer, or admin can upload proof"
 	);
 }
 
 function personaForRole(role: PaymentProofSubmitterRole): DealPortalPersona {
-	if (role === "platform_lawyer" || role === "guest_lawyer") {
-		return "selected_lawyer";
+	switch (role) {
+		case "admin":
+		case "fairlend_admin":
+			return "fairlend_admin";
+		case "guest_lawyer":
+		case "platform_lawyer":
+		case "primary_lawyer":
+			return "primary_lawyer";
+		case "lender":
+		case "purchasing_lender":
+			return "purchasing_lender";
+		default:
+			return role satisfies never;
 	}
-	return role;
 }
 
 function assertValidTransferDate(transferDate: number, now = Date.now()) {
@@ -141,6 +137,14 @@ function assertValidTransferDate(transferDate: number, now = Date.now()) {
 			"Transfer date cannot be more than 7 days in the future"
 		);
 	}
+}
+
+async function assertPaymentProofAssetUploadAllowed(
+	ctx: DbContext,
+	args: { dealId: Id<"deals">; viewer: Viewer }
+): Promise<PaymentProofSubmitterRole> {
+	assertFundsPending(await ctx.db.get(args.dealId));
+	return await resolveUploaderRole(ctx, args);
 }
 
 async function viewerUserId(
@@ -170,6 +174,7 @@ async function assertAttachmentSet(
 	}
 
 	const requiredUploaderUserId =
+		args.submittedByRole === "fairlend_admin" ||
 		args.submittedByRole === "admin"
 			? null
 			: await viewerUserId(ctx, args.viewer);
@@ -621,6 +626,79 @@ export const getCashLedgerIdsForPaymentProofInternal = convex
 	)
 	.internal();
 
+export const generatePaymentProofUploadUrl = authedMutation
+	.input({ dealId: v.id("deals") })
+	.returns(v.object({ uploadUrl: v.string() }))
+	.handler(async (ctx, args) => {
+		await assertPaymentProofAssetUploadAllowed(ctx, {
+			dealId: args.dealId,
+			viewer: ctx.viewer,
+		});
+		return { uploadUrl: await ctx.storage.generateUploadUrl() };
+	})
+	.public();
+
+export const createPaymentProofAsset = authedMutation
+	.input({
+		dealId: v.id("deals"),
+		description: v.optional(v.string()),
+		fileHash: v.string(),
+		fileRef: v.id("_storage"),
+		fileSize: v.number(),
+		mimeType: paymentProofMimeTypeValidator,
+		name: v.string(),
+		originalFilename: v.string(),
+	})
+	.returns(
+		v.object({
+			assetId: v.id("documentAssets"),
+			duplicate: v.boolean(),
+		})
+	)
+	.handler(async (ctx, args) => {
+		await assertPaymentProofAssetUploadAllowed(ctx, {
+			dealId: args.dealId,
+			viewer: ctx.viewer,
+		});
+		if (args.fileSize <= 0) {
+			throw new ConvexError("Payment proof attachment cannot be empty");
+		}
+		if (!ALLOWED_ATTACHMENT_MIME_TYPES.has(args.mimeType)) {
+			throw new ConvexError("Payment proof attachment type is not supported");
+		}
+
+		const uploadedByUserId = await viewerUserId(ctx, ctx.viewer);
+		const matchingAssets = await ctx.db
+			.query("documentAssets")
+			.withIndex("by_hash", (query) => query.eq("fileHash", args.fileHash))
+			.collect();
+		const existingOwnPaymentProofAsset = matchingAssets.find(
+			(asset) =>
+				asset.source === "payment_proof_upload" &&
+				asset.uploadedByUserId === uploadedByUserId
+		);
+		if (existingOwnPaymentProofAsset) {
+			return { assetId: existingOwnPaymentProofAsset._id, duplicate: true };
+		}
+
+		const trimmedName = args.name.trim() || "Payment proof";
+		const assetId = await ctx.db.insert("documentAssets", {
+			description: args.description,
+			fileHash: args.fileHash,
+			fileRef: args.fileRef,
+			fileSize: args.fileSize,
+			mimeType: args.mimeType,
+			name: trimmedName,
+			originalFilename: args.originalFilename.trim() || trimmedName,
+			source: "payment_proof_upload",
+			uploadedAt: Date.now(),
+			uploadedByUserId,
+		});
+
+		return { assetId, duplicate: false };
+	})
+	.public();
+
 export const markManualPaymentProofApprovedInternal = convex
 	.mutation()
 	.input({
@@ -705,7 +783,7 @@ export const uploadManualPaymentProof = authedMutation
 		});
 		if (!canUploadManualPaymentProof(personaForRole(submittedByRole))) {
 			throw new ConvexError(
-				"Only lender, selected lawyer, or admin can upload proof"
+				"Only purchasing lender, ready primary lawyer, or admin can upload proof"
 			);
 		}
 		await assertAttachmentSet(ctx, {
@@ -729,6 +807,7 @@ export const uploadManualPaymentProof = authedMutation
 			dealId: args.dealId,
 			submittedBy: ctx.viewer.authId,
 			submittedByRole,
+			submittedByPersona: personaForRole(submittedByRole),
 			status: "pending_review",
 			amount: normalizedInput.amount,
 			currency: normalizedInput.currency,

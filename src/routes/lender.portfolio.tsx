@@ -28,6 +28,12 @@ export const Route = createFileRoute(LENDER_PORTFOLIO_ROUTE_PATH)({
 			context.portalContext,
 			"Lender portfolio requires an active portal host."
 		);
+		if (import.meta.env.DEV) {
+			console.info("[lender-portfolio-route] loading command center", {
+				portalId: String(portalId),
+				portalContext: context.portalContext,
+			});
+		}
 		await context.queryClient.ensureQueryData(
 			lenderPortfolioCommandCenterQueryOptions(portalId)
 		);
@@ -52,7 +58,7 @@ export function LenderPortfolioRouteComponent() {
 function LenderPortfolioRouteError({ error }: { error: unknown }) {
 	useEffect(() => {
 		if (import.meta.env.DEV) {
-			console.error(error);
+			console.error("[lender-portfolio-route] error boundary", error);
 		}
 	}, [error]);
 
@@ -90,6 +96,14 @@ function LenderPortfolioRouteContent() {
 		portalContext,
 		"Lender portfolio requires an active portal host."
 	);
+	useEffect(() => {
+		if (import.meta.env.DEV) {
+			console.info("[lender-portfolio-route] rendering command center", {
+				portalId: String(portalId),
+				portalContext,
+			});
+		}
+	}, [portalContext, portalId]);
 	const { data } = useSuspenseQuery(
 		lenderPortfolioCommandCenterQueryOptions(portalId)
 	);

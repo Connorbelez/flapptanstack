@@ -42,11 +42,11 @@ describe("deal portal contracts", () => {
 	});
 
 	it.each([
-		["lender", true],
-		["selected_lawyer", true],
-		["admin", true],
-		["broker", false],
-		["seller", false],
+		["purchasing_lender", true],
+		["primary_lawyer", true],
+		["fairlend_admin", true],
+		["broker_of_record", false],
+		["selling_lender", false],
 	] as [
 		DealPortalPersona,
 		boolean,

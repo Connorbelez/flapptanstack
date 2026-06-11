@@ -26,9 +26,9 @@ const SELLER_IDENTITY = {
 	issuer: "https://api.workos.com",
 	org_id: "org_broker_test",
 	organization_name: "Broker Test",
-	role: "borrower",
-	roles: JSON.stringify(["borrower"]),
-	permissions: JSON.stringify(["borrower:access", "deal:view"]),
+	role: "lender",
+	roles: JSON.stringify(["lender"]),
+	permissions: JSON.stringify(["lender:access", "deal:view"]),
 	user_email: "seller@test.fairlend.ca",
 	user_first_name: "Sam",
 	user_last_name: "Seller",
@@ -135,18 +135,29 @@ async function seedParticipantDeal(args?: {
 			lastTransitionAt: now + 1000,
 			lenderId,
 			mortgageId,
+			purchasingLenderAuthId: BUYER_IDENTITY.subject,
 			sellerId: SELLER_IDENTITY.subject,
+			sellingLenderAuthId: SELLER_IDENTITY.subject,
 			status: args?.dealStatus ?? "documentReview.signed",
 		});
 		const accessStatus = args?.accessStatus ?? "active";
 		for (const access of [
-			{ role: "lender" as const, userId: BUYER_IDENTITY.subject },
-			{ role: "borrower" as const, userId: SELLER_IDENTITY.subject },
+			{
+				persona: "purchasing_lender" as const,
+				role: "lender" as const,
+				userId: BUYER_IDENTITY.subject,
+			},
+			{
+				persona: "selling_lender" as const,
+				role: "lender" as const,
+				userId: SELLER_IDENTITY.subject,
+			},
 		]) {
 			await ctx.db.insert("dealAccess", {
 				dealId,
 				grantedAt: now,
 				grantedBy: ADMIN_IDENTITY.subject,
+				persona: access.persona,
 				revokedAt: accessStatus === "revoked" ? now + 1 : undefined,
 				role: access.role,
 				status: accessStatus,
@@ -209,7 +220,7 @@ async function seedParticipantDeal(args?: {
 				embeddedSigningToken: "buyer-token",
 				name: "Bianca Buyer",
 				packageId,
-				platformRole: "lender_primary",
+				platformRole: "purchasing_lender",
 				providerRecipientId: "rec_buyer",
 				readStatus: "available",
 				required: true,
@@ -232,7 +243,7 @@ async function seedParticipantDeal(args?: {
 				embeddedSigningToken: "lawyer-token",
 				name: "Laura Lawyer",
 				packageId,
-				platformRole: "lawyer_primary",
+				platformRole: "primary_lawyer",
 				providerRecipientId: "rec_lawyer",
 				readStatus: "available",
 				required: true,
@@ -304,14 +315,14 @@ describe("participant deal workspace projections", () => {
 		const queue = await t
 			.withIdentity(BUYER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealQueue, {
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 
 		expect(queue.needsAction).toHaveLength(0);
 		expect(queue.inProgress).toHaveLength(1);
 		expect(queue.inProgress[0]).toMatchObject({
 			dealId,
-			persona: "buyer",
+			persona: "purchasing_lender",
 			propertyLabel: "123 King St W, Toronto, ON",
 			signingStatus: "not_started",
 		});
@@ -326,7 +337,7 @@ describe("participant deal workspace projections", () => {
 				.withIdentity(BUYER_IDENTITY)
 				.query(api.deals.queries.getParticipantDealWorkspace, {
 					dealId,
-					persona: "buyer",
+					persona: "purchasing_lender",
 				})
 		).rejects.toThrow(ConvexError);
 
@@ -336,7 +347,7 @@ describe("participant deal workspace projections", () => {
 				.withIdentity(SELLER_IDENTITY)
 				.query(api.deals.queries.getParticipantDealWorkspace, {
 					dealId: active.dealId,
-					persona: "buyer",
+					persona: "purchasing_lender",
 				})
 		).rejects.toThrow(ConvexError);
 	});
@@ -347,7 +358,7 @@ describe("participant deal workspace projections", () => {
 			.withIdentity(BUYER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealWorkspace, {
 				dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 
 		expect(buyerWorkspace?.queueGroup).toBe("needsAction");
@@ -361,7 +372,7 @@ describe("participant deal workspace projections", () => {
 			.withIdentity(SELLER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealWorkspace, {
 				dealId,
-				persona: "seller",
+				persona: "selling_lender",
 			});
 
 		expect(sellerWorkspace?.signing.embeddedSigningToken).toBeNull();
@@ -376,7 +387,7 @@ describe("participant deal workspace projections", () => {
 			.withIdentity(BUYER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealWorkspace, {
 				dealId: pendingPackage.dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 		expect(pendingWorkspace?.signing.status).toBe("package_pending");
 		expect(pendingWorkspace?.blockers).toContainEqual(
@@ -390,7 +401,7 @@ describe("participant deal workspace projections", () => {
 			.withIdentity(BUYER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealWorkspace, {
 				dealId: failedPackage.dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 		expect(failedWorkspace?.queueGroup).toBe("needsAction");
 		expect(failedWorkspace?.signing.status).toBe("package_failed");
@@ -406,7 +417,7 @@ describe("participant deal workspace projections", () => {
 			.withIdentity(BUYER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealWorkspace, {
 				dealId: envelopeException.dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 		expect(exceptionWorkspace?.queueGroup).toBe("needsAction");
 		expect(exceptionWorkspace?.signing.embeddedSigningToken).toBeNull();
@@ -425,7 +436,7 @@ describe("participant deal workspace projections", () => {
 			.withIdentity(BUYER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealWorkspace, {
 				dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 
 		expect(workspace?.queueGroup).toBe("needsAction");
@@ -444,7 +455,7 @@ describe("participant deal workspace projections", () => {
 			.withIdentity(BUYER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealWorkspace, {
 				dealId: withoutEvidence.dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 
 		expect(pendingReceipt?.closeReceipt.closedAt).toBeNull();
@@ -463,7 +474,7 @@ describe("participant deal workspace projections", () => {
 			.withIdentity(BUYER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealWorkspace, {
 				dealId: withEvidence.dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 
 		expect(completed?.closeReceipt.closedAt).not.toBeNull();
@@ -483,7 +494,7 @@ describe("participant deal workspace projections", () => {
 				.withIdentity(BUYER_IDENTITY)
 				.query(api.deals.queries.getParticipantDealWorkspace, {
 					dealId: archiveOnly.dealId,
-					persona: "buyer",
+					persona: "purchasing_lender",
 				});
 
 			expect(workspace?.closeReceipt.closedAt).toBeNull();
@@ -502,7 +513,7 @@ describe("participant deal workspace projections", () => {
 			.withIdentity(BUYER_IDENTITY)
 			.query(api.deals.queries.getParticipantDealWorkspace, {
 				dealId: archived.dealId,
-				persona: "buyer",
+				persona: "purchasing_lender",
 			});
 
 		expect(completed?.closeReceipt.closedAt).not.toBeNull();

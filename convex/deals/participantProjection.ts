@@ -1,7 +1,13 @@
+import { legacyStorageRoleToDealPersona } from "../../src/lib/deals/access-policy/classify";
+import type { DealPersona } from "../../src/lib/deals/access-policy/types";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 
-export type DealPartyRole = "buyer" | "seller" | "lawyer";
+export type DealPartyRole =
+	| "purchasing_lender"
+	| "selling_lender"
+	| "primary_borrower"
+	| "primary_lawyer";
 export type DealAccessStorageRole =
 	| "lender"
 	| "borrower"
@@ -9,19 +15,14 @@ export type DealAccessStorageRole =
 	| "guest_lawyer"
 	| "broker_of_record"
 	| "assigned_broker";
-export type DealPortalPersona =
-	| "buyer"
-	| "seller"
-	| "lawyer"
-	| "broker"
-	| "admin";
+export type DealPortalPersona = DealPersona;
 export type DealInvolvedPartyRole =
-	| "buyer"
-	| "seller"
-	| "buyer_lawyer"
-	| "seller_lawyer"
-	| "broker"
-	| "borrower";
+	| "purchasing_lender"
+	| "selling_lender"
+	| "primary_lawyer"
+	| "broker_of_record"
+	| "assigned_broker"
+	| "primary_borrower";
 
 export interface DealFractionalShareProjection {
 	fractionalShareDisplayPercent: number | null;
@@ -39,13 +40,26 @@ interface BuyerProjection {
 	userId: Id<"users"> | null;
 }
 
+interface LenderPersonaProjection extends BuyerProjection {
+	persona: "purchasing_lender" | "selling_lender";
+}
+
 interface SellerProjection {
-	accessRole: "borrower" | "lender";
+	accessRole: "lender";
 	authId: string;
 	borrowerId: Id<"borrowers"> | null;
 	displayName: string;
 	email: string | null;
 	lenderId: Id<"lenders"> | null;
+	userId: Id<"users"> | null;
+}
+
+interface BorrowerPersonaProjection {
+	authId: string | null;
+	borrowerId: Id<"borrowers"> | null;
+	displayName: string | null;
+	email: string | null;
+	persona: "primary_borrower";
 	userId: Id<"users"> | null;
 }
 
@@ -66,6 +80,7 @@ interface InvolvedPartyProjection {
 }
 
 export interface DealParticipantProjection {
+	/** @deprecated Compatibility alias for purchasing_lender. */
 	buyer: BuyerProjection;
 	dealId: Id<"deals">;
 	fractionalShareDisplayPercent: number | null;
@@ -74,12 +89,20 @@ export interface DealParticipantProjection {
 	involvedParties: InvolvedPartyProjection[];
 	lawyer: LawyerProjection;
 	personas: {
-		admin: DealPortalPersona;
-		buyer: DealPortalPersona;
-		lawyer: DealPortalPersona;
-		seller: DealPortalPersona;
+		assigned_broker: DealPortalPersona;
+		broker_of_record: DealPortalPersona;
+		fairlend_admin: DealPortalPersona;
+		primary_borrower: DealPortalPersona;
+		primary_lawyer: DealPortalPersona;
+		purchasing_lender: DealPortalPersona;
+		selling_lender: DealPortalPersona;
 	};
+	primary_borrower: BorrowerPersonaProjection;
+	primary_lawyer: LawyerProjection & { persona: "primary_lawyer" };
+	purchasing_lender: LenderPersonaProjection;
+	/** @deprecated Compatibility alias for selling_lender. */
 	seller: SellerProjection;
+	selling_lender: LenderPersonaProjection;
 }
 
 type ProjectionReaderCtx = Pick<QueryCtx, "db">;
@@ -130,19 +153,8 @@ export function projectFractionalShareUnits(
 
 export function mapDealAccessRoleToPortalPersona(
 	role: DealAccessStorageRole
-): DealPortalPersona {
-	// dealAccess storage roles intentionally remain lender/borrower/lawyer
-	// variants; buyer/seller/lawyer/admin are projection personas only.
-	if (role === "lender") {
-		return "buyer";
-	}
-	if (role === "borrower") {
-		return "seller";
-	}
-	if (role === "broker_of_record" || role === "assigned_broker") {
-		return "broker";
-	}
-	return "lawyer";
+): DealPortalPersona | null {
+	return legacyStorageRoleToDealPersona({ role });
 }
 
 async function getUserByAuthId(ctx: ProjectionReaderCtx, authId: string) {
@@ -161,19 +173,6 @@ async function getLenderByUserId(
 	}
 	return ctx.db
 		.query("lenders")
-		.withIndex("by_user", (query) => query.eq("userId", userId))
-		.first();
-}
-
-async function getBorrowerByUserId(
-	ctx: ProjectionReaderCtx,
-	userId: Id<"users"> | null
-) {
-	if (!userId) {
-		return null;
-	}
-	return ctx.db
-		.query("borrowers")
 		.withIndex("by_user", (query) => query.eq("userId", userId))
 		.first();
 }
@@ -224,22 +223,6 @@ async function getPrimaryClosingLawyerAuthId(
 			?.userId ??
 		null
 	);
-}
-
-function activeSellerAccessRole(
-	accessRows: Doc<"dealAccess">[],
-	authId: string,
-	hasBorrowerRecord: boolean
-): "borrower" | "lender" {
-	const row = accessRows.find(
-		(access) =>
-			access.userId === authId &&
-			(access.role === "borrower" || access.role === "lender")
-	);
-	if (row?.role === "borrower" || row?.role === "lender") {
-		return row.role;
-	}
-	return hasBorrowerRecord ? "borrower" : "lender";
 }
 
 async function brokerProfile(
@@ -311,20 +294,27 @@ export async function buildDealParticipantProjection(
 	ctx: ProjectionReaderCtx,
 	deal: Doc<"deals">
 ): Promise<DealParticipantProjection> {
+	const purchasingLenderAuthId =
+		"purchasingLenderAuthId" in deal && deal.purchasingLenderAuthId
+			? deal.purchasingLenderAuthId
+			: deal.buyerId;
+	const sellingLenderAuthId =
+		"sellingLenderAuthId" in deal && deal.sellingLenderAuthId
+			? deal.sellingLenderAuthId
+			: deal.sellerId;
 	const [buyerUser, sellerUser, activeAccessRows, mortgage] = await Promise.all(
 		[
-			getUserByAuthId(ctx, deal.buyerId),
-			getUserByAuthId(ctx, deal.sellerId),
+			getUserByAuthId(ctx, purchasingLenderAuthId),
+			getUserByAuthId(ctx, sellingLenderAuthId),
 			getActiveDealAccessRows(ctx, deal._id),
 			ctx.db.get(deal.mortgageId),
 		]
 	);
 
-	const [buyerLender, sellerLender, sellerBorrower, primaryMortgageBorrower] =
+	const [buyerLender, sellerLender, primaryMortgageBorrower] =
 		await Promise.all([
 			getLenderByUserId(ctx, buyerUser?._id ?? null),
 			getLenderByUserId(ctx, sellerUser?._id ?? null),
-			getBorrowerByUserId(ctx, sellerUser?._id ?? null),
 			getPrimaryMortgageBorrower(ctx, deal.mortgageId),
 		]);
 
@@ -374,44 +364,34 @@ export async function buildDealParticipantProjection(
 		ctx,
 		mortgage?.assignedBrokerId ?? mortgage?.brokerOfRecordId
 	);
-	const borrower = await borrowerProfile(
-		ctx,
-		primaryMortgageBorrower ?? sellerBorrower
-	);
+	const borrower = await borrowerProfile(ctx, primaryMortgageBorrower);
 	const involvedParties: InvolvedPartyProjection[] = [
 		{
 			email: normalizeText(buyerUser?.email),
 			hasWorkspaceAccess: hasActiveWorkspaceAccess(activeAccessRows, {
-				authId: deal.buyerId,
+				authId: purchasingLenderAuthId,
 				roles: new Set(["lender"]),
 			}),
-			label: "Buyer",
-			name: displayNameForAuthParticipant(deal.buyerId, buyerUser),
-			role: "buyer",
+			label: "Purchasing lender",
+			name: displayNameForAuthParticipant(purchasingLenderAuthId, buyerUser),
+			role: "purchasing_lender",
 		},
 		{
 			email: normalizeText(sellerUser?.email),
 			hasWorkspaceAccess: hasActiveWorkspaceAccess(activeAccessRows, {
-				authId: deal.sellerId,
-				roles: new Set(["borrower", "lender"]),
+				authId: sellingLenderAuthId,
+				roles: new Set(["lender"]),
 			}),
-			label: "Seller",
-			name: displayNameForAuthParticipant(deal.sellerId, sellerUser),
-			role: "seller",
+			label: "Selling lender",
+			name: displayNameForAuthParticipant(sellingLenderAuthId, sellerUser),
+			role: "selling_lender",
 		},
 		{
 			email: selectedLawyerEmail,
 			hasWorkspaceAccess: selectedLawyerHasWorkspaceAccess,
-			label: "Buyer's Lawyer",
+			label: "Primary lawyer",
 			name: selectedLawyerName,
-			role: "buyer_lawyer",
-		},
-		{
-			email: null,
-			hasWorkspaceAccess: false,
-			label: "Seller's Lawyer",
-			name: null,
-			role: "seller_lawyer",
+			role: "primary_lawyer",
 		},
 		{
 			email: broker?.email ?? null,
@@ -421,57 +401,88 @@ export async function buildDealParticipantProjection(
 			}),
 			label: "Broker",
 			name: broker?.displayName ?? null,
-			role: "broker",
+			role: "broker_of_record",
 		},
 		{
-			email: borrower?.email ?? normalizeText(sellerUser?.email),
+			email: borrower?.email ?? null,
 			hasWorkspaceAccess: hasActiveWorkspaceAccess(activeAccessRows, {
-				authId: borrower?.authId ?? deal.sellerId,
+				authId: borrower?.authId,
 				roles: new Set(["borrower"]),
 			}),
-			label: "Borrower",
-			name:
-				borrower?.displayName ??
-				displayNameForAuthParticipant(deal.sellerId, sellerUser),
-			role: "borrower",
+			label: "Primary borrower",
+			name: borrower?.displayName ?? null,
+			role: "primary_borrower",
 		},
 	];
+	const purchasingLender: LenderPersonaProjection = {
+		accessRole: "lender",
+		authId: purchasingLenderAuthId,
+		displayName: displayNameForAuthParticipant(
+			purchasingLenderAuthId,
+			buyerUser
+		),
+		email: normalizeText(buyerUser?.email),
+		lenderId: buyerLender?._id ?? deal.lenderId ?? null,
+		persona: "purchasing_lender",
+		userId: buyerUser?._id ?? null,
+	};
+	const sellingLender: LenderPersonaProjection = {
+		accessRole: "lender",
+		authId: sellingLenderAuthId,
+		displayName: displayNameForAuthParticipant(sellingLenderAuthId, sellerUser),
+		email: normalizeText(sellerUser?.email),
+		lenderId: sellerLender?._id ?? null,
+		persona: "selling_lender",
+		userId: sellerUser?._id ?? null,
+	};
+	const primaryBorrower: BorrowerPersonaProjection = {
+		authId: borrower?.authId ?? null,
+		borrowerId: primaryMortgageBorrower?._id ?? null,
+		displayName: borrower?.displayName ?? null,
+		email: borrower?.email ?? null,
+		persona: "primary_borrower",
+		userId: primaryMortgageBorrower?.userId ?? null,
+	};
+	const primaryLawyer: LawyerProjection & { persona: "primary_lawyer" } = {
+		authId: lawyerAuthId,
+		displayName:
+			selectedLawyerName ??
+			(lawyerAuthId
+				? displayNameForAuthParticipant(lawyerAuthId, lawyerUser)
+				: null),
+		email: selectedLawyerEmail,
+		hasActiveDealAccess: Boolean(
+			lawyerAuthId && activeLawyerAccess?.userId === lawyerAuthId
+		),
+		lawyerType,
+		persona: "primary_lawyer",
+	};
 
 	return {
 		dealId: deal._id,
 		buyer: {
 			accessRole: "lender",
-			authId: deal.buyerId,
-			displayName: displayNameForAuthParticipant(deal.buyerId, buyerUser),
+			authId: purchasingLenderAuthId,
+			displayName: purchasingLender.displayName,
 			email: normalizeText(buyerUser?.email),
 			lenderId: buyerLender?._id ?? deal.lenderId ?? null,
 			userId: buyerUser?._id ?? null,
 		},
 		seller: {
-			accessRole: activeSellerAccessRole(
-				activeAccessRows,
-				deal.sellerId,
-				Boolean(sellerBorrower)
-			),
-			authId: deal.sellerId,
-			borrowerId: sellerBorrower?._id ?? null,
-			displayName: displayNameForAuthParticipant(deal.sellerId, sellerUser),
+			accessRole: "lender",
+			authId: sellingLenderAuthId,
+			borrowerId: null,
+			displayName: sellingLender.displayName,
 			email: normalizeText(sellerUser?.email),
 			lenderId: sellerLender?._id ?? null,
 			userId: sellerUser?._id ?? null,
 		},
 		lawyer: {
-			authId: lawyerAuthId,
-			displayName:
-				selectedLawyerName ??
-				(lawyerAuthId
-					? displayNameForAuthParticipant(lawyerAuthId, lawyerUser)
-					: null),
-			email: selectedLawyerEmail,
-			hasActiveDealAccess: Boolean(
-				lawyerAuthId && activeLawyerAccess?.userId === lawyerAuthId
-			),
-			lawyerType,
+			authId: primaryLawyer.authId,
+			displayName: primaryLawyer.displayName,
+			email: primaryLawyer.email,
+			hasActiveDealAccess: primaryLawyer.hasActiveDealAccess,
+			lawyerType: primaryLawyer.lawyerType,
 		},
 		fractionalShareDisplayPercent:
 			fractionalShareStatus.fractionalShareDisplayPercent,
@@ -479,10 +490,17 @@ export async function buildDealParticipantProjection(
 		fractionalShareUnits: fractionalShareStatus.fractionalShareUnits,
 		involvedParties,
 		personas: {
-			admin: "admin",
-			buyer: "buyer",
-			lawyer: "lawyer",
-			seller: "seller",
+			assigned_broker: "assigned_broker",
+			broker_of_record: "broker_of_record",
+			fairlend_admin: "fairlend_admin",
+			primary_borrower: "primary_borrower",
+			primary_lawyer: "primary_lawyer",
+			purchasing_lender: "purchasing_lender",
+			selling_lender: "selling_lender",
 		},
+		primary_borrower: primaryBorrower,
+		primary_lawyer: primaryLawyer,
+		purchasing_lender: purchasingLender,
+		selling_lender: sellingLender,
 	};
 }

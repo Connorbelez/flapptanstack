@@ -74,6 +74,13 @@ describe("PaymentProofUploader", () => {
 		await user.click(screen.getByRole("button", { name: /upload proof/i }));
 
 		await waitFor(() => {
+			expect(generateUploadUrl).toHaveBeenCalledWith({ dealId: "deal-1" });
+			expect(createAsset).toHaveBeenCalledWith(
+				expect.objectContaining({
+					dealId: "deal-1",
+				})
+			);
+			expect(createAsset.mock.calls[0]?.[0]).not.toHaveProperty("source");
 			expect(uploadProof).toHaveBeenCalledWith(
 				expect.objectContaining({
 					amount: 12_345,

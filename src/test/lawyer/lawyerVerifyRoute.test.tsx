@@ -2,12 +2,13 @@
  * @vitest-environment jsdom
  */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import { useAction, useMutation, useQuery } from "convex/react";
+import { Window } from "happy-dom";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LawyerWorkosInvitationRouteContent } from "#/routes/lawyer/invitation";
 import {
 	buildLawyerWorkosInvitationPath,
@@ -20,13 +21,10 @@ import {
 	getLawyerVerifyTerminalCopy,
 } from "#/routes/lawyer/verify.$token";
 
-vi.mock("@tanstack/react-router", async () => {
-	const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
-		"@tanstack/react-router"
-	);
-
+vi.mock("@tanstack/react-router", () => {
 	return {
-		...actual,
+		createFileRoute: () => (config: unknown) => config,
+		Link: ({ children }: { children: ReactNode }) => <a href="/">{children}</a>,
 		useNavigate: vi.fn(),
 	};
 });
@@ -43,8 +41,49 @@ vi.mock("convex/react", () => ({
 	useQuery: vi.fn(),
 }));
 
+const useActionMock = useAction as unknown as ReturnType<typeof vi.fn>;
+const useAuthMock = useAuth as unknown as ReturnType<typeof vi.fn>;
+const useNavigateMock = useNavigate as unknown as ReturnType<typeof vi.fn>;
+let testWindow: Window | null = null;
+
+beforeEach(() => {
+	testWindow = new Window({
+		url: "http://admin.localhost:3000/lawyer/invitation",
+	});
+	Object.defineProperty(globalThis, "window", {
+		configurable: true,
+		value: testWindow,
+	});
+	Object.defineProperty(globalThis, "document", {
+		configurable: true,
+		value: testWindow.document,
+	});
+	Object.defineProperty(globalThis, "navigator", {
+		configurable: true,
+		value: testWindow.navigator,
+	});
+	Object.defineProperty(globalThis, "HTMLElement", {
+		configurable: true,
+		value: testWindow.HTMLElement,
+	});
+	Object.defineProperty(globalThis, "Element", {
+		configurable: true,
+		value: testWindow.Element,
+	});
+	Object.defineProperty(globalThis, "Node", {
+		configurable: true,
+		value: testWindow.Node,
+	});
+	Object.defineProperty(testWindow, "SyntaxError", {
+		configurable: true,
+		value: SyntaxError,
+	});
+});
+
 afterEach(() => {
 	cleanup();
+	void testWindow?.happyDOM.abort();
+	testWindow = null;
 	vi.clearAllMocks();
 });
 
@@ -118,22 +157,22 @@ describe("lawyer WorkOS invitation route", () => {
 			targetEmail: "guest@example.test",
 		});
 
-		vi.mocked(useNavigate).mockReturnValue(mockNavigate);
-		vi.mocked(useAuth).mockReturnValue({
+		useNavigateMock.mockReturnValue(mockNavigate);
+		useAuthMock.mockReturnValue({
 			loading: false,
 			user: { id: "user_123" },
 		} as never);
 		let actionCallIndex = 0;
-		vi.mocked(useAction).mockImplementation(() => {
+		useActionMock.mockImplementation(() => {
 			actionCallIndex += 1;
 			return actionCallIndex % 2 === 1 ? completeInvitation : resolveInvitation;
 		});
 
-		render(
+		const view = render(
 			<LawyerWorkosInvitationRouteContent invitationToken="workos_token" />
 		);
 
-		await screen.findByText(/Preparing invitation/i);
+		await view.findByText(/Preparing invitation/i);
 		await waitFor(() =>
 			expect(mockNavigate).toHaveBeenCalledWith({
 				href: "/lawyer/onboarding/session_123",
@@ -153,20 +192,22 @@ describe("lawyer legacy verification route", () => {
 			},
 		});
 
-		vi.mocked(useNavigate).mockReturnValue(mockNavigate);
-		vi.mocked(useAuth).mockReturnValue({
+		useNavigateMock.mockReturnValue(mockNavigate);
+		useAuthMock.mockReturnValue({
 			loading: false,
 			permissions: [],
 			role: "member",
 			roles: ["member"],
 			user: { id: "user_123" },
 		} as never);
-		vi.mocked(useQuery).mockReturnValue({
+		const useQueryMock = useQuery as unknown as ReturnType<typeof vi.fn>;
+		const useMutationMock = useMutation as unknown as ReturnType<typeof vi.fn>;
+		useQueryMock.mockReturnValue({
 			dealId: "deal_123",
 			status: "pending",
 		} as never);
 		let mutationCallIndex = 0;
-		vi.mocked(useMutation).mockImplementation(() => {
+		useMutationMock.mockImplementation(() => {
 			mutationCallIndex += 1;
 			return mutationCallIndex % 2 === 1
 				? acceptInvitation

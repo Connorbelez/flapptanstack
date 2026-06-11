@@ -53,7 +53,7 @@ export const CANONICAL_DOCUMENT_VARIABLES = [
 	canonicalVariable({
 		availability: "nullable_until_lock",
 		description: "Email address for the first co-borrower, when present.",
-		key: "borrower_co_1_email",
+		key: "co_borrower_1_email",
 		label: "Co-borrower 1 Email",
 		readOnly: true,
 		sampleValue: "co.borrower1@example.com",
@@ -63,7 +63,7 @@ export const CANONICAL_DOCUMENT_VARIABLES = [
 	canonicalVariable({
 		availability: "nullable_until_lock",
 		description: "Full name for the first co-borrower, when present.",
-		key: "borrower_co_1_full_name",
+		key: "co_borrower_1_full_name",
 		label: "Co-borrower 1 Full Name",
 		readOnly: true,
 		sampleValue: "Casey Borrower",
@@ -73,7 +73,7 @@ export const CANONICAL_DOCUMENT_VARIABLES = [
 	canonicalVariable({
 		availability: "nullable_until_lock",
 		description: "Email address for the second co-borrower, when present.",
-		key: "borrower_co_2_email",
+		key: "co_borrower_2_email",
 		label: "Co-borrower 2 Email",
 		readOnly: true,
 		sampleValue: "co.borrower2@example.com",
@@ -83,7 +83,7 @@ export const CANONICAL_DOCUMENT_VARIABLES = [
 	canonicalVariable({
 		availability: "nullable_until_lock",
 		description: "Full name for the second co-borrower, when present.",
-		key: "borrower_co_2_full_name",
+		key: "co_borrower_2_full_name",
 		label: "Co-borrower 2 Full Name",
 		readOnly: true,
 		sampleValue: "Jordan Borrower",
@@ -93,21 +93,21 @@ export const CANONICAL_DOCUMENT_VARIABLES = [
 	canonicalVariable({
 		availability: "guaranteed",
 		description: "Email address for the primary borrower on the mortgage.",
-		key: "borrower_primary_email",
+		key: "primary_borrower_email",
 		label: "Primary Borrower Email",
 		readOnly: true,
 		sampleValue: "borrower@example.com",
-		sourcePath: "deal.participants.seller.email",
+		sourcePath: "deal.participants.primary_borrower.email",
 		type: "string",
 	}),
 	canonicalVariable({
 		availability: "guaranteed",
 		description: "Full name for the primary borrower on the mortgage.",
-		key: "borrower_primary_full_name",
+		key: "primary_borrower_full_name",
 		label: "Primary Borrower Full Name",
 		readOnly: true,
 		sampleValue: "Taylor Borrower",
-		sourcePath: "deal.participants.seller.displayName",
+		sourcePath: "deal.participants.primary_borrower.displayName",
 		type: "string",
 	}),
 	canonicalVariable({
@@ -154,21 +154,21 @@ export const CANONICAL_DOCUMENT_VARIABLES = [
 	canonicalVariable({
 		availability: "nullable_until_lock",
 		description: "Email address for the selected lawyer on the locked deal.",
-		key: "lawyer_primary_email",
+		key: "primary_lawyer_email",
 		label: "Primary Lawyer Email",
 		readOnly: true,
 		sampleValue: "lawyer@example.com",
-		sourcePath: "deal.participants.lawyer.email",
+		sourcePath: "deal.participants.primary_lawyer.email",
 		type: "string",
 	}),
 	canonicalVariable({
 		availability: "nullable_until_lock",
 		description: "Selected lawyer for the locked deal.",
-		key: "lawyer_primary_full_name",
+		key: "primary_lawyer_full_name",
 		label: "Primary Lawyer Full Name",
 		readOnly: true,
 		sampleValue: "Morgan Patel",
-		sourcePath: "deal.participants.lawyer.displayName",
+		sourcePath: "deal.participants.primary_lawyer.displayName",
 		type: "string",
 	}),
 	canonicalVariable({
@@ -204,31 +204,51 @@ export const CANONICAL_DOCUMENT_VARIABLES = [
 	canonicalVariable({
 		availability: "guaranteed",
 		description: "Email address for the lender who locked the listing.",
-		key: "lender_primary_email",
-		label: "Primary Lender Email",
+		key: "purchasing_lender_email",
+		label: "Purchasing Lender Email",
 		readOnly: true,
 		sampleValue: "lender@example.com",
-		sourcePath: "deal.participants.buyer.email",
+		sourcePath: "deal.participants.purchasing_lender.email",
 		type: "string",
 	}),
 	canonicalVariable({
 		availability: "guaranteed",
 		description: "Name of the lender who locked the listing.",
-		key: "lender_primary_full_name",
-		label: "Primary Lender Full Name",
+		key: "purchasing_lender_full_name",
+		label: "Purchasing Lender Full Name",
 		readOnly: true,
 		sampleValue: "Avery Chen",
-		sourcePath: "deal.participants.buyer.displayName",
+		sourcePath: "deal.participants.purchasing_lender.displayName",
 		type: "string",
 	}),
 	canonicalVariable({
 		availability: "guaranteed",
 		description: "Internal user id for the lender who locked the listing.",
-		key: "lender_primary_system_id",
-		label: "Primary Lender System ID",
+		key: "purchasing_lender_system_id",
+		label: "Purchasing Lender System ID",
 		readOnly: true,
 		sampleValue: "user_01KLOCKEDLENDER",
-		sourcePath: "deal.participants.buyer.userId",
+		sourcePath: "deal.participants.purchasing_lender.userId",
+		type: "string",
+	}),
+	canonicalVariable({
+		availability: "guaranteed",
+		description: "Email address for the selling lender on the deal.",
+		key: "selling_lender_email",
+		label: "Selling Lender Email",
+		readOnly: true,
+		sampleValue: "seller.lender@example.com",
+		sourcePath: "deal.participants.selling_lender.email",
+		type: "string",
+	}),
+	canonicalVariable({
+		availability: "guaranteed",
+		description: "Name of the selling lender on the deal.",
+		key: "selling_lender_full_name",
+		label: "Selling Lender Full Name",
+		readOnly: true,
+		sampleValue: "Sam Seller",
+		sourcePath: "deal.participants.selling_lender.displayName",
 		type: "string",
 	}),
 	canonicalVariable({
@@ -440,10 +460,85 @@ const CANONICAL_VARIABLES_BY_KEY: ReadonlyMap<
 	CANONICAL_DOCUMENT_VARIABLES.map((variable) => [variable.key, variable])
 );
 
+export interface LegacyDocumentVariableAlias {
+	canonicalKey: string;
+	legacyKey: string;
+	removal: string;
+}
+
+export const LEGACY_DOCUMENT_VARIABLE_ALIASES = [
+	{
+		canonicalKey: "co_borrower_1_email",
+		legacyKey: "borrower_co_1_email",
+		removal: "Migrate published templates to co_borrower_1_email.",
+	},
+	{
+		canonicalKey: "co_borrower_1_full_name",
+		legacyKey: "borrower_co_1_full_name",
+		removal: "Migrate published templates to co_borrower_1_full_name.",
+	},
+	{
+		canonicalKey: "co_borrower_2_email",
+		legacyKey: "borrower_co_2_email",
+		removal: "Migrate published templates to co_borrower_2_email.",
+	},
+	{
+		canonicalKey: "co_borrower_2_full_name",
+		legacyKey: "borrower_co_2_full_name",
+		removal: "Migrate published templates to co_borrower_2_full_name.",
+	},
+	{
+		canonicalKey: "purchasing_lender_email",
+		legacyKey: "lender_primary_email",
+		removal: "Migrate published templates to purchasing_lender_email.",
+	},
+	{
+		canonicalKey: "purchasing_lender_full_name",
+		legacyKey: "lender_primary_full_name",
+		removal: "Migrate published templates to purchasing_lender_full_name.",
+	},
+	{
+		canonicalKey: "purchasing_lender_system_id",
+		legacyKey: "lender_primary_system_id",
+		removal: "Migrate published templates to purchasing_lender_system_id.",
+	},
+	{
+		canonicalKey: "primary_borrower_email",
+		legacyKey: "borrower_primary_email",
+		removal: "Migrate published templates to primary_borrower_email.",
+	},
+	{
+		canonicalKey: "primary_borrower_full_name",
+		legacyKey: "borrower_primary_full_name",
+		removal: "Migrate published templates to primary_borrower_full_name.",
+	},
+	{
+		canonicalKey: "primary_lawyer_email",
+		legacyKey: "lawyer_primary_email",
+		removal: "Migrate published templates to primary_lawyer_email.",
+	},
+	{
+		canonicalKey: "primary_lawyer_full_name",
+		legacyKey: "lawyer_primary_full_name",
+		removal: "Migrate published templates to primary_lawyer_full_name.",
+	},
+] as const satisfies readonly LegacyDocumentVariableAlias[];
+
+const LEGACY_DOCUMENT_VARIABLE_ALIASES_BY_KEY: ReadonlyMap<
+	string,
+	LegacyDocumentVariableAlias
+> = new Map(
+	LEGACY_DOCUMENT_VARIABLE_ALIASES.map((alias) => [alias.legacyKey, alias])
+);
+
 export function isCanonicalDocumentVariableKey(key: string): boolean {
 	return CANONICAL_VARIABLES_BY_KEY.has(key);
 }
 
 export function getCanonicalDocumentVariable(key: string) {
 	return CANONICAL_VARIABLES_BY_KEY.get(key) ?? null;
+}
+
+export function getLegacyDocumentVariableAlias(key: string) {
+	return LEGACY_DOCUMENT_VARIABLE_ALIASES_BY_KEY.get(key) ?? null;
 }

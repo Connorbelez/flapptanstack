@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { dealPersonaValidator } from "../src/lib/deals/access-policy/types";
 import {
 	originationCaseStatusValidator,
 	originationCollectionsDraftValidator,
@@ -1471,7 +1472,8 @@ export default defineSchema({
 		trigger: velocitySyncTriggerValidator,
 		loanCode: v.optional(v.string()),
 		dealHref: v.optional(v.string()),
-		idempotencyKey: v.string(),
+		//TODO: Run migration and remove optional from these fields
+		idempotencyKey: v.optional(v.string()),
 		connectorCredentialContext: v.optional(
 			velocityConnectorCredentialContextValidator
 		),
@@ -2562,6 +2564,8 @@ export default defineSchema({
 		mortgageId: v.id("mortgages"),
 		buyerId: v.string(),
 		sellerId: v.string(),
+		purchasingLenderAuthId: v.optional(v.string()),
+		sellingLenderAuthId: v.optional(v.string()),
 		fractionalShare: v.number(),
 		closingDate: v.optional(v.number()),
 		lockingFeeAmount: v.optional(v.number()),
@@ -2604,6 +2608,8 @@ export default defineSchema({
 		mortgageId: v.id("mortgages"),
 		buyerAuthId: v.string(),
 		sellerAuthId: v.string(),
+		purchasingLenderAuthId: v.optional(v.string()),
+		sellingLenderAuthId: v.optional(v.string()),
 		selectedLawyerAuthId: v.optional(v.string()),
 		selectedLawyerType: v.optional(dealLockSelectedLawyerTypeValidator),
 		fractionalShareUnits: v.number(),
@@ -2669,8 +2675,12 @@ export default defineSchema({
 			v.literal("lender"),
 			v.literal("platform_lawyer"),
 			v.literal("guest_lawyer"),
-			v.literal("admin")
+			v.literal("admin"),
+			v.literal("purchasing_lender"),
+			v.literal("primary_lawyer"),
+			v.literal("fairlend_admin")
 		),
+		submittedByPersona: v.optional(dealPersonaValidator),
 		status: v.union(
 			v.literal("pending_review"),
 			v.literal("approved"),
@@ -2859,6 +2869,42 @@ export default defineSchema({
 		.index("by_normalized_email", ["normalizedEmail"])
 		.index("by_bar_jurisdiction", ["barNumber", "jurisdiction"])
 		.index("by_platform_status", ["platformStatus"]),
+
+	platformLawyerInvitations: defineTable({
+		lawyerProfileId: v.id("lawyerProfiles"),
+		email: v.string(),
+		normalizedEmail: v.string(),
+		displayName: v.string(),
+		firmName: v.optional(v.string()),
+		barNumber: v.optional(v.string()),
+		jurisdiction: v.optional(v.string()),
+		status: v.union(
+			v.literal("pending"),
+			v.literal("sent"),
+			v.literal("failed"),
+			v.literal("canceled"),
+			v.literal("accepted")
+		),
+		deliveryStatus: v.union(
+			v.literal("pending"),
+			v.literal("sent"),
+			v.literal("failed")
+		),
+		workosInvitationId: v.optional(v.string()),
+		acceptInvitationUrl: v.optional(v.string()),
+		deliveryError: v.optional(v.string()),
+		deliveredAt: v.optional(v.number()),
+		lastDeliveryAttemptAt: v.optional(v.number()),
+		acceptedAt: v.optional(v.number()),
+		onboardingSessionId: v.optional(v.id("lawyerOnboardingSessions")),
+		createdBy: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_profile_status", ["lawyerProfileId", "status"])
+		.index("by_email_status", ["normalizedEmail", "status"])
+		.index("by_onboarding_session", ["onboardingSessionId"])
+		.index("by_workos_invitation", ["workosInvitationId"]),
 
 	platformLawyerSlaTiers: defineTable({
 		name: v.string(),
@@ -3058,7 +3104,7 @@ export default defineSchema({
 		completedAt: v.optional(v.number()),
 		createdAt: v.number(),
 		currentStep: v.string(),
-		dealId: v.id("deals"),
+		dealId: v.optional(v.id("deals")),
 		engagementAcceptedAt: v.optional(v.number()),
 		idvCompletedAt: v.optional(v.number()),
 		identityConfirmedAt: v.optional(v.number()),
@@ -3069,6 +3115,10 @@ export default defineSchema({
 		nextRoute: v.optional(v.string()),
 		normalizedTargetEmail: v.optional(v.string()),
 		path: lawyerOnboardingPathValidator,
+		platformAgreementAcceptedAt: v.optional(v.number()),
+		platformAgreementEvidenceHash: v.optional(v.string()),
+		platformAgreementVersion: v.optional(v.string()),
+		platformLawyerInvitationId: v.optional(v.id("platformLawyerInvitations")),
 		returnPath: v.string(),
 		status: lawyerOnboardingStatusValidator,
 		updatedAt: v.number(),
@@ -3076,6 +3126,8 @@ export default defineSchema({
 	})
 		.index("by_deal_status", ["dealId", "status"])
 		.index("by_invitation", ["invitationId"])
+		.index("by_lawyer_profile_status", ["lawyerProfileId", "status"])
+		.index("by_platform_invitation", ["platformLawyerInvitationId"])
 		.index("by_workos_deal", ["workosUserId", "dealId"])
 		.index("by_target_email_deal", ["normalizedTargetEmail", "dealId"]),
 
@@ -3121,6 +3173,10 @@ export default defineSchema({
 			v.literal("assigned_broker"),
 			v.literal("lender"),
 			v.literal("borrower")
+		),
+		persona: v.optional(dealPersonaValidator),
+		lawyerSource: v.optional(
+			v.union(v.literal("platform_lawyer"), v.literal("guest_lawyer"))
 		),
 		grantedAt: v.number(),
 		grantedBy: v.string(),

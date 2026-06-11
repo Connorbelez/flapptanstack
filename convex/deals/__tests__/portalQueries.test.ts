@@ -93,6 +93,7 @@ async function seedPortalDeal(
 		lawyerEmail?: string;
 		lawyerAccessUserId?: string;
 		lawyerOnboardingSessionStatus?: Doc<"lawyerOnboardingSessions">["status"];
+		missingPaymentProofAsset?: boolean;
 		withPaymentProof?: boolean;
 		withRepresentationInvitation?: boolean;
 	}
@@ -193,8 +194,10 @@ async function seedPortalDeal(
 			lawyerType: "guest_lawyer",
 			lenderId,
 			mortgageId,
+			purchasingLenderAuthId: LENDER_AUTH_ID,
 			selectedLawyer: guestLawyerSnapshot(lawyerEmail),
 			sellerId: SELLER_AUTH_ID,
+			sellingLenderAuthId: SELLER_AUTH_ID,
 			status: args?.dealStatus ?? "lawyerOnboarding.pending",
 		});
 		const accessRows: Array<{
@@ -207,7 +210,7 @@ async function seedPortalDeal(
 			userId: string;
 		}> = [
 			{ role: "lender", userId: LENDER_AUTH_ID },
-			{ role: "borrower", userId: SELLER_AUTH_ID },
+			{ role: "lender", userId: SELLER_AUTH_ID },
 			{ role: "broker_of_record", userId: BROKER_AUTH_ID },
 		];
 		if (args?.lawyerAccessUserId) {
@@ -255,6 +258,33 @@ async function seedPortalDeal(
 				status: args.lawyerOnboardingSessionStatus,
 				updatedAt: NOW,
 			});
+			if (args.lawyerOnboardingSessionStatus === "complete") {
+				await ctx.db.insert("lawyerVerifications", {
+					authId: args.closingTeamAccessUserId,
+					checkType: "idv",
+					createdAt: NOW,
+					createdBy: "test",
+					dealId,
+					expiresAt: NOW + 86_400_000,
+					normalizedEmail: lawyerEmail.toLowerCase(),
+					outcome: "eligible",
+					provider: "manual_admin",
+					reasonCodes: ["identity_confirmed"],
+					sourceSnapshot: {
+						source: "test",
+					},
+				});
+				await ctx.db.insert("representationEngagements", {
+					createdAt: NOW,
+					dealId,
+					evidenceHash: "sha256:test-engagement",
+					lawyerAuthId: args.closingTeamAccessUserId ?? "lawyer-auth",
+					provider: "manual_admin",
+					signedAt: NOW,
+					status: "signed",
+					updatedAt: NOW,
+				});
+			}
 		}
 		if (args?.withPaymentProof) {
 			const fileRef = await (
@@ -288,10 +318,14 @@ async function seedPortalDeal(
 				sendingParty: "Lena Lender",
 				status: "approved",
 				submittedBy: LENDER_AUTH_ID,
-				submittedByRole: "lender",
+				submittedByPersona: "purchasing_lender",
+				submittedByRole: "purchasing_lender",
 				transferDate: NOW,
 				updatedAt: NOW + 2,
 			});
+			if (args.missingPaymentProofAsset) {
+				await ctx.db.delete(assetId);
+			}
 		}
 		return { dealId };
 	});
@@ -307,6 +341,27 @@ async function getWorkspace(
 		.query(portalQueriesApi.getDealPortalWorkspace, { dealId });
 }
 
+type PortalWorkspace = NonNullable<Awaited<ReturnType<typeof getWorkspace>>>;
+
+function expectOnboardingOnlyWorkspace(workspace: PortalWorkspace) {
+	expect(workspace.accessDecision.allowed).toBe(false);
+	expect(workspace.activeScreen).toBe("unavailable");
+	expect(workspace.blockers).toEqual([]);
+	expect(workspace.capabilities).toEqual([]);
+	expect(workspace.documents).toMatchObject({
+		instances: [],
+		package: null,
+		participants: null,
+	});
+	expect(workspace.participants.involvedParties).toEqual([]);
+	expect(workspace.payment).toEqual({
+		adminReview: null,
+		hasApprovedProof: false,
+		hasPendingProof: false,
+		proofs: [],
+	});
+}
+
 describe("deal portal shared projection", () => {
 	it("projects lender representation screen and invite capabilities without payment review", async () => {
 		const t = createHarness();
@@ -318,7 +373,8 @@ describe("deal portal shared projection", () => {
 
 		expect(result).toMatchObject({
 			activeScreen: "representation",
-			viewer: { persona: "lender" },
+			deal: { dealValue: 125_000 },
+			viewer: { persona: "purchasing_lender" },
 		});
 		expect(result.capabilities).toContain("representation.invitation.resend");
 		expect(result.capabilities).toContain("representation.lawyer.replace");
@@ -347,10 +403,12 @@ describe("deal portal shared projection", () => {
 
 		expect(result.viewer).toMatchObject({
 			authId: "workos-guest-lawyer-auth",
-			persona: "selected_lawyer_onboarding_required",
+			persona: "primary_lawyer",
+			readiness: "invited",
 		});
-		expect(result.capabilities).toEqual(["representation.onboarding.resume"]);
+		expect(result.capabilities).toEqual([]);
 		expect(result.onboarding.required).toBe(true);
+		expectOnboardingOnlyWorkspace(result);
 	});
 
 	it("resolves selected lawyer persona from completed onboarding session", async () => {
@@ -375,7 +433,8 @@ describe("deal portal shared projection", () => {
 
 		expect(result.viewer).toMatchObject({
 			authId: "workos-completed-guest-lawyer-auth",
-			persona: "selected_lawyer",
+			persona: "primary_lawyer",
+			readiness: "active",
 		});
 		expect(result.onboarding.required).toBe(false);
 	});
@@ -413,12 +472,14 @@ describe("deal portal shared projection", () => {
 			dealId
 		);
 
-		expect(result.viewer.persona).toBe("selected_lawyer_onboarding_required");
+		expect(result.viewer.persona).toBe("primary_lawyer");
+		expect(result.viewer.readiness).toBe("onboarding_in_progress");
 		expect(result.onboarding).toMatchObject({
 			nextRoute: "/lawyer/onboarding/latest",
 			required: true,
 			sessionId: pendingSessionId,
 		});
+		expectOnboardingOnlyWorkspace(result);
 	});
 
 	it("downgrades selected-lawyer email match until onboarding is complete", async () => {
@@ -441,18 +502,16 @@ describe("deal portal shared projection", () => {
 			dealId
 		);
 
-		expect(workspace.viewer.persona).toBe(
-			"selected_lawyer_onboarding_required"
-		);
-		expect(workspace.capabilities).toEqual([
-			"representation.onboarding.resume",
-		]);
+		expect(workspace.viewer.persona).toBe("primary_lawyer");
+		expect(workspace.viewer.readiness).toBe("onboarding_in_progress");
+		expect(workspace.capabilities).toEqual([]);
 		expect(workspace.capabilities).not.toContain("representation.confirm");
 		expect(workspace.onboarding.sessionId).toBeTruthy();
 		expect(workspace.onboarding).toMatchObject({
 			nextRoute: "/lawyer/onboarding/test",
 			required: true,
 		});
+		expectOnboardingOnlyWorkspace(workspace);
 	});
 
 	it("does not expose payment upload blockers for onboarding-required selected lawyers", async () => {
@@ -476,18 +535,16 @@ describe("deal portal shared projection", () => {
 			dealId
 		);
 
-		expect(workspace.viewer.persona).toBe(
-			"selected_lawyer_onboarding_required"
-		);
-		expect(workspace.capabilities).toEqual([
-			"representation.onboarding.resume",
-		]);
+		expect(workspace.viewer.persona).toBe("primary_lawyer");
+		expect(workspace.viewer.readiness).toBe("onboarding_in_progress");
+		expect(workspace.capabilities).toEqual([]);
 		expect(
 			workspace.blockers.map((blocker) => blocker.recoverableAction)
 		).not.toContain("payment.proof.upload");
+		expectOnboardingOnlyWorkspace(workspace);
 	});
 
-	it("fails closed for selected-lawyer email match without onboarding session", async () => {
+	it("returns a bootstrap path for selected-lawyer email match without onboarding session", async () => {
 		const t = createHarness();
 		const guestEmail = "guest-without-session@example.test";
 		const { dealId } = await seedPortalDeal(t, {
@@ -506,28 +563,49 @@ describe("deal portal shared projection", () => {
 			dealId
 		);
 
-		expect(workspace.viewer.persona).toBe(
-			"selected_lawyer_onboarding_required"
-		);
-		expect(workspace.capabilities).toEqual([
-			"representation.onboarding.resume",
-		]);
+		expect(workspace.viewer.persona).toBe("primary_lawyer");
+		expect(workspace.viewer.readiness).toBe("invited");
+		expect(workspace.accessDecision).toMatchObject({
+			allowed: false,
+			persona: "primary_lawyer",
+			readiness: "invited",
+			redirectTo: `/lawyer/deals/${String(dealId)}`,
+			scope: "none",
+		});
+		expect(workspace.capabilities).toEqual([]);
 		expect(workspace.onboarding).toEqual({
-			nextRoute: null,
+			nextRoute: `/lawyer/deals/${String(dealId)}`,
 			required: true,
 			sessionId: null,
 		});
+		expectOnboardingOnlyWorkspace(workspace);
 	});
 
-	it("shows admin payment review records and redacts them for lender viewers", async () => {
+	it("shows payment review attachment previews to admins and upload-capable deal personas", async () => {
 		const t = createHarness();
+		const lawyerAuthId = "lawyer-payment-auth";
+		const lawyerEmail = "lawyer-payment@example.test";
 		const { dealId } = await seedPortalDeal(t, {
+			closingTeamAccessUserId: lawyerAuthId,
 			dealStatus: "fundsTransfer.pending",
+			lawyerAccessUserId: lawyerAuthId,
+			lawyerEmail,
+			lawyerOnboardingSessionStatus: "complete",
 			withPaymentProof: true,
 		});
 
 		const adminResult = await getWorkspace(t, ADMIN_IDENTITY, dealId);
 		const lenderResult = await getWorkspace(t, LENDER_IDENTITY, dealId);
+		const lawyerResult = await getWorkspace(
+			t,
+			identity({
+				authId: lawyerAuthId,
+				email: lawyerEmail,
+				role: "lawyer",
+				roles: ["lawyer"],
+			}),
+			dealId
+		);
 
 		expect(adminResult.activeScreen).toBe("payment");
 		expect(adminResult.capabilities).toContain("payment.proof.review");
@@ -535,18 +613,135 @@ describe("deal portal shared projection", () => {
 		expect(adminResult.payment.adminReview).toEqual({
 			proofs: [
 				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							assetId: expect.any(String),
+							fileSize: 10,
+							mimeType: "application/pdf",
+							name: "wire-proof.pdf",
+							originalFilename: "wire-proof.pdf",
+							url: expect.any(String),
+						}),
+					],
 					reviewReason: "Matches expected funds transfer.",
 					reviewedBy: ADMIN_AUTH_ID,
 					status: "approved",
 				}),
 			],
 		});
-		expect(lenderResult.viewer.persona).toBe("lender");
+		expect(lenderResult.viewer.persona).toBe("purchasing_lender");
 		expect(lenderResult.payment.proofs).toHaveLength(1);
-		expect(lenderResult.payment.adminReview).toBeNull();
-		expect(JSON.stringify(lenderResult.payment)).not.toContain(
-			"Matches expected funds transfer."
-		);
+		expect(lenderResult.payment.adminReview).toEqual({
+			proofs: [
+				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							mimeType: "application/pdf",
+							name: "wire-proof.pdf",
+							url: expect.any(String),
+						}),
+					],
+					status: "approved",
+				}),
+			],
+		});
+		expect(lenderResult.capabilities).not.toContain("payment.proof.approve");
+		expect(lenderResult.capabilities).not.toContain("payment.proof.reject");
+		expect(lawyerResult.viewer.persona).toBe("primary_lawyer");
+		expect(lawyerResult.payment.adminReview).toEqual({
+			proofs: [
+				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							mimeType: "application/pdf",
+							name: "wire-proof.pdf",
+							url: expect.any(String),
+						}),
+					],
+					status: "approved",
+				}),
+			],
+		});
+		expect(lawyerResult.capabilities).not.toContain("payment.proof.approve");
+		expect(lawyerResult.capabilities).not.toContain("payment.proof.reject");
+	});
+
+	it("shows payment proof attachments to involved brokers without approval capabilities", async () => {
+		const t = createHarness();
+		const { dealId } = await seedPortalDeal(t, {
+			dealStatus: "fundsTransfer.pending",
+			withPaymentProof: true,
+		});
+
+		const brokerResult = await getWorkspace(t, BROKER_IDENTITY, dealId);
+
+		expect(brokerResult.viewer.persona).toBe("broker_of_record");
+		expect(brokerResult.capabilities).toContain("payment.proof.review");
+		expect(brokerResult.capabilities).not.toContain("payment.proof.approve");
+		expect(brokerResult.capabilities).not.toContain("payment.proof.reject");
+		expect(brokerResult.payment.adminReview).toEqual({
+			proofs: [
+				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							mimeType: "application/pdf",
+							name: "wire-proof.pdf",
+							url: expect.any(String),
+						}),
+					],
+					status: "approved",
+				}),
+			],
+		});
+	});
+
+	it("keeps review rows available when a payment proof attachment URL is unavailable", async () => {
+		const t = createHarness();
+		const { dealId } = await seedPortalDeal(t, {
+			dealStatus: "fundsTransfer.pending",
+			missingPaymentProofAsset: true,
+			withPaymentProof: true,
+		});
+
+		const adminResult = await getWorkspace(t, ADMIN_IDENTITY, dealId);
+
+		expect(adminResult.payment.adminReview).toEqual({
+			proofs: [
+				expect.objectContaining({
+					attachments: [
+						expect.objectContaining({
+							assetId: expect.any(String),
+							fileSize: null,
+							mimeType: null,
+							name: "Unavailable attachment",
+							originalFilename: "Unavailable attachment",
+							url: null,
+						}),
+					],
+					status: "approved",
+				}),
+			],
+		});
+	});
+
+	it("exposes empty document progression to involved active deal personas", async () => {
+		const t = createHarness();
+		const { dealId } = await seedPortalDeal(t, {
+			dealStatus: "documentReview.pending",
+		});
+
+		const workspaces = await Promise.all([
+			getWorkspace(t, LENDER_IDENTITY, dealId),
+			getWorkspace(t, SELLER_IDENTITY, dealId),
+			getWorkspace(t, BROKER_IDENTITY, dealId),
+			getWorkspace(t, ADMIN_IDENTITY, dealId),
+		]);
+
+		for (const workspace of workspaces) {
+			expect(workspace.activeScreen).toBe("documents");
+			expect(workspace.documents.instances).toEqual([]);
+			expect(workspace.capabilities).toContain("documents.skipEmpty");
+		}
 	});
 
 	it("keeps broker and seller personas view-only for payment proof by default", async () => {
@@ -558,8 +753,8 @@ describe("deal portal shared projection", () => {
 		const brokerResult = await getWorkspace(t, BROKER_IDENTITY, dealId);
 		const sellerResult = await getWorkspace(t, SELLER_IDENTITY, dealId);
 
-		expect(brokerResult.viewer.persona).toBe("broker");
-		expect(sellerResult.viewer.persona).toBe("seller");
+		expect(brokerResult.viewer.persona).toBe("broker_of_record");
+		expect(sellerResult.viewer.persona).toBe("selling_lender");
 		for (const workspace of [brokerResult, sellerResult]) {
 			expect(workspace.capabilities).not.toContain("payment.proof.upload");
 			expect(workspace.capabilities).not.toContain("payment.proof.review");

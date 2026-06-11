@@ -1,7 +1,13 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
 import { AdminDescriptionHelp } from "#/components/admin/AdminDescriptionHelp";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "#/components/ui/collapsible";
 import type { AdminRelationNavigationTarget } from "#/lib/admin-relation-navigation";
 import { cn } from "#/lib/utils";
 import type { Doc } from "../../../../convex/_generated/dataModel";
@@ -12,11 +18,11 @@ import type {
 import { FieldRenderer } from "./FieldRenderer";
 
 export interface DetailSectionDefinition {
+	readonly defaultCollapsed?: boolean;
 	readonly description?: string;
 	readonly fieldNames: readonly string[];
 	readonly title: string;
 }
-
 interface DetailSectionWithFields extends DetailSectionDefinition {
 	readonly fields: readonly NormalizedFieldDefinition[];
 }
@@ -162,52 +168,82 @@ export function SectionedRecordDetails({
 					))}
 				</div>
 			) : null}
-
-			{renderedSections.map((section) => (
-				<section
-					className="space-y-4 border-border/70 border-t pt-5"
-					key={getDetailSectionKey(section)}
-				>
-					<div className="flex items-center gap-1.5">
-						<h3 className="font-medium text-sm tracking-[0.02em]">
-							{section.title}
-						</h3>
-						{section.description ? (
-							<AdminDescriptionHelp
-								content={section.description}
-								label={`${section.title} details`}
-							/>
-						) : null}
-					</div>
+			{renderedSections.map((section) => {
+				const sectionContent = (
 					<DetailFieldGrid
 						fields={section.fields}
 						objectDefs={objectDefs}
 						onNavigateRelation={onNavigateRelation}
 						record={record}
 					/>
-				</section>
-			))}
-
-			{remainingFields.length > 0 ? (
-				<section className="space-y-3">
-					<div>
+				);
+				if (section.defaultCollapsed !== undefined) {
+					return (
+						<Collapsible
+							className="border-border/70 border-t pt-5"
+							defaultOpen={!section.defaultCollapsed}
+							key={getDetailSectionKey(section)}
+						>
+							<CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-1.5 text-left">
+								<h3 className="font-medium text-sm tracking-[0.02em]">
+									{section.title}
+								</h3>
+								{section.description ? (
+									<AdminDescriptionHelp
+										content={section.description}
+										label={`${section.title} details`}
+									/>
+								) : null}
+								<ChevronDown className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+							</CollapsibleTrigger>
+							<CollapsibleContent className="pt-4">
+								{sectionContent}
+							</CollapsibleContent>
+						</Collapsible>
+					);
+				}
+				return (
+					<section
+						className="space-y-4 border-border/70 border-t pt-5"
+						key={getDetailSectionKey(section)}
+					>
 						<div className="flex items-center gap-1.5">
 							<h3 className="font-medium text-sm tracking-[0.02em]">
-								Additional Details
+								{section.title}
 							</h3>
-							<AdminDescriptionHelp
-								content="Remaining populated fields on this record."
-								label="Additional Details details"
-							/>
+							{section.description ? (
+								<AdminDescriptionHelp
+									content={section.description}
+									label={`${section.title} details`}
+								/>
+							) : null}
 						</div>
-					</div>
-					<DetailFieldGrid
-						fields={remainingFields}
-						objectDefs={objectDefs}
-						onNavigateRelation={onNavigateRelation}
-						record={record}
-					/>
-				</section>
+						{sectionContent}
+					</section>
+				);
+			})}
+
+			{remainingFields.length > 0 ? (
+				<Collapsible className="space-y-3" defaultOpen={false}>
+					<CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-1.5 text-left">
+						<h3 className="font-medium text-sm tracking-[0.02em]">
+							Additional Details
+						</h3>
+						<AdminDescriptionHelp
+							content="Remaining populated fields on this record."
+							label="Additional Details details"
+						/>
+						<ChevronDown className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+					</CollapsibleTrigger>
+					<CollapsibleContent>
+						<DetailFieldGrid
+							fields={remainingFields}
+							objectDefs={objectDefs}
+							onNavigateRelation={onNavigateRelation}
+							record={record}
+						/>
+					</CollapsibleContent>
+				</Collapsible>
 			) : null}
 		</div>
 	);

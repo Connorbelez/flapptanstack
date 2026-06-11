@@ -124,7 +124,7 @@ describe("mortgage document mapping override contracts", () => {
 		const overrides = assertValidatorAccepts({
 			signatories: [
 				{
-					dealParticipantRole: "borrower_primary",
+					dealParticipantRole: "primary_borrower",
 					templatePlatformRole: "borrower_primary",
 				},
 			],
@@ -140,7 +140,7 @@ describe("mortgage document mapping override contracts", () => {
 			"principal_amount"
 		);
 		expect(overrides.signatories[0]?.dealParticipantRole).toBe(
-			"borrower_primary"
+			"primary_borrower"
 		);
 	});
 
@@ -151,10 +151,12 @@ describe("mortgage document mapping override contracts", () => {
 		);
 		const supportedTargets = getLiteralUnionValues(dealVariableKeyValidator);
 
-		expect(supportedTargets).toContain("lawyer_primary_email");
-		expect(supportedTargets).toContain("lender_primary_full_name");
+		expect(supportedTargets).toContain("primary_lawyer_email");
+		expect(supportedTargets).toContain("purchasing_lender_full_name");
 		expect(supportedTargets).toContain("mortgage_principal");
 		expect(supportedTargets).toContain("property_street_address");
+		expect(supportedTargets).not.toContain("lawyer_primary_email");
+		expect(supportedTargets).not.toContain("lender_primary_full_name");
 		expect(supportedTargets).not.toContain("principal_amount");
 		expect(supportedTargets).not.toContain("unknown_variable");
 		expect(supportedTargets).toEqual([
@@ -171,7 +173,9 @@ describe("mortgage document mapping override contracts", () => {
 			dealParticipantRoleValidator
 		);
 
-		expect(supportedTargets).toContain("borrower_primary");
+		expect(supportedTargets).toContain("primary_borrower");
+		expect(supportedTargets).toContain("purchasing_lender");
+		expect(supportedTargets).not.toContain("borrower_primary");
 		expect(supportedTargets).not.toContain("borrower_signer");
 		expect(supportedTargets).not.toContain("unknown_role");
 		expect(supportedTargets).toEqual([
@@ -184,7 +188,7 @@ describe("mortgage blueprint mapping validation", () => {
 	it("rejects duplicate variable override rows", () => {
 		expect(() =>
 			validateMortgageDocumentMappingOverrides({
-				allowedPlatformRoles: ["borrower_primary"],
+				allowedPlatformRoles: ["primary_borrower"],
 				allowedVariableKeys: ["mortgage_principal"],
 				mappingOverrides: {
 					signatories: [],
@@ -211,7 +215,7 @@ describe("mortgage blueprint mapping validation", () => {
 
 		expect(() =>
 			validateMortgageDocumentMappingOverrides({
-				allowedPlatformRoles: ["borrower_primary"],
+				allowedPlatformRoles: ["primary_borrower"],
 				allowedVariableKeys: ["mortgage_principal"],
 				mappingOverrides: {
 					signatories: [],
@@ -234,7 +238,7 @@ describe("mortgage blueprint mapping validation", () => {
 
 		expect(() =>
 			validateMortgageDocumentMappingOverrides({
-				allowedPlatformRoles: ["borrower_primary"],
+				allowedPlatformRoles: ["primary_borrower"],
 				allowedVariableKeys: ["mortgage_principal"],
 				mappingOverrides: {
 					signatories: [
@@ -256,7 +260,7 @@ describe("mortgage blueprint mapping validation", () => {
 			mappingOverrides: {
 				signatories: [
 					{
-						dealParticipantRole: "borrower_primary",
+						dealParticipantRole: "primary_borrower",
 						templatePlatformRole: "custom_borrower",
 					},
 				],
@@ -283,11 +287,11 @@ describe("mortgage blueprint mapping validation", () => {
 		]);
 		expect(effective.signatories).toEqual([
 			{
-				dealParticipantRole: "borrower_primary",
+				dealParticipantRole: "primary_borrower",
 				templatePlatformRole: "borrower_primary",
 			},
 			{
-				dealParticipantRole: "borrower_primary",
+				dealParticipantRole: "primary_borrower",
 				templatePlatformRole: "custom_borrower",
 			},
 		]);
@@ -300,7 +304,7 @@ describe("mortgage blueprint mapping validation", () => {
 				mappingOverrides: {
 					signatories: [
 						{
-							dealParticipantRole: "borrower_primary",
+							dealParticipantRole: "primary_borrower",
 							templatePlatformRole: "custom_borrower",
 						},
 					],
@@ -398,7 +402,7 @@ describe("mortgage blueprint mapping validation", () => {
 		const existingOverrides: MortgageDocumentMappingOverrides = {
 			signatories: [
 				{
-					dealParticipantRole: "borrower_primary",
+					dealParticipantRole: "primary_borrower",
 					templatePlatformRole: "custom_borrower",
 				},
 			],
@@ -436,7 +440,7 @@ describe("mortgage blueprint mapping validation", () => {
 		const overrides = {
 			signatories: [
 				{
-					dealParticipantRole: "borrower_primary" as const,
+					dealParticipantRole: "primary_borrower" as const,
 					templatePlatformRole: "custom_borrower",
 				},
 				{
@@ -556,7 +560,7 @@ describe("deal package signatory mapping recipient attribution", () => {
 					{
 						email: "borrower@example.test",
 						name: "Borrower User",
-						platformRole: "borrower_primary",
+						platformRole: "primary_borrower",
 						userId: borrowerUserId,
 					},
 				],
@@ -577,7 +581,7 @@ describe("deal package signatory mapping recipient attribution", () => {
 		expect(rows[0]?.userId).toBe(borrowerUserId);
 	});
 
-	it("attributes remapped canonical template roles to the mapped participant", () => {
+	it("attributes remapped legacy template roles to the mapped participant", () => {
 		const borrowerUserId = "user_borrower" as Id<"users">;
 		const brokerUserId = "user_broker" as Id<"users">;
 
@@ -601,7 +605,7 @@ describe("deal package signatory mapping recipient attribution", () => {
 					{
 						email: "borrower@example.test",
 						name: "Borrower User",
-						platformRole: "borrower_primary",
+						platformRole: "primary_borrower",
 						userId: borrowerUserId,
 					},
 					{

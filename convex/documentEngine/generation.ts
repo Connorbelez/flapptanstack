@@ -260,16 +260,28 @@ async function generatePdfWithPdfLib(
 // ── Documenso config builder ────────────────────────────────────
 
 const SIGNATORY_ROLE_EQUIVALENTS: Record<string, string[]> = {
-	borrower: ["borrower_primary"],
-	borrower_lawyer: ["lawyer_primary"],
-	borrower_primary: ["borrower"],
+	borrower: ["primary_borrower"],
+	borrower_co_1: ["co_borrower_1"],
+	borrower_co_2: ["co_borrower_2"],
+	borrower_lawyer: ["primary_lawyer"],
+	borrower_primary: ["primary_borrower"],
 	broker_of_record: ["fairlend_broker"],
+	co_borrower_1: ["borrower_co_1"],
+	co_borrower_2: ["borrower_co_2"],
 	fairlend_broker: ["broker_of_record"],
-	lawyer_primary: ["borrower_lawyer", "lender_lawyer", "seller_lawyer"],
-	lender: ["lender_primary"],
-	lender_lawyer: ["lawyer_primary"],
-	lender_primary: ["lender"],
-	seller_lawyer: ["lawyer_primary"],
+	lawyer_primary: ["primary_lawyer"],
+	lender: ["purchasing_lender"],
+	lender_lawyer: ["primary_lawyer"],
+	lender_primary: ["purchasing_lender"],
+	primary_borrower: ["borrower", "borrower_primary"],
+	primary_lawyer: [
+		"borrower_lawyer",
+		"lawyer_primary",
+		"lender_lawyer",
+		"seller_lawyer",
+	],
+	purchasing_lender: ["lender", "lender_primary"],
+	seller_lawyer: ["primary_lawyer"],
 };
 
 function getFieldsForSignatoryRole(

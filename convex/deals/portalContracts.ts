@@ -1,3 +1,5 @@
+import type { DealPersona } from "../../src/lib/deals/access-policy/types";
+
 export type DealPortalScreen =
 	| "representation"
 	| "documents"
@@ -6,13 +8,7 @@ export type DealPortalScreen =
 	| "failed"
 	| "unavailable";
 
-export type DealPortalPersona =
-	| "admin"
-	| "lender"
-	| "selected_lawyer"
-	| "selected_lawyer_onboarding_required"
-	| "broker"
-	| "seller";
+export type DealPortalPersona = DealPersona;
 
 export type DealPortalCapability =
 	| "representation.onboarding.resume"
@@ -21,8 +17,10 @@ export type DealPortalCapability =
 	| "representation.lawyer.replace"
 	| "representation.adminOverride"
 	| "representation.confirm"
+	| "representation.progressDeal"
 	| "documents.generate"
 	| "documents.approve"
+	| "documents.skipEmpty"
 	| "documents.sign"
 	| "payment.proof.upload"
 	| "payment.proof.review"
@@ -74,6 +72,8 @@ export function canUploadManualPaymentProof(
 	persona: DealPortalPersona
 ): boolean {
 	return (
-		persona === "lender" || persona === "selected_lawyer" || persona === "admin"
+		persona === "purchasing_lender" ||
+		persona === "primary_lawyer" ||
+		persona === "fairlend_admin"
 	);
 }

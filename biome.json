@@ -11,6 +11,7 @@
       "!!.superpowers",
       "!!specs",
       "!!plugins",
+      "!!mockups",
       "!!scripts",
       "!!**/convex/_generated",
       "!!.context/*",
