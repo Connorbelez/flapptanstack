@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
+import { normalizeMortgageFeeForRead } from "./resolver";
 import {
 	feeAssessmentSourceValidator,
 	feeAssessmentStatusValidator,
@@ -31,6 +32,7 @@ export const createFeeAssessment = internalMutation({
 				`Mortgage fee ${args.mortgageFeeId} does not belong to mortgage ${args.mortgageId}`
 			);
 		}
+		const normalizedMortgageFee = normalizeMortgageFeeForRead(mortgageFee);
 
 		const mortgage = await ctx.db.get(args.mortgageId);
 		if (!mortgage) {
@@ -49,11 +51,11 @@ export const createFeeAssessment = internalMutation({
 			orgId: mortgage.orgId,
 			mortgageId: args.mortgageId,
 			mortgageFeeId: args.mortgageFeeId,
-			feeTemplateId: mortgageFee.feeTemplateId,
-			feeSetTemplateId: mortgageFee.feeSetTemplateId,
-			behavior: mortgageFee.behavior,
-			code: mortgageFee.code,
-			displayCode: mortgageFee.displayCode,
+			feeTemplateId: normalizedMortgageFee.feeTemplateId,
+			feeSetTemplateId: normalizedMortgageFee.feeSetTemplateId,
+			behavior: normalizedMortgageFee.behavior,
+			code: normalizedMortgageFee.code,
+			displayCode: normalizedMortgageFee.displayCode,
 			amountCents: args.amountCents,
 			amountSettledCents: 0,
 			source: args.source,

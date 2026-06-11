@@ -42,12 +42,22 @@ function installWorkosInvitationLookup(args?: {
 			email: input.email,
 			id: "user_unused",
 		}),
+		deactivateOrganizationMembership: async () => ({
+			id: "om_old",
+			organizationId: "org_old",
+			roleSlug: "lender",
+			roleSlugs: ["lender"],
+			status: "inactive",
+			userId: "user_lender",
+		}),
+		deleteOrganizationMembership: async () => undefined,
 		findInvitationByToken: async (token: string) => ({
 			email: args?.email ?? "riley.guest@example.test",
 			id: args?.invitationId ?? "workos_invitation_1",
 			state: "pending",
 			token,
 		}),
+		listOrganizationMemberships: async () => [],
 		listUsers: async () => [],
 		resendInvitation: async (invitationId: string) => ({
 			email: args?.email ?? "riley.guest@example.test",

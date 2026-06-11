@@ -1,5 +1,6 @@
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { FAIRLEND_BROKERAGE_ORG_ID } from "../constants";
 import {
 	deleteOrphanUsersByAuthId,
 	findCanonicalUserByAuthId,
@@ -134,6 +135,11 @@ export async function resolveUserHomePortalId(
 		.withIndex("by_user", (query) => query.eq("userId", user._id))
 		.first();
 	if (lender) {
+		const lenderBroker = await ctx.db.get(lender.brokerId);
+		if (lenderBroker?.orgId === FAIRLEND_BROKERAGE_ORG_ID) {
+			return ensureFairLendPortal(ctx);
+		}
+
 		const lenderPortal = await getPortalByBrokerId(ctx, lender.brokerId);
 		if (lenderPortal) {
 			return lenderPortal._id;

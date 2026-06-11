@@ -55,13 +55,13 @@ export function FieldRenderer({
 	return (
 		<div
 			className={cn(
-				"min-w-0 space-y-2 border-border/60 border-t py-3",
+				"min-w-0 space-y-2 border-border/30 border-t py-3",
 				className
 			)}
 		>
 			<div className="flex items-start justify-between gap-3">
 				<div className="flex min-w-0 items-center gap-1.5">
-					<p className="min-w-0 break-words font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
+					<p className="min-w-0 truncate font-medium text-muted-foreground text-xs uppercase tracking-[0.08em]">
 						{resolvedLabel}
 					</p>
 					{helpContent ? (
@@ -96,12 +96,7 @@ function resolveFieldHelpContent(field: NormalizedFieldDefinition | undefined) {
 		return null;
 	}
 
-	const reasons = [
-		field.description,
-		field.editability.mode !== "editable"
-			? field.editability.reason
-			: undefined,
-	].filter(
+	const reasons = [field.description].filter(
 		(reason, index, allReasons): reason is string =>
 			typeof reason === "string" &&
 			reason.trim().length > 0 &&
@@ -121,13 +116,38 @@ function resolveFieldHelpContent(field: NormalizedFieldDefinition | undefined) {
 	);
 }
 
-function resolveMetadataBadge(_field: NormalizedFieldDefinition | undefined):
+function resolveMetadataBadge(field: NormalizedFieldDefinition | undefined):
 	| {
 			label: string;
 			variant: "outline" | "secondary";
 	  }
 	| undefined {
-	return undefined;
+	if (!field) {
+		return undefined;
+	}
+
+	switch (field.editability.mode) {
+		case "computed":
+			return { label: "Computed", variant: "secondary" };
+		case "read_only": {
+			if (isObviousSystemField(field.name)) {
+				return undefined;
+			}
+			return { label: "Read only", variant: "outline" };
+		}
+		default:
+			return undefined;
+	}
+}
+function isObviousSystemField(fieldName: string): boolean {
+	const lower = fieldName.toLowerCase();
+	return (
+		lower.endsWith("id") ||
+		lower.endsWith("at") ||
+		lower.startsWith("created") ||
+		lower.startsWith("updated") ||
+		lower.startsWith("system")
+	);
 }
 
 function toSelectOptions(
@@ -187,7 +207,7 @@ function renderFieldValue(args: {
 		if (navTarget) {
 			return (
 				<button
-					className="inline-block max-w-full truncate text-left font-medium text-primary text-sm underline-offset-4 hover:underline"
+					className="block w-full min-w-0 truncate text-left font-medium text-primary text-sm underline-offset-4 hover:underline"
 					onClick={(event) => {
 						event.preventDefault();
 						event.stopPropagation();

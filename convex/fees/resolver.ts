@@ -18,6 +18,18 @@ export const DEFAULT_DIRECT_WATERFALL_PRIORITY = 10_000;
 
 export type FeeCode = Doc<"feeTemplates">["code"];
 export type FeeSurface = Doc<"feeTemplates">["surface"];
+type MortgageFeeBehavior = NonNullable<Doc<"mortgageFees">["behavior"]>;
+type MortgageFeeDefaultApplication = NonNullable<
+	Doc<"mortgageFees">["defaultApplication"]
+>;
+
+export type NormalizedFeeTemplate = CompatibleFeeTemplate;
+
+export type NormalizedMortgageFee = Doc<"mortgageFees"> & {
+	behavior: MortgageFeeBehavior;
+	defaultApplication: MortgageFeeDefaultApplication;
+	displayCode: string;
+};
 
 export type BulkApplyConflictReason =
 	| "existing_active_fee"
@@ -177,6 +189,155 @@ function compareMortgageFees(
 	return left._id.localeCompare(right._id);
 }
 
+function defaultMortgageFeeBehavior(
+	fee: Pick<Doc<"mortgageFees">, "surface">
+): MortgageFeeBehavior {
+	return fee.surface === "waterfall_deduction"
+		? "payment_waterfall_deduction"
+		: "borrower_one_time_charge";
+}
+
+function defaultMortgageFeeApplication(
+	fee: Pick<Doc<"mortgageFees">, "feeSetTemplateId" | "feeSetTemplateItemId">
+): MortgageFeeDefaultApplication {
+	return fee.feeSetTemplateId !== undefined ||
+		fee.feeSetTemplateItemId !== undefined
+		? "platform_default"
+		: "mortgage_specific";
+}
+
+export function normalizeMortgageFeeForRead(
+	fee: Doc<"mortgageFees">
+): NormalizedMortgageFee {
+	const behavior = fee.behavior ?? defaultMortgageFeeBehavior(fee);
+	return {
+		...fee,
+		behavior,
+		defaultApplication:
+			fee.defaultApplication ?? defaultMortgageFeeApplication(fee),
+		displayCode: fee.displayCode ?? fee.code,
+		paymentRail:
+			behavior === "payment_waterfall_deduction"
+				? fee.paymentRail
+				: (fee.paymentRail ?? "manual"),
+		recurrence:
+			behavior === "payment_waterfall_deduction"
+				? fee.recurrence
+				: (fee.recurrence ?? "one_time"),
+	};
+}
+
+export function buildFeeTemplateBehaviorFieldBackfillPatch(
+	template: Doc<"feeTemplates">,
+	now = Date.now()
+) {
+	const normalized = normalizeFeeTemplate(template);
+	const patch: Partial<
+		Pick<
+			Doc<"feeTemplates">,
+			"behavior" | "displayCode" | "paymentRail" | "recurrence" | "updatedAt"
+		>
+	> = {};
+
+	if (template.behavior === undefined) {
+		patch.behavior = normalized.behavior;
+	}
+	if (template.displayCode === undefined) {
+		patch.displayCode = normalized.displayCode;
+	}
+	if (
+		template.paymentRail === undefined &&
+		normalized.paymentRail !== undefined
+	) {
+		patch.paymentRail = normalized.paymentRail;
+	}
+	if (
+		template.recurrence === undefined &&
+		normalized.recurrence !== undefined
+	) {
+		patch.recurrence = normalized.recurrence;
+	}
+
+	if (Object.keys(patch).length > 0) {
+		patch.updatedAt = now;
+	}
+	return patch;
+}
+
+export async function buildMortgageFeeBehaviorFieldBackfillPatch(
+	db: GenericDatabaseReader<DataModel>,
+	fee: Doc<"mortgageFees">
+) {
+	const behavior = fee.behavior ?? defaultMortgageFeeBehavior(fee);
+	const patch: Partial<
+		Pick<
+			Doc<"mortgageFees">,
+			| "behavior"
+			| "defaultApplication"
+			| "displayCode"
+			| "paymentRail"
+			| "recurrence"
+			| "waterfallPriority"
+		>
+	> = {};
+
+	if (fee.behavior === undefined) {
+		patch.behavior = behavior;
+	}
+	if (fee.displayCode === undefined) {
+		patch.displayCode = fee.code;
+	}
+	if (fee.defaultApplication === undefined) {
+		patch.defaultApplication = defaultMortgageFeeApplication(fee);
+	}
+	if (behavior !== "payment_waterfall_deduction") {
+		if (fee.paymentRail === undefined) {
+			patch.paymentRail = "manual";
+		}
+		if (fee.recurrence === undefined) {
+			patch.recurrence = "one_time";
+		}
+	}
+	if (
+		behavior === "payment_waterfall_deduction" &&
+		fee.waterfallPriority === undefined
+	) {
+		const feeSetItem =
+			fee.feeSetTemplateItemId !== undefined
+				? await db.get(fee.feeSetTemplateItemId)
+				: null;
+		patch.waterfallPriority =
+			feeSetItem?.sortOrder ?? DEFAULT_DIRECT_WATERFALL_PRIORITY;
+	}
+
+	return patch;
+}
+
+export function needsFeeTemplateBehaviorFieldBackfill(
+	template: Doc<"feeTemplates">
+) {
+	return (
+		Object.keys(buildFeeTemplateBehaviorFieldBackfillPatch(template)).length > 0
+	);
+}
+
+export async function needsMortgageFeeBehaviorFieldBackfill(
+	db: GenericDatabaseReader<DataModel>,
+	fee: Doc<"mortgageFees">
+) {
+	return (
+		Object.keys(await buildMortgageFeeBehaviorFieldBackfillPatch(db, fee))
+			.length > 0
+	);
+}
+
+export async function repairFeeTemplateForUse(
+	db: GenericDatabaseWriter<DataModel>,
+	template: Doc<"feeTemplates">
+): Promise<CompatibleFeeTemplate> {
+	return repairFeeTemplateIfNeeded(db, template);
+}
+
 export function assertValidFeeDefinition(input: FeeDefinitionInput) {
 	assertBehaviorMatchesDefinition({
 		behavior: input.behavior,
@@ -224,7 +385,7 @@ export async function listActiveMortgageFeesForSurface(
 	mortgageId: Id<"mortgages">,
 	surface: FeeSurface,
 	asOfDate: string
-) {
+): Promise<NormalizedMortgageFee[]> {
 	const rows = await db
 		.query("mortgageFees")
 		.withIndex("by_mortgage_surface_status", (q) =>
@@ -237,14 +398,15 @@ export async function listActiveMortgageFeesForSurface(
 
 	return rows
 		.filter((row) => dateInRange(asOfDate, row.effectiveFrom, row.effectiveTo))
-		.sort(compareMortgageFees);
+		.sort(compareMortgageFees)
+		.map(normalizeMortgageFeeForRead);
 }
 
 async function materializeLegacyServicingMortgageFee(
 	db: GenericDatabaseWriter<DataModel>,
 	mortgage: Pick<Doc<"mortgages">, "_id" | "annualServicingRate">,
 	asOfDate: string
-): Promise<Doc<"mortgageFees"> | null> {
+): Promise<NormalizedMortgageFee | null> {
 	const defaults = await ensureDefaultFeeTemplatesAndSet(db);
 	if (await hasMortgageFeeSetOptOut(db, mortgage._id, defaults.feeSetId)) {
 		return null;
@@ -255,6 +417,10 @@ async function materializeLegacyServicingMortgageFee(
 			`Default servicing fee template not found: ${defaults.servicingTemplateId}`
 		);
 	}
+	const normalizedServicingTemplate = await repairFeeTemplateForUse(
+		db,
+		servicingTemplate
+	);
 
 	const existingRows = await listActiveMortgageFeesForSurface(
 		db,
@@ -276,11 +442,11 @@ async function materializeLegacyServicingMortgageFee(
 		)
 		.collect();
 	const servicingSetItem = defaultFeeSetItems.find(
-		(item) => item.feeTemplateId === servicingTemplate._id
+		(item) => item.feeTemplateId === normalizedServicingTemplate._id
 	);
 	const mortgageFeeId = await attachFeeTemplateToMortgageSnapshot(db, {
 		mortgageId: mortgage._id,
-		feeTemplate: servicingTemplate,
+		feeTemplate: normalizedServicingTemplate,
 		defaultApplication: "platform_default",
 		feeSetTemplateId: defaults.feeSetId,
 		feeSetTemplateItemId: servicingSetItem?._id,
@@ -296,11 +462,11 @@ async function materializeLegacyServicingMortgageFee(
 			`Failed to load materialized servicing mortgage fee ${mortgageFeeId}`
 		);
 	}
-	return mortgageFee;
+	return normalizeMortgageFeeForRead(mortgageFee);
 }
 
 function resolveAnnualRatePrincipalWaterfallFee(
-	row: Doc<"mortgageFees">,
+	row: NormalizedMortgageFee,
 	waterfallPriority: number
 ): ResolvedWaterfallFeeConfig {
 	if (row.behavior !== "payment_waterfall_deduction") {
@@ -333,7 +499,7 @@ function resolveAnnualRatePrincipalWaterfallFee(
 
 async function resolveMortgageFeeWaterfallPriority(
 	db: GenericDatabaseReader<DataModel>,
-	row: Doc<"mortgageFees">
+	row: NormalizedMortgageFee
 ) {
 	if (row.waterfallPriority !== undefined) {
 		return row.waterfallPriority;
@@ -782,7 +948,7 @@ export async function ensureDefaultFeeTemplatesAndSet(
 		if (!createdTemplate) {
 			throw new ConvexError(`Failed to load inserted fee template ${id}`);
 		}
-		servicingTemplate = createdTemplate;
+		servicingTemplate = await repairFeeTemplateIfNeeded(db, createdTemplate);
 	}
 
 	let lateFeeTemplate = await getFeeTemplateByCode(db, "late_fee");
@@ -809,7 +975,7 @@ export async function ensureDefaultFeeTemplatesAndSet(
 		if (!createdTemplate) {
 			throw new ConvexError(`Failed to load inserted fee template ${id}`);
 		}
-		lateFeeTemplate = createdTemplate;
+		lateFeeTemplate = await repairFeeTemplateIfNeeded(db, createdTemplate);
 	}
 
 	let nsfTemplate = await getFeeTemplateByCode(db, "nsf");
@@ -837,7 +1003,7 @@ export async function ensureDefaultFeeTemplatesAndSet(
 		if (!createdTemplate) {
 			throw new ConvexError(`Failed to load inserted fee template ${id}`);
 		}
-		nsfTemplate = createdTemplate;
+		nsfTemplate = await repairFeeTemplateIfNeeded(db, createdTemplate);
 	}
 
 	let feeSet = await getDefaultFeeSet(db, now);
@@ -906,7 +1072,7 @@ export async function attachFeeTemplateToMortgageSnapshot(
 	db: GenericDatabaseWriter<DataModel>,
 	args: {
 		mortgageId: Id<"mortgages">;
-		feeTemplate: Doc<"feeTemplates">;
+		feeTemplate: CompatibleFeeTemplate;
 		effectiveFrom?: string;
 		effectiveTo?: string;
 		feeSetTemplateId?: Id<"feeSetTemplates">;
@@ -992,13 +1158,14 @@ export async function attachDefaultFeeSetToMortgage(
 		if (!template) {
 			continue;
 		}
+		const normalizedTemplate = await repairFeeTemplateForUse(db, template);
 		const existingRows = await db
 			.query("mortgageFees")
 			.withIndex("by_mortgage_code_surface_status", (q) =>
 				q
 					.eq("mortgageId", mortgageId)
-					.eq("code", template.code)
-					.eq("surface", template.surface)
+					.eq("code", normalizedTemplate.code)
+					.eq("surface", normalizedTemplate.surface)
 					.eq("status", "active")
 			)
 			.collect();
@@ -1008,13 +1175,14 @@ export async function attachDefaultFeeSetToMortgage(
 
 		await attachFeeTemplateToMortgageSnapshot(db, {
 			mortgageId,
-			feeTemplate: template,
+			feeTemplate: normalizedTemplate,
 			defaultApplication: "platform_default",
 			feeSetTemplateId: defaults.feeSetId,
 			feeSetTemplateItemId: item._id,
 			waterfallPriority: item.sortOrder,
 			parameterOverrides:
-				template.code === "servicing" && annualServicingRate !== undefined
+				normalizedTemplate.code === "servicing" &&
+				annualServicingRate !== undefined
 					? { annualRate: annualServicingRate }
 					: undefined,
 		});

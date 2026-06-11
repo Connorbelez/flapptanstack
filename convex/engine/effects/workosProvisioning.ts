@@ -1,3 +1,29 @@
+export type WorkosOrganizationMembershipStatus =
+	| "active"
+	| "inactive"
+	| "pending";
+
+export interface WorkosOrganizationMembership {
+	id: string;
+	organizationId: string;
+	roleSlug?: string;
+	roleSlugs?: string[];
+	status: WorkosOrganizationMembershipStatus;
+	userId: string;
+}
+
+export type WorkosOrganizationMembershipListArgs =
+	| {
+			organizationId: string;
+			statuses?: WorkosOrganizationMembershipStatus[];
+			userId?: string;
+	  }
+	| {
+			organizationId?: string;
+			statuses?: WorkosOrganizationMembershipStatus[];
+			userId: string;
+	  };
+
 export interface WorkosProvisioning {
 	createOrganization(args: { name: string }): Promise<{ id: string }>;
 	createOrganizationMembership(args: {
@@ -10,6 +36,10 @@ export interface WorkosProvisioning {
 		firstName?: string;
 		lastName?: string;
 	}): Promise<{ email: string; id: string }>;
+	deactivateOrganizationMembership(
+		membershipId: string
+	): Promise<WorkosOrganizationMembership>;
+	deleteOrganizationMembership(membershipId: string): Promise<void>;
 	findInvitationByToken?(token: string): Promise<{
 		acceptInvitationUrl?: string;
 		email: string;
@@ -17,6 +47,9 @@ export interface WorkosProvisioning {
 		state?: string;
 		token?: string;
 	}>;
+	listOrganizationMemberships(
+		args: WorkosOrganizationMembershipListArgs
+	): Promise<WorkosOrganizationMembership[]>;
 	listUsers(args: {
 		email?: string;
 	}): Promise<Array<{ email: string; id: string }>>;
@@ -43,11 +76,33 @@ export interface WorkosProvisioning {
 		state?: string;
 		token?: string;
 	}>;
+	updateOrganizationMembership(
+		membershipId: string,
+		args: { roleSlug?: string; roleSlugs?: string[] }
+	): Promise<WorkosOrganizationMembership>;
 }
 
 async function getAuthKit() {
 	const { authKit } = await import("../../auth");
 	return authKit;
+}
+
+function mapWorkosOrganizationMembership(membership: {
+	id: string;
+	organizationId: string;
+	role?: { slug: string };
+	roles?: Array<{ slug: string }>;
+	status: WorkosOrganizationMembershipStatus;
+	userId: string;
+}): WorkosOrganizationMembership {
+	return {
+		id: membership.id,
+		organizationId: membership.organizationId,
+		roleSlug: membership.role?.slug,
+		roleSlugs: membership.roles?.map((role) => role.slug),
+		status: membership.status,
+		userId: membership.userId,
+	};
 }
 
 const defaultProvisioning: WorkosProvisioning = {
@@ -70,6 +125,20 @@ const defaultProvisioning: WorkosProvisioning = {
 		});
 		return { email: user.email, id: user.id };
 	},
+	deactivateOrganizationMembership: async (membershipId) => {
+		const authKit = await getAuthKit();
+		const membership =
+			await authKit.workos.userManagement.deactivateOrganizationMembership(
+				membershipId
+			);
+		return mapWorkosOrganizationMembership(membership);
+	},
+	deleteOrganizationMembership: async (membershipId) => {
+		const authKit = await getAuthKit();
+		await authKit.workos.userManagement.deleteOrganizationMembership(
+			membershipId
+		);
+	},
 	findInvitationByToken: async (token) => {
 		const authKit = await getAuthKit();
 		const invitation =
@@ -86,6 +155,25 @@ const defaultProvisioning: WorkosProvisioning = {
 		const authKit = await getAuthKit();
 		const users = await authKit.workos.userManagement.listUsers(args);
 		return users.data.map((user) => ({ email: user.email, id: user.id }));
+	},
+	listOrganizationMemberships: async (args) => {
+		const authKit = await getAuthKit();
+		const memberships =
+			await authKit.workos.userManagement.listOrganizationMemberships({
+				organizationId: args.organizationId,
+				statuses: args.statuses,
+				userId: args.userId,
+			});
+		return memberships.data.map(mapWorkosOrganizationMembership);
+	},
+	updateOrganizationMembership: async (membershipId, args) => {
+		const authKit = await getAuthKit();
+		const membership =
+			await authKit.workos.userManagement.updateOrganizationMembership(
+				membershipId,
+				args
+			);
+		return mapWorkosOrganizationMembership(membership);
 	},
 	resendInvitation: async (invitationId) => {
 		const authKit = await getAuthKit();
