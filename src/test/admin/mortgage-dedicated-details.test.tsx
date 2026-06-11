@@ -212,7 +212,7 @@ describe("mortgage dedicated details", () => {
 					interestRate: 9.5,
 					listingId: "listing_1",
 					ltvRatio: 62,
-					principal: 250_000,
+					principal: 25_000_000,
 					publishedAt: null,
 					status: "draft",
 					title: "King West bridge opportunity",
@@ -239,7 +239,7 @@ describe("mortgage dedicated details", () => {
 					createdByUserId: "user_admin_1",
 					relatedDocumentAssetId: "document_asset_valuation_report",
 					source: "admin_origination",
-					valueAsIs: 425_000,
+					valueAsIs: 42_500_000,
 					valuationDate: "2026-05-01",
 				},
 				paymentSetup: {
@@ -499,7 +499,8 @@ describe("mortgage dedicated details", () => {
 		expect(screen.getByRole("heading", { name: "Payments" })).toBeTruthy();
 		expect(screen.getByRole("heading", { name: "Documents" })).toBeTruthy();
 		expect(screen.getByRole("heading", { name: "Deals" })).toBeTruthy();
-		expect(screen.getByText("$25,000,000")).toBeTruthy();
+		expect(screen.getByText("$250,000")).toBeTruthy();
+		expect(screen.getByText("$425,000")).toBeTruthy();
 		expect(screen.getByText("Rotessa linked")).toBeTruthy();
 		expect(
 			screen.getByRole("link", { name: "123 King St W, Toronto, ON" })

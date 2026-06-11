@@ -16,6 +16,7 @@ import type {
 const reactModulePath = vi.hoisted(
 	() => new URL("../../../node_modules/react/index.js", import.meta.url).pathname
 );
+const useAuthorizationMock = vi.hoisted(() => vi.fn());
 
 vi.mock("react", async () => {
 	return await vi.importActual<typeof import("react")>(reactModulePath);
@@ -41,19 +42,30 @@ vi.mock("@tanstack/react-router", async () => {
 	return {
 		...actual,
 		Link: (props: {
+			"aria-label"?: string;
 			children: ReactNode;
 			className?: string;
 			params?: Record<string, string>;
 			to: string;
 		}) => (
-			<a className={props.className} href={props.to}>
+			<a aria-label={props["aria-label"]} className={props.className} href={props.to}>
 				{props.children}
 			</a>
 		),
 	};
 });
 
+vi.mock("#/lib/auth", async () => {
+	const actual = await vi.importActual<typeof import("#/lib/auth")>("#/lib/auth");
+
+	return {
+		...actual,
+		useAuthorization: useAuthorizationMock,
+	};
+});
+
 beforeEach(() => {
+	useAuthorizationMock.mockReturnValue({ allowed: false, loading: false });
 	vi.stubGlobal(
 		"IntersectionObserver",
 		class IntersectionObserver {
@@ -133,6 +145,16 @@ function renderInteractiveListing(
 	return { listing, onStartCheckout, redirectToHostedCheckout };
 }
 
+function renderReadOnlyListing(listing: ListingDetailData = getListing()) {
+	render(
+		<ListingDetailPage
+			buildSimilarListingHref={(listingId) => `/listings/${listingId}`}
+			listing={listing}
+			mode="readOnly"
+		/>
+	);
+}
+
 function listingWithoutPlatformLawyers(): ListingDetailData {
 	const listing = getListing();
 	return {
@@ -146,9 +168,226 @@ function listingWithoutPlatformLawyers(): ListingDetailData {
 
 function firstCheckoutButton(): HTMLButtonElement {
 	return screen.getAllByRole("button", {
-		name: /Lock .* Fractions - Pay CAD 250 Fee/i,
+		name: /Lock .* fractions, pay CAD 250 fee/i,
 	})[0] as HTMLButtonElement;
 }
+
+describe("listing detail appraisal sections", () => {
+	it("uses appraisal secondary labels instead of hard-coded company copy", () => {
+		const listing = getListing();
+
+		renderInteractiveListing({
+			listing: {
+				...listing,
+				appraisal: {
+					...listing.appraisal,
+					asIs: {
+						...listing.appraisal.asIs,
+						secondaryLabel: "Effective",
+						secondaryValue: "Apr 1, 2026",
+					},
+				},
+			},
+		});
+
+		expect(screen.getAllByText("Effective").length).toBeGreaterThan(0);
+		expect(screen.queryByText("Company")).toBeNull();
+	});
+
+	it("does not render projected appraisal or as-if comparables without an as-if appraisal", () => {
+		const listing = getListing();
+
+		renderInteractiveListing({
+			listing: {
+				...listing,
+				appraisal: {
+					...listing.appraisal,
+					asIf: {
+						label: "Projected Value",
+						note: "No as-if-complete valuation has been published.",
+						value: "Unavailable",
+					},
+					hasAsIf: false,
+				},
+				comparables: {
+					...listing.comparables,
+					asIf: [],
+				},
+			},
+		});
+
+		expect(screen.queryByText("Projected Value")).toBeNull();
+		expect(screen.queryByText("Unavailable")).toBeNull();
+		expect(
+			screen.queryByText("No as-if-complete valuation has been published.")
+		).toBeNull();
+		expect(screen.queryByText("As-If Comparables")).toBeNull();
+		expect(
+			screen.queryByText("No comparable sales are published for this appraisal.")
+		).toBeNull();
+	});
+});
+
+describe("listing detail polish", () => {
+	it("hides admin quick links from non-admin viewers", () => {
+		renderReadOnlyListing({
+			...getListing(),
+			adminQuickLinks: [
+				{
+					entityType: "listings",
+					id: "listing_123",
+					label: "Listing",
+				},
+			],
+		});
+
+		expect(screen.queryByRole("button", { name: /Admin/i })).toBeNull();
+	});
+
+	it("renders admin quick links for admin viewers", () => {
+		useAuthorizationMock.mockReturnValue({ allowed: true, loading: false });
+
+		renderReadOnlyListing({
+			...getListing(),
+			adminQuickLinks: [
+				{
+					entityType: "listings",
+					id: "listing_123",
+					label: "Listing",
+				},
+				{
+					entityType: "mortgages",
+					id: "mortgage_123",
+					label: "Mortgage",
+				},
+				{
+					entityType: "collectionPlanEntries",
+					id: "plan_entry_123",
+					label: "Payment schedule",
+				},
+				{
+					entityType: "obligations",
+					id: "obligation_123",
+					label: "Current obligation",
+				},
+			],
+		});
+
+		fireEvent.pointerDown(screen.getAllByRole("button", { name: /Admin/i })[0]!);
+
+		expect(
+			screen.getByRole("menuitem", { name: /Listing/i }).getAttribute("href")
+		).toBe("http://admin.localhost:3000/admin/listings/listing_123");
+		expect(
+			screen.getByRole("menuitem", { name: /Mortgage/i }).getAttribute("href")
+		).toBe("http://admin.localhost:3000/admin/mortgages/mortgage_123");
+		expect(
+			screen
+				.getByRole("menuitem", { name: /Payment schedule/i })
+				.getAttribute("href")
+		).toBe(
+			"http://admin.localhost:3000/admin/collectionPlanEntries/plan_entry_123"
+		);
+		expect(
+			screen
+				.getByRole("menuitem", { name: /Current obligation/i })
+				.getAttribute("href")
+		).toBe(
+			"http://admin.localhost:3000/admin/obligations/obligation_123"
+		);
+	});
+
+	it("renders ordinal mortgage badges legibly", () => {
+		const listing = getListing();
+
+		renderInteractiveListing({
+			listing: {
+				...listing,
+				badges: [{ id: "first", label: "1ST MORTGAGE", tone: "dark" }],
+			},
+		});
+
+		expect(screen.getAllByText("1st mortgage").length).toBeGreaterThan(0);
+		expect(screen.queryByText("1ST MORTGAGE")).toBeNull();
+	});
+
+	it("renders mobile comparable property evidence", () => {
+		const listing = getListing();
+		renderInteractiveListing({
+			listing: {
+				...listing,
+				comparables: {
+					...listing.comparables,
+					asIs: [
+						{
+							...listing.comparables.asIs[0]!,
+							evidenceAssets: [
+								{
+									kind: "image",
+									label: "Frontage photo",
+									url: "https://example.com/frontage.jpg",
+								},
+								{
+									kind: "file",
+									label: "MLS sheet",
+									url: "https://example.com/mls.pdf",
+								},
+							],
+						},
+						...listing.comparables.asIs.slice(1),
+					],
+				},
+			},
+		});
+
+		expect(screen.getByText("Comparable Properties")).not.toBeNull();
+		expect(screen.getAllByText("As-is comparables").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("47 Willowdale Ave").length).toBeGreaterThan(0);
+		expect(screen.getAllByRole("img", { name: "Frontage photo" })).toHaveLength(
+			1
+		);
+		expect(
+			screen.getAllByRole("link", { name: /Frontage photo/i })[0]?.getAttribute(
+				"href"
+			)
+		).toBe("https://example.com/frontage.jpg");
+		expect(
+			screen.getAllByRole("link", { name: /MLS sheet/i })[0]?.getAttribute(
+				"href"
+			)
+		).toBe("https://example.com/mls.pdf");
+	});
+
+	it("renders a polished comparable empty state when no comparables are published", () => {
+		const listing = getListing();
+
+		renderInteractiveListing({
+			listing: {
+				...listing,
+				comparables: {
+					asIf: [],
+					asIs: [],
+				},
+			},
+		});
+
+		expect(
+			screen.getAllByText("No comparable properties published").length
+		).toBeGreaterThan(0);
+		expect(
+			screen.getAllByText(
+				"FairLend has not published comparable sales evidence for this appraisal yet."
+			).length
+		).toBeGreaterThan(0);
+	});
+
+	it("keeps the read-only availability card concise", () => {
+		renderReadOnlyListing();
+
+		expect(screen.getAllByText("Published availability").length).toBeGreaterThan(0);
+		expect(screen.queryByText(/Currently available:/i)).toBeNull();
+	});
+});
 
 describe("listing detail hosted checkout launcher", () => {
 	it("starts hosted checkout and redirects only to the returned URL", async () => {
@@ -184,7 +423,7 @@ describe("listing detail hosted checkout launcher", () => {
 		renderInteractiveListing();
 
 		fireEvent.click(
-			screen.getAllByRole("button", { name: "Start listing lock" })[0]!
+			screen.getAllByRole("button", { name: "Start fraction lock" })[0]!
 		);
 
 		expect(document.getElementById).toHaveBeenCalledWith(
@@ -242,33 +481,54 @@ describe("listing detail hosted checkout launcher", () => {
 			/>
 		);
 
-		expect(screen.queryByRole("button", { name: /Lock .* Fractions/i })).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /Lock .* fractions/i })
+		).toBeNull();
 		expect(
 			screen.getAllByText("No fractions are currently available for checkout.")
 				.length
 		).toBeGreaterThan(0);
+		expect(screen.queryByText("Invest in this mortgage")).toBeNull();
+		expect(screen.getAllByText("Marketplace availability").length).toBeGreaterThan(
+			0
+		);
+		expect(screen.getAllByText("Published availability").length).toBeGreaterThan(
+			0
+		);
+		expect(screen.getAllByText("Listed minimum lock").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("Read-only listing").length).toBeGreaterThan(0);
+		expect(
+			screen.getAllByText("Review only, locking disabled").length
+		).toBeGreaterThan(0);
+		expect(screen.getAllByText("Read-only").length).toBeGreaterThan(0);
+		expect(screen.queryByText(/^View$/)).toBeNull();
+		expect(
+			screen
+				.getAllByRole("link", { name: "Back to Listings" })
+				.some((link) => link.className.includes("size-11"))
+		).toBe(true);
 	});
 
 	it("requires guest lawyer name and email before enabling checkout", () => {
 		renderInteractiveListing({ listing: listingWithoutPlatformLawyers() });
 
 		fireEvent.click(
-			screen.getAllByRole("button", { name: "Guest lawyer fallback" })[0]!
+			screen.getAllByRole("button", { name: "Guest lawyer" })[0]!
 		);
 
 		expect(firstCheckoutButton().disabled).toBe(true);
-		expect(screen.getAllByLabelText("Name").length).toBeGreaterThan(0);
-		expect(screen.getAllByLabelText("Email").length).toBeGreaterThan(0);
+		expect(screen.getAllByLabelText("Lawyer name").length).toBeGreaterThan(0);
+		expect(screen.getAllByLabelText("Lawyer email").length).toBeGreaterThan(0);
 	});
 
 	it("does not expose manual guest fallback while platform lawyers are configured", () => {
 		renderInteractiveListing();
 
 		expect(
-			screen.queryByRole("button", { name: "Guest lawyer fallback" })
+			screen.queryByRole("button", { name: "Guest lawyer" })
 		).toBeNull();
-		expect(screen.queryByLabelText("Name")).toBeNull();
-		expect(screen.queryByLabelText("Email")).toBeNull();
+		expect(screen.queryByLabelText("Lawyer name")).toBeNull();
+		expect(screen.queryByLabelText("Lawyer email")).toBeNull();
 	});
 
 	it("shows platform lawyer SLA, availability, active count, and capacity warning", () => {
@@ -346,12 +606,12 @@ describe("listing detail hosted checkout launcher", () => {
 		renderInteractiveListing({ listing: listingWithoutPlatformLawyers() });
 
 		fireEvent.click(
-			screen.getAllByRole("button", { name: "Guest lawyer fallback" })[0]!
+			screen.getAllByRole("button", { name: "Guest lawyer" })[0]!
 		);
-		fireEvent.change(screen.getAllByLabelText("Name")[0]!, {
+		fireEvent.change(screen.getAllByLabelText("Lawyer name")[0]!, {
 			target: { value: "Jordan Counsel" },
 		});
-		fireEvent.change(screen.getAllByLabelText("Email")[0]!, {
+		fireEvent.change(screen.getAllByLabelText("Lawyer email")[0]!, {
 			target: { value: "not-an-email" },
 		});
 
@@ -402,7 +662,9 @@ describe("listing detail hosted checkout launcher", () => {
 		expect(screen.getAllByText("Jane Eligible").length).toBeGreaterThan(0);
 		expect(screen.getAllByText("Rita Restricted").length).toBeGreaterThan(0);
 		expect(screen.getAllByText("Not selectable").length).toBeGreaterThan(0);
-		expect(screen.getAllByLabelText("Contact email").length).toBeGreaterThan(0);
+		expect(screen.getAllByLabelText("Lawyer contact email").length).toBeGreaterThan(
+			0
+		);
 		expect(firstCheckoutButton().disabled).toBe(true);
 	});
 
@@ -472,12 +734,12 @@ describe("listing detail hosted checkout launcher", () => {
 		});
 
 		fireEvent.click(
-			screen.getAllByRole("button", { name: "Guest lawyer fallback" })[0]!
+			screen.getAllByRole("button", { name: "Guest lawyer" })[0]!
 		);
-		fireEvent.change(screen.getAllByLabelText("Name")[0]!, {
+		fireEvent.change(screen.getAllByLabelText("Lawyer name")[0]!, {
 			target: { value: "Jordan Counsel" },
 		});
-		fireEvent.change(screen.getAllByLabelText("Email")[0]!, {
+		fireEvent.change(screen.getAllByLabelText("Lawyer email")[0]!, {
 			target: { value: "jordan@example.test" },
 		});
 		fireEvent.click(firstCheckoutButton());
@@ -506,7 +768,9 @@ describe("listing detail hosted checkout launcher", () => {
 		fireEvent.click(firstCheckoutButton());
 
 		expect(
-			await screen.findAllByText("Unable to start hosted checkout. Please try again.")
+			await screen.findAllByText(
+				"We could not open hosted checkout. Try again in a moment."
+			)
 		).toHaveLength(2);
 		expect(consoleError).toHaveBeenCalledWith(
 			"[ListingDetailPage] hosted checkout start failed",
@@ -556,9 +820,9 @@ describe("listing detail hosted checkout launcher", () => {
 
 	it.each([
 		["abandoned", "Checkout canceled"],
-		["error", "Checkout status unavailable"],
+		["error", "Checkout status not confirmed"],
 		["expired", "Checkout expired"],
-		["provider_start_failed", "Hosted checkout did not open"],
+		["provider_start_failed", "Hosted checkout could not open"],
 		["success_pending", "Checkout received"],
 	] satisfies Array<[ListingCheckoutReturnState, string]>)(
 		"renders the %s return-state banner",

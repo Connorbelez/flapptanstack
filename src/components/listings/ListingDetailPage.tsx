@@ -5,10 +5,13 @@ import { motion, useReducedMotion } from "framer-motion";
 import {
 	AlertCircle,
 	ArrowLeft,
+	Building2,
 	Check,
+	ChevronDown,
 	ChevronLeft,
 	ChevronRight,
 	ExternalLink,
+	FileText,
 	Heart,
 	ImageIcon,
 	Loader2,
@@ -19,13 +22,39 @@ import {
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu";
 import { Input } from "#/components/ui/input";
 import { Slider } from "#/components/ui/slider";
+import { useAuthorization } from "#/lib/auth";
+import {
+	buildAbsoluteHostUrl,
+	resolvePortalHostTypeFromHost,
+} from "#/lib/portal/auth-routing";
 import { cn } from "#/lib/utils";
+import {
+	FAIRLEND_ADMIN_LOCAL_HOST,
+	FAIRLEND_ADMIN_PRODUCTION_HOST,
+} from "../../../shared/portal/contracts";
 import { ListingDocumentSidebar } from "./ListingDocumentSidebar";
 import { ListingDocumentViewer } from "./ListingDocumentViewer";
 import { ListingMap } from "./ListingMap";
+import {
+	listingDetailActionClasses,
+	listingDetailBadgeClasses,
+	listingDetailHeroToneClasses,
+	listingDetailPaymentClasses,
+	listingDetailStateClasses,
+	listingDetailSurfaceClasses,
+	listingDetailTextClasses,
+	listingDetailValueToneClasses,
+} from "./listing-detail-styles";
 import type {
+	ListingAdminQuickLink,
 	ListingBadge,
 	ListingBorrowerSignal,
 	ListingCheckoutReturnState,
@@ -41,30 +70,11 @@ import type {
 	ListingValueTone,
 } from "./listing-detail-types";
 
-const HERO_TONE_CLASSES: Record<ListingHeroImage["tone"], string> = {
-	mist: "bg-linear-to-br from-stone-100 via-stone-50 to-stone-200",
-	pearl: "bg-linear-to-br from-neutral-100 via-stone-50 to-stone-200",
-	sage: "bg-linear-to-br from-emerald-50 via-stone-100 to-stone-200",
-	sand: "bg-linear-to-br from-amber-50 via-stone-100 to-stone-200",
-	stone: "bg-linear-to-br from-stone-200 via-stone-100 to-stone-300",
-	warm: "bg-linear-to-br from-orange-50 via-stone-100 to-stone-200",
-};
-
-const VALUE_TONE_CLASSES: Record<ListingValueTone, string> = {
-	default: "text-foreground",
-	positive: "text-[var(--palm)]",
-	warning: "text-amber-800 dark:text-amber-400",
-};
-
 const DIGITS_ONLY_PATTERN = /^\d+$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/** Frosted panels: coherent on gradient page bg + dark mode; avoids flat white slabs. */
-const LISTING_ISLAND_CLASS =
-	"rounded-xl border border-border/80 bg-card/90 text-card-foreground shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-card/78 dark:border-border/60 dark:bg-card/70 dark:supports-[backdrop-filter]:bg-card/52";
-
-const LISTING_HEADER_CLASS =
-	"border-border/80 bg-card/75 backdrop-blur-lg supports-[backdrop-filter]:bg-card/65 dark:bg-card/60 dark:supports-[backdrop-filter]:bg-card/48";
+const ORDINAL_MORTGAGE_BADGE_PATTERN = /^(\d+)(ST|ND|RD|TH)\s+MORTGAGE$/u;
+const MOBILE_METRIC_VALUE_CLASS =
+	"mt-2 truncate whitespace-nowrap font-semibold text-[28px] leading-[1.04] tracking-[-0.03em] tabular-nums";
 
 const LISTING_REVEAL_EASE = [0.22, 1, 0.36, 1] as const;
 const LISTING_REVEAL_TRANSITION = {
@@ -210,6 +220,14 @@ export function ListingDetailPage({
 	const firstLawyerId = checkout?.lawyers[0]?.id;
 	const firstLsoLawyerId = checkout?.lsoLawyerSearchResults?.[0]?.lsoLawyerId;
 	const hasFirstLawyer = firstLawyerId !== undefined;
+	const adminAuthorization = useAuthorization({
+		kind: "permission",
+		permission: "admin:access",
+	});
+	const showAdminQuickLinks =
+		!adminAuthorization.loading &&
+		adminAuthorization.allowed &&
+		(listing.adminQuickLinks?.length ?? 0) > 0;
 
 	useEffect(() => {
 		setSelectedImageId(firstHeroImageId);
@@ -253,6 +271,7 @@ export function ListingDetailPage({
 	const referenceLabel =
 		listing.referenceLabel ??
 		(listing.mlsId ? `MLS #${listing.mlsId}` : undefined);
+	const hasAsIfAppraisal = hasPublishedAsIfAppraisal(listing);
 
 	const parsedFractionInput = useMemo(() => {
 		const parsed = Number.parseInt(fractionInput, 10);
@@ -298,7 +317,7 @@ export function ListingDetailPage({
 		portalId !== undefined &&
 		!isCheckoutPending;
 	const ctaLabel = checkout
-		? `Lock ${effectiveFractions} Fractions - Pay ${checkout.lockFee.display} Fee`
+		? `Lock ${effectiveFractions} fractions, pay ${checkout.lockFee.display} fee`
 		: "";
 	const summaryParagraphs = splitSummary(listing.summary);
 	const reduceMotion = useReducedMotion();
@@ -337,7 +356,9 @@ export function ListingDetailPage({
 					input: checkoutStartInput,
 					stage: "empty_provider_url",
 				});
-				setCheckoutError("Hosted checkout is unavailable. Please try again.");
+				setCheckoutError(
+					"Hosted checkout is unavailable. Try again in a moment."
+				);
 				return;
 			}
 			redirectToHostedCheckout(result.stripeCheckoutUrl);
@@ -347,7 +368,9 @@ export function ListingDetailPage({
 				input: checkoutStartInput,
 				stage: "start_action",
 			});
-			setCheckoutError("Unable to start hosted checkout. Please try again.");
+			setCheckoutError(
+				"We could not open hosted checkout. Try again in a moment."
+			);
 		} finally {
 			setIsCheckoutPending(false);
 		}
@@ -436,7 +459,12 @@ export function ListingDetailPage({
 							disabled={listing.heroImages.length <= 1}
 							onClick={goToNextImage}
 						/>
-						<div className="absolute right-4 bottom-4 rounded-lg bg-black/70 px-3 py-1 font-medium text-sm text-white">
+						<div
+							className={cn(
+								"absolute right-4 bottom-4 rounded-lg px-3 py-1 font-medium text-sm",
+								listingDetailBadgeClasses.imageCount
+							)}
+						>
 							{selectedImage ? normalizedImageIndex + 1 : 0} of{" "}
 							{listing.heroImages.length} photos
 						</div>
@@ -480,6 +508,9 @@ export function ListingDetailPage({
 								{listing.badges.map((badge) => (
 									<BadgePill badge={badge} key={badge.id} />
 								))}
+								{showAdminQuickLinks ? (
+									<AdminQuickLinksMenu links={listing.adminQuickLinks ?? []} />
+								) : null}
 							</div>
 							<div className="space-y-2">
 								<h1 className="font-semibold text-[44px] leading-[1.04] tracking-[-0.03em]">
@@ -493,16 +524,19 @@ export function ListingDetailPage({
 							{isInteractive && checkout ? (
 								<div className="flex flex-wrap items-center gap-3 pt-1">
 									<Button
-										className="h-11 rounded-full bg-[#1B4332] px-5 text-white hover:bg-[#143528]"
+										className={cn(
+											"h-11 rounded-full px-5",
+											listingDetailActionClasses.primary
+										)}
 										onClick={scrollToLockWorkflow}
 										type="button"
 									>
 										<LockKeyhole className="size-4" />
-										Start listing lock
+										Start fraction lock
 									</Button>
 									<p className="text-muted-foreground text-sm">
-										{checkout.lockFee.display} lock fee via hosted Stripe
-										checkout.
+										Pay the {checkout.lockFee.display} lock fee through hosted
+										Stripe checkout.
 									</p>
 								</div>
 							) : null}
@@ -531,7 +565,7 @@ export function ListingDetailPage({
 									<span
 										className={cn(
 											"font-medium text-sm",
-											VALUE_TONE_CLASSES[item.tone ?? "default"]
+											listingDetailValueToneClasses[item.tone ?? "default"]
 										)}
 									>
 										{item.value}
@@ -552,7 +586,11 @@ export function ListingDetailPage({
 					onDocumentSelect={setSelectedDocumentId}
 					selectedDocumentId={selectedDocument?.id}
 				/>
-				<InvestmentSummaryCard className="mx-16 mt-10" listing={listing} />
+				<InvestmentSummaryCard
+					className="mx-16 mt-10"
+					isInteractive={isInteractive}
+					listing={listing}
+				/>
 				<CheckoutReturnStateBanner
 					className="mx-16 mt-6"
 					state={checkoutReturnState}
@@ -615,7 +653,12 @@ export function ListingDetailPage({
 					transition={{ ...LISTING_REVEAL_TRANSITION, delay: 0.04 }}
 				>
 					<MediaPanel image={selectedImage} />
-					<div className="absolute right-4 bottom-4 rounded-lg bg-black/70 px-3 py-1 font-medium text-sm text-white">
+					<div
+						className={cn(
+							"absolute right-4 bottom-4 rounded-lg px-3 py-1 font-medium text-sm",
+							listingDetailBadgeClasses.imageCount
+						)}
+					>
 						{selectedImage ? normalizedImageIndex + 1 : 0} /{" "}
 						{listing.heroImages.length}
 					</div>
@@ -626,6 +669,12 @@ export function ListingDetailPage({
 						{listing.badges.map((badge) => (
 							<BadgePill badge={badge} key={badge.id} mobile />
 						))}
+						{showAdminQuickLinks ? (
+							<AdminQuickLinksMenu
+								links={listing.adminQuickLinks ?? []}
+								mobile
+							/>
+						) : null}
 					</div>
 					<h1 className="mt-3 font-semibold text-[24px] leading-[1.08] tracking-[-0.03em]">
 						{listing.title}
@@ -637,15 +686,19 @@ export function ListingDetailPage({
 					{isInteractive && checkout ? (
 						<div className="mt-4 space-y-2">
 							<Button
-								className="h-11 w-full rounded-full bg-[#1B4332] text-white hover:bg-[#143528]"
+								className={cn(
+									"h-11 w-full rounded-full",
+									listingDetailActionClasses.primary
+								)}
 								onClick={scrollToLockWorkflow}
 								type="button"
 							>
 								<LockKeyhole className="size-4" />
-								Start listing lock
+								Start fraction lock
 							</Button>
 							<p className="text-center text-muted-foreground text-xs">
-								{checkout.lockFee.display} lock fee via hosted Stripe checkout.
+								Pay the {checkout.lockFee.display} lock fee through hosted
+								Stripe checkout.
 							</p>
 						</div>
 					) : null}
@@ -655,13 +708,13 @@ export function ListingDetailPage({
 					<button
 						className={cn(
 							"flex w-full items-center justify-center gap-2 px-4 py-3 font-medium text-[15px]",
-							LISTING_ISLAND_CLASS
+							listingDetailSurfaceClasses.island
 						)}
 						onClick={() => setShowMobileMap((current) => !current)}
 						type="button"
 					>
 						<MapPinned className="size-4" />
-						{showMobileMap ? "Hide Map" : "Show Map"} —{" "}
+						{showMobileMap ? "Hide map" : "Show map"} for{" "}
 						{listing.map.locationText}
 					</button>
 				</section>
@@ -674,9 +727,11 @@ export function ListingDetailPage({
 
 				<ListingScrollReveal className="px-5 pt-6">
 					<SectionLabel>Executive Summary</SectionLabel>
-					<p className="mt-3 max-w-prose text-[15px] text-foreground/90 leading-[1.65] dark:text-foreground/85">
-						{listing.summary}
-					</p>
+					<div className="mt-3 max-w-prose space-y-3 text-[15px] text-foreground/90 leading-[1.65] dark:text-foreground/85">
+						{summaryParagraphs.map((paragraph) => (
+							<p key={paragraph}>{paragraph}</p>
+						))}
+					</div>
 				</ListingScrollReveal>
 
 				<ListingScrollReveal className="px-5 pt-6">
@@ -697,24 +752,24 @@ export function ListingDetailPage({
 									<h2 className="font-semibold text-[22px] leading-none">
 										{listing.appraisal.asIs.label}
 									</h2>
-									<p className="mt-2 text-muted-foreground text-sm">
-										{listing.appraisal.asIs.note}
-									</p>
 								</div>
 								<span className="font-medium text-muted-foreground text-xs uppercase tracking-[0.22em]">
-									Full Interior
+									{listing.appraisal.asIs.note}
 								</span>
 							</div>
-							<div className="mt-5 grid grid-cols-2 gap-4">
-								<div>
+							<div className="mt-5 space-y-4">
+								<div className="min-w-0">
 									<p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
 										Appraised value
 									</p>
-									<p className="mt-2 font-semibold text-[40px] leading-none tracking-[-0.04em]">
+									<p
+										className={cn(MOBILE_METRIC_VALUE_CLASS, "text-[34px]")}
+										title={listing.appraisal.asIs.value}
+									>
 										{listing.appraisal.asIs.value}
 									</p>
 								</div>
-								<div className="space-y-4 pt-1 text-sm">
+								<div className="grid grid-cols-2 gap-4 text-sm">
 									<div>
 										<p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
 											Date
@@ -723,7 +778,7 @@ export function ListingDetailPage({
 									</div>
 									<div>
 										<p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
-											Company
+											{listing.appraisal.asIs.secondaryLabel ?? "Effective"}
 										</p>
 										<p className="mt-1">
 											{listing.appraisal.asIs.secondaryValue}
@@ -733,24 +788,33 @@ export function ListingDetailPage({
 							</div>
 						</WhiteSurface>
 
-						<WhiteSurface className="border-dashed px-5 py-5">
-							<div className="flex items-center gap-2">
-								<h2 className="font-semibold text-[22px] leading-none">
-									{listing.appraisal.asIf.label}
-								</h2>
-								<span className="font-semibold text-[10px] text-amber-800 uppercase tracking-[0.24em] dark:text-amber-400">
-									Projected
-								</span>
-							</div>
-							<p className="mt-4 font-semibold text-[40px] leading-none tracking-[-0.04em]">
-								{listing.appraisal.asIf.value}
-							</p>
-							<p className="mt-3 max-w-[24ch] text-foreground/90 text-sm leading-6">
-								{listing.appraisal.asIf.note}
-							</p>
-						</WhiteSurface>
+						{hasAsIfAppraisal ? (
+							<WhiteSurface className="border-dashed px-5 py-5">
+								<div className="flex items-center gap-2">
+									<h2 className="font-semibold text-[22px] leading-none">
+										{listing.appraisal.asIf.label}
+									</h2>
+									<span
+										className={cn(
+											"font-semibold text-[10px] uppercase tracking-[0.24em]",
+											listingDetailTextClasses.warning
+										)}
+									>
+										Projected
+									</span>
+								</div>
+								<p className="mt-4 font-semibold text-[40px] leading-none tracking-[-0.04em]">
+									{listing.appraisal.asIf.value}
+								</p>
+								<p className="mt-3 max-w-[24ch] text-foreground/90 text-sm leading-6">
+									{listing.appraisal.asIf.note}
+								</p>
+							</WhiteSurface>
+						) : null}
 					</div>
 				</ListingScrollReveal>
+
+				<MobileComparablesSection listing={listing} />
 
 				<ListingScrollReveal className="px-5 pt-6">
 					<SectionLabel>Borrower Signals</SectionLabel>
@@ -845,7 +909,12 @@ export function ListingDetailPage({
 					)}
 				</ListingScrollReveal>
 
-				<InvestmentSummaryCard className="mx-5 mt-6" listing={listing} mobile />
+				<InvestmentSummaryCard
+					className="mx-5 mt-6"
+					isInteractive={isInteractive}
+					listing={listing}
+					mobile
+				/>
 				<CheckoutReturnStateBanner
 					className="mx-5 mt-4"
 					state={checkoutReturnState}
@@ -897,7 +966,7 @@ export function ListingDetailPage({
 					cards={listing.similarListings}
 					className="px-5 pt-6"
 					mobile
-					title="You May Also Like"
+					title="Similar listings"
 				/>
 			</div>
 		</div>
@@ -915,7 +984,7 @@ function DesktopTopNav({
 		<header
 			className={cn(
 				"flex items-center justify-between border-b px-16 py-4",
-				LISTING_HEADER_CLASS
+				listingDetailSurfaceClasses.header
 			)}
 		>
 			<Link
@@ -928,13 +997,21 @@ function DesktopTopNav({
 			</Link>
 
 			<div className="flex items-center gap-3">
-				<div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-2 text-[12px] text-[var(--palm)] dark:border-primary/25 dark:bg-primary/15">
+				<div
+					className={cn(
+						"inline-flex items-center gap-2 rounded-full px-3 py-2 text-[12px]",
+						listingDetailBadgeClasses.statusPill
+					)}
+				>
 					<span className="size-1.5 rounded-full bg-[var(--lagoon)]" />
 					{mode === "readOnly" ? "Read-only marketplace" : "12 viewing now"}
 				</div>
 				{mode === "interactive" ? (
 					<button
-						className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background/60 px-4 py-2 font-medium text-[13px] hover:bg-muted/40"
+						className={cn(
+							"inline-flex items-center gap-2 rounded-full px-4 py-2 font-medium text-[13px]",
+							listingDetailActionClasses.secondaryPill
+						)}
 						type="button"
 					>
 						<Heart className="size-4" />
@@ -957,24 +1034,38 @@ function MobileTopNav({
 		<header
 			className={cn(
 				"flex items-center justify-between border-b px-5 py-3",
-				LISTING_HEADER_CLASS
+				listingDetailSurfaceClasses.header
 			)}
 		>
 			<Link
 				aria-label="Back to Listings"
-				className="inline-flex"
+				className="-ml-3 inline-flex size-11 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
 				to={backHref}
 				viewTransition
 			>
 				<ChevronLeft className="size-5 text-muted-foreground" />
 			</Link>
 			<div className="flex items-center gap-3 text-[12px]">
-				<div className="inline-flex items-center gap-1 text-[var(--palm)]">
+				<div
+					aria-label={
+						mode === "readOnly"
+							? "Read-only marketplace listing"
+							: "12 people viewing this listing now"
+					}
+					className={cn(
+						"inline-flex min-h-8 items-center gap-1 rounded-full px-2.5",
+						listingDetailBadgeClasses.statusPill
+					)}
+					role="status"
+				>
 					<span className="size-1.5 rounded-full bg-[var(--lagoon)]" />
-					{mode === "readOnly" ? "View" : "12"}
+					{mode === "readOnly" ? "Read-only" : "12 viewing"}
 				</div>
 				{mode === "interactive" ? (
-					<button type="button">
+					<button
+						className="-mr-3 inline-flex size-11 items-center justify-center rounded-full transition hover:bg-muted/40"
+						type="button"
+					>
 						<Heart className="size-4 text-muted-foreground" />
 						<span className="sr-only">Save listing</span>
 					</button>
@@ -1025,11 +1116,24 @@ function DesktopFinancials({ listing }: { listing: ListingDetailData }) {
 	);
 }
 
+function hasPublishedAsIfAppraisal(listing: ListingDetailData) {
+	return (
+		listing.appraisal.hasAsIf ?? listing.appraisal.asIf.value !== "Unavailable"
+	);
+}
+
 function DesktopAppraisal({ listing }: { listing: ListingDetailData }) {
+	const hasAsIfAppraisal = hasPublishedAsIfAppraisal(listing);
+
 	return (
 		<ListingScrollReveal className="px-16 pt-10">
 			<SectionLabel>Appraisal</SectionLabel>
-			<div className="mt-5 grid grid-cols-[minmax(0,1fr)_320px] gap-6">
+			<div
+				className={cn(
+					"mt-5 grid gap-6",
+					hasAsIfAppraisal ? "grid-cols-[minmax(0,1fr)_320px]" : "grid-cols-1"
+				)}
+			>
 				<WhiteSurface className="px-7 py-6">
 					<div className="flex items-start justify-between">
 						<div>
@@ -1053,47 +1157,63 @@ function DesktopAppraisal({ listing }: { listing: ListingDetailData }) {
 							value={listing.appraisal.asIs.date ?? ""}
 						/>
 						<InfoColumn
-							label="Company"
+							label={listing.appraisal.asIs.secondaryLabel ?? "Effective"}
 							value={listing.appraisal.asIs.secondaryValue ?? ""}
 						/>
 						<InfoColumn label="Type" value={listing.appraisal.asIs.note} />
 					</div>
 				</WhiteSurface>
 
-				<WhiteSurface className="border-dashed px-6 py-6">
-					<div className="flex items-center gap-2">
-						<h2 className="font-semibold text-[24px]">
-							{listing.appraisal.asIf.label}
-						</h2>
-						<span className="font-semibold text-[10px] text-amber-800 uppercase tracking-[0.24em] dark:text-amber-400">
-							Projected
-						</span>
-					</div>
-					<p className="mt-5 font-semibold text-[44px] leading-none tracking-[-0.04em]">
-						{listing.appraisal.asIf.value}
-					</p>
-					<p className="mt-4 text-foreground/90 text-sm leading-6">
-						{listing.appraisal.asIf.note}
-					</p>
-				</WhiteSurface>
+				{hasAsIfAppraisal ? (
+					<WhiteSurface className="border-dashed px-6 py-6">
+						<div className="flex items-center gap-2">
+							<h2 className="font-semibold text-[24px]">
+								{listing.appraisal.asIf.label}
+							</h2>
+							<span
+								className={cn(
+									"font-semibold text-[10px] uppercase tracking-[0.24em]",
+									listingDetailTextClasses.warning
+								)}
+							>
+								Projected
+							</span>
+						</div>
+						<p className="mt-5 font-semibold text-[44px] leading-none tracking-[-0.04em]">
+							{listing.appraisal.asIf.value}
+						</p>
+						<p className="mt-4 text-foreground/90 text-sm leading-6">
+							{listing.appraisal.asIf.note}
+						</p>
+					</WhiteSurface>
+				) : null}
 			</div>
 		</ListingScrollReveal>
 	);
 }
 
 function DesktopComparables({ listing }: { listing: ListingDetailData }) {
+	const hasAsIfAppraisal = hasPublishedAsIfAppraisal(listing);
+
 	return (
 		<ListingScrollReveal className="px-16 pt-4">
-			<div className="grid grid-cols-2 gap-6">
+			<div
+				className={cn(
+					"grid gap-6",
+					hasAsIfAppraisal ? "grid-cols-2" : "grid-cols-1"
+				)}
+			>
 				<ComparableTable
 					rows={listing.comparables.asIs}
 					title="As-Is Comparables"
 				/>
-				<ComparableTable
-					projected
-					rows={listing.comparables.asIf}
-					title="As-If Comparables"
-				/>
+				{hasAsIfAppraisal ? (
+					<ComparableTable
+						projected
+						rows={listing.comparables.asIf}
+						title="As-If Comparables"
+					/>
+				) : null}
 			</div>
 		</ListingScrollReveal>
 	);
@@ -1174,9 +1294,15 @@ function DesktopBorrowerAndHistory({
 									))}
 								</div>
 								<div className="mt-4 flex gap-4 text-[11px] text-muted-foreground">
-									<LegendChip color="bg-[#22C55E]" label="On-time" />
-									<LegendChip color="bg-[#F59E0B]" label="Late (1-30 days)" />
-									<LegendChip color="bg-[#EF4444]" label="Missed (30+ days)" />
+									<LegendChip color="bg-[var(--palm)]" label="On-time" />
+									<LegendChip
+										color="bg-[color-mix(in_oklab,var(--palm)_58%,var(--destructive))]"
+										label="Late (1-30 days)"
+									/>
+									<LegendChip
+										color="bg-destructive"
+										label="Missed (30+ days)"
+									/>
 								</div>
 							</>
 						) : (
@@ -1210,7 +1336,10 @@ function DesktopDocuments({
 		<ListingScrollReveal className="px-16 pt-10">
 			<SectionLabel>Documents</SectionLabel>
 			<div
-				className={cn("mt-5 flex overflow-hidden p-0", LISTING_ISLAND_CLASS)}
+				className={cn(
+					listingDetailSurfaceClasses.documentShell,
+					listingDetailSurfaceClasses.island
+				)}
 			>
 				<div className="w-[260px] border-border/70 border-r bg-muted/15 p-3">
 					<ListingDocumentSidebar
@@ -1232,10 +1361,12 @@ function DesktopDocuments({
 
 function InvestmentSummaryCard({
 	className,
+	isInteractive,
 	listing,
 	mobile = false,
 }: {
 	className?: string;
+	isInteractive: boolean;
 	listing: ListingDetailData;
 	mobile?: boolean;
 }) {
@@ -1247,15 +1378,75 @@ function InvestmentSummaryCard({
 		listing.investment.perFractionAmount ??
 		listing.checkout?.perFractionAmount ??
 		0;
+	const sectionLabel = isInteractive
+		? "Invest in this mortgage"
+		: "Marketplace availability";
+	const availabilityLabel = isInteractive
+		? "Fraction availability"
+		: "Published availability";
+	const minimumLabel = isInteractive ? "Minimum lock" : "Listed minimum lock";
+	const supportingCopy = isInteractive
+		? listing.investment.investorCountLabel
+		: "Availability is current. Reservations and checkout are disabled for this listing.";
+	const availableFractionsLine = isInteractive
+		? `Currently available: ${listing.investment.availableFractions.toLocaleString()} fractions`
+		: null;
+
+	if (mobile) {
+		return (
+			<section className={className}>
+				<SectionLabel>{sectionLabel}</SectionLabel>
+				<WhiteSurface className="mt-3 px-5 py-5">
+					<div className="flex items-baseline justify-between gap-4">
+						<span className="text-muted-foreground text-sm">
+							{availabilityLabel}
+						</span>
+						<span className="font-medium text-[15px] text-foreground">
+							{listing.investment.availabilityLabel}
+						</span>
+					</div>
+					<div className="mt-3 h-2 rounded-full bg-muted">
+						<div
+							className="h-full rounded-full bg-[var(--palm)]"
+							style={{ width: `${listing.investment.availabilityValue}%` }}
+						/>
+					</div>
+					<div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4">
+						<MiniMetric
+							compact
+							label="Per fraction"
+							value={formatCurrency(perFractionAmount)}
+						/>
+						<MiniMetric
+							compact
+							label={minimumLabel}
+							value={`${minimumFractions} frac.`}
+						/>
+						<div className="col-span-2">
+							<MiniMetric
+								compact
+								label="Yield"
+								tone="positive"
+								value={listing.investment.projectedYield}
+							/>
+						</div>
+					</div>
+					<p className="mt-5 text-muted-foreground text-sm leading-6">
+						{supportingCopy}
+					</p>
+				</WhiteSurface>
+			</section>
+		);
+	}
 
 	return (
 		<section className={className}>
-			<SectionLabel>Invest in This Mortgage</SectionLabel>
+			<SectionLabel>{sectionLabel}</SectionLabel>
 			<WhiteSurface
 				className={cn("mt-5 px-6 py-6", mobile && "mt-3 px-5 py-5")}
 			>
 				<div className="flex items-center justify-between gap-4 text-muted-foreground text-sm">
-					<span>Fraction Availability</span>
+					<span>{availabilityLabel}</span>
 					<span>{listing.investment.availabilityLabel}</span>
 				</div>
 				<div className="mt-4 h-2 rounded-full bg-muted">
@@ -1275,7 +1466,7 @@ function InvestmentSummaryCard({
 						value={formatCurrency(perFractionAmount)}
 					/>
 					<MiniMetric
-						label="Minimum purchase"
+						label={minimumLabel}
 						value={`${minimumFractions} frac.`}
 					/>
 					<MiniMetric
@@ -1284,13 +1475,12 @@ function InvestmentSummaryCard({
 						value={listing.investment.projectedYield}
 					/>
 				</div>
-				<p className="mt-5 text-muted-foreground text-sm">
-					{listing.investment.investorCountLabel}
-				</p>
-				<p className="mt-2 text-[12px] text-muted-foreground/90">
-					Maximum available for this listing:{" "}
-					{listing.investment.availableFractions.toLocaleString()} fractions
-				</p>
+				<p className="mt-5 text-muted-foreground text-sm">{supportingCopy}</p>
+				{availableFractionsLine ? (
+					<p className="mt-2 text-[12px] text-muted-foreground/90">
+						{availableFractionsLine}
+					</p>
+				) : null}
 			</WhiteSurface>
 		</section>
 	);
@@ -1385,7 +1575,7 @@ function HostedCheckoutLauncher({
 					/>
 				))
 			) : (
-				<EmptySelectionState message="No platform lawyers are currently configured." />
+				<EmptySelectionState message="No platform lawyers are available for this listing." />
 			);
 	} else if (hasLsoLawyers) {
 		lawyerSelection = (
@@ -1403,7 +1593,7 @@ function HostedCheckoutLauncher({
 				{selectedLsoLawyer?.email ? null : (
 					<FieldInput
 						id={guestEmailId}
-						label="Contact email"
+						label="Lawyer contact email"
 						onChange={onGuestLawyerEmailChange}
 						type="email"
 						value={guestLawyerEmail}
@@ -1416,13 +1606,13 @@ function HostedCheckoutLauncher({
 			<div className="grid gap-3 sm:grid-cols-2">
 				<FieldInput
 					id={guestNameId}
-					label="Name"
+					label="Lawyer name"
 					onChange={onGuestLawyerNameChange}
 					value={guestLawyerName}
 				/>
 				<FieldInput
 					id={guestEmailId}
-					label="Email"
+					label="Lawyer email"
 					onChange={onGuestLawyerEmailChange}
 					type="email"
 					value={guestLawyerEmail}
@@ -1430,7 +1620,7 @@ function HostedCheckoutLauncher({
 				<FieldInput
 					className="sm:col-span-2"
 					id={guestFirmId}
-					label="Firm"
+					label="Law firm"
 					onChange={onGuestLawyerFirmChange}
 					value={guestLawyerFirm}
 				/>
@@ -1438,7 +1628,7 @@ function HostedCheckoutLauncher({
 		);
 	} else {
 		lawyerSelection = (
-			<EmptySelectionState message="Manual guest entry is available only as a fallback when no platform lawyer is configured." />
+			<EmptySelectionState message="Guest lawyer entry appears only when no platform lawyer or LSO result is available." />
 		);
 	}
 
@@ -1455,14 +1645,14 @@ function HostedCheckoutLauncher({
 				<div className="border-border/70 border-b px-5 py-5 sm:px-6">
 					<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 						<div className="min-w-0">
-							<SectionLabel>Lock workflow</SectionLabel>
+							<SectionLabel>Fraction lock</SectionLabel>
 							<h2 className="mt-2 font-semibold text-[24px] leading-tight">
-								Reserve your fraction
+								Choose fractions to reserve
 							</h2>
 						</div>
 						<div className="grid grid-cols-2 gap-2 sm:w-[260px]">
 							<LockStat
-								label="Available"
+								label="Fractions available"
 								value={availableFractions.toLocaleString()}
 							/>
 							<LockStat label="Lock fee" value={checkout.lockFee.display} />
@@ -1471,19 +1661,19 @@ function HostedCheckoutLauncher({
 				</div>
 
 				<div className="grid gap-5 px-5 py-5 sm:px-6 sm:py-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-					<div className="rounded-xl border border-border/70 bg-background/35 p-4">
+					<div className={listingDetailSurfaceClasses.mutedCard}>
 						<div className="flex items-start justify-between gap-4">
 							<div>
 								<p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
-									Fractions
+									Fractions to lock
 								</p>
 								<label className="sr-only" htmlFor={fractionsInputId}>
 									Number of fractions
 								</label>
 							</div>
-							<p className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[12px] text-[var(--palm)]">
-								{minimumFractions.toLocaleString()}-
-								{availableFractions.toLocaleString()} allowed
+							<p className={listingDetailSurfaceClasses.primaryPill}>
+								{minimumFractions.toLocaleString()} to{" "}
+								{availableFractions.toLocaleString()} available
 							</p>
 						</div>
 						<div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
@@ -1493,7 +1683,10 @@ function HostedCheckoutLauncher({
 										fractionError ? `${fractionsInputId}-error` : undefined
 									}
 									aria-invalid={fractionError !== null}
-									className="h-14 rounded-lg border-border/80 bg-card/70 px-4 font-semibold text-[22px] shadow-none focus-visible:ring-[var(--palm)]"
+									className={cn(
+										"h-14 px-4 font-semibold text-[22px]",
+										listingDetailSurfaceClasses.formInput
+									)}
 									id={fractionsInputId}
 									inputMode="numeric"
 									onBlur={onFractionBlur}
@@ -1524,21 +1717,29 @@ function HostedCheckoutLauncher({
 									</div>
 								</div>
 							</div>
-							<div className="min-w-[128px] rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-right">
+							<div
+								className={cn(
+									"min-w-[128px] px-4 py-3 text-right",
+									listingDetailSurfaceClasses.primaryStat
+								)}
+							>
 								<p className="font-semibold text-[22px] text-[var(--palm)] leading-none">
 									{formatCurrency(calculatedInvestment)}
 								</p>
 								<p className="mt-1 text-[11px] text-muted-foreground">
-									total position
+									Position total
 								</p>
 							</div>
 						</div>
 						<p className="mt-3 text-muted-foreground text-xs leading-5">
-							Availability is rechecked before Stripe checkout opens.
+							FairLend checks availability again before checkout opens.
 						</p>
 						{fractionError ? (
 							<p
-								className="mt-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-red-400 text-xs"
+								className={cn(
+									"mt-3 rounded-lg border px-3 py-2 text-xs",
+									listingDetailStateClasses.error
+								)}
 								id={`${fractionsInputId}-error`}
 							>
 								{fractionError}
@@ -1546,19 +1747,20 @@ function HostedCheckoutLauncher({
 						) : null}
 					</div>
 
-					<div className="rounded-xl border border-border/70 bg-background/35 p-4">
+					<div className={listingDetailSurfaceClasses.mutedCard}>
 						<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 							<div>
 								<p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
-									Counsel
+									Closing counsel
 								</p>
 								<p className="mt-1 font-medium text-sm">
-									Choose representation for closing
+									Choose the lawyer representing this lock.
 								</p>
 							</div>
 							<div
 								className={cn(
-									"grid gap-1 rounded-lg border border-border/70 bg-muted/25 p-1",
+									"grid gap-1",
+									listingDetailSurfaceClasses.segmentedControl,
 									canUseGuestMode ? "grid-cols-2" : "grid-cols-1"
 								)}
 							>
@@ -1573,7 +1775,7 @@ function HostedCheckoutLauncher({
 										isSelected={lawyerMode === "guest"}
 										onClick={() => onLawyerModeChange("guest")}
 									>
-										{hasLsoLawyers ? "LSO lawyer" : "Guest lawyer fallback"}
+										{hasLsoLawyers ? "LSO lawyer" : "Guest lawyer"}
 									</SegmentButton>
 								) : null}
 							</div>
@@ -1581,7 +1783,12 @@ function HostedCheckoutLauncher({
 
 						<div className="mt-4">{lawyerSelection}</div>
 						{lawyerError ? (
-							<p className="mt-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-red-400 text-xs">
+							<p
+								className={cn(
+									"mt-3 rounded-lg border px-3 py-2 text-xs",
+									listingDetailStateClasses.error
+								)}
+							>
 								{lawyerError}
 							</p>
 						) : null}
@@ -1614,7 +1821,7 @@ function HostedCheckoutLauncher({
 
 function LockStat({ label, value }: { label: string; value: string }) {
 	return (
-		<div className="rounded-lg border border-primary/15 bg-primary/10 px-3 py-2">
+		<div className={listingDetailSurfaceClasses.lockStat}>
 			<p className="font-medium text-[10px] text-muted-foreground uppercase tracking-[0.16em]">
 				{label}
 			</p>
@@ -1687,7 +1894,7 @@ function FieldInput({
 				{label}
 			</label>
 			<Input
-				className="mt-1 h-11 rounded-lg border-border/80 bg-card/70 shadow-none focus-visible:ring-[var(--palm)]"
+				className={cn("mt-1 h-11", listingDetailSurfaceClasses.formInput)}
 				id={id}
 				onChange={(event) => onChange(event.target.value)}
 				type={type}
@@ -1725,45 +1932,80 @@ function HostedCheckoutSummary({
 	return (
 		<aside
 			className={cn(
-				"shrink-0 overflow-hidden rounded-xl border border-primary/20 bg-[#173A2B] text-white shadow-sm",
+				"shrink-0 overflow-hidden rounded-xl border shadow-sm",
+				listingDetailSurfaceClasses.checkoutPanel,
 				isMobile ? "mt-4 w-full" : "sticky top-6 self-start"
 			)}
 		>
-			<div className="border-white/10 border-b px-5 py-5">
-				<p className="font-medium text-[11px] text-white/55 uppercase tracking-[0.18em]">
-					Hosted Checkout
+			<div
+				className={cn(
+					"border-b px-5 py-5",
+					"border-[color-mix(in_oklab,var(--sand)_12%,transparent)]"
+				)}
+			>
+				<p
+					className={cn(
+						"font-medium text-[11px] uppercase tracking-[0.18em]",
+						listingDetailTextClasses.checkoutLabel
+					)}
+				>
+					Hosted checkout
 				</p>
 				<div className="mt-4 flex items-end justify-between gap-4">
 					<div>
-						<p className="text-sm text-white/60">Lock fee due today</p>
+						<p
+							className={cn("text-sm", listingDetailTextClasses.checkoutSubtle)}
+						>
+							Lock fee due today
+						</p>
 						<p className="mt-1 font-semibold text-[42px] leading-none tracking-[-0.04em]">
 							{checkout.lockFee.display}
 						</p>
 					</div>
-					<div className="rounded-lg bg-white/10 px-3 py-2 text-right">
+					<div
+						className={cn(
+							"rounded-lg px-3 py-2 text-right",
+							listingDetailSurfaceClasses.checkoutInset
+						)}
+					>
 						<p className="font-semibold text-[18px] leading-none">
 							{fractions}
 						</p>
-						<p className="mt-1 text-[11px] text-white/55">fractions</p>
+						<p
+							className={cn(
+								"mt-1 text-[11px]",
+								listingDetailTextClasses.checkoutLabel
+							)}
+						>
+							fractions
+						</p>
 					</div>
 				</div>
 			</div>
 
 			<div className="space-y-4 px-5 py-5">
-				<div className="space-y-3 rounded-lg border border-white/10 bg-black/10 p-4 text-sm">
+				<div
+					className={cn(
+						"space-y-3 rounded-lg border p-4 text-sm",
+						listingDetailSurfaceClasses.checkoutInset
+					)}
+				>
 					<CheckoutRow label="Listing" value={listingTitle} />
 					<CheckoutRow
-						label="Position"
+						label="Position total"
 						value={formatCurrency(calculatedInvestment)}
 					/>
 					<CheckoutRow
-						label="Counsel"
+						label="Closing counsel"
 						value={selectedLawyerLabel ?? "No lawyer selected"}
 					/>
 				</div>
 
 				<Button
-					className="inline-flex h-auto min-h-12 w-full items-center justify-center gap-2 whitespace-normal rounded-lg bg-white px-4 py-3 font-semibold text-[#173A2B] hover:bg-white/90 disabled:bg-white/35 disabled:text-[#173A2B]/70"
+					className={cn(
+						"inline-flex h-auto min-h-12 w-full items-center justify-center gap-2 whitespace-normal rounded-lg px-4 py-3 font-semibold",
+						listingDetailActionClasses.checkoutCta
+					)}
 					disabled={!canStartCheckout || isCheckoutPending}
 					onClick={onStartCheckout}
 					type="button"
@@ -1771,7 +2013,7 @@ function HostedCheckoutSummary({
 					{isCheckoutPending ? (
 						<>
 							<Loader2 className="size-4 animate-spin" />
-							Starting checkout
+							Opening checkout
 						</>
 					) : (
 						<>
@@ -1782,14 +2024,24 @@ function HostedCheckoutSummary({
 				</Button>
 
 				{checkoutError ? (
-					<div className="flex gap-2 rounded-lg border border-red-200/25 bg-red-100/90 px-3 py-3 text-[#7A271A] text-sm">
+					<div
+						className={cn(
+							"flex gap-2 rounded-lg border px-3 py-3 text-sm",
+							listingDetailStateClasses.error
+						)}
+					>
 						<AlertCircle className="mt-0.5 size-4 shrink-0" />
 						<p>{checkoutError}</p>
 					</div>
 				) : null}
 
-				<p className="text-[12px] text-white/58 leading-5">
-					Stripe collects the lock fee after FairLend confirms the selected
+				<p
+					className={cn(
+						"text-[12px] leading-5",
+						listingDetailTextClasses.checkoutMeta
+					)}
+				>
+					Stripe collects the lock fee only after FairLend confirms the selected
 					fractions are still available.
 				</p>
 			</div>
@@ -1823,7 +2075,7 @@ function SimilarListingsSection({
 					<a
 						className={cn(
 							"group overflow-hidden transition-transform duration-300 ease-out hover:-translate-y-0.5",
-							LISTING_ISLAND_CLASS,
+							listingDetailSurfaceClasses.island,
 							mobile ? "w-[220px] shrink-0" : "min-w-0"
 						)}
 						href={card.href ?? buildHref(card.id)}
@@ -1868,7 +2120,12 @@ function SimilarListingsSection({
 
 function ListingDetailMapPopup({ listing }: { listing: ListingDetailData }) {
 	return (
-		<div className="w-[min(280px,calc(100vw-3rem))] rounded-lg border border-border bg-card p-3 text-card-foreground shadow-lg">
+		<div
+			className={cn(
+				"w-[min(280px,calc(100vw-3rem))]",
+				listingDetailSurfaceClasses.popover
+			)}
+		>
 			<p className="line-clamp-2 font-semibold text-sm">{listing.title}</p>
 			<p className="mt-1 flex items-center gap-1 text-muted-foreground text-xs">
 				<MapPin aria-hidden="true" className="size-3 shrink-0" />
@@ -1930,13 +2187,10 @@ function MapPanel({
 	if (mapItems.length === 0) {
 		return (
 			<div
-				className={cn(
-					"flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-border/60 bg-muted/40 px-4 py-6 text-center text-muted-foreground dark:bg-muted/25",
-					className
-				)}
+				className={cn(listingDetailSurfaceClasses.mapUnavailable, className)}
 				id={mapPanelId}
 			>
-				<div className="relative flex size-[180px] items-center justify-center rounded-full border border-primary/25 border-dashed bg-background/50 dark:border-primary/35 dark:bg-background/30">
+				<div className={listingDetailSurfaceClasses.mapUnavailableMarker}>
 					<div className="size-2 rounded-full bg-[var(--lagoon)]" />
 				</div>
 				<div className="space-y-1">
@@ -1984,8 +2238,10 @@ function MediaPanel({
 	return (
 		<div
 			className={cn(
-				"flex h-full w-full items-center justify-center rounded-xl",
-				image ? HERO_TONE_CLASSES[image.tone] : HERO_TONE_CLASSES.stone,
+				listingDetailSurfaceClasses.mediaFallback,
+				image
+					? listingDetailHeroToneClasses[image.tone]
+					: listingDetailHeroToneClasses.stone,
 				className
 			)}
 		>
@@ -2016,7 +2272,7 @@ function EmptySelectionState({ message }: { message: string }) {
 		<div
 			className={cn(
 				"border-dashed px-4 py-4 text-muted-foreground text-sm",
-				LISTING_ISLAND_CLASS
+				listingDetailSurfaceClasses.island
 			)}
 		>
 			{message}
@@ -2161,31 +2417,29 @@ function CheckoutReturnStateBanner({
 		abandoned: {
 			heading: "Checkout canceled",
 			message:
-				"No deal was created. Any active lock will be released by the checkout workflow.",
+				"No deal was created. If a temporary lock exists, FairLend will release it automatically.",
 			tone: "warning",
 		},
 		error: {
-			heading: "Checkout status unavailable",
-			message:
-				"We could not confirm the checkout state. Refresh the listing before starting another lock.",
+			heading: "Checkout status not confirmed",
+			message: "Refresh this listing before starting another lock.",
 			tone: "error",
 		},
 		expired: {
 			heading: "Checkout expired",
-			message:
-				"The checkout window expired and the temporary lock is no longer active.",
+			message: "The checkout window expired. No lock is active.",
 			tone: "warning",
 		},
 		provider_start_failed: {
-			heading: "Hosted checkout did not open",
+			heading: "Hosted checkout could not open",
 			message:
-				"The payment provider could not start checkout. No lock-fee payment was collected.",
+				"Stripe did not start a checkout session. No lock fee was collected.",
 			tone: "error",
 		},
 		success_pending: {
 			heading: "Checkout received",
 			message:
-				"FairLend is reconciling the hosted checkout before deal creation is shown.",
+				"FairLend is confirming the Stripe result. The deal will appear when confirmation finishes.",
 			tone: "success",
 		},
 	};
@@ -2196,12 +2450,9 @@ function CheckoutReturnStateBanner({
 			<div
 				className={cn(
 					"flex gap-3 rounded-xl border px-4 py-4 text-sm",
-					selected.tone === "success" &&
-						"border-[#B7E4C7] bg-[#F1FAF3] text-[#204636]",
-					selected.tone === "warning" &&
-						"border-[#F4D7A1] bg-[#FFF8E8] text-[#7A4D0B]",
-					selected.tone === "error" &&
-						"border-[#F1B8B1] bg-[#F8EAEA] text-[#7A271A]"
+					selected.tone === "success" && listingDetailStateClasses.success,
+					selected.tone === "warning" && listingDetailStateClasses.warning,
+					selected.tone === "error" && listingDetailStateClasses.error
 				)}
 				role="status"
 			>
@@ -2231,16 +2482,16 @@ function ReadOnlyMarketplaceNotice({
 			<WhiteSurface className="px-6 py-6">
 				<div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
 					<div className="space-y-2">
-						<SectionLabel>Read-only release</SectionLabel>
+						<SectionLabel>Read-only listing</SectionLabel>
 						<h2 className="font-semibold text-[22px] leading-tight">
-							Fraction locking opens in the next phase
+							Review only, locking disabled
 						</h2>
-						<p className="max-w-2xl text-[#5A5956] text-sm leading-6">
+						<p className="max-w-2xl text-muted-foreground text-sm leading-6">
 							{reason ??
-								"Availability on this page is live and accurate. Lawyer selection, fraction reservation, and lock-fee checkout are not available for this listing."}
+								"Availability is current. This listing is open for review only, so fraction reservation, lawyer selection, and checkout are disabled."}
 						</p>
 					</div>
-					<div className="rounded-2xl border border-primary/15 bg-primary/10 px-5 py-4 text-right dark:border-primary/25 dark:bg-primary/15">
+					<div className={listingDetailSurfaceClasses.readOnlyMetric}>
 						<p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
 							Fractions available
 						</p>
@@ -2264,7 +2515,11 @@ function WhiteSurface({
 	children: ReactNode;
 	className?: string;
 }) {
-	return <div className={cn(LISTING_ISLAND_CLASS, className)}>{children}</div>;
+	return (
+		<div className={cn(listingDetailSurfaceClasses.island, className)}>
+			{children}
+		</div>
+	);
 }
 
 function MetricCard({
@@ -2278,7 +2533,7 @@ function MetricCard({
 			<p
 				className={cn(
 					"mt-2 font-semibold text-[34px] leading-none tracking-[-0.04em]",
-					VALUE_TONE_CLASSES[item.tone ?? "default"]
+					listingDetailValueToneClasses[item.tone ?? "default"]
 				)}
 			>
 				{item.value}
@@ -2294,17 +2549,127 @@ function CompactMetricCard({
 	item: ListingDetailData["keyFinancials"][number];
 }) {
 	return (
-		<WhiteSurface className="px-4 py-4">
+		<WhiteSurface className="min-w-0 px-4 py-4">
 			<p className="text-[12px] text-muted-foreground">{item.label}</p>
 			<p
 				className={cn(
-					"mt-2 font-semibold text-[32px] leading-none tracking-[-0.04em]",
-					VALUE_TONE_CLASSES[item.tone ?? "default"]
+					MOBILE_METRIC_VALUE_CLASS,
+					listingDetailValueToneClasses[item.tone ?? "default"]
 				)}
+				title={item.value}
 			>
 				{item.value}
 			</p>
 		</WhiteSurface>
+	);
+}
+
+function MobileComparablesSection({ listing }: { listing: ListingDetailData }) {
+	const hasAsIfAppraisal = hasPublishedAsIfAppraisal(listing);
+
+	return (
+		<ListingScrollReveal className="px-5 pt-6">
+			<SectionLabel>Comparable Properties</SectionLabel>
+			<div className="mt-3 space-y-3">
+				<MobileComparableList
+					rows={listing.comparables.asIs}
+					title="As-is comparables"
+				/>
+				{hasAsIfAppraisal ? (
+					<MobileComparableList
+						projected
+						rows={listing.comparables.asIf}
+						title="As-if comparables"
+					/>
+				) : null}
+			</div>
+		</ListingScrollReveal>
+	);
+}
+
+function MobileComparableList({
+	projected = false,
+	rows,
+	title,
+}: {
+	projected?: boolean;
+	rows: ListingComparable[];
+	title: string;
+}) {
+	return (
+		<WhiteSurface className={cn("px-4 py-4", projected && "border-dashed")}>
+			<div className="flex items-center justify-between gap-3">
+				<h2 className="font-semibold text-[18px] leading-tight">{title}</h2>
+				<span className="text-muted-foreground text-xs">
+					{rows.length.toLocaleString()} sales
+				</span>
+			</div>
+			{rows.length > 0 ? (
+				<div className="mt-3 space-y-2">
+					{rows.map((row) => (
+						<ComparableMobileCard key={row.id} row={row} />
+					))}
+				</div>
+			) : (
+				<ComparableEmptyState projected={projected} />
+			)}
+		</WhiteSurface>
+	);
+}
+
+function ComparableMobileCard({ row }: { row: ListingComparable }) {
+	return (
+		<div className="rounded-lg border border-border/70 bg-background/35 px-3 py-3">
+			{row.evidenceAssets?.some((asset) => asset.kind === "image") ? (
+				<div className="mb-3 grid grid-cols-2 gap-2">
+					{row.evidenceAssets
+						.filter((asset) => asset.kind === "image")
+						.slice(0, 2)
+						.map((asset) => (
+							<img
+								alt={asset.label}
+								className="h-24 w-full rounded-md border border-border/60 object-cover"
+								height={96}
+								key={asset.url}
+								src={asset.url}
+								width={240}
+							/>
+						))}
+				</div>
+			) : null}
+			<div className="flex items-start justify-between gap-3">
+				<p className="min-w-0 font-medium text-[14px] leading-5">
+					{row.address}
+				</p>
+				<p className="shrink-0 font-semibold text-[15px] tabular-nums">
+					{row.price}
+				</p>
+			</div>
+			<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground text-xs">
+				<span>{row.date}</span>
+				<span>{row.distance}</span>
+				<span>{row.squareFeet}</span>
+			</div>
+			<ComparableEvidenceLinks row={row} />
+		</div>
+	);
+}
+
+function ComparableEmptyState({ projected }: { projected?: boolean }) {
+	return (
+		<div className="mt-3 rounded-lg border border-border/80 border-dashed bg-muted/25 px-4 py-5 text-center">
+			<div className="mx-auto flex size-11 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-[var(--palm)]">
+				<Building2 className="size-5" />
+			</div>
+			<p className="mt-3 font-semibold text-[15px]">
+				No comparable properties published
+			</p>
+			<p className="mx-auto mt-1 max-w-[28ch] text-muted-foreground text-sm leading-6">
+				{projected
+					? "As-if comparables will appear when the appraisal package includes projected sales evidence."
+					: "FairLend has not published comparable sales evidence for this appraisal yet."}
+			</p>
+		</div>
 	);
 }
 
@@ -2322,13 +2687,18 @@ function ComparableTable({
 			<div className="flex items-center gap-2">
 				<h2 className="font-semibold text-[20px]">{title}</h2>
 				{projected ? (
-					<span className="font-semibold text-[10px] text-amber-800 uppercase tracking-[0.24em] dark:text-amber-400">
+					<span
+						className={cn(
+							"font-semibold text-[10px] uppercase tracking-[0.24em]",
+							listingDetailTextClasses.warning
+						)}
+					>
 						Projected
 					</span>
 				) : null}
 			</div>
 			<div className="mt-4 overflow-hidden rounded-lg border border-border/70">
-				<div className="grid grid-cols-[1.6fr_1fr_0.9fr_0.8fr_0.8fr] gap-3 bg-muted/40 px-4 py-3 text-[11px] text-muted-foreground uppercase tracking-[0.18em]">
+				<div className={listingDetailSurfaceClasses.tableHeader}>
 					<span>Address</span>
 					<span>Price</span>
 					<span>Date</span>
@@ -2337,11 +2707,11 @@ function ComparableTable({
 				</div>
 				{rows.length > 0 ? (
 					rows.map((row) => (
-						<div
-							className="grid grid-cols-[1.6fr_1fr_0.9fr_0.8fr_0.8fr] gap-3 border-border/60 border-t px-4 py-3 text-sm"
-							key={row.id}
-						>
-							<span>{row.address}</span>
+						<div className={listingDetailSurfaceClasses.tableRow} key={row.id}>
+							<span>
+								<span>{row.address}</span>
+								<ComparableEvidenceLinks row={row} />
+							</span>
 							<span>{row.price}</span>
 							<span>{row.date}</span>
 							<span>{row.distance}</span>
@@ -2358,6 +2728,34 @@ function ComparableTable({
 	);
 }
 
+function ComparableEvidenceLinks({ row }: { row: ListingComparable }) {
+	if (!row.evidenceAssets?.length) {
+		return null;
+	}
+
+	return (
+		<div className="mt-2 flex flex-wrap gap-1.5">
+			{row.evidenceAssets.map((asset) => (
+				<a
+					className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-2 py-1 text-[11px] text-foreground/80 transition hover:border-[var(--palm)] hover:text-[var(--palm)]"
+					href={asset.url}
+					key={`${asset.kind}:${asset.url}`}
+					rel="noopener noreferrer"
+					target="_blank"
+				>
+					{asset.kind === "image" ? (
+						<ImageIcon className="size-3" />
+					) : (
+						<FileText className="size-3" />
+					)}
+					<span>{asset.label}</span>
+					<ExternalLink className="size-3" />
+				</a>
+			))}
+		</div>
+	);
+}
+
 function SignalRow({ item }: { item: ListingBorrowerSignal }) {
 	return (
 		<div className="flex items-center justify-between gap-4">
@@ -2366,8 +2764,8 @@ function SignalRow({ item }: { item: ListingBorrowerSignal }) {
 				className={cn(
 					"inline-flex items-center rounded-full font-medium text-sm",
 					item.value === "Approved"
-						? "bg-[var(--palm)] px-3 py-1 text-white"
-						: VALUE_TONE_CLASSES[item.tone]
+						? cn("px-3 py-1", listingDetailBadgeClasses.positive)
+						: listingDetailValueToneClasses[item.tone]
 				)}
 			>
 				{item.value}
@@ -2396,10 +2794,10 @@ function LawyerOptionCard({
 		<button
 			aria-pressed={isSelected}
 			className={cn(
-				"flex w-full items-start gap-3 rounded-xl border px-4 py-4 text-left transition-colors",
+				listingDetailSurfaceClasses.selectableCardBase,
 				isSelected
-					? "border-primary/45 bg-primary/10 dark:border-primary/55 dark:bg-primary/15"
-					: "border-border/80 bg-background/40 hover:bg-muted/45 dark:bg-background/25",
+					? listingDetailSurfaceClasses.selectableCardSelected
+					: listingDetailSurfaceClasses.selectableCardIdle,
 				isCompact && "px-4 py-3"
 			)}
 			onClick={() => onSelect(lawyer.id)}
@@ -2409,8 +2807,8 @@ function LawyerOptionCard({
 				className={cn(
 					"mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
 					isSelected
-						? "border-[var(--palm)] bg-[var(--palm)] text-white"
-						: "border-muted-foreground/35 bg-card text-transparent"
+						? listingDetailSurfaceClasses.selectionIndicatorSelected
+						: listingDetailSurfaceClasses.selectionIndicatorIdle
 				)}
 			>
 				<Check className="size-3" />
@@ -2419,7 +2817,12 @@ function LawyerOptionCard({
 				<div className="flex flex-wrap items-center gap-2">
 					<p className="font-medium text-sm">{lawyer.label}</p>
 					{lawyer.slaTier ? (
-						<span className="rounded-full bg-[#E7F6EA] px-2 py-0.5 font-medium text-[#2E7D4F] text-[11px]">
+						<span
+							className={cn(
+								"rounded-full px-2 py-0.5 font-medium text-[11px]",
+								listingDetailBadgeClasses.positive
+							)}
+						>
 							{lawyer.slaTier.reviewHours}h SLA
 						</span>
 					) : null}
@@ -2434,8 +2837,8 @@ function LawyerOptionCard({
 								className={cn(
 									"rounded-full px-2 py-1 text-[11px]",
 									day.hasAvailability
-										? "bg-[#F1FAF3] text-[#204636]"
-										: "bg-[#F8EAEA] text-[#7A271A]"
+										? listingDetailBadgeClasses.positive
+										: listingDetailBadgeClasses.error
 								)}
 								key={day.businessDate}
 							>
@@ -2454,7 +2857,7 @@ function LawyerOptionCard({
 						</span>
 					) : null}
 					{capacityWarning ? (
-						<span className="font-medium text-[#B54708]">
+						<span className="font-medium text-[color-mix(in_oklab,var(--palm)_58%,var(--destructive))]">
 							{capacityWarning}
 						</span>
 					) : null}
@@ -2480,12 +2883,11 @@ function LsoLawyerOptionCard({
 			aria-disabled={!lawyer.selectable}
 			aria-pressed={isSelected}
 			className={cn(
-				"flex w-full items-start gap-3 rounded-xl border px-4 py-4 text-left transition-colors",
+				listingDetailSurfaceClasses.selectableCardBase,
 				isSelected
-					? "border-primary/45 bg-primary/10 dark:border-primary/55 dark:bg-primary/15"
-					: "border-border/80 bg-background/40 hover:bg-muted/45 dark:bg-background/25",
-				!lawyer.selectable &&
-					"cursor-not-allowed opacity-60 hover:bg-background/40"
+					? listingDetailSurfaceClasses.selectableCardSelected
+					: listingDetailSurfaceClasses.selectableCardIdle,
+				!lawyer.selectable && listingDetailSurfaceClasses.selectableCardDisabled
 			)}
 			disabled={!lawyer.selectable}
 			onClick={() => onSelect(lawyer.lsoLawyerId)}
@@ -2495,8 +2897,8 @@ function LsoLawyerOptionCard({
 				className={cn(
 					"mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
 					isSelected
-						? "border-[var(--palm)] bg-[var(--palm)] text-white"
-						: "border-muted-foreground/35 bg-card text-transparent"
+						? listingDetailSurfaceClasses.selectionIndicatorSelected
+						: listingDetailSurfaceClasses.selectionIndicatorIdle
 				)}
 			>
 				<Check className="size-3" />
@@ -2508,8 +2910,8 @@ function LsoLawyerOptionCard({
 						className={cn(
 							"rounded-full px-2 py-0.5 font-medium text-[11px]",
 							lawyer.selectable
-								? "bg-[#E7F6EA] text-[#2E7D4F]"
-								: "bg-[#F8EAEA] text-[#7A271A]"
+								? listingDetailBadgeClasses.positive
+								: listingDetailBadgeClasses.error
 						)}
 					>
 						{lawyer.selectable ? "LSO clear" : "Not selectable"}
@@ -2520,7 +2922,7 @@ function LsoLawyerOptionCard({
 					{lawyer.jurisdiction}
 				</p>
 				{lawyer.restrictionSummary ? (
-					<p className="mt-2 text-[#7A271A] text-xs">
+					<p className="mt-2 text-destructive text-xs">
 						{lawyer.restrictionSummary}
 					</p>
 				) : null}
@@ -2552,14 +2954,66 @@ function SectionLabel({
 	className?: string;
 }) {
 	return (
-		<p
-			className={cn(
-				"font-semibold text-[12px] text-muted-foreground uppercase tracking-[0.22em]",
-				className
-			)}
-		>
+		<p className={cn(listingDetailTextClasses.sectionLabel, className)}>
 			{children}
 		</p>
+	);
+}
+
+function buildAdminDetailHref(link: ListingAdminQuickLink) {
+	const host =
+		typeof window === "undefined"
+			? FAIRLEND_ADMIN_PRODUCTION_HOST
+			: window.location.host;
+	const hostType = resolvePortalHostTypeFromHost(host);
+	const adminHost =
+		hostType === "local"
+			? FAIRLEND_ADMIN_LOCAL_HOST
+			: FAIRLEND_ADMIN_PRODUCTION_HOST;
+
+	return buildAbsoluteHostUrl(
+		adminHost,
+		`/admin/${link.entityType}/${link.id}`
+	);
+}
+
+function AdminQuickLinksMenu({
+	links,
+	mobile = false,
+}: {
+	links: ListingAdminQuickLink[];
+	mobile?: boolean;
+}) {
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<Button
+					className={cn(
+						"h-7 rounded-full border-border/80 px-2.5 font-medium text-[11px]",
+						mobile && "h-7 px-2"
+					)}
+					size="sm"
+					type="button"
+					variant="outline"
+				>
+					<ExternalLink className="size-3.5" />
+					Admin
+					<ChevronDown className="size-3.5 text-muted-foreground" />
+				</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="start" className="w-56">
+				{links.map((link) => (
+					<DropdownMenuItem asChild key={`${link.entityType}:${link.id}`}>
+						<a href={buildAdminDetailHref(link)}>
+							<span>{link.label}</span>
+							<span className="ml-auto max-w-24 truncate font-mono text-[10px] text-muted-foreground">
+								{link.id}
+							</span>
+						</a>
+					</DropdownMenuItem>
+				))}
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }
 
@@ -2570,12 +3024,18 @@ function BadgePill({
 	badge: ListingBadge;
 	mobile?: boolean;
 }) {
+	const label = formatBadgeLabel(badge.label);
+
 	if (badge.tone === "dark") {
 		return (
 			<Badge
-				className={cn("bg-[var(--palm)] text-white", mobile && "text-[10px]")}
+				className={cn(
+					"px-2.5 py-1 text-[11px] leading-none tracking-[0.01em]",
+					listingDetailBadgeClasses.dark,
+					mobile && "text-[11px]"
+				)}
 			>
-				{badge.label}
+				{label}
 			</Badge>
 		);
 	}
@@ -2583,12 +3043,13 @@ function BadgePill({
 	return (
 		<Badge
 			className={cn(
-				"border-border/80 bg-card/90 text-foreground/90 backdrop-blur-sm",
-				mobile && "text-[10px]"
+				"px-2.5 py-1 text-[11px] leading-none tracking-[0.01em]",
+				listingDetailSurfaceClasses.outlineBadge,
+				mobile && "text-[11px]"
 			)}
 			variant="outline"
 		>
-			{badge.label}
+			{label}
 		</Badge>
 	);
 }
@@ -2610,10 +3071,7 @@ function HeroArrowButton({
 	return (
 		<button
 			aria-label={ariaLabel}
-			className={cn(
-				"absolute top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-card/90 text-foreground shadow-md backdrop-blur-md disabled:cursor-not-allowed disabled:opacity-50",
-				className
-			)}
+			className={cn(listingDetailActionClasses.heroArrow, className)}
 			disabled={disabled}
 			onClick={onClick}
 			type="button"
@@ -2638,7 +3096,7 @@ function UpcomingPaymentCallout({ listing }: { listing: ListingDetailData }) {
 	const nextPayment = listing.paymentHistory.nextUpcoming;
 
 	return (
-		<div className="mt-5 rounded-lg border border-border/70 bg-muted/35 px-4 py-4">
+		<div className={cn("mt-5", listingDetailSurfaceClasses.mutedPanel)}>
 			<div className="flex items-start justify-between gap-4">
 				<div>
 					<p className="font-medium text-[13px] text-muted-foreground">
@@ -2663,22 +3121,27 @@ function UpcomingPaymentCallout({ listing }: { listing: ListingDetailData }) {
 }
 
 function MiniMetric({
+	compact = false,
 	label,
 	tone = "default",
 	value,
 }: {
+	compact?: boolean;
 	label: string;
 	tone?: ListingValueTone;
 	value: string;
 }) {
 	return (
-		<div>
+		<div className="min-w-0">
 			<p className="text-muted-foreground text-sm">{label}</p>
 			<p
 				className={cn(
-					"mt-1 font-semibold text-[30px] leading-none tracking-[-0.04em]",
-					VALUE_TONE_CLASSES[tone]
+					compact
+						? MOBILE_METRIC_VALUE_CLASS
+						: "mt-1 font-semibold text-[30px] leading-none tracking-[-0.04em]",
+					listingDetailValueToneClasses[tone]
 				)}
+				title={value}
 			>
 				{value}
 			</p>
@@ -2709,9 +3172,9 @@ function LegendChip({ color, label }: { color: string; label: string }) {
 function CheckoutRow({ label, value }: { label: string; value: string }) {
 	return (
 		<div className="grid grid-cols-[86px_minmax(0,1fr)] items-start gap-3">
-			<span className="text-white/55">{label}</span>
+			<span className={listingDetailTextClasses.checkoutLabel}>{label}</span>
 			<span
-				className="min-w-0 text-right font-medium text-white leading-5"
+				className="min-w-0 text-right font-medium text-[var(--sand)] leading-5"
 				title={value}
 			>
 				{value}
@@ -2725,11 +3188,11 @@ function monthStatusClass(
 ) {
 	switch (status) {
 		case "late":
-			return "bg-[#F59E0B] text-white";
+			return listingDetailPaymentClasses.late;
 		case "missed":
-			return "bg-[#EF4444] text-white";
+			return "bg-destructive text-destructive-foreground";
 		case "onTime":
-			return "bg-[#22C55E] text-white";
+			return listingDetailPaymentClasses.onTime;
 		default:
 			return "bg-muted text-foreground";
 	}
@@ -2740,12 +3203,18 @@ function upcomingPaymentStatusClass(
 ) {
 	switch (status) {
 		case "overdue":
-			return "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-200";
+			return listingDetailStateClasses.upcomingOverdue;
 		case "due":
 		case "executing":
-			return "bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200";
+			return cn(
+				listingDetailStateClasses.upcomingDue,
+				listingDetailTextClasses.warning
+			);
 		case "planned":
-			return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200";
+			return cn(
+				listingDetailStateClasses.upcomingPlanned,
+				listingDetailBadgeClasses.positive
+			);
 		default:
 			return "bg-muted text-muted-foreground";
 	}
@@ -2761,6 +3230,14 @@ function splitSummary(summary: string) {
 		`${sentences.slice(0, 2).join(". ")}.`,
 		`${sentences.slice(2).join(". ")}`.trim(),
 	].filter(Boolean);
+}
+
+function formatBadgeLabel(label: string) {
+	return label.replace(
+		ORDINAL_MORTGAGE_BADGE_PATTERN,
+		(_, number: string, suffix: string) =>
+			`${number}${suffix.toLowerCase()} mortgage`
+	);
 }
 
 function formatCurrency(amount: number) {

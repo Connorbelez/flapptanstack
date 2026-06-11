@@ -1,7 +1,10 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { MarketplaceListingsPage } from "#/components/listings/MarketplaceListingsPage";
-import type { MarketplaceListingsSearchState } from "#/components/listings/marketplace-types";
+import type {
+	MarketplaceListingsSearchState,
+	MarketplaceListingsSnapshot,
+} from "#/components/listings/marketplace-types";
 import { marketplaceListingsQueryOptions } from "#/components/listings/query-options";
 import {
 	cleanMarketplaceListingsSearch,
@@ -13,7 +16,9 @@ import { Route as RootRoute } from "../__root";
 
 export const Route = createFileRoute("/listings/")({
 	component: ListingsIndexRoutePage,
-	loaderDeps: ({ search }) => ({ search }),
+	loaderDeps: ({ search }) => ({
+		search: { ...search, q: undefined },
+	}),
 	loader: async ({ context, deps: { search } }) => {
 		const portalId = assertActivePortalId(
 			context.portalContext,
@@ -30,14 +35,30 @@ export const Route = createFileRoute("/listings/")({
 export function ListingsIndexRoutePage() {
 	const search = Route.useSearch();
 	const navigate = useNavigate();
+	const queryClient = useQueryClient();
 	const { portalContext } = RootRoute.useRouteContext();
 	const portalId = assertActivePortalId(
 		portalContext,
 		"Marketplace listings require an active portal host."
 	);
-	const { data } = useSuspenseQuery(
-		marketplaceListingsQueryOptions(portalId, search)
-	);
+	const unsearchedOptions = marketplaceListingsQueryOptions(portalId, {
+		...search,
+		q: undefined,
+	});
+	const queryResult = useQuery({
+		...marketplaceListingsQueryOptions(portalId, search),
+		placeholderData: (previousData) =>
+			previousData ?? queryClient.getQueryData(unsearchedOptions.queryKey),
+	});
+	const data =
+		queryResult.data ??
+		queryClient.getQueryData<MarketplaceListingsSnapshot>(
+			unsearchedOptions.queryKey
+		);
+
+	if (!data) {
+		return null;
+	}
 	const effectiveSearch = marketplaceFiltersToSearchState(
 		data.effectiveFilters,
 		search.sort

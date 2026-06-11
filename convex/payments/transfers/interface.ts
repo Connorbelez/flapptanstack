@@ -23,11 +23,16 @@ import type {
 } from "./types";
 
 export interface ManualSettlementDetails {
+	chequeNumber?: string;
+	depositReference?: string;
 	enteredBy?: string;
 	evidenceAttachmentIds?: string[];
 	externalReference?: string;
 	instrumentType: "cash" | "cheque" | "wire" | "journal" | "other";
 	location?: string;
+	notes?: string;
+	receivedAt?: number;
+	referenceNumber?: string;
 	settlementOccurredAt: number;
 }
 

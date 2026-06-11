@@ -44,6 +44,7 @@ import { Route as FinancingPreApprovalRouteImport } from './routes/financing.pre
 import { Route as E2eSwitchOrgRouteImport } from './routes/e2e/switch-org'
 import { Route as E2eSessionRouteImport } from './routes/e2e/session'
 import { Route as E2eMarketplacePublicDocumentsRouteImport } from './routes/e2e/marketplace-public-documents'
+import { Route as E2eMarketplaceListingsMobileRouteImport } from './routes/e2e/marketplace-listings-mobile'
 import { Route as DemoWorkosRouteImport } from './routes/demo/workos'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoTableRouteImport } from './routes/demo/table'
@@ -79,6 +80,7 @@ import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminRotessaReconciliationRouteImport } from './routes/admin/rotessa-reconciliation'
 import { Route as AdminPaymentOperationsRouteImport } from './routes/admin/payment-operations'
 import { Route as AdminOriginationsRouteImport } from './routes/admin/originations'
+import { Route as AdminOfflinePaymentOperationsRouteImport } from './routes/admin/offline-payment-operations'
 import { Route as AdminFinancialLedgerRouteImport } from './routes/admin/financial-ledger'
 import { Route as AdminFeesRouteImport } from './routes/admin/fees'
 import { Route as AdminDocumentEngineRouteImport } from './routes/admin.document-engine'
@@ -355,6 +357,12 @@ const E2eMarketplacePublicDocumentsRoute =
     path: '/e2e/marketplace-public-documents',
     getParentRoute: () => rootRouteImport,
   } as any)
+const E2eMarketplaceListingsMobileRoute =
+  E2eMarketplaceListingsMobileRouteImport.update({
+    id: '/e2e/marketplace-listings-mobile',
+    path: '/e2e/marketplace-listings-mobile',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const DemoWorkosRoute = DemoWorkosRouteImport.update({
   id: '/demo/workos',
   path: '/demo/workos',
@@ -534,6 +542,12 @@ const AdminOriginationsRoute = AdminOriginationsRouteImport.update({
   path: '/originations',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminOfflinePaymentOperationsRoute =
+  AdminOfflinePaymentOperationsRouteImport.update({
+    id: '/offline-payment-operations',
+    path: '/offline-payment-operations',
+    getParentRoute: () => AdminRouteRoute,
+  } as any)
 const AdminFinancialLedgerRoute = AdminFinancialLedgerRouteImport.update({
   id: '/financial-ledger',
   path: '/financial-ledger',
@@ -1115,6 +1129,7 @@ export interface FileRoutesByFullPath {
   '/admin/document-engine': typeof AdminDocumentEngineRouteWithChildren
   '/admin/fees': typeof AdminFeesRoute
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
+  '/admin/offline-payment-operations': typeof AdminOfflinePaymentOperationsRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
@@ -1150,6 +1165,7 @@ export interface FileRoutesByFullPath {
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/e2e/marketplace-listings-mobile': typeof E2eMarketplaceListingsMobileRoute
   '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
@@ -1272,6 +1288,7 @@ export interface FileRoutesByTo {
   '/admin/$entitytype': typeof AdminEntitytypeRouteWithChildren
   '/admin/fees': typeof AdminFeesRoute
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
+  '/admin/offline-payment-operations': typeof AdminOfflinePaymentOperationsRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
@@ -1306,6 +1323,7 @@ export interface FileRoutesByTo {
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/e2e/marketplace-listings-mobile': typeof E2eMarketplaceListingsMobileRoute
   '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
@@ -1442,6 +1460,7 @@ export interface FileRoutesById {
   '/admin/document-engine': typeof AdminDocumentEngineRouteWithChildren
   '/admin/fees': typeof AdminFeesRoute
   '/admin/financial-ledger': typeof AdminFinancialLedgerRoute
+  '/admin/offline-payment-operations': typeof AdminOfflinePaymentOperationsRoute
   '/admin/originations': typeof AdminOriginationsRouteWithChildren
   '/admin/payment-operations': typeof AdminPaymentOperationsRoute
   '/admin/rotessa-reconciliation': typeof AdminRotessaReconciliationRoute
@@ -1477,6 +1496,7 @@ export interface FileRoutesById {
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/e2e/marketplace-listings-mobile': typeof E2eMarketplaceListingsMobileRoute
   '/e2e/marketplace-public-documents': typeof E2eMarketplacePublicDocumentsRoute
   '/e2e/session': typeof E2eSessionRoute
   '/e2e/switch-org': typeof E2eSwitchOrgRoute
@@ -1615,6 +1635,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine'
     | '/admin/fees'
     | '/admin/financial-ledger'
+    | '/admin/offline-payment-operations'
     | '/admin/originations'
     | '/admin/payment-operations'
     | '/admin/rotessa-reconciliation'
@@ -1650,6 +1671,7 @@ export interface FileRouteTypes {
     | '/demo/table'
     | '/demo/tanstack-query'
     | '/demo/workos'
+    | '/e2e/marketplace-listings-mobile'
     | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
@@ -1772,6 +1794,7 @@ export interface FileRouteTypes {
     | '/admin/$entitytype'
     | '/admin/fees'
     | '/admin/financial-ledger'
+    | '/admin/offline-payment-operations'
     | '/admin/originations'
     | '/admin/payment-operations'
     | '/admin/rotessa-reconciliation'
@@ -1806,6 +1829,7 @@ export interface FileRouteTypes {
     | '/demo/table'
     | '/demo/tanstack-query'
     | '/demo/workos'
+    | '/e2e/marketplace-listings-mobile'
     | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
@@ -1941,6 +1965,7 @@ export interface FileRouteTypes {
     | '/admin/document-engine'
     | '/admin/fees'
     | '/admin/financial-ledger'
+    | '/admin/offline-payment-operations'
     | '/admin/originations'
     | '/admin/payment-operations'
     | '/admin/rotessa-reconciliation'
@@ -1976,6 +2001,7 @@ export interface FileRouteTypes {
     | '/demo/table'
     | '/demo/tanstack-query'
     | '/demo/workos'
+    | '/e2e/marketplace-listings-mobile'
     | '/e2e/marketplace-public-documents'
     | '/e2e/session'
     | '/e2e/switch-org'
@@ -2129,6 +2155,7 @@ export interface RootRouteChildren {
   DemoTableRoute: typeof DemoTableRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   DemoWorkosRoute: typeof DemoWorkosRoute
+  E2eMarketplaceListingsMobileRoute: typeof E2eMarketplaceListingsMobileRoute
   E2eMarketplacePublicDocumentsRoute: typeof E2eMarketplacePublicDocumentsRoute
   E2eSessionRoute: typeof E2eSessionRoute
   E2eSwitchOrgRoute: typeof E2eSwitchOrgRoute
@@ -2385,6 +2412,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof E2eMarketplacePublicDocumentsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/e2e/marketplace-listings-mobile': {
+      id: '/e2e/marketplace-listings-mobile'
+      path: '/e2e/marketplace-listings-mobile'
+      fullPath: '/e2e/marketplace-listings-mobile'
+      preLoaderRoute: typeof E2eMarketplaceListingsMobileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/demo/workos': {
       id: '/demo/workos'
       path: '/demo/workos'
@@ -2628,6 +2662,13 @@ declare module '@tanstack/react-router' {
       path: '/originations'
       fullPath: '/admin/originations'
       preLoaderRoute: typeof AdminOriginationsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/offline-payment-operations': {
+      id: '/admin/offline-payment-operations'
+      path: '/offline-payment-operations'
+      fullPath: '/admin/offline-payment-operations'
+      preLoaderRoute: typeof AdminOfflinePaymentOperationsRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/financial-ledger': {
@@ -3474,6 +3515,7 @@ interface AdminRouteRouteChildren {
   AdminDocumentEngineRoute: typeof AdminDocumentEngineRouteWithChildren
   AdminFeesRoute: typeof AdminFeesRoute
   AdminFinancialLedgerRoute: typeof AdminFinancialLedgerRoute
+  AdminOfflinePaymentOperationsRoute: typeof AdminOfflinePaymentOperationsRoute
   AdminOriginationsRoute: typeof AdminOriginationsRouteWithChildren
   AdminPaymentOperationsRoute: typeof AdminPaymentOperationsRoute
   AdminRotessaReconciliationRoute: typeof AdminRotessaReconciliationRoute
@@ -3496,6 +3538,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminDocumentEngineRoute: AdminDocumentEngineRouteWithChildren,
   AdminFeesRoute: AdminFeesRoute,
   AdminFinancialLedgerRoute: AdminFinancialLedgerRoute,
+  AdminOfflinePaymentOperationsRoute: AdminOfflinePaymentOperationsRoute,
   AdminOriginationsRoute: AdminOriginationsRouteWithChildren,
   AdminPaymentOperationsRoute: AdminPaymentOperationsRoute,
   AdminRotessaReconciliationRoute: AdminRotessaReconciliationRoute,
@@ -3944,6 +3987,7 @@ const rootRouteChildren: RootRouteChildren = {
   DemoTableRoute: DemoTableRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   DemoWorkosRoute: DemoWorkosRoute,
+  E2eMarketplaceListingsMobileRoute: E2eMarketplaceListingsMobileRoute,
   E2eMarketplacePublicDocumentsRoute: E2eMarketplacePublicDocumentsRoute,
   E2eSessionRoute: E2eSessionRoute,
   E2eSwitchOrgRoute: E2eSwitchOrgRoute,

@@ -225,6 +225,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../deals/lawyerQueries.ts"),
 	"/convex/deals/lawyerMutations.ts": async () =>
 		await import("./../deals/lawyerMutations.ts"),
+	"/convex/deals/migrations.ts": async () =>
+		await import("./../deals/migrations.ts"),
 	"/convex/deals/mutations.ts": async () =>
 		await import("./../deals/mutations.ts"),
 	"/convex/deals/participantProjection.ts": async () =>
@@ -636,6 +638,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../payments/bankAccounts/validation.ts"),
 	"/convex/payments/adminDashboard/queries.ts": async () =>
 		await import("./../payments/adminDashboard/queries.ts"),
+	"/convex/payments/offlineOperations.ts": async () =>
+		await import("./../payments/offlineOperations.ts"),
 	"/convex/payments/scheduleReplacement/drafts.ts": async () =>
 		await import("./../payments/scheduleReplacement/drafts.ts"),
 	"/convex/payments/scheduleReplacement/apply.ts": async () =>

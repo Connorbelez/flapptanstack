@@ -1,3 +1,4 @@
+import { principalCentsToDollars } from "./marketplace-adapters";
 import {
 	MARKETPLACE_MORTGAGE_TYPES,
 	MARKETPLACE_PROPERTY_TYPES,
@@ -55,11 +56,15 @@ export function parseMarketplaceListingsSearch(
 	search: Record<string, unknown>
 ): MarketplaceListingsSearchState {
 	return {
+		availableMax: parseNumber(search.availableMax),
+		availableMin: parseNumber(search.availableMin),
 		maturityBefore:
 			typeof search.maturityBefore === "string" &&
 			search.maturityBefore.trim().length > 0
 				? search.maturityBefore.trim()
 				: undefined,
+		minimumInvestmentMax: parseNumber(search.minimumInvestmentMax),
+		minimumInvestmentMin: parseNumber(search.minimumInvestmentMin),
 		mortgageTypes: parseCsvEnum(
 			search.mortgageTypes,
 			MARKETPLACE_MORTGAGE_TYPES
@@ -106,7 +111,17 @@ export function marketplaceFiltersToSearchState(
 	currentSort: MarketplaceListingsSearchState["sort"]
 ): MarketplaceListingsSearchState {
 	return {
+		availableMax: filters?.availabilityPercent?.max,
+		availableMin: filters?.availabilityPercent?.min,
 		maturityBefore: filters?.maturityDate?.end,
+		minimumInvestmentMax:
+			filters?.minimumInvestmentAmount?.max === undefined
+				? undefined
+				: principalCentsToDollars(filters.minimumInvestmentAmount.max),
+		minimumInvestmentMin:
+			filters?.minimumInvestmentAmount?.min === undefined
+				? undefined
+				: principalCentsToDollars(filters.minimumInvestmentAmount.min),
 		mortgageTypes: filters?.mortgageTypes,
 		principalMax: filters?.principalAmount?.max,
 		principalMin: filters?.principalAmount?.min,

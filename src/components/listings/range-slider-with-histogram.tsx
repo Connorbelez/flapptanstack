@@ -15,6 +15,7 @@ interface RangeSliderWithHistogramProps {
 	bufferPercentage?: number;
 	className?: string;
 	defaultValue?: [number, number];
+	formatBucketLabel?: (bucket: { end: number; start: number }) => string;
 	formatValue?: (value: number) => string;
 	histogramData?: number[];
 	inRangeClass?: string;
@@ -44,6 +45,7 @@ const RangeSliderWithHistogram: React.FC<RangeSliderWithHistogramProps> = ({
 	histogramData,
 	onValueChange,
 	title = "Budget",
+	formatBucketLabel,
 	formatValue = (value) => `$${value.toLocaleString()}`,
 	minLabel = "Minimum",
 	maxLabel = "Maximum",
@@ -94,7 +96,10 @@ const RangeSliderWithHistogram: React.FC<RangeSliderWithHistogramProps> = ({
 	const valueClass = isCompact
 		? "font-medium text-primary text-sm"
 		: "text-primary text-xl";
-	const histogramHeight = isCompact ? "h-28" : "h-32";
+	const histogramHeight = isCompact ? "h-14 sm:h-28" : "h-32";
+	const getBucketLabel = (bucket: { end: number; start: number }) =>
+		formatBucketLabel?.(bucket) ??
+		`${formatValue(bucket.start)} – ${formatValue(bucket.end)}`;
 
 	return (
 		<TooltipProvider delayDuration={0}>
@@ -140,7 +145,10 @@ const RangeSliderWithHistogram: React.FC<RangeSliderWithHistogramProps> = ({
 											<p>
 												Count: {count}
 												<br />
-												{formatValue(bucketStart)} – {formatValue(bucketEnd)}
+												{getBucketLabel({
+													end: bucketEnd,
+													start: bucketStart,
+												})}
 											</p>
 										)}
 									</TooltipContent>

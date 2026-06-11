@@ -42,9 +42,16 @@ export interface ListingComparable {
 	address: string;
 	date: string;
 	distance: string;
+	evidenceAssets?: ListingComparableEvidenceAsset[];
 	id: string;
 	price: string;
 	squareFeet: string;
+}
+
+export interface ListingComparableEvidenceAsset {
+	kind: "file" | "image";
+	label: string;
+	url: string;
 }
 
 export interface ListingBorrowerSignal {
@@ -77,6 +84,12 @@ export interface ListingDocumentItem {
 	label: string;
 	meta: string;
 	url?: string | null;
+}
+
+export interface ListingAdminQuickLink {
+	entityType: string;
+	id: string;
+	label: string;
 }
 
 export interface ListingLawyerOption {
@@ -153,9 +166,11 @@ export interface ListingSimilarCard {
 }
 
 export interface ListingDetailData {
+	adminQuickLinks?: ListingAdminQuickLink[];
 	appraisal: {
 		asIf: ListingAppraisalRecord;
 		asIs: ListingAppraisalRecord;
+		hasAsIf?: boolean;
 	};
 	atAGlance: ListingAtAGlanceItem[];
 	badges: ListingBadge[];

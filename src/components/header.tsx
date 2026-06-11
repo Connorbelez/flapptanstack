@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { EMPTY_ADMIN_DETAIL_SEARCH } from "#/lib/admin-detail-search";
+import { buildAdminNavigationHref } from "#/lib/portal/admin-navigation";
+import type { RootPortalContext } from "#/lib/portal/host-resolution";
 import ThemeToggle from "./theme-toggle";
 import WorkOSHeader from "./workos-user.tsx";
 
@@ -72,58 +73,36 @@ const demoSections: DemoSection[] = [
 const demoLinkClassName =
 	"block rounded-lg px-3 py-2 text-sm !text-[var(--sea-ink-soft)] no-underline transition hover:bg-[var(--link-bg-hover)] hover:!text-[var(--sea-ink)]";
 
-export default function Header() {
+interface HeaderProps {
+	portalContext: Pick<RootPortalContext, "canonicalHost">;
+}
+
+export default function Header({ portalContext }: HeaderProps) {
+	const adminHref = buildAdminNavigationHref(portalContext.canonicalHost);
+
 	return (
 		<header className="sticky top-0 z-50 shrink-0 border-(--line) border-b bg-(--header-bg) px-4 backdrop-blur-lg">
-			<nav className="page-wrap flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 py-3 sm:py-4">
-				<h2 className="m-0 shrink-0 font-semibold text-base tracking-tight">
+			<nav className="page-wrap flex w-full flex-wrap items-center gap-x-3 gap-y-2 py-2.5 sm:justify-center sm:py-4">
+				<h2 className="order-1 m-0 shrink-0 font-semibold text-base tracking-tight">
 					<Link
-						className="!text-[var(--sea-ink)] inline-flex items-center gap-2 rounded-full border border-(--chip-line) bg-(--chip-bg) px-3 py-1.5 text-sm no-underline shadow-[0_8px_24px_rgba(30,90,72,0.08)] sm:px-4 sm:py-2"
+						className="!text-[var(--sea-ink)] inline-flex items-center gap-2 rounded-full px-0 py-1.5 font-bold text-[17px] no-underline sm:border sm:border-(--chip-line) sm:bg-(--chip-bg) sm:px-4 sm:py-2 sm:text-sm sm:shadow-[0_8px_24px_rgba(30,90,72,0.08)]"
 						to="/"
 						viewTransition
 					>
 						<span className="h-2 w-2 rounded-full bg-[linear-gradient(90deg,#56c6be,#7ed3bf)]" />
-						TanStack Start
+						FairLend
 					</Link>
 				</h2>
 
-				<div className="ml-auto flex items-center gap-1.5 sm:ml-0 sm:gap-2">
-					<a
-						className="!text-[var(--sea-ink-soft)] hover:!text-[var(--sea-ink)] hidden rounded-xl p-2 transition hover:bg-(--link-bg-hover) sm:block"
-						href="https://x.com/tan_stack"
-						rel="noreferrer"
-						target="_blank"
-					>
-						<span className="sr-only">Follow TanStack on X</span>
-						<svg aria-hidden="true" height="24" viewBox="0 0 16 16" width="24">
-							<path
-								d="M12.6 1h2.2L10 6.48 15.64 15h-4.41L7.78 9.82 3.23 15H1l5.14-5.84L.72 1h4.52l3.12 4.73L12.6 1zm-.77 12.67h1.22L4.57 2.26H3.26l8.57 11.41z"
-								fill="currentColor"
-							/>
-						</svg>
-					</a>
-					<a
-						className="!text-[var(--sea-ink-soft)] hover:!text-[var(--sea-ink)] hidden rounded-xl p-2 transition hover:bg-(--link-bg-hover) sm:block"
-						href="https://github.com/TanStack"
-						rel="noreferrer"
-						target="_blank"
-					>
-						<span className="sr-only">Go to TanStack GitHub</span>
-						<svg aria-hidden="true" height="24" viewBox="0 0 16 16" width="24">
-							<path
-								d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"
-								fill="currentColor"
-							/>
-						</svg>
-					</a>
-
+				<div className="order-2 ml-auto flex shrink-0 items-center gap-2 sm:order-3 sm:ml-auto">
 					<ThemeToggle />
+					<WorkOSHeader />
 				</div>
 
-				<div className="order-3 flex w-full flex-wrap items-center gap-x-4 gap-y-1 pb-1 font-semibold text-sm sm:order-2 sm:w-auto sm:flex-nowrap sm:pb-0">
+				<div className="order-3 -mx-4 flex w-[calc(100%+2rem)] items-center gap-x-4 overflow-x-auto px-4 pb-1 font-semibold text-sm sm:order-2 sm:mx-0 sm:w-auto sm:flex-nowrap sm:overflow-visible sm:px-0 sm:pb-0">
 					<Link
 						activeProps={{ className: "nav-link is-active" }}
-						className="nav-link"
+						className="nav-link shrink-0"
 						to="/"
 						viewTransition
 					>
@@ -131,42 +110,36 @@ export default function Header() {
 					</Link>
 					<Link
 						activeProps={{ className: "nav-link is-active" }}
-						className="nav-link"
+						className="nav-link shrink-0"
 						to="/listings"
 						viewTransition
 					>
 						Listings
 					</Link>
-					<Link
-						activeProps={{ className: "nav-link is-active" }}
-						className="nav-link"
-						search={EMPTY_ADMIN_DETAIL_SEARCH}
-						to="/admin"
-						viewTransition
-					>
+					<a className="nav-link shrink-0" href={adminHref}>
 						Admin
-					</Link>
+					</a>
 					<Link
 						activeProps={{ className: "nav-link is-active" }}
-						className="nav-link"
+						className="nav-link hidden shrink-0 sm:inline-flex"
 						to="/about"
 						viewTransition
 					>
 						About
 					</Link>
 					<a
-						className="nav-link"
+						className="nav-link hidden shrink-0 sm:inline-flex"
 						href="https://tanstack.com/start/latest/docs/framework/react/overview"
 						rel="noreferrer"
 						target="_blank"
 					>
 						Docs
 					</a>
-					<details className="relative w-full sm:w-auto">
+					<details className="group relative hidden sm:block sm:w-auto">
 						<summary className="nav-link cursor-pointer list-none">
 							Demos
 						</summary>
-						<div className="mt-2 max-h-[70vh] min-w-56 overflow-y-auto rounded-xl border border-(--line) bg-(--header-bg) p-2 shadow-lg sm:absolute sm:right-0">
+						<div className="mt-2 hidden max-h-[70vh] min-w-56 overflow-y-auto rounded-xl border border-(--line) bg-(--header-bg) p-2 shadow-lg group-open:block sm:absolute sm:right-0">
 							{demoSections.map((section) => (
 								<div key={section.label}>
 									<div className="px-3 pt-2 pb-1 font-semibold text-[var(--sea-ink-soft)] text-xs uppercase tracking-wider">
@@ -200,8 +173,6 @@ export default function Header() {
 							))}
 						</div>
 					</details>
-
-					<WorkOSHeader />
 				</div>
 			</nav>
 		</header>

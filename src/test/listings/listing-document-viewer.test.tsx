@@ -78,6 +78,56 @@ describe("listing document viewer", () => {
 		).toBe("https://example.com/term-sheet.docx");
 	});
 
+	it("renders image public documents inline", () => {
+		const queryClient = new QueryClient();
+		const document: ListingDocumentItem = {
+			assetId: "asset-survey-image",
+			contentType: "image/png",
+			description: "Survey image.",
+			fileName: "survey.png",
+			id: "asset-survey-image",
+			kind: "other",
+			label: "Survey",
+			meta: "Public Static",
+			url: "https://example.com/survey.png",
+		};
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<ListingDocumentViewer document={document} listingId="listing_1" />
+			</QueryClientProvider>
+		);
+
+		expect(
+			screen.getByRole("img", { name: "Survey preview" }).getAttribute("src")
+		).toBe("https://example.com/survey.png");
+	});
+
+	it("embeds url-backed public documents when content metadata is missing", () => {
+		const queryClient = new QueryClient();
+		const document: ListingDocumentItem = {
+			assetId: "asset-public-static",
+			contentType: null,
+			description: "Public static package.",
+			fileName: "t2",
+			id: "asset-public-static",
+			kind: "other",
+			label: "t2",
+			meta: "Public Static",
+			url: "https://example.com/public-static",
+		};
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<ListingDocumentViewer document={document} listingId="listing_1" />
+			</QueryClientProvider>
+		);
+
+		expect(screen.getByTitle("t2 preview").getAttribute("src")).toBe(
+			"https://example.com/public-static"
+		);
+	});
+
 	it("routes pdf documents to the inline pdf viewer", () => {
 		const queryClient = new QueryClient();
 		const document: ListingDocumentItem = {

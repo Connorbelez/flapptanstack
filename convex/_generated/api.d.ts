@@ -116,6 +116,7 @@ import type * as deals_envelopeWebhooks from "../deals/envelopeWebhooks.js";
 import type * as deals_envelopes from "../deals/envelopes.js";
 import type * as deals_lawyerMutations from "../deals/lawyerMutations.js";
 import type * as deals_lawyerQueries from "../deals/lawyerQueries.js";
+import type * as deals_migrations from "../deals/migrations.js";
 import type * as deals_mutations from "../deals/mutations.js";
 import type * as deals_participantProjection from "../deals/participantProjection.js";
 import type * as deals_paymentProofs from "../deals/paymentProofs.js";
@@ -272,6 +273,7 @@ import type * as listings_lifecycle from "../listings/lifecycle.js";
 import type * as listings_marketplace from "../listings/marketplace.js";
 import type * as listings_marketplaceShared from "../listings/marketplaceShared.js";
 import type * as listings_math from "../listings/math.js";
+import type * as listings_paymentHistory from "../listings/paymentHistory.js";
 import type * as listings_portalProjection from "../listings/portalProjection.js";
 import type * as listings_portalQueries from "../listings/portalQueries.js";
 import type * as listings_portalVisibility from "../listings/portalVisibility.js";
@@ -382,6 +384,7 @@ import type * as payments_obligations_generate from "../payments/obligations/gen
 import type * as payments_obligations_generateImpl from "../payments/obligations/generateImpl.js";
 import type * as payments_obligations_monitoring from "../payments/obligations/monitoring.js";
 import type * as payments_obligations_queries from "../payments/obligations/queries.js";
+import type * as payments_offlineOperations from "../payments/offlineOperations.js";
 import type * as payments_origination_bootstrap from "../payments/origination/bootstrap.js";
 import type * as payments_payout_adminPayout from "../payments/payout/adminPayout.js";
 import type * as payments_payout_batchPayout from "../payments/payout/batchPayout.js";
@@ -397,6 +400,7 @@ import type * as payments_recurringSchedules_poller from "../payments/recurringS
 import type * as payments_recurringSchedules_providers_registry from "../payments/recurringSchedules/providers/registry.js";
 import type * as payments_recurringSchedules_providers_rotessaRecurring from "../payments/recurringSchedules/providers/rotessaRecurring.js";
 import type * as payments_recurringSchedules_queries from "../payments/recurringSchedules/queries.js";
+import type * as payments_recurringSchedules_repair from "../payments/recurringSchedules/repair.js";
 import type * as payments_recurringSchedules_rotessaCustomerReference from "../payments/recurringSchedules/rotessaCustomerReference.js";
 import type * as payments_recurringSchedules_types from "../payments/recurringSchedules/types.js";
 import type * as payments_recurringSchedules_validators from "../payments/recurringSchedules/validators.js";
@@ -621,6 +625,7 @@ declare const fullApi: ApiFromModules<{
   "deals/envelopes": typeof deals_envelopes;
   "deals/lawyerMutations": typeof deals_lawyerMutations;
   "deals/lawyerQueries": typeof deals_lawyerQueries;
+  "deals/migrations": typeof deals_migrations;
   "deals/mutations": typeof deals_mutations;
   "deals/participantProjection": typeof deals_participantProjection;
   "deals/paymentProofs": typeof deals_paymentProofs;
@@ -777,6 +782,7 @@ declare const fullApi: ApiFromModules<{
   "listings/marketplace": typeof listings_marketplace;
   "listings/marketplaceShared": typeof listings_marketplaceShared;
   "listings/math": typeof listings_math;
+  "listings/paymentHistory": typeof listings_paymentHistory;
   "listings/portalProjection": typeof listings_portalProjection;
   "listings/portalQueries": typeof listings_portalQueries;
   "listings/portalVisibility": typeof listings_portalVisibility;
@@ -887,6 +893,7 @@ declare const fullApi: ApiFromModules<{
   "payments/obligations/generateImpl": typeof payments_obligations_generateImpl;
   "payments/obligations/monitoring": typeof payments_obligations_monitoring;
   "payments/obligations/queries": typeof payments_obligations_queries;
+  "payments/offlineOperations": typeof payments_offlineOperations;
   "payments/origination/bootstrap": typeof payments_origination_bootstrap;
   "payments/payout/adminPayout": typeof payments_payout_adminPayout;
   "payments/payout/batchPayout": typeof payments_payout_batchPayout;
@@ -902,6 +909,7 @@ declare const fullApi: ApiFromModules<{
   "payments/recurringSchedules/providers/registry": typeof payments_recurringSchedules_providers_registry;
   "payments/recurringSchedules/providers/rotessaRecurring": typeof payments_recurringSchedules_providers_rotessaRecurring;
   "payments/recurringSchedules/queries": typeof payments_recurringSchedules_queries;
+  "payments/recurringSchedules/repair": typeof payments_recurringSchedules_repair;
   "payments/recurringSchedules/rotessaCustomerReference": typeof payments_recurringSchedules_rotessaCustomerReference;
   "payments/recurringSchedules/types": typeof payments_recurringSchedules_types;
   "payments/recurringSchedules/validators": typeof payments_recurringSchedules_validators;

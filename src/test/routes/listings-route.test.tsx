@@ -3,7 +3,7 @@
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +18,8 @@ import { ListingsLayout } from "#/routes/listings/route";
 import { Route as RootRoute } from "#/routes/__root";
 
 vi.mock("@tanstack/react-query", () => ({
-	useSuspenseQuery: vi.fn(),
+	useQuery: vi.fn(),
+	useQueryClient: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", async () => {
@@ -97,10 +98,13 @@ describe("public listings route", () => {
 			},
 		} as never);
 		vi.mocked(useNavigate).mockReturnValue(navigate);
+		vi.mocked(useQueryClient).mockReturnValue({
+			getQueryData: vi.fn(),
+		} as never);
 		vi.mocked(marketplaceListingsQueryOptions).mockReturnValue(
 			LIST_QUERY_OPTIONS as never
 		);
-		vi.mocked(useSuspenseQuery).mockReturnValue({
+		vi.mocked(useQuery).mockReturnValue({
 			data: {
 				continueCursor: null,
 				effectiveFilters: {
@@ -122,7 +126,7 @@ describe("public listings route", () => {
 			PORTAL_ID,
 			search
 		);
-		expect(useSuspenseQuery).toHaveBeenCalledWith(LIST_QUERY_OPTIONS);
+		expect(useQuery).toHaveBeenCalled();
 		expect(MarketplaceListingsPage).toHaveBeenCalled();
 
 		const props = vi.mocked(MarketplaceListingsPage).mock.calls[0]?.[0];

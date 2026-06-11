@@ -62,6 +62,7 @@ interface DealPackageViewerContext {
 }
 
 interface SignatoryParticipant {
+	authId?: string;
 	email: string;
 	name: string;
 	platformRole: string;
@@ -130,6 +131,7 @@ interface ParticipantSnapshot {
 	dealParticipants: DealParticipantProjection;
 	dealStatus: string;
 	latestValuationSnapshot: Doc<"mortgageValuationSnapshots"> | null;
+	lawyerUserId?: Id<"users">;
 	listing?: Doc<"listings"> | null;
 	mortgage: Doc<"mortgages">;
 	property: Doc<"properties">;
@@ -461,6 +463,9 @@ async function buildParticipantSnapshot(
 			.collect(),
 		resolveLatestValuationSnapshot(ctx, mortgage._id),
 	]);
+	const lawyerUser = dealParticipants.lawyer.authId
+		? await getUserByAuthId(ctx, dealParticipants.lawyer.authId)
+		: null;
 
 	const borrowers = (
 		await Promise.all(
@@ -497,6 +502,7 @@ async function buildParticipantSnapshot(
 		brokerOfRecord,
 		dealStatus: deal.status,
 		dealParticipants,
+		lawyerUserId: lawyerUser?._id ?? undefined,
 		latestValuationSnapshot,
 		listing,
 		mortgage,
@@ -522,17 +528,12 @@ function projectionContact(participant: {
 }
 
 const LEGACY_TEMPLATE_SIGNATORY_ROLE_ALIASES: Record<string, string> = {
-	borrower: "primary_borrower",
-	borrower_lawyer: "primary_lawyer",
-	borrower_primary: "primary_borrower",
-	borrower_co_1: "co_borrower_1",
-	borrower_co_2: "co_borrower_2",
+	borrower: "borrower_primary",
+	borrower_lawyer: "lawyer_primary",
 	fairlend_broker: "broker_of_record",
-	lawyer_primary: "primary_lawyer",
-	lender: "purchasing_lender",
-	lender_lawyer: "primary_lawyer",
-	lender_primary: "purchasing_lender",
-	seller_lawyer: "primary_lawyer",
+	lender: "lender_primary",
+	lender_lawyer: "lawyer_primary",
+	seller_lawyer: "lawyer_primary",
 };
 
 function hasResolvedSignatoryContact(entry: SignatoryMapping): boolean {
@@ -563,18 +564,9 @@ function appendLegacyTemplateRoleAliases<T extends SignatoryMapping>(
 }
 
 function buildDealVariableBag(snapshot: ParticipantSnapshot) {
-	const purchasingLender = projectionContact(
-		snapshot.dealParticipants.purchasing_lender
-	);
-	const sellingLender = projectionContact(
-		snapshot.dealParticipants.selling_lender
-	);
-	const borrowerPrimary = projectionContact(
-		snapshot.dealParticipants.primary_borrower
-	);
-	const lawyerPrimary = projectionContact(
-		snapshot.dealParticipants.primary_lawyer
-	);
+	const lenderPrimary = projectionContact(snapshot.dealParticipants.buyer);
+	const borrowerPrimary = projectionContact(snapshot.dealParticipants.seller);
+	const lawyerPrimary = projectionContact(snapshot.dealParticipants.lawyer);
 	const coBorrowers = snapshot.borrowers.filter(
 		(borrower) => borrower.role === "co_borrower"
 	);
@@ -583,20 +575,27 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 		(snapshot.mortgage.principal * selectedFractionUnits) / 10_000
 	);
 
-	const bag = {
+	return {
 		assigned_broker_email: snapshot.assignedBroker?.email ?? "",
 		assigned_broker_full_name: snapshot.assignedBroker?.fullName ?? "",
+		borrower_co_1_email: coBorrowers[0]?.email ?? "",
+		borrower_co_1_full_name: coBorrowers[0]?.fullName ?? "",
+		borrower_co_2_email: coBorrowers[1]?.email ?? "",
+		borrower_co_2_full_name: coBorrowers[1]?.fullName ?? "",
+		borrower_primary_email: borrowerPrimary?.email ?? "",
+		borrower_primary_full_name: borrowerPrimary?.fullName ?? "",
 		broker_of_record_email: snapshot.brokerOfRecord.email,
 		broker_of_record_full_name: snapshot.brokerOfRecord.fullName,
-		co_borrower_1_email: coBorrowers[0]?.email ?? "",
-		co_borrower_1_full_name: coBorrowers[0]?.fullName ?? "",
-		co_borrower_2_email: coBorrowers[1]?.email ?? "",
-		co_borrower_2_full_name: coBorrowers[1]?.fullName ?? "",
 		deal_investment_amount: String(investmentAmount),
 		deal_selected_fraction_units: String(selectedFractionUnits),
+		lawyer_primary_email: lawyerPrimary?.email ?? "",
+		lawyer_primary_full_name: lawyerPrimary?.fullName ?? "",
 		listing_description: snapshot.listing?.description ?? "",
 		listing_marketplace_copy: snapshot.listing?.marketplaceCopy ?? "",
 		listing_title: snapshot.listing?.title ?? "",
+		lender_primary_email: lenderPrimary?.email ?? "",
+		lender_primary_full_name: lenderPrimary?.fullName ?? "",
+		lender_primary_system_id: snapshot.dealParticipants.buyer.userId ?? "",
 		mortgage_amortization_months: String(snapshot.mortgage.amortizationMonths),
 		mortgage_amount: String(snapshot.mortgage.principal),
 		mortgage_first_payment_date: snapshot.mortgage.firstPaymentDate,
@@ -621,75 +620,32 @@ function buildDealVariableBag(snapshot: ParticipantSnapshot) {
 		valuation_value_as_is: String(
 			snapshot.latestValuationSnapshot?.valueAsIs ?? 0
 		),
-		primary_borrower_email: borrowerPrimary?.email ?? "",
-		primary_borrower_full_name: borrowerPrimary?.fullName ?? "",
-		primary_lawyer_email: lawyerPrimary?.email ?? "",
-		primary_lawyer_full_name: lawyerPrimary?.fullName ?? "",
-		purchasing_lender_email: purchasingLender?.email ?? "",
-		purchasing_lender_full_name: purchasingLender?.fullName ?? "",
-		purchasing_lender_system_id:
-			snapshot.dealParticipants.purchasing_lender.userId ?? "",
-		selling_lender_email: sellingLender?.email ?? "",
-		selling_lender_full_name: sellingLender?.fullName ?? "",
 		test_str_n72b_pv2: "Demo package value",
-	};
-
-	return {
-		...bag,
-		borrower_co_1_email: bag.co_borrower_1_email,
-		borrower_co_1_full_name: bag.co_borrower_1_full_name,
-		borrower_co_2_email: bag.co_borrower_2_email,
-		borrower_co_2_full_name: bag.co_borrower_2_full_name,
-		borrower_primary_email: bag.primary_borrower_email,
-		borrower_primary_full_name: bag.primary_borrower_full_name,
-		lawyer_primary_email: bag.primary_lawyer_email,
-		lawyer_primary_full_name: bag.primary_lawyer_full_name,
-		lender_primary_email: bag.purchasing_lender_email,
-		lender_primary_full_name: bag.purchasing_lender_full_name,
-		lender_primary_system_id: bag.purchasing_lender_system_id,
 	};
 }
 
 function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
-	const purchasingLender = projectionContact(
-		snapshot.dealParticipants.purchasing_lender
-	);
-	const sellingLender = projectionContact(
-		snapshot.dealParticipants.selling_lender
-	);
-	const borrowerPrimary = projectionContact(
-		snapshot.dealParticipants.primary_borrower
-	);
-	const lawyerPrimary = projectionContact(
-		snapshot.dealParticipants.primary_lawyer
-	);
+	const lenderPrimary = projectionContact(snapshot.dealParticipants.buyer);
+	const borrowerPrimary = projectionContact(snapshot.dealParticipants.seller);
+	const lawyerPrimary = projectionContact(snapshot.dealParticipants.lawyer);
 	const coBorrowers = snapshot.borrowers.filter(
 		(borrower) => borrower.role === "co_borrower"
 	);
 
 	const mappings: SignatoryMapping[] = [
-		...(purchasingLender
+		...(lenderPrimary
 			? [
 					{
-						platformRole: "purchasing_lender",
-						name: purchasingLender.fullName,
-						email: purchasingLender.email,
-					},
-				]
-			: []),
-		...(sellingLender
-			? [
-					{
-						platformRole: "selling_lender",
-						name: sellingLender.fullName,
-						email: sellingLender.email,
+						platformRole: "lender_primary",
+						name: lenderPrimary.fullName,
+						email: lenderPrimary.email,
 					},
 				]
 			: []),
 		...(borrowerPrimary
 			? [
 					{
-						platformRole: "primary_borrower",
+						platformRole: "borrower_primary",
 						name: borrowerPrimary.fullName,
 						email: borrowerPrimary.email,
 					},
@@ -698,7 +654,7 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 		...(coBorrowers[0]
 			? [
 					{
-						platformRole: "co_borrower_1",
+						platformRole: "borrower_co_1",
 						name: coBorrowers[0].fullName,
 						email: coBorrowers[0].email,
 					},
@@ -707,7 +663,7 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 		...(coBorrowers[1]
 			? [
 					{
-						platformRole: "co_borrower_2",
+						platformRole: "borrower_co_2",
 						name: coBorrowers[1].fullName,
 						email: coBorrowers[1].email,
 					},
@@ -730,7 +686,7 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 		...(lawyerPrimary
 			? [
 					{
-						platformRole: "primary_lawyer",
+						platformRole: "lawyer_primary",
 						name: lawyerPrimary.fullName,
 						email: lawyerPrimary.email,
 					},
@@ -744,18 +700,9 @@ function buildSignatoryMappings(snapshot: ParticipantSnapshot) {
 function buildSignatoryParticipants(
 	snapshot: ParticipantSnapshot
 ): SignatoryParticipant[] {
-	const purchasingLender = projectionContact(
-		snapshot.dealParticipants.purchasing_lender
-	);
-	const sellingLender = projectionContact(
-		snapshot.dealParticipants.selling_lender
-	);
-	const borrowerPrimary = projectionContact(
-		snapshot.dealParticipants.primary_borrower
-	);
-	const lawyerPrimary = projectionContact(
-		snapshot.dealParticipants.primary_lawyer
-	);
+	const lenderPrimary = projectionContact(snapshot.dealParticipants.buyer);
+	const borrowerPrimary = projectionContact(snapshot.dealParticipants.seller);
+	const lawyerPrimary = projectionContact(snapshot.dealParticipants.lawyer);
 	const primaryBorrower =
 		snapshot.borrowers.find((borrower) => borrower.role === "primary") ??
 		snapshot.borrowers[0];
@@ -764,36 +711,26 @@ function buildSignatoryParticipants(
 	);
 
 	const participants: SignatoryParticipant[] = [
-		...(purchasingLender
+		...(lenderPrimary
 			? [
 					{
-						platformRole: "purchasing_lender",
-						name: purchasingLender.fullName,
-						email: purchasingLender.email,
-						userId:
-							snapshot.dealParticipants.purchasing_lender.userId ?? undefined,
-					},
-				]
-			: []),
-		...(sellingLender
-			? [
-					{
-						platformRole: "selling_lender",
-						name: sellingLender.fullName,
-						email: sellingLender.email,
-						userId:
-							snapshot.dealParticipants.selling_lender.userId ?? undefined,
+						platformRole: "lender_primary",
+						name: lenderPrimary.fullName,
+						email: lenderPrimary.email,
+						authId: snapshot.dealParticipants.buyer.authId,
+						userId: snapshot.dealParticipants.buyer.userId ?? undefined,
 					},
 				]
 			: []),
 		...(borrowerPrimary
 			? [
 					{
-						platformRole: "primary_borrower",
+						platformRole: "borrower_primary",
 						name: borrowerPrimary.fullName,
 						email: borrowerPrimary.email,
+						authId: snapshot.dealParticipants.seller.authId,
 						userId:
-							snapshot.dealParticipants.primary_borrower.userId ??
+							snapshot.dealParticipants.seller.userId ??
 							primaryBorrower?.userId,
 					},
 				]
@@ -801,7 +738,7 @@ function buildSignatoryParticipants(
 		...(coBorrowers[0]
 			? [
 					{
-						platformRole: "co_borrower_1",
+						platformRole: "borrower_co_1",
 						name: coBorrowers[0].fullName,
 						email: coBorrowers[0].email,
 						userId: coBorrowers[0].userId,
@@ -811,7 +748,7 @@ function buildSignatoryParticipants(
 		...(coBorrowers[1]
 			? [
 					{
-						platformRole: "co_borrower_2",
+						platformRole: "borrower_co_2",
 						name: coBorrowers[1].fullName,
 						email: coBorrowers[1].email,
 						userId: coBorrowers[1].userId,
@@ -837,9 +774,11 @@ function buildSignatoryParticipants(
 		...(lawyerPrimary
 			? [
 					{
-						platformRole: "primary_lawyer",
+						platformRole: "lawyer_primary",
 						name: lawyerPrimary.fullName,
 						email: lawyerPrimary.email,
+						authId: snapshot.dealParticipants.lawyer.authId ?? undefined,
+						userId: snapshot.lawyerUserId,
 					},
 				]
 			: []),
@@ -2689,6 +2628,48 @@ function getWorkItemSourceBlueprintSnapshot(
 	return workItem.instance.sourceBlueprintSnapshot;
 }
 
+function isSnapshotGroupSignableWorkItem(
+	workItem: PackageWorkItem
+): workItem is Extract<PackageWorkItem, { type: "snapshot" }> {
+	const snapshot = getWorkItemSourceBlueprintSnapshot(workItem);
+	return (
+		workItem.type === "snapshot" &&
+		snapshot.class === "private_templated_signable" &&
+		snapshot.packageItemKind === "group" &&
+		Boolean(snapshot.envelopeBoundaryKey)
+	);
+}
+
+function requireFirstWorkItem(workItems: PackageWorkItem[]) {
+	const first = workItems[0];
+	if (!first) {
+		throw new ConvexError("Package group has no work items");
+	}
+	return first;
+}
+
+function groupEnvelopeDisplayName(workItems: PackageWorkItem[]) {
+	const firstName = getWorkItemSourceBlueprintSnapshot(
+		requireFirstWorkItem(workItems)
+	).displayName;
+	return firstName.includes(" - ")
+		? (firstName.split(" - ")[0] ?? firstName)
+		: firstName;
+}
+
+function buildGroupEnvelopeSourceSnapshot(
+	workItems: PackageWorkItem[]
+): DealDocumentSourceBlueprintSnapshot {
+	const first = getWorkItemSourceBlueprintSnapshot(
+		requireFirstWorkItem(workItems)
+	);
+	return {
+		...first,
+		displayName: groupEnvelopeDisplayName(workItems),
+		packageKey: first.envelopeBoundaryKey ?? first.packageKey,
+	};
+}
+
 function getWorkItemSourceBlueprintId(workItem: PackageWorkItem) {
 	if (workItem.type === "snapshot") {
 		return workItem.snapshot.sourceBlueprintId;
@@ -2865,6 +2846,15 @@ async function insertGeneratedDocumentRecord(
 	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot,
 	args: {
 		documensoEnvelopeId?: string;
+		metadataSnapshot?: {
+			signatoryMapping: Array<{
+				email: string;
+				name: string;
+				platformRole: string;
+			}>;
+			signatureRecipients?: SignatureProviderRecipientInput[];
+			variables: Record<string, string>;
+		};
 		pdfRef: Id<"_storage">;
 		signingStatus?: GeneratedDocumentRow["signingStatus"];
 		templateVersionUsed: number;
@@ -2881,8 +2871,14 @@ async function insertGeneratedDocumentRecord(
 			documensoEnvelopeId: args.documensoEnvelopeId,
 			groupId: undefined,
 			metadata: buildGeneratedDocumentMetadata({
+				dealId: runtime.dealId,
+				metadataSnapshot: args.metadataSnapshot,
+				mortgageId: runtime.mortgageId,
 				packageId: runtime.packageId,
 				sourceBlueprintId: getWorkItemSourceBlueprintId(workItem),
+				sourceBlueprintSnapshot,
+				templateVersionUsed:
+					sourceBlueprintSnapshot.templateVersion ?? args.templateVersionUsed,
 			}),
 			name: sourceBlueprintSnapshot.displayName,
 			pdfStorageId: args.pdfRef,
@@ -3007,14 +3003,72 @@ function applySignatoryMappingOverrides(args: {
 }
 
 function buildGeneratedDocumentMetadata(args: {
+	dealId: Id<"deals">;
+	metadataSnapshot?: {
+		signatoryMapping: Array<{
+			email: string;
+			name: string;
+			platformRole: string;
+		}>;
+		signatureRecipients?: SignatureProviderRecipientInput[];
+		variables: Record<string, string>;
+	};
+	mortgageId: Id<"mortgages">;
 	packageId: Id<"dealDocumentPackages">;
 	sourceBlueprintId?: Id<"mortgageDocumentBlueprints">;
+	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot;
+	templateVersionUsed: number;
 }) {
+	const signatureRecipients = args.metadataSnapshot?.signatureRecipients ?? [];
 	return {
 		packageId: String(args.packageId),
 		sourceBlueprintId: args.sourceBlueprintId
 			? String(args.sourceBlueprintId)
 			: undefined,
+		interpolation: args.metadataSnapshot
+			? {
+					variables: Object.fromEntries(
+						Object.entries(args.metadataSnapshot.variables).map(
+							([key, value]) => [
+								key,
+								{
+									source: "deal_package_runtime",
+									value,
+								},
+							]
+						)
+					),
+				}
+			: undefined,
+		preflight: {
+			documensoRecipientCount: signatureRecipients.length,
+			requiredSignatoryPlatformRoles: signatureRecipients.map(
+				(recipient) => recipient.platformRole
+			),
+			signableFieldCount: signatureRecipients.reduce(
+				(total, recipient) => total + recipient.fields.length,
+				0
+			),
+			signatoryMapping:
+				args.metadataSnapshot?.signatoryMapping.map((signatory) => ({
+					email: signatory.email,
+					name: signatory.name,
+					platformRole: signatory.platformRole,
+				})) ?? [],
+		},
+		provenance: {
+			dealId: String(args.dealId),
+			mortgageId: String(args.mortgageId),
+			packageId: String(args.packageId),
+			sourceBlueprintId: args.sourceBlueprintId
+				? String(args.sourceBlueprintId)
+				: undefined,
+			sourceBlueprintSnapshot: args.sourceBlueprintSnapshot,
+			templateId: args.sourceBlueprintSnapshot.templateId
+				? String(args.sourceBlueprintSnapshot.templateId)
+				: undefined,
+			templateVersionUsed: args.templateVersionUsed,
+		},
 	};
 }
 
@@ -3062,6 +3116,15 @@ async function createGeneratedSuccessInstance(
 	workItem: PackageWorkItem,
 	sourceBlueprintSnapshot: DealDocumentSourceBlueprintSnapshot,
 	args: {
+		metadataSnapshot?: {
+			signatoryMapping: Array<{
+				email: string;
+				name: string;
+				platformRole: string;
+			}>;
+			signatureRecipients?: SignatureProviderRecipientInput[];
+			variables: Record<string, string>;
+		};
 		pdfRef: Id<"_storage">;
 		templateVersionUsed: number;
 	}
@@ -3076,6 +3139,7 @@ async function createGeneratedSuccessInstance(
 		workItem,
 		sourceBlueprintSnapshot,
 		{
+			metadataSnapshot: args.metadataSnapshot,
 			pdfRef: args.pdfRef,
 			signingStatus: "not_applicable",
 			templateVersionUsed: args.templateVersionUsed,
@@ -3180,6 +3244,54 @@ export function buildEnvelopeRecipientRows(args: {
 	});
 }
 
+function buildResolvedDealEnvelopeRecipientRows(args: {
+	createEnvelopeResult: SignatureProviderCreateEnvelopeResult;
+	runtime: DealPackageRuntimeState;
+	signatureRecipients: SignatureProviderRecipientInput[];
+}) {
+	const participantsByEmail = new Map(
+		args.runtime.signatoryParticipants.map((participant) => [
+			participant.email.toLowerCase(),
+			participant,
+		])
+	);
+	const participantsByRole = new Map(
+		args.runtime.signatoryParticipants.map((participant) => [
+			participant.platformRole,
+			participant,
+		])
+	);
+	const providerRecipientsByRole = new Map(
+		args.createEnvelopeResult.recipients.map((recipient) => [
+			recipient.platformRole,
+			recipient,
+		])
+	);
+
+	return args.signatureRecipients.map((recipient) => {
+		const providerRecipient = providerRecipientsByRole.get(
+			recipient.platformRole
+		);
+		const participant =
+			participantsByEmail.get(recipient.email.toLowerCase()) ??
+			participantsByRole.get(recipient.platformRole);
+		return {
+			authId: participant?.authId,
+			email: recipient.email,
+			name: recipient.name,
+			platformRole: recipient.platformRole,
+			documensoRole: recipient.providerRole,
+			signingOrder: recipient.signingOrder,
+			required: true,
+			providerRecipientId: providerRecipient?.providerRecipientId,
+			embeddedSigningToken: providerRecipient?.token,
+			tokenExpiresAt: providerRecipient?.token
+				? Date.now() + 60 * 60 * 1000
+				: undefined,
+		};
+	});
+}
+
 async function deleteRemoteEnvelopeAfterPersistenceFailure(args: {
 	provider: ReturnType<typeof getSignatureProvider>;
 	providerEnvelopeId: string;
@@ -3224,6 +3336,76 @@ function buildEnvelopeRecipientRowsFromSyncResult(args: {
 			userId: participant.userId,
 		};
 	});
+}
+
+async function mergePdfStorageRefs(
+	ctx: DealPackageActionCtx,
+	pdfRefs: Id<"_storage">[]
+): Promise<{
+	pageOffsets: number[];
+	pdfRef: Id<"_storage">;
+}> {
+	const { PDFDocument } = await import("pdf-lib");
+	const merged = await PDFDocument.create();
+	const pageOffsets: number[] = [];
+	let pageOffset = 0;
+
+	for (const pdfRef of pdfRefs) {
+		const blob = await ctx.storage.get(pdfRef);
+		if (!blob) {
+			throw new ConvexError("Generated group PDF was not found in storage");
+		}
+		const pdf = await PDFDocument.load(await blob.arrayBuffer());
+		pageOffsets.push(pageOffset);
+		const pages = await merged.copyPages(pdf, pdf.getPageIndices());
+		for (const page of pages) {
+			merged.addPage(page);
+		}
+		pageOffset += pdf.getPageCount();
+	}
+
+	const bytes = await merged.save();
+	const pdfRef = await ctx.storage.store(
+		new Blob([bytes as BlobPart], { type: "application/pdf" })
+	);
+	return { pageOffsets, pdfRef };
+}
+
+function combineSignatureProviderRecipients(
+	groups: Array<{
+		pageOffset: number;
+		recipients: SignatureProviderRecipientInput[];
+	}>
+): SignatureProviderRecipientInput[] {
+	const byRole = new Map<string, SignatureProviderRecipientInput>();
+
+	for (const group of groups) {
+		for (const recipient of group.recipients) {
+			const existing = byRole.get(recipient.platformRole);
+			const shiftedFields = recipient.fields.map((field) => ({
+				...field,
+				pageNumber: field.pageNumber + group.pageOffset,
+			}));
+			if (!existing) {
+				byRole.set(recipient.platformRole, {
+					...recipient,
+					fields: shiftedFields,
+				});
+				continue;
+			}
+			existing.fields.push(...shiftedFields);
+			existing.signingOrder = Math.min(
+				existing.signingOrder,
+				recipient.signingOrder
+			);
+		}
+	}
+
+	return [...byRole.values()].sort(
+		(left, right) =>
+			left.signingOrder - right.signingOrder ||
+			left.platformRole.localeCompare(right.platformRole)
+	);
 }
 
 function toSyncEnvelopeMutationRecipients(
@@ -3384,6 +3566,11 @@ async function createSignableGeneratedInstance(
 			workItem,
 			sourceBlueprintSnapshot,
 			{
+				metadataSnapshot: {
+					signatoryMapping,
+					signatureRecipients,
+					variables,
+				},
 				pdfRef: generationResult.pdfRef,
 				signingStatus: "draft",
 				templateVersionUsed: generationResult.templateVersionUsed,
@@ -3467,6 +3654,25 @@ async function createSignableGeneratedInstance(
 					}),
 					sourceBlueprintId: getWorkItemSourceBlueprintId(workItem),
 					sourceBlueprintSnapshot,
+					status: createdEnvelope.status,
+				}
+			);
+			if (!envelopeResult.instanceId) {
+				throw new Error("Signable package instance was not persisted");
+			}
+			await ctx.runMutation(
+				internal.deals.envelopes.createResolvedEnvelopeAttemptInternal,
+				{
+					dealId: runtime.dealId,
+					dealDocumentInstanceId: envelopeResult.instanceId,
+					provider: "documenso",
+					providerDocumentId: createdEnvelope.providerEnvelopeId,
+					providerEnvelopeId: createdEnvelope.providerEnvelopeId,
+					recipients: buildResolvedDealEnvelopeRecipientRows({
+						createEnvelopeResult: createdEnvelope,
+						runtime,
+						signatureRecipients,
+					}),
 					status: createdEnvelope.status,
 				}
 			);
@@ -3563,6 +3769,272 @@ async function createSignableGeneratedInstance(
 	}
 }
 
+async function createSignableGeneratedGroupInstance(
+	ctx: DealPackageActionCtx,
+	runtime: DealPackageRuntimeState,
+	workItems: PackageWorkItem[]
+) {
+	const firstWorkItem = requireFirstWorkItem(workItems);
+	const sourceBlueprintSnapshot = buildGroupEnvelopeSourceSnapshot(workItems);
+
+	try {
+		const generatedParts: Array<{
+			pdfRef: Id<"_storage">;
+			recipients: SignatureProviderRecipientInput[];
+			templateVersionUsed: number;
+		}> = [];
+
+		for (const workItem of workItems) {
+			const itemSnapshot = getWorkItemSourceBlueprintSnapshot(workItem);
+			if (!itemSnapshot.templateId) {
+				return createGeneratedFailureInstance(
+					ctx,
+					runtime,
+					workItem,
+					sourceBlueprintSnapshot,
+					"Signable generated package group member is missing a templateId"
+				);
+			}
+			const signatoryMapping = applySignatoryMappingOverrides({
+				signatoryMapping: runtime.signatories,
+				sourceBlueprintSnapshot: itemSnapshot,
+			});
+			const variables = applyVariableMappingOverrides({
+				sourceBlueprintSnapshot: itemSnapshot,
+				variableBag: runtime.variables,
+			});
+			const generationResult = await ctx.runAction(
+				internal.documentEngine.generation.generateSingleTemplate,
+				{
+					pinnedVersion: itemSnapshot.templateVersion ?? undefined,
+					signatoryMapping,
+					templateId: itemSnapshot.templateId,
+					variables,
+				}
+			);
+
+			if (!(generationResult.success && generationResult.pdfRef)) {
+				return createGeneratedFailureInstance(
+					ctx,
+					runtime,
+					workItem,
+					sourceBlueprintSnapshot,
+					buildTemplateGenerationFailureMessage({
+						missingVariables: generationResult.missingVariables,
+					})
+				);
+			}
+
+			generatedParts.push({
+				pdfRef: generationResult.pdfRef,
+				recipients: toSignatureProviderRecipients(
+					generationResult.documensoConfig?.recipients ?? []
+				),
+				templateVersionUsed: generationResult.templateVersionUsed,
+			});
+		}
+
+		const merged = await mergePdfStorageRefs(
+			ctx,
+			generatedParts.map((part) => part.pdfRef)
+		);
+		const signatureRecipients = combineSignatureProviderRecipients(
+			generatedParts.map((part, index) => ({
+				pageOffset: merged.pageOffsets[index] ?? 0,
+				recipients: part.recipients,
+			}))
+		);
+
+		const generatedDocumentId = await insertGeneratedDocumentRecord(
+			ctx,
+			runtime,
+			firstWorkItem,
+			sourceBlueprintSnapshot,
+			{
+				metadataSnapshot: {
+					signatoryMapping: runtime.signatories,
+					signatureRecipients,
+					variables: runtime.variables,
+				},
+				pdfRef: merged.pdfRef,
+				signingStatus: "draft",
+				templateVersionUsed: generatedParts[0]?.templateVersionUsed ?? 1,
+			}
+		);
+		if (!canStartSigningForDealStatus(runtime.dealStatus)) {
+			return createPackageInstance(ctx, {
+				dealId: runtime.dealId,
+				generatedDocumentId,
+				kind: "generated",
+				mortgageId: runtime.mortgageId,
+				packageId: runtime.packageId,
+				sourceBlueprintId: getWorkItemSourceBlueprintId(firstWorkItem),
+				sourceBlueprintSnapshot,
+				status: "available",
+			});
+		}
+		if (signatureRecipients.length === 0) {
+			return createPackageInstance(ctx, {
+				dealId: runtime.dealId,
+				generatedDocumentId,
+				kind: "generated",
+				lastError: EMPTY_SIGNABLE_RECIPIENTS_ERROR,
+				mortgageId: runtime.mortgageId,
+				packageId: runtime.packageId,
+				sourceBlueprintId: getWorkItemSourceBlueprintId(firstWorkItem),
+				sourceBlueprintSnapshot,
+				status: "signature_pending_recipient_resolution",
+			});
+		}
+
+		let provider: ReturnType<typeof getSignatureProvider> | null = null;
+		let createdEnvelope: SignatureProviderCreateEnvelopeResult | null = null;
+
+		try {
+			provider = getSignatureProvider("documenso", {
+				fetchFn: fetch,
+				getStorageBlob: (storageId) => ctx.storage.get(storageId),
+			});
+			createdEnvelope = await provider.createEnvelope({
+				dealId: runtime.dealId,
+				generatedDocumentId,
+				pdfStorageId: merged.pdfRef,
+				recipients: signatureRecipients,
+				title: sourceBlueprintSnapshot.displayName,
+			});
+			const now = Date.now();
+
+			await ctx.runMutation(
+				internal.documents.dealPackages
+					.patchGeneratedDocumentSigningStateInternal,
+				{
+					documensoEnvelopeId: createdEnvelope.providerEnvelopeId,
+					generatedDocumentId,
+					now,
+					signingStatus: mapEnvelopeStatusToGeneratedDocumentSigningStatus(
+						createdEnvelope.status
+					),
+				}
+			);
+
+			const envelopeResult = await ctx.runMutation(
+				internal.documents.dealPackages
+					.createSignatureEnvelopeWithRecipientsInternal,
+				{
+					dealId: runtime.dealId,
+					generatedDocumentId,
+					instanceLastError: createdEnvelope.lastError,
+					instanceStatus: mapEnvelopeStatusToDealDocumentInstanceStatus(
+						createdEnvelope.status
+					),
+					lastError: createdEnvelope.lastError,
+					mortgageId: runtime.mortgageId,
+					now,
+					packageId: runtime.packageId,
+					providerCode: "documenso",
+					providerEnvelopeId: createdEnvelope.providerEnvelopeId,
+					recipients: buildEnvelopeRecipientRows({
+						createEnvelopeResult: createdEnvelope,
+						runtime,
+						signatureRecipients,
+					}),
+					sourceBlueprintId: getWorkItemSourceBlueprintId(firstWorkItem),
+					sourceBlueprintSnapshot,
+					status: createdEnvelope.status,
+				}
+			);
+			if (!envelopeResult.instanceId) {
+				throw new Error("Signable package group instance was not persisted");
+			}
+			await ctx.runMutation(
+				internal.deals.envelopes.createResolvedEnvelopeAttemptInternal,
+				{
+					dealId: runtime.dealId,
+					dealDocumentInstanceId: envelopeResult.instanceId,
+					provider: "documenso",
+					providerDocumentId: createdEnvelope.providerEnvelopeId,
+					providerEnvelopeId: createdEnvelope.providerEnvelopeId,
+					recipients: buildResolvedDealEnvelopeRecipientRows({
+						createEnvelopeResult: createdEnvelope,
+						runtime,
+						signatureRecipients,
+					}),
+					status: createdEnvelope.status,
+				}
+			);
+			await ctx.runMutation(
+				internal.documents.dealPackages
+					.resolveOpenPreSendSigningExceptionsInternal,
+				{
+					dealId: runtime.dealId,
+					now,
+					packageId: runtime.packageId,
+					resolvedBy: "system:document-package-signing-ready",
+				}
+			);
+			return envelopeResult.instanceId;
+		} catch (error) {
+			const cleanupError =
+				createdEnvelope && provider
+					? await deleteRemoteEnvelopeAfterPersistenceFailure({
+							provider,
+							providerEnvelopeId: createdEnvelope.providerEnvelopeId,
+						})
+					: null;
+			const message = providerFailureLastError(error);
+			await ctx.runMutation(
+				internal.documents.dealPackages
+					.patchGeneratedDocumentSigningStateInternal,
+				{
+					documensoEnvelopeId:
+						createdEnvelope && !cleanupError
+							? null
+							: createdEnvelope?.providerEnvelopeId,
+					generatedDocumentId,
+					now: Date.now(),
+					signingStatus:
+						createdEnvelope && !cleanupError ? "draft" : "provider_error",
+				}
+			);
+			return createPackageInstance(ctx, {
+				dealId: runtime.dealId,
+				generatedDocumentId,
+				kind: "generated",
+				lastError:
+					createdEnvelope && cleanupError
+						? truncateProviderDiagnostic(
+								`${message}. Remote envelope cleanup failed: ${cleanupError}`
+							)
+						: message,
+				mortgageId: runtime.mortgageId,
+				packageId: runtime.packageId,
+				sourceBlueprintId: getWorkItemSourceBlueprintId(firstWorkItem),
+				sourceBlueprintSnapshot,
+				status: "generation_failed",
+			});
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (isRecipientResolutionError(error)) {
+			return createPendingRecipientResolutionInstance(
+				ctx,
+				runtime,
+				firstWorkItem,
+				sourceBlueprintSnapshot,
+				message
+			);
+		}
+
+		return createGeneratedFailureInstance(
+			ctx,
+			runtime,
+			firstWorkItem,
+			sourceBlueprintSnapshot,
+			message
+		);
+	}
+}
+
 async function createNonSignableGeneratedInstance(
 	ctx: DealPackageActionCtx,
 	runtime: DealPackageRuntimeState,
@@ -3616,6 +4088,13 @@ async function createNonSignableGeneratedInstance(
 			workItem,
 			sourceBlueprintSnapshot,
 			{
+				metadataSnapshot: {
+					signatoryMapping,
+					signatureRecipients: toSignatureProviderRecipients(
+						generationResult.documensoConfig?.recipients ?? []
+					),
+					variables,
+				},
 				pdfRef: generationResult.pdfRef,
 				templateVersionUsed: generationResult.templateVersionUsed,
 			}
@@ -3874,7 +4353,33 @@ async function createDocumentPackageForDeal(
 		return preparation.result;
 	}
 
+	const processedGroupBoundaries = new Set<string>();
 	for (const workItem of preparation.workItems) {
+		if (isSnapshotGroupSignableWorkItem(workItem)) {
+			const boundaryKey =
+				workItem.snapshot.sourceBlueprintSnapshot.envelopeBoundaryKey;
+			if (boundaryKey && processedGroupBoundaries.has(boundaryKey)) {
+				continue;
+			}
+			const groupItems = preparation.workItems.filter(
+				(candidate) =>
+					isSnapshotGroupSignableWorkItem(candidate) &&
+					candidate.snapshot.sourceBlueprintSnapshot.envelopeBoundaryKey ===
+						boundaryKey
+			);
+			if (groupItems.length > 1) {
+				await createSignableGeneratedGroupInstance(
+					ctx,
+					preparation.runtime,
+					groupItems
+				);
+				if (boundaryKey) {
+					processedGroupBoundaries.add(boundaryKey);
+				}
+				continue;
+			}
+		}
+
 		await generateDealPackageWorkItem(ctx, {
 			runtime: preparation.runtime,
 			workItem,

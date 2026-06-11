@@ -7,6 +7,7 @@ import { adminMutation, requirePermission } from "../fluent";
 import { insertListingRecord, type ListingInsert } from "./create";
 import { deriveMarketplacePropertyType } from "./marketplaceShared";
 import { roundToTwoDecimals } from "./math";
+import { buildPaymentHistoryMonthsFromObligations } from "./paymentHistory";
 
 type ListingDoc = Doc<"listings">;
 type ListingHeroImage = ListingDoc["heroImages"][number];
@@ -223,6 +224,7 @@ function buildPaymentHistory(args: {
 	return {
 		byStatus,
 		lastDueDate: sortedByDueDate[0]?.dueDate ?? null,
+		months: buildPaymentHistoryMonthsFromObligations(args.obligations),
 		totalObligations: args.obligations.length,
 		totalOutstanding: args.obligations.reduce(
 			(total, obligation) =>

@@ -1,11 +1,16 @@
 import { Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import { MarketplaceFilterBar } from "./filter-bar";
+import {
+	MarketplaceFilterBar,
+	type MarketplaceFilterChangeMode,
+} from "./filter-bar";
 import { ListingGridShell } from "./ListingGridShell";
 import { Horizontal } from "./listing-card-horizontal";
 import { ListingMapPopup } from "./listing-map-popup";
 import {
+	applyMarketplaceListingFilters,
 	buildFilterMetricItems,
 	buildMarketplaceListingCardItems,
 	filterStateToSearchState,
@@ -17,6 +22,8 @@ import type {
 	MarketplaceListingsSnapshot,
 } from "./marketplace-types";
 import type { MobileListingSection } from "./mobile-listing-scroller";
+
+const FILTER_SYNC_DEBOUNCE_MS = 350;
 
 function groupItemsForMobile(items: readonly MarketplaceListingCardItem[]) {
 	const firstMortgages = items.filter((item) => item.mortgageType === "First");
@@ -65,23 +72,79 @@ export function MarketplaceListingsPage({
 	eyebrow = "Lender Marketplace",
 	heading = "Browse fractional mortgage opportunities",
 }: MarketplaceListingsPageProps) {
-	const filterState = searchStateToFilterState(search);
+	const committedFilterState = useMemo(
+		() => searchStateToFilterState(search),
+		[search]
+	);
+	const [draftFilters, setDraftFilters] = useState(committedFilterState);
+	const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	useEffect(() => {
+		setDraftFilters(committedFilterState);
+	}, [committedFilterState]);
+
+	useEffect(
+		() => () => {
+			if (syncTimerRef.current) {
+				clearTimeout(syncTimerRef.current);
+			}
+		},
+		[]
+	);
+
 	const filterMetrics = buildFilterMetricItems(snapshot.page);
-	const items = buildMarketplaceListingCardItems(snapshot.page);
+	const allItems = useMemo(
+		() => buildMarketplaceListingCardItems(snapshot.page),
+		[snapshot.page]
+	);
+	const items = useMemo(
+		() => applyMarketplaceListingFilters(allItems, draftFilters),
+		[allItems, draftFilters]
+	);
+
+	const commitFilters = useCallback(
+		(nextFilters: typeof draftFilters) => {
+			setSearch(() => filterStateToSearchState(nextFilters, search.sort));
+		},
+		[search.sort, setSearch]
+	);
+
+	const handleFiltersChange = useCallback(
+		(
+			nextFilters: typeof draftFilters,
+			options?: { mode?: MarketplaceFilterChangeMode }
+		) => {
+			setDraftFilters(nextFilters);
+
+			if (syncTimerRef.current) {
+				clearTimeout(syncTimerRef.current);
+				syncTimerRef.current = null;
+			}
+
+			if (options?.mode === "debounced") {
+				syncTimerRef.current = setTimeout(() => {
+					commitFilters(nextFilters);
+					syncTimerRef.current = null;
+				}, FILTER_SYNC_DEBOUNCE_MS);
+				return;
+			}
+
+			commitFilters(nextFilters);
+		},
+		[commitFilters]
+	);
 
 	const toolbar = (
 		<div className="space-y-3">
-			<div className="flex flex-wrap items-center gap-2">
+			<div className="hidden flex-wrap items-center gap-2 md:flex">
 				<Badge className="rounded-full px-3 py-1" variant="secondary">
 					{snapshot.page.length} opportunities
 				</Badge>
 			</div>
 			<MarketplaceFilterBar
-				filters={filterState}
+				filters={draftFilters}
 				items={filterMetrics}
-				onFiltersChange={(nextFilters) =>
-					setSearch(() => filterStateToSearchState(nextFilters, search.sort))
-				}
+				onFiltersChange={handleFiltersChange}
 			/>
 		</div>
 	);
@@ -117,12 +180,25 @@ export function MarketplaceListingsPage({
 	}
 
 	return (
-		<div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-4 overflow-hidden">
-			<div className="shrink-0 space-y-3 px-4 sm:px-8">
-				<p className="font-medium text-[11px] text-muted-foreground uppercase tracking-[0.24em]">
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-4 overflow-hidden bg-[#F4F5F7] md:bg-transparent">
+			<div className="shrink-0 space-y-3 px-4 pt-3 sm:px-8 md:pt-0">
+				<div className="md:hidden">
+					<p className="font-semibold text-[11px] text-muted-foreground uppercase">
+						FairLend MIC
+					</p>
+					<div className="mt-0.5 flex items-end justify-between gap-3">
+						<h1 className="font-semibold text-[28px] leading-none tracking-normal">
+							Listings
+						</h1>
+						<Badge className="rounded-full px-3 py-1" variant="secondary">
+							{snapshot.page.length} live
+						</Badge>
+					</div>
+				</div>
+				<p className="hidden font-medium text-[11px] text-muted-foreground uppercase tracking-[0.24em] md:block">
 					{eyebrow}
 				</p>
-				<div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
+				<div className="hidden flex-col gap-2 md:flex xl:flex-row xl:items-end xl:justify-between">
 					<div className="space-y-2">
 						<h1 className="font-semibold text-3xl tracking-tight sm:text-4xl">
 							{heading}
@@ -151,20 +227,47 @@ export function MarketplaceListingsPage({
 					initialCenter: { lat: 43.6532, lng: -79.3832 },
 					initialZoom: 10,
 				}}
+				mobilePresentation="nativeList"
 				renderCard={(listing) => (
 					<Link
-						className="block"
+						className="block w-full min-w-0 max-w-full"
 						params={{ listingId: listing.id }}
 						search={{ checkout: undefined }}
 						to={detailRoute}
 					>
-						<Horizontal
-							address={listing.address}
-							apr={listing.apr}
-							imageSrc={listing.imageSrc}
-							principal={listing.principal}
-							title={listing.title}
-						/>
+						<div className="md:hidden">
+							<Horizontal
+								address={listing.address}
+								apr={listing.apr}
+								availablePercent={listing.availablePercent}
+								fractionsSummary={listing.fractionsSummary}
+								imageSrc={listing.imageSrc}
+								lockedPercent={listing.lockedPercent}
+								ltv={listing.ltv}
+								maturityDate={listing.maturityDate.toLocaleDateString("en-CA")}
+								principal={listing.principal}
+								propertyType={listing.propertyType}
+								soldPercent={listing.soldPercent}
+								title={listing.title}
+								variant="nativeMobile"
+							/>
+						</div>
+						<div className="hidden md:block">
+							<Horizontal
+								address={listing.address}
+								apr={listing.apr}
+								availablePercent={listing.availablePercent}
+								fractionsSummary={listing.fractionsSummary}
+								imageSrc={listing.imageSrc}
+								lockedPercent={listing.lockedPercent}
+								ltv={listing.ltv}
+								maturityDate={listing.maturityDate.toLocaleDateString("en-CA")}
+								principal={listing.principal}
+								propertyType={listing.propertyType}
+								soldPercent={listing.soldPercent}
+								title={listing.title}
+							/>
+						</div>
 					</Link>
 				)}
 				renderMapPopup={(listing) => (

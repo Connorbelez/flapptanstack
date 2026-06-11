@@ -84,6 +84,9 @@ export const collectionAttemptMachine = setup({
 					target: "failed",
 					actions: ["incrementRetryCount"],
 				},
+				ATTEMPT_CANCELLED: {
+					target: "cancelled",
+				},
 			},
 		},
 		failed: {

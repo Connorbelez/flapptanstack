@@ -95,6 +95,11 @@ export const manualSettlementValidator = v.object({
 	enteredBy: v.optional(v.string()),
 	location: v.optional(v.string()),
 	evidenceAttachmentIds: v.optional(v.array(v.string())),
+	chequeNumber: v.optional(v.string()),
+	depositReference: v.optional(v.string()),
+	notes: v.optional(v.string()),
+	receivedAt: v.optional(v.number()),
+	referenceNumber: v.optional(v.string()),
 });
 
 // ── Pipeline Leg Number ──────────────────────────────────────────────

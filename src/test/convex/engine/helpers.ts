@@ -6,7 +6,7 @@
  * can exercise the full transition pipeline on non-onboarding entities.
  */
 
-import type { Id } from "../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type { MortgageMachineContext } from "../../../../convex/engine/machines/mortgage.machine";
 import type { EntityType } from "../../../../convex/engine/types";
 import { attachDefaultFeeSetToMortgage } from "../../../../convex/fees/resolver";
@@ -122,7 +122,18 @@ export async function seedObligation(
 	t: GovernedTestConvex,
 	mortgageId: Id<"mortgages">,
 	borrowerId: Id<"borrowers">,
-	overrides?: { status?: string }
+	overrides?: Partial<
+		Pick<
+			Doc<"obligations">,
+			| "amount"
+			| "amountSettled"
+			| "dueDate"
+			| "gracePeriodEnd"
+			| "paymentNumber"
+			| "status"
+			| "type"
+		>
+	>
 ): Promise<Id<"obligations">> {
 	return t.run(async (ctx) =>
 		ctx.db.insert("obligations", {
@@ -131,12 +142,15 @@ export async function seedObligation(
 			lastTransitionAt: Date.now(),
 			mortgageId,
 			borrowerId,
-			paymentNumber: 1,
-			type: "regular_interest",
-			amount: 3_000_00,
-			amountSettled: 0,
-			dueDate: new Date("2026-02-15T12:00:00.000Z").getTime(),
-			gracePeriodEnd: new Date("2026-02-25T12:00:00.000Z").getTime(),
+			paymentNumber: overrides?.paymentNumber ?? 1,
+			type: overrides?.type ?? "regular_interest",
+			amount: overrides?.amount ?? 3_000_00,
+			amountSettled: overrides?.amountSettled ?? 0,
+			dueDate:
+				overrides?.dueDate ?? new Date("2026-02-15T12:00:00.000Z").getTime(),
+			gracePeriodEnd:
+				overrides?.gracePeriodEnd ??
+				new Date("2026-02-25T12:00:00.000Z").getTime(),
 			createdAt: Date.now(),
 		})
 	);

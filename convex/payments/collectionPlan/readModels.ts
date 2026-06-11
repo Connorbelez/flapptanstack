@@ -223,7 +223,7 @@ async function loadTransferSummary(
 		counterpartyType: transfer.counterpartyType,
 		counterpartyId: transfer.counterpartyId,
 		providerCode: transfer.providerCode,
-		providerRef: transfer.providerRef,
+		providerRef: transfer.providerRef ?? undefined,
 		failureCode: transfer.failureCode,
 		failureReason: transfer.failureReason,
 		confirmedAt: transfer.confirmedAt,

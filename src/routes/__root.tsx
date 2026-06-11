@@ -20,6 +20,7 @@ import { isAdminPathname } from "../lib/admin-routes";
 import { getReturnPathname } from "../lib/auth-redirect";
 import { portalRequestMiddleware } from "../lib/portal/request-host";
 import { resolveRouteHostDecision } from "../lib/portal/route-host-decision";
+import { isRouteHostPolicyExempt } from "../lib/portal/route-host-policy";
 import { resolveRouteHostSession } from "../lib/portal/route-host-session";
 import appCss from "../styles.css?url";
 
@@ -103,10 +104,14 @@ export const Route = createRootRouteWithContext<{
 		const isAllowedBlockedHostAuthPath =
 			ctx.location.pathname === "/auth-complete" ||
 			ctx.location.pathname === "/callback";
+		const isAllowedBlockedHostExemptPath = isRouteHostPolicyExempt(
+			ctx.location.pathname
+		);
 		if (
 			isBlockedPortalHost &&
 			ctx.location.pathname !== "/" &&
-			!isAllowedBlockedHostAuthPath
+			!isAllowedBlockedHostAuthPath &&
+			!isAllowedBlockedHostExemptPath
 		) {
 			throw redirect({ to: "/" });
 		}
@@ -154,11 +159,12 @@ export function shouldRenderSharedHeader({
 	pathname: string;
 	portalContext: RootRoutePortalContext;
 }) {
+	const isPolicyExemptRoute = isRouteHostPolicyExempt(pathname);
 	const isAdminRoute = isAdminPathname(pathname);
 	const isPublicPortalRoot =
 		pathname === "/" && portalContext.kind === "portal";
 
-	return !(isAdminRoute || isPublicPortalRoot);
+	return !(isPolicyExemptRoute || isAdminRoute || isPublicPortalRoot);
 }
 
 function RootComponent() {
@@ -170,17 +176,25 @@ function RootComponent() {
 		pathname,
 		portalContext,
 	});
+	const isPolicyExemptRoute = isRouteHostPolicyExempt(pathname);
+	const routeContent = (
+		<div className="flex h-dvh max-h-dvh min-h-0 w-full min-w-0 flex-col overflow-hidden">
+			{renderSharedHeader ? <Header portalContext={portalContext} /> : null}
+			<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
+				<Outlet />
+			</div>
+		</div>
+	);
 
 	return (
 		<RootDocument>
-			<PortalStateBoundary portalContext={portalContext}>
-				<div className="flex h-dvh max-h-dvh min-h-0 w-full min-w-0 flex-col overflow-hidden">
-					{renderSharedHeader ? <Header /> : null}
-					<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
-						<Outlet />
-					</div>
-				</div>
-			</PortalStateBoundary>
+			{isPolicyExemptRoute ? (
+				routeContent
+			) : (
+				<PortalStateBoundary portalContext={portalContext}>
+					{routeContent}
+				</PortalStateBoundary>
+			)}
 		</RootDocument>
 	);
 }

@@ -5,6 +5,7 @@ import { Button } from "#/components/ui/button";
 import {
 	Drawer,
 	DrawerContent,
+	DrawerDescription,
 	DrawerHeader,
 	DrawerTitle,
 	DrawerTrigger,
@@ -12,6 +13,7 @@ import {
 import ProgressiveBlur from "#/components/ui/progressive-blur";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { useIsMobile } from "#/hooks/use-mobile";
+import { cn } from "#/lib/utils";
 import {
 	useViewportFilteredItems,
 	type WithLatLng,
@@ -52,6 +54,7 @@ export interface ListingGridShellProps<T extends WithLatLng> {
 	mapProps?: Partial<
 		Omit<ListingMapProps<T>, "items" | "renderPopup" | "onViewportChange">
 	>;
+	mobilePresentation?: "sectionedCarousel" | "nativeList";
 	renderCard: (item: T) => ReactNode;
 	renderMapPopup: ListingMapProps<T>["renderPopup"];
 	toolbar?: ReactNode;
@@ -113,6 +116,7 @@ export function ListingGridShell<T extends WithLatLng>({
 	mapProps,
 	groupItemsForMobile,
 	toolbar,
+	mobilePresentation = "sectionedCarousel",
 }: ListingGridShellProps<T>) {
 	const isMobile = useIsMobile();
 	const [viewportBounds, setViewportBounds] = useState<
@@ -139,6 +143,99 @@ export function ListingGridShell<T extends WithLatLng>({
 	const handleViewportChange = useCallback((bounds: ViewportBounds) => {
 		setViewportBounds(bounds);
 	}, []);
+
+	if (isMobile && mobilePresentation === "nativeList") {
+		return (
+			<div
+				className={cn(
+					"relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#F4F5F7]",
+					classNames?.container
+				)}
+			>
+				{toolbar ? <div className="shrink-0 px-4 pb-2">{toolbar}</div> : null}
+				<ScrollArea className="min-h-0 flex-1">
+					<div className="flex flex-col gap-2.5 px-4 pt-1 pb-24">
+						<AnimatePresence mode="popLayout">
+							{filteredItems.map((item, index) => {
+								const key =
+									(item as { id?: string | number }).id ?? `listing-${index}`;
+
+								return (
+									<motion.div
+										animate={{ opacity: 1, y: 0 }}
+										exit={{ opacity: 0, scale: 0.98 }}
+										initial={{ opacity: 0, y: 14 }}
+										key={key}
+										layout
+										transition={{ duration: 0.18 }}
+									>
+										{renderCard(item)}
+									</motion.div>
+								);
+							})}
+						</AnimatePresence>
+					</div>
+				</ScrollArea>
+
+				<div className="fixed inset-x-0 bottom-0 z-40">
+					<Drawer onOpenChange={setIsMapDrawerOpen} open={isMapDrawerOpen}>
+						<DrawerTrigger asChild>
+							<Button
+								aria-label="Open map view"
+								className="h-[76px] w-full justify-between rounded-none rounded-t-[22px] border-x-0 border-b-0 bg-background px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-foreground shadow-[0_-10px_30px_rgba(15,23,42,0.16)] hover:bg-background"
+								variant="outline"
+							>
+								<span className="flex min-w-0 items-center gap-3">
+									<span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted">
+										<MapIcon aria-hidden="true" className="size-5" />
+									</span>
+									<span className="min-w-0 text-left">
+										<span className="block font-semibold text-sm">
+											Map view
+										</span>
+										<span className="block text-muted-foreground text-xs">
+											{items.length} listings nearby
+										</span>
+									</span>
+								</span>
+								<span className="font-semibold text-primary text-sm">Show</span>
+							</Button>
+						</DrawerTrigger>
+						<DrawerContent className="h-[82dvh] rounded-t-[22px]">
+							<motion.div
+								animate="visible"
+								className="flex h-full min-h-0 flex-col"
+								initial="hidden"
+								variants={drawerVariants}
+							>
+								<motion.div variants={itemVariants}>
+									<DrawerHeader className="pb-3 text-left">
+										<DrawerTitle>Map view</DrawerTitle>
+										<DrawerDescription>
+											Showing {items.length} marketplace listings.
+										</DrawerDescription>
+									</DrawerHeader>
+								</motion.div>
+								<motion.div
+									className="min-h-0 flex-1 px-4 pb-4"
+									variants={itemVariants}
+								>
+									<ListingMap
+										className="h-full w-full"
+										containerClassName="rounded-[18px]"
+										items={items}
+										onViewportChange={handleViewportChange}
+										renderPopup={renderMapPopup}
+										{...mapProps}
+									/>
+								</motion.div>
+							</motion.div>
+						</DrawerContent>
+					</Drawer>
+				</div>
+			</div>
+		);
+	}
 
 	if (isMobile) {
 		return (

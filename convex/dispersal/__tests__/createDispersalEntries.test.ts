@@ -25,8 +25,6 @@ const DEFAULT_SOURCE: CommandSource = {
 	channel: "scheduler",
 	actorType: "system",
 };
-const NO_ACTIVE_POSITIONS_PATTERN = /no active positions for mortgage/i;
-
 type TestHarness = ReturnType<typeof createHarness>;
 
 type CreateDispersalEntriesResult = Awaited<
@@ -367,6 +365,24 @@ describe("createDispersalEntries", () => {
 		).toBe(4000);
 	});
 
+	it("does not fail background settlement processing when a mortgage has no active lender positions", async () => {
+		const seeded = await seedDispersalScenario(t, { positionUnits: [] });
+
+		const result = await runCreateDispersal(t, {
+			obligationId: seeded.obligationId,
+			mortgageId: seeded.mortgageId,
+			settledAmount: 100_000,
+			settledDate: "2026-03-01",
+			idempotencyKey: "dispersal:test:no-active-positions",
+		});
+
+		expect(result).toMatchObject({
+			created: false,
+			entries: [],
+			servicingFeeEntryId: null,
+		});
+	});
+
 	it("uses mortgage payment frequency when calculating bi-weekly servicing fees", async () => {
 		const seeded = await seedDispersalScenario(t, {
 			paymentFrequency: "bi_weekly",
@@ -651,18 +667,30 @@ describe("createDispersalEntries", () => {
 		);
 	});
 
-	it("fails when the mortgage has no positive position accounts", async () => {
+	it("keeps no-position settlements idempotent without creating dispersals", async () => {
 		const seeded = await seedDispersalScenario(t, { positionUnits: [] });
 
-		await expect(
-			runCreateDispersal(t, {
-				obligationId: seeded.obligationId,
-				mortgageId: seeded.mortgageId,
-				settledAmount: 100_000,
-				settledDate: "2026-03-01",
-				idempotencyKey: "dispersal:test:no-positions",
-			})
-		).rejects.toThrow(NO_ACTIVE_POSITIONS_PATTERN);
+		const first = await runCreateDispersal(t, {
+			obligationId: seeded.obligationId,
+			mortgageId: seeded.mortgageId,
+			settledAmount: 100_000,
+			settledDate: "2026-03-01",
+			idempotencyKey: "dispersal:test:no-positions",
+		});
+		const second = await runCreateDispersal(t, {
+			obligationId: seeded.obligationId,
+			mortgageId: seeded.mortgageId,
+			settledAmount: 100_000,
+			settledDate: "2026-03-01",
+			idempotencyKey: "dispersal:test:no-positions",
+		});
+
+		expect(first).toMatchObject({
+			created: false,
+			entries: [],
+			servicingFeeEntryId: null,
+		});
+		expect(second).toEqual(first);
 	});
 
 	it("computes lower servicing fee when mortgage principal decreases (ENG-217)", async () => {

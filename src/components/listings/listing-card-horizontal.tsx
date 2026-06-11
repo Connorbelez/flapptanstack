@@ -1,3 +1,4 @@
+import { cva } from "class-variance-authority";
 import {
 	CalendarDays,
 	CircleDollarSign,
@@ -15,6 +16,7 @@ import {
 	CardTitle,
 } from "#/components/ui/card";
 import { Separator } from "#/components/ui/separator";
+import { cn } from "#/lib/utils";
 import { OwnershipBar } from "./OwnershipBar";
 
 export interface HorizontalProps {
@@ -33,6 +35,51 @@ export interface HorizontalProps {
 	propertyType?: string;
 	soldPercent?: number;
 	title?: string;
+	variant?: "default" | "nativeMobile";
+}
+
+const listingCardVariants = cva(
+	"w-full min-w-0 max-w-full overflow-hidden transition-all duration-300",
+	{
+		defaultVariants: {
+			variant: "default",
+		},
+		variants: {
+			variant: {
+				default:
+					"gap-0 border-none bg-opacity-0 px-4 py-4 shadow-none hover:scale-[1.03] hover:shadow-black/10 hover:shadow-lg active:scale-100",
+				nativeMobile:
+					"rounded-[20px] border-none bg-background p-0 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_6px_18px_rgba(15,23,42,0.07)] active:scale-[0.995] md:hidden",
+			},
+		},
+	}
+);
+
+function formatCompactCurrency(value: number) {
+	const absolute = Math.abs(value);
+
+	if (absolute >= 1_000_000) {
+		return `${value < 0 ? "-" : ""}$${(absolute / 1_000_000).toFixed(1)}M`;
+	}
+
+	if (absolute >= 1000) {
+		return `${value < 0 ? "-" : ""}$${(absolute / 1000).toFixed(0)}K`;
+	}
+
+	return `${value < 0 ? "-" : ""}$${Math.round(absolute).toLocaleString()}`;
+}
+
+function formatPercentValue(
+	value: number,
+	options?: { ratioFallback?: boolean }
+) {
+	const normalized =
+		options?.ratioFallback && value > 0 && value <= 1 ? value * 100 : value;
+	return `${normalized.toFixed(normalized >= 10 ? 0 : 1)}%`;
+}
+
+function formatMonthlyIncome(principal: number, apr: number) {
+	return formatCompactCurrency((principal * (apr / 100)) / 12);
 }
 
 export function Horizontal({
@@ -50,9 +97,112 @@ export function Horizontal({
 	fractionsSummary,
 	lockedPercent = 0,
 	soldPercent = 0,
+	variant = "default",
 }: HorizontalProps = {}) {
+	if (variant === "nativeMobile") {
+		return (
+			<Card className={listingCardVariants({ variant })}>
+				<CardContent className="p-0">
+					<div className="grid min-h-[156px] w-full min-w-0 max-w-full grid-cols-[104px_minmax(0,1fr)] min-[390px]:grid-cols-[112px_minmax(0,1fr)]">
+						<div className="relative min-w-0 overflow-hidden bg-muted">
+							{imageSrc ? (
+								<img
+									alt={`${title} thumbnail`}
+									className="h-full w-full object-cover"
+									height={360}
+									src={imageSrc}
+									width={300}
+								/>
+							) : (
+								<div className="h-full w-full bg-[linear-gradient(135deg,#d8dde5,#f4f5f7)]" />
+							)}
+							<div className="absolute top-2 right-1.5 left-1.5 rounded-[10px] bg-background/95 px-1.5 py-1 shadow-[0_5px_14px_rgba(15,23,42,0.16)]">
+								<div className="flex min-w-0 items-center gap-1.5">
+									<span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
+										<CircleDollarSign aria-hidden="true" className="size-3.5" />
+									</span>
+									<span className="min-w-0 leading-none">
+										<span className="block font-semibold text-[9px] text-muted-foreground uppercase">
+											Mo. income
+										</span>
+										<span className="block truncate font-bold text-[13px] text-foreground tabular-nums">
+											{formatMonthlyIncome(principal, apr)}
+										</span>
+									</span>
+								</div>
+							</div>
+							{locked ? (
+								<Badge
+									className="absolute bottom-2 left-2 gap-1"
+									variant="destructive"
+								>
+									<Lock className="size-3" />
+									Locked
+								</Badge>
+							) : null}
+						</div>
+
+						<div className="flex min-w-0 flex-col overflow-hidden px-3 py-2.5">
+							<div className="w-full min-w-0 max-w-full overflow-hidden">
+								<CardTitle className="line-clamp-2 max-w-full break-words font-semibold text-[16px] leading-[1.15] tracking-normal">
+									{title}
+								</CardTitle>
+								<CardDescription className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+									<MapPin className="size-3 shrink-0" />
+									<span className="truncate">
+										{address}
+										{propertyType ? ` • ${propertyType}` : ""}
+									</span>
+								</CardDescription>
+							</div>
+
+							<div className="mt-2 grid min-w-0 grid-cols-3 divide-x divide-border/60 text-center">
+								<MobileMetric
+									label="LTV"
+									value={formatPercentValue(ltv, { ratioFallback: true })}
+								/>
+								<MobileMetric label="APR" value={formatPercentValue(apr)} />
+								<MobileMetric
+									label="Principal"
+									value={formatCompactCurrency(principal)}
+								/>
+							</div>
+
+							<div className="mt-auto grid min-w-0 grid-cols-[88px_minmax(0,1fr)] items-end gap-2 pt-2">
+								<div className="min-w-0">
+									<CardDescription className="flex items-center gap-1 text-[11px]">
+										<CalendarDays className="size-3.5" />
+										Maturity
+									</CardDescription>
+									<p className="mt-0.5 font-semibold text-[12px] tabular-nums">
+										{maturityDate}
+									</p>
+								</div>
+								<div className="min-w-0 flex-1">
+									<div className="flex min-w-0 items-center gap-2">
+										<span className="w-9 shrink-0 font-semibold text-[13px] text-primary tabular-nums">
+											{availablePercent}%
+										</span>
+										<div className="min-w-0 flex-1">
+											<OwnershipBar
+												availablePercent={availablePercent}
+												lockedPercent={lockedPercent}
+												showDetails={false}
+												soldPercent={soldPercent}
+											/>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</CardContent>
+			</Card>
+		);
+	}
+
 	return (
-		<Card className="w-full min-w-0 max-w-full gap-0 overflow-hidden border-none bg-opacity-0 px-4 py-4 shadow-none transition-all duration-300 hover:scale-[1.03] hover:shadow-black/10 hover:shadow-lg active:scale-100">
+		<Card className={cn(listingCardVariants({ variant }))}>
 			<CardContent className="min-w-0 p-0">
 				<div className="flex min-w-0 flex-col gap-4 md:flex-row">
 					<div className="relative aspect-video w-full min-w-0 shrink-0 overflow-hidden rounded-2xl md:aspect-square md:max-w-[180px] xl:aspect-auto">
@@ -164,5 +314,16 @@ export function Horizontal({
 				</div>
 			</CardContent>
 		</Card>
+	);
+}
+
+function MobileMetric({ label, value }: { label: string; value: string }) {
+	return (
+		<div className="min-w-0 px-1">
+			<p className="truncate text-[10px] text-muted-foreground">{label}</p>
+			<p className="mt-0.5 truncate font-bold text-[12px] tabular-nums">
+				{value}
+			</p>
+		</div>
 	);
 }

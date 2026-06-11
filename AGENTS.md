@@ -219,7 +219,7 @@ We're building a backoffice Loan Management System with an integrated ledger and
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **fairlendapp** (43564 symbols, 63198 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely, subject to the Convex generated API limitations below.
+This project is indexed by GitNexus as **fairlendapp** (44547 symbols, 64820 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely, subject to the Convex generated API limitations below.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
