@@ -1,6 +1,7 @@
 import { convexTest } from "convex-test";
 import { registerAuditLogComponent } from "../../registerAuditLogComponent";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import type { MutationCtx } from "../../../../../convex/_generated/server";
 import auditTrailSchema from "../../../../../convex/components/auditTrail/schema";
 import schema from "../../../../../convex/schema";
 import { auditTrailModules } from "../../../../../convex/test/moduleMaps";
@@ -9,6 +10,7 @@ import {
 	type PostCashEntryInput,
 	postCashEntryInternal,
 } from "../../../../../convex/payments/cashLedger/postEntry";
+import type { ServicingFeeMetadata } from "../../../../../convex/payments/cashLedger/integrations";
 import type {
 	CashAccountFamily,
 	ControlSubaccount,
@@ -155,6 +157,43 @@ export async function seedMinimalEntities(t: TestHarness) {
 			createdAt: now,
 		});
 
+		const servicingFeeTemplateId = await ctx.db.insert("feeTemplates", {
+			name: "Test Servicing Fee",
+			code: "servicing",
+			behavior: "payment_waterfall_deduction",
+			displayCode: "servicing",
+			surface: "waterfall_deduction",
+			revenueDestination: "platform_revenue",
+			calculationType: "annual_rate_principal",
+			parameters: { annualRate: 0.01 },
+			status: "active",
+			createdAt: now,
+			updatedAt: now,
+		});
+		const servicingFeeSetTemplateId = await ctx.db.insert("feeSetTemplates", {
+			name: "Test Standard Mortgage Fees",
+			isPlatformDefault: false,
+			status: "active",
+			createdAt: now,
+			updatedAt: now,
+		});
+		await ctx.db.insert("mortgageFees", {
+			mortgageId,
+			feeTemplateId: servicingFeeTemplateId,
+			feeSetTemplateId: servicingFeeSetTemplateId,
+			code: "servicing",
+			behavior: "payment_waterfall_deduction",
+			displayCode: "servicing",
+			surface: "waterfall_deduction",
+			revenueDestination: "platform_revenue",
+			calculationType: "annual_rate_principal",
+			parameters: { annualRate: 0.01 },
+			defaultApplication: "platform_default",
+			effectiveFrom: "2026-01-01",
+			status: "active",
+			createdAt: now,
+		});
+
 		// Ownership ledger accounts (60/40 split)
 		await ctx.db.insert("ledger_accounts", {
 			type: "POSITION",
@@ -184,6 +223,153 @@ export async function seedMinimalEntities(t: TestHarness) {
 			mortgageId,
 		};
 	});
+}
+
+export async function createTestServicingFeeMetadata(
+	ctx: Pick<MutationCtx, "db">,
+	args: {
+		effectiveDate: string;
+		feeCashApplied: number;
+		feeDue: number;
+		feeReceivable?: number;
+		mortgageId: Id<"mortgages">;
+		obligationId: Id<"obligations">;
+	}
+): Promise<ServicingFeeMetadata> {
+	const now = Date.now();
+	const mortgage = await ctx.db.get(args.mortgageId);
+	if (!mortgage) {
+		throw new Error(`Mortgage not found: ${args.mortgageId}`);
+	}
+
+	let mortgageFee = await ctx.db
+		.query("mortgageFees")
+		.withIndex("by_mortgage_code_surface_status", (q) =>
+			q
+				.eq("mortgageId", args.mortgageId)
+				.eq("code", "servicing")
+				.eq("surface", "waterfall_deduction")
+				.eq("status", "active")
+		)
+		.first();
+
+	if (!mortgageFee) {
+		const feeTemplateId = await ctx.db.insert("feeTemplates", {
+			name: "Test Servicing Fee",
+			code: "servicing",
+			behavior: "payment_waterfall_deduction",
+			displayCode: "servicing",
+			surface: "waterfall_deduction",
+			revenueDestination: "platform_revenue",
+			calculationType: "annual_rate_principal",
+			parameters: { annualRate: 0.01 },
+			status: "active",
+			createdAt: now,
+			updatedAt: now,
+		});
+		const feeSetTemplateId = await ctx.db.insert("feeSetTemplates", {
+			name: "Test Standard Mortgage Fees",
+			isPlatformDefault: false,
+			status: "active",
+			createdAt: now,
+			updatedAt: now,
+		});
+		const mortgageFeeId = await ctx.db.insert("mortgageFees", {
+			mortgageId: args.mortgageId,
+			feeTemplateId,
+			feeSetTemplateId,
+			code: "servicing",
+			behavior: "payment_waterfall_deduction",
+			displayCode: "servicing",
+			surface: "waterfall_deduction",
+			revenueDestination: "platform_revenue",
+			calculationType: "annual_rate_principal",
+			parameters: { annualRate: 0.01 },
+			defaultApplication: "platform_default",
+			effectiveFrom: "2026-01-01",
+			status: "active",
+			createdAt: now,
+		});
+		mortgageFee = await ctx.db.get(mortgageFeeId);
+	}
+
+	if (!mortgageFee) {
+		throw new Error("Failed to create test servicing mortgage fee");
+	}
+	if (mortgageFee.behavior !== "payment_waterfall_deduction") {
+		throw new Error("Test servicing mortgage fee has invalid behavior");
+	}
+
+	const feeReceivable =
+		args.feeReceivable ?? args.feeDue - args.feeCashApplied;
+	const existingAssessment = await ctx.db
+		.query("feeAssessments")
+		.withIndex("by_obligation", (q) => q.eq("obligationId", args.obligationId))
+		.first();
+	const feeAssessmentId =
+		existingAssessment?._id ??
+		(await ctx.db.insert("feeAssessments", {
+			orgId: mortgage.orgId,
+			mortgageId: args.mortgageId,
+			mortgageFeeId: mortgageFee._id,
+			feeTemplateId: mortgageFee.feeTemplateId,
+			feeSetTemplateId: mortgageFee.feeSetTemplateId,
+			behavior: mortgageFee.behavior,
+			code: mortgageFee.code,
+			displayCode: mortgageFee.displayCode,
+			amountCents: args.feeDue,
+			amountSettledCents: 0,
+			source: "payment_waterfall",
+			status: "assessed",
+			assessedAt: now,
+			effectiveDate: args.effectiveDate,
+			obligationId: args.obligationId,
+			sourceObligationId: args.obligationId,
+			metadata: { testFixture: true },
+			createdAt: now,
+			updatedAt: now,
+		}));
+
+	const annualRate =
+		typeof mortgageFee.parameters.annualRate === "number"
+			? mortgageFee.parameters.annualRate
+			: 0.01;
+	const calculationInputs = {
+		annualRate,
+		paymentFrequency: mortgage.paymentFrequency,
+		principalBalance: mortgage.principal,
+	};
+	const calculationOutputs = {
+		feeCashApplied: args.feeCashApplied,
+		feeDue: args.feeDue,
+		feeReceivable,
+	};
+	const feeAssessment = {
+		behavior: mortgageFee.behavior,
+		calculationInputs,
+		calculationOutputs,
+		displayCode: mortgageFee.displayCode,
+		feeAssessmentId,
+		feeCode: mortgageFee.code,
+		mortgageFeeId: mortgageFee._id,
+	};
+
+	return {
+		annualRate,
+		behavior: mortgageFee.behavior,
+		calculationInputs,
+		calculationOutputs,
+		displayCode: mortgageFee.displayCode,
+		feeAssessment,
+		feeAssessmentId,
+		feeCashApplied: args.feeCashApplied,
+		feeCode: mortgageFee.code,
+		feeDue: args.feeDue,
+		feeReceivable,
+		mortgageFeeId: mortgageFee._id,
+		paymentFrequency: mortgage.paymentFrequency,
+		principalBalance: mortgage.principal,
+	};
 }
 
 // ── createTestAccount ────────────────────────────────────────────────

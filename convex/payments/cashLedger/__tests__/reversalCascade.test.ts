@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	createHarness,
 	createSettledObligation,
+	createTestServicingFeeMetadata,
 	SYSTEM_SOURCE,
 	type TestHarness,
 } from "../../../../src/test/convex/payments/cashLedger/testUtils";
@@ -296,11 +297,20 @@ async function setupFullSettlementState(
 
 	// 6. Post allocation entries (LENDER_PAYABLE_CREATED x2 + SERVICING_FEE_RECOGNIZED)
 	await t.run(async (ctx) => {
+		const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+			mortgageId,
+			obligationId,
+			effectiveDate: "2026-03-01",
+			feeDue: SERVICING_FEE_AMOUNT,
+			feeCashApplied: SERVICING_FEE_AMOUNT,
+		});
+
 		return postSettlementAllocation(ctx, {
 			obligationId,
 			mortgageId,
 			settledDate: "2026-03-01",
 			servicingFee: SERVICING_FEE_AMOUNT,
+			feeMetadata,
 			entries: [
 				{
 					dispersalEntryId: dispersalEntryAId,

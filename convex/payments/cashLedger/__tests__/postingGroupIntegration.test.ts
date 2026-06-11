@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	createHarness,
 	createSettledObligation,
+	createTestServicingFeeMetadata,
 	SYSTEM_SOURCE,
 	seedMinimalEntities,
 } from "../../../../src/test/convex/payments/cashLedger/testUtils";
@@ -155,12 +156,21 @@ describe("posting group integration — dispersal E2E", () => {
 
 		// Attempt to post with amounts that don't sum to the obligation amount
 		await t.run(async (ctx) => {
+			const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+				mortgageId: seeded.mortgageId,
+				obligationId,
+				effectiveDate: "2026-03-01",
+				feeDue: 833,
+				feeCashApplied: 833,
+			});
+
 			try {
 				await postSettlementAllocation(ctx, {
 					obligationId,
 					mortgageId: seeded.mortgageId,
 					settledDate: "2026-03-01",
 					servicingFee: 833,
+					feeMetadata,
 					entries: [
 						{
 							dispersalEntryId: fakeDispersalEntryId,
@@ -189,6 +199,640 @@ describe("posting group integration — dispersal E2E", () => {
 				)
 				.collect();
 			expect(entries).toHaveLength(0);
+		});
+	});
+
+	it("direct settlement allocation links the supplied fee assessment trace root", async () => {
+		const t = createHarness(modules);
+		const seeded = await seedMinimalEntities(t);
+		const obligationId = await createSettledObligation(t, {
+			mortgageId: seeded.mortgageId,
+			borrowerId: seeded.borrowerId,
+			amount: 100_000,
+		});
+
+		await t.run(async (ctx) => {
+			const accounts = await ctx.db
+				.query("ledger_accounts")
+				.withIndex("by_type_and_mortgage", (q) =>
+					q.eq("type", "POSITION").eq("mortgageId", String(seeded.mortgageId))
+				)
+				.collect();
+			if (accounts.length < 2) {
+				throw new Error("Expected two position accounts");
+			}
+			const firstEntryId = await ctx.db.insert("dispersalEntries", {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderAId,
+				lenderAccountId: accounts[0]._id,
+				amount: 55_000,
+				dispersalDate: "2026-03-01",
+				servicingFeeDeducted: 0,
+				status: "pending",
+				idempotencyKey: "pgi-direct-link-a",
+				calculationDetails: {
+					settledAmount: 100_000,
+					servicingFee: 8333,
+					distributableAmount: 91_667,
+					feeDue: 8333,
+					feeCashApplied: 8333,
+					feeReceivable: 0,
+					ownershipUnits: 6000,
+					totalUnits: 10_000,
+					ownershipFraction: 0.6,
+					rawAmount: 55_000.2,
+					roundedAmount: 55_000,
+					sourceObligationType: "regular_interest",
+				},
+				createdAt: Date.now(),
+			});
+			const secondEntryId = await ctx.db.insert("dispersalEntries", {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderBId,
+				lenderAccountId: accounts[1]._id,
+				amount: 36_667,
+				dispersalDate: "2026-03-01",
+				servicingFeeDeducted: 0,
+				status: "pending",
+				idempotencyKey: "pgi-direct-link-b",
+				calculationDetails: {
+					settledAmount: 100_000,
+					servicingFee: 8333,
+					distributableAmount: 91_667,
+					feeDue: 8333,
+					feeCashApplied: 8333,
+					feeReceivable: 0,
+					ownershipUnits: 4000,
+					totalUnits: 10_000,
+					ownershipFraction: 0.4,
+					rawAmount: 36_666.8,
+					roundedAmount: 36_667,
+					sourceObligationType: "regular_interest",
+				},
+				createdAt: Date.now(),
+			});
+			const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+				mortgageId: seeded.mortgageId,
+				obligationId,
+				effectiveDate: "2026-03-01",
+				feeDue: 8333,
+				feeCashApplied: 8333,
+			});
+
+			const result = await postSettlementAllocation(ctx, {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				settledDate: "2026-03-01",
+				servicingFee: 8333,
+				feeMetadata,
+				entries: [
+					{
+						dispersalEntryId: firstEntryId,
+						lenderId: seeded.lenderAId,
+						amount: 55_000,
+					},
+					{
+						dispersalEntryId: secondEntryId,
+						lenderId: seeded.lenderBId,
+						amount: 36_667,
+					},
+				],
+				source: SYSTEM_SOURCE,
+			});
+
+			const assessment = await ctx.db.get(feeMetadata.feeAssessmentId);
+			expect(assessment).toMatchObject({
+				amountSettledCents: 8333,
+				cashLedgerJournalEntryId: result.servicingFeeJournalEntryId,
+				status: "settled",
+			});
+		});
+	});
+
+	it("direct settlement allocation rejects metadata that does not match the fee assessment", async () => {
+		const t = createHarness(modules);
+		const seeded = await seedMinimalEntities(t);
+		const obligationId = await createSettledObligation(t, {
+			mortgageId: seeded.mortgageId,
+			borrowerId: seeded.borrowerId,
+			amount: 100_000,
+		});
+
+		await t.run(async (ctx) => {
+			const account = await ctx.db
+				.query("ledger_accounts")
+				.withIndex("by_type_and_mortgage", (q) =>
+					q.eq("type", "POSITION").eq("mortgageId", String(seeded.mortgageId))
+				)
+				.first();
+			if (!account) {
+				throw new Error("Expected a position account");
+			}
+			const dispersalEntryId = await ctx.db.insert("dispersalEntries", {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderAId,
+				lenderAccountId: account._id,
+				amount: 91_667,
+				dispersalDate: "2026-03-01",
+				servicingFeeDeducted: 0,
+				status: "pending",
+				idempotencyKey: "pgi-direct-metadata-reject",
+				calculationDetails: {
+					settledAmount: 100_000,
+					servicingFee: 8333,
+					distributableAmount: 91_667,
+					feeDue: 8333,
+					feeCashApplied: 8333,
+					feeReceivable: 0,
+					ownershipUnits: 10_000,
+					totalUnits: 10_000,
+					ownershipFraction: 1,
+					rawAmount: 91_667,
+					roundedAmount: 91_667,
+					sourceObligationType: "regular_interest",
+				},
+				createdAt: Date.now(),
+			});
+			const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+				mortgageId: seeded.mortgageId,
+				obligationId,
+				effectiveDate: "2026-03-01",
+				feeDue: 8333,
+				feeCashApplied: 8333,
+			});
+			const mismatchedMetadata = {
+				...feeMetadata,
+				displayCode: "administration_spread",
+				feeAssessment: {
+					...feeMetadata.feeAssessment,
+					displayCode: "administration_spread",
+					feeCode: "admin_fee",
+				},
+				feeCode: "admin_fee",
+			};
+
+			await expect(
+				postSettlementAllocation(ctx, {
+					obligationId,
+					mortgageId: seeded.mortgageId,
+					settledDate: "2026-03-01",
+					settledAmount: 100_000,
+					servicingFee: 8333,
+					feeMetadata: mismatchedMetadata,
+					entries: [
+						{
+							dispersalEntryId,
+							lenderId: seeded.lenderAId,
+							amount: 91_667,
+						},
+					],
+					source: SYSTEM_SOURCE,
+				})
+			).rejects.toThrow(ConvexError);
+		});
+	});
+
+	it("direct settlement allocation rejects positive metadata when servicingFee is zero", async () => {
+		const t = createHarness(modules);
+		const seeded = await seedMinimalEntities(t);
+		const obligationId = await createSettledObligation(t, {
+			mortgageId: seeded.mortgageId,
+			borrowerId: seeded.borrowerId,
+			amount: 100_000,
+		});
+
+		await t.run(async (ctx) => {
+			const account = await ctx.db
+				.query("ledger_accounts")
+				.withIndex("by_type_and_mortgage", (q) =>
+					q.eq("type", "POSITION").eq("mortgageId", String(seeded.mortgageId))
+				)
+				.first();
+			if (!account) {
+				throw new Error("Expected a position account");
+			}
+			const dispersalEntryId = await ctx.db.insert("dispersalEntries", {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderAId,
+				lenderAccountId: account._id,
+				amount: 100_000,
+				dispersalDate: "2026-03-01",
+				servicingFeeDeducted: 0,
+				status: "pending",
+				idempotencyKey: "pgi-direct-zero-servicing-metadata",
+				calculationDetails: {
+					settledAmount: 100_000,
+					servicingFee: 0,
+					distributableAmount: 100_000,
+					feeDue: 0,
+					feeCashApplied: 0,
+					feeReceivable: 0,
+					ownershipUnits: 10_000,
+					totalUnits: 10_000,
+					ownershipFraction: 1,
+					rawAmount: 100_000,
+					roundedAmount: 100_000,
+					sourceObligationType: "regular_interest",
+				},
+				createdAt: Date.now(),
+			});
+			const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+				mortgageId: seeded.mortgageId,
+				obligationId,
+				effectiveDate: "2026-03-01",
+				feeDue: 8333,
+				feeCashApplied: 8333,
+			});
+
+			await expect(
+				postSettlementAllocation(ctx, {
+					obligationId,
+					mortgageId: seeded.mortgageId,
+					settledDate: "2026-03-01",
+					settledAmount: 100_000,
+					servicingFee: 0,
+					feeMetadata,
+					entries: [
+						{
+							dispersalEntryId,
+							lenderId: seeded.lenderAId,
+							amount: 100_000,
+						},
+					],
+					source: SYSTEM_SOURCE,
+				})
+			).rejects.toThrow(ConvexError);
+		});
+	});
+
+	it("direct settlement allocation rejects metadata amounts that do not match the fee assessment", async () => {
+		const t = createHarness(modules);
+		const seeded = await seedMinimalEntities(t);
+		const obligationId = await createSettledObligation(t, {
+			mortgageId: seeded.mortgageId,
+			borrowerId: seeded.borrowerId,
+			amount: 100_000,
+		});
+
+		await t.run(async (ctx) => {
+			const account = await ctx.db
+				.query("ledger_accounts")
+				.withIndex("by_type_and_mortgage", (q) =>
+					q.eq("type", "POSITION").eq("mortgageId", String(seeded.mortgageId))
+				)
+				.first();
+			if (!account) {
+				throw new Error("Expected a position account");
+			}
+			const dispersalEntryId = await ctx.db.insert("dispersalEntries", {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderAId,
+				lenderAccountId: account._id,
+				amount: 91_667,
+				dispersalDate: "2026-03-01",
+				servicingFeeDeducted: 0,
+				status: "pending",
+				idempotencyKey: "pgi-direct-amount-mismatch",
+				calculationDetails: {
+					settledAmount: 100_000,
+					servicingFee: 8333,
+					distributableAmount: 91_667,
+					feeDue: 8333,
+					feeCashApplied: 8333,
+					feeReceivable: 0,
+					ownershipUnits: 10_000,
+					totalUnits: 10_000,
+					ownershipFraction: 1,
+					rawAmount: 91_667,
+					roundedAmount: 91_667,
+					sourceObligationType: "regular_interest",
+				},
+				createdAt: Date.now(),
+			});
+			const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+				mortgageId: seeded.mortgageId,
+				obligationId,
+				effectiveDate: "2026-03-01",
+				feeDue: 8333,
+				feeCashApplied: 8333,
+			});
+			const mismatchedMetadata = {
+				...feeMetadata,
+				calculationOutputs: {
+					...feeMetadata.calculationOutputs,
+					feeDue: 9000,
+					feeReceivable: 667,
+				},
+				feeAssessment: {
+					...feeMetadata.feeAssessment,
+					calculationOutputs: {
+						...feeMetadata.feeAssessment.calculationOutputs,
+						feeDue: 9000,
+						feeReceivable: 667,
+					},
+				},
+				feeDue: 9000,
+				feeReceivable: 667,
+			};
+
+			await expect(
+				postSettlementAllocation(ctx, {
+					obligationId,
+					mortgageId: seeded.mortgageId,
+					settledDate: "2026-03-01",
+					settledAmount: 100_000,
+					servicingFee: 8333,
+					feeMetadata: mismatchedMetadata,
+					entries: [
+						{
+							dispersalEntryId,
+							lenderId: seeded.lenderAId,
+							amount: 91_667,
+						},
+					],
+					source: SYSTEM_SOURCE,
+				})
+			).rejects.toThrow(ConvexError);
+		});
+	});
+
+	it("direct settlement allocation rejects nested output amounts that do not match top-level fee metadata", async () => {
+		const t = createHarness(modules);
+		const seeded = await seedMinimalEntities(t);
+		const obligationId = await createSettledObligation(t, {
+			mortgageId: seeded.mortgageId,
+			borrowerId: seeded.borrowerId,
+			amount: 100_000,
+		});
+
+		await t.run(async (ctx) => {
+			const account = await ctx.db
+				.query("ledger_accounts")
+				.withIndex("by_type_and_mortgage", (q) =>
+					q.eq("type", "POSITION").eq("mortgageId", String(seeded.mortgageId))
+				)
+				.first();
+			if (!account) {
+				throw new Error("Expected a position account");
+			}
+			const dispersalEntryId = await ctx.db.insert("dispersalEntries", {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderAId,
+				lenderAccountId: account._id,
+				amount: 91_667,
+				dispersalDate: "2026-03-01",
+				servicingFeeDeducted: 0,
+				status: "pending",
+				idempotencyKey: "pgi-direct-nested-amount-mismatch",
+				calculationDetails: {
+					settledAmount: 100_000,
+					servicingFee: 8333,
+					distributableAmount: 91_667,
+					feeDue: 8333,
+					feeCashApplied: 8333,
+					feeReceivable: 0,
+					ownershipUnits: 10_000,
+					totalUnits: 10_000,
+					ownershipFraction: 1,
+					rawAmount: 91_667,
+					roundedAmount: 91_667,
+					sourceObligationType: "regular_interest",
+				},
+				createdAt: Date.now(),
+			});
+			const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+				mortgageId: seeded.mortgageId,
+				obligationId,
+				effectiveDate: "2026-03-01",
+				feeDue: 8333,
+				feeCashApplied: 8333,
+			});
+			const mismatchedMetadata = {
+				...feeMetadata,
+				calculationOutputs: {
+					...feeMetadata.calculationOutputs,
+					feeDue: 9000,
+				},
+				feeAssessment: {
+					...feeMetadata.feeAssessment,
+					calculationOutputs: {
+						...feeMetadata.feeAssessment.calculationOutputs,
+						feeReceivable: 667,
+					},
+				},
+			};
+
+			await expect(
+				postSettlementAllocation(ctx, {
+					obligationId,
+					mortgageId: seeded.mortgageId,
+					settledDate: "2026-03-01",
+					settledAmount: 100_000,
+					servicingFee: 8333,
+					feeMetadata: mismatchedMetadata,
+					entries: [
+						{
+							dispersalEntryId,
+							lenderId: seeded.lenderAId,
+							amount: 91_667,
+						},
+					],
+					source: SYSTEM_SOURCE,
+				})
+			).rejects.toThrow(ConvexError);
+		});
+	});
+
+	it("direct settlement allocation rejects duplicate positive fee assessment metadata", async () => {
+		const t = createHarness(modules);
+		const seeded = await seedMinimalEntities(t);
+		const obligationId = await createSettledObligation(t, {
+			mortgageId: seeded.mortgageId,
+			borrowerId: seeded.borrowerId,
+			amount: 100_000,
+		});
+
+		await t.run(async (ctx) => {
+			const account = await ctx.db
+				.query("ledger_accounts")
+				.withIndex("by_type_and_mortgage", (q) =>
+					q.eq("type", "POSITION").eq("mortgageId", String(seeded.mortgageId))
+				)
+				.first();
+			if (!account) {
+				throw new Error("Expected a position account");
+			}
+			const dispersalEntryId = await ctx.db.insert("dispersalEntries", {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderAId,
+				lenderAccountId: account._id,
+				amount: 83_334,
+				dispersalDate: "2026-03-01",
+				servicingFeeDeducted: 0,
+				status: "pending",
+				idempotencyKey: "pgi-direct-duplicate-fee-metadata",
+				calculationDetails: {
+					settledAmount: 100_000,
+					servicingFee: 16_666,
+					distributableAmount: 83_334,
+					feeDue: 8333,
+					feeCashApplied: 8333,
+					feeReceivable: 0,
+					ownershipUnits: 10_000,
+					totalUnits: 10_000,
+					ownershipFraction: 1,
+					rawAmount: 83_334,
+					roundedAmount: 83_334,
+					sourceObligationType: "regular_interest",
+				},
+				createdAt: Date.now(),
+			});
+			const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+				mortgageId: seeded.mortgageId,
+				obligationId,
+				effectiveDate: "2026-03-01",
+				feeDue: 8333,
+				feeCashApplied: 8333,
+			});
+
+			await expect(
+				postSettlementAllocation(ctx, {
+					obligationId,
+					mortgageId: seeded.mortgageId,
+					settledDate: "2026-03-01",
+					settledAmount: 100_000,
+					servicingFee: 16_666,
+					feeMetadataEntries: [feeMetadata, feeMetadata],
+					entries: [
+						{
+							dispersalEntryId,
+							lenderId: seeded.lenderAId,
+							amount: 83_334,
+						},
+					],
+					source: SYSTEM_SOURCE,
+				})
+			).rejects.toThrow(ConvexError);
+		});
+	});
+
+	it("direct settlement allocation persists canonical fee calculation inputs", async () => {
+		const t = createHarness(modules);
+		const seeded = await seedMinimalEntities(t);
+		const obligationId = await createSettledObligation(t, {
+			mortgageId: seeded.mortgageId,
+			borrowerId: seeded.borrowerId,
+			amount: 100_000,
+		});
+
+		await t.run(async (ctx) => {
+			const account = await ctx.db
+				.query("ledger_accounts")
+				.withIndex("by_type_and_mortgage", (q) =>
+					q.eq("type", "POSITION").eq("mortgageId", String(seeded.mortgageId))
+				)
+				.first();
+			if (!account) {
+				throw new Error("Expected a position account");
+			}
+			const dispersalEntryId = await ctx.db.insert("dispersalEntries", {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				lenderId: seeded.lenderAId,
+				lenderAccountId: account._id,
+				amount: 91_667,
+				dispersalDate: "2026-03-01",
+				servicingFeeDeducted: 0,
+				status: "pending",
+				idempotencyKey: "pgi-direct-canonical-inputs",
+				calculationDetails: {
+					settledAmount: 100_000,
+					servicingFee: 8333,
+					distributableAmount: 91_667,
+					feeDue: 8333,
+					feeCashApplied: 8333,
+					feeReceivable: 0,
+					ownershipUnits: 10_000,
+					totalUnits: 10_000,
+					ownershipFraction: 1,
+					rawAmount: 91_667,
+					roundedAmount: 91_667,
+					sourceObligationType: "regular_interest",
+				},
+				createdAt: Date.now(),
+			});
+			const feeMetadata = await createTestServicingFeeMetadata(ctx, {
+				mortgageId: seeded.mortgageId,
+				obligationId,
+				effectiveDate: "2026-03-01",
+				feeDue: 8333,
+				feeCashApplied: 8333,
+			});
+			const tamperedMetadata = {
+				...feeMetadata,
+				calculationInputs: {
+					...feeMetadata.calculationInputs,
+					annualRate: 0.99,
+					principalBalance: 1,
+				},
+				feeAssessment: {
+					...feeMetadata.feeAssessment,
+					calculationInputs: {
+						...feeMetadata.feeAssessment.calculationInputs,
+						annualRate: 0.99,
+						principalBalance: 1,
+					},
+				},
+			};
+
+			const result = await postSettlementAllocation(ctx, {
+				obligationId,
+				mortgageId: seeded.mortgageId,
+				settledDate: "2026-03-01",
+				settledAmount: 100_000,
+				servicingFee: 8333,
+				feeMetadata: tamperedMetadata,
+				entries: [
+					{
+						dispersalEntryId,
+						lenderId: seeded.lenderAId,
+						amount: 91_667,
+					},
+				],
+				source: SYSTEM_SOURCE,
+			});
+
+			if (!result.servicingFeeJournalEntryId) {
+				throw new Error("Expected servicing fee journal entry");
+			}
+			const journalEntry = await ctx.db.get(result.servicingFeeJournalEntryId);
+			if (!journalEntry) {
+				throw new Error("Expected servicing fee journal entry row");
+			}
+			const metadata = journalEntry.metadata as {
+				calculationInputs?: Record<string, unknown>;
+				feeAssessment?: { calculationInputs?: Record<string, unknown> };
+			};
+
+			expect(metadata.calculationInputs?.annualRate).toBe(
+				feeMetadata.annualRate
+			);
+			expect(metadata.calculationInputs?.principalBalance).toBe(
+				feeMetadata.principalBalance
+			);
+			expect(metadata.feeAssessment?.calculationInputs?.annualRate).toBe(
+				feeMetadata.annualRate
+			);
+			expect(metadata.feeAssessment?.calculationInputs?.principalBalance).toBe(
+				feeMetadata.principalBalance
+			);
 		});
 	});
 

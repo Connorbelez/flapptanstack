@@ -4,13 +4,41 @@ import type {
 } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
+import { assertBehaviorMatchesDefinition, type FeeBehavior } from "./behavior";
+import {
+	type CompatibleFeeTemplate,
+	normalizeFeeTemplate,
+	repairFeeTemplateIfNeeded,
+} from "./templateCompatibility";
 
 export const DEFAULT_FEE_SET_NAME = "Standard Mortgage Fees";
 export const MIN_EFFECTIVE_FROM = "0000-01-01";
 export const FEE_POLICY_VERSION = 1;
+export const DEFAULT_DIRECT_WATERFALL_PRIORITY = 10_000;
 
 export type FeeCode = Doc<"feeTemplates">["code"];
 export type FeeSurface = Doc<"feeTemplates">["surface"];
+
+export type BulkApplyConflictReason =
+	| "existing_active_fee"
+	| "mortgage_opted_out"
+	| "mortgage_not_found";
+
+export interface BulkApplyPreview {
+	applicable: Array<{ mortgageId: Id<"mortgages">; feeCount: number }>;
+	conflicts: Array<{
+		mortgageId: Id<"mortgages">;
+		reason: BulkApplyConflictReason;
+	}>;
+	effectiveFrom: string;
+	feeSetTemplateId: Id<"feeSetTemplates">;
+	previewToken: string;
+}
+
+export interface BulkApplyFeeSetItem {
+	item: Doc<"feeSetTemplateItems">;
+	template: CompatibleFeeTemplate;
+}
 
 export interface FeeParameters {
 	annualRate?: number;
@@ -20,19 +48,36 @@ export interface FeeParameters {
 }
 
 export interface FeeDefinitionInput {
+	behavior: FeeBehavior;
 	calculationType: Doc<"feeTemplates">["calculationType"];
 	code: FeeCode;
+	displayCode: string;
 	parameters: FeeParameters;
+	paymentRail?: Doc<"feeTemplates">["paymentRail"];
+	recurrence?: Doc<"feeTemplates">["recurrence"];
 	revenueDestination: Doc<"feeTemplates">["revenueDestination"];
 	surface: FeeSurface;
 }
 
 export interface ResolvedServicingFeeConfig {
 	annualRate: number;
+	behavior: "payment_waterfall_deduction";
 	code: "servicing";
+	displayCode: string;
 	mortgageFeeId?: Id<"mortgageFees">;
 	policyVersion: number;
 	revenueDestination: Doc<"mortgageFees">["revenueDestination"];
+}
+
+export interface ResolvedWaterfallFeeConfig {
+	annualRate: number;
+	behavior: "payment_waterfall_deduction";
+	code: FeeCode;
+	displayCode: string;
+	mortgageFeeId: Id<"mortgageFees">;
+	policyVersion: number;
+	revenueDestination: Doc<"mortgageFees">["revenueDestination"];
+	waterfallPriority: number;
 }
 
 export interface ResolvedBorrowerChargeFeeConfig {
@@ -68,6 +113,57 @@ function rangesOverlap(
 	return left.effectiveFrom <= rightEnd && right.effectiveFrom <= leftEnd;
 }
 
+function buildBulkApplyPreviewToken(args: {
+	feeSetTemplateId: Id<"feeSetTemplates">;
+	effectiveFrom: string;
+	targetMortgageIds: Id<"mortgages">[];
+	applicableMortgageIds: Id<"mortgages">[];
+	conflicts: BulkApplyPreview["conflicts"];
+	items: BulkApplyFeeSetItem[];
+}) {
+	return JSON.stringify({
+		feeSetTemplateId: args.feeSetTemplateId,
+		effectiveFrom: args.effectiveFrom,
+		targetMortgageIds: [...args.targetMortgageIds].sort(),
+		applicableMortgageIds: [...args.applicableMortgageIds].sort(),
+		conflicts: [...args.conflicts].sort((left, right) => {
+			const mortgageComparison = left.mortgageId.localeCompare(
+				right.mortgageId
+			);
+			if (mortgageComparison !== 0) {
+				return mortgageComparison;
+			}
+			return left.reason.localeCompare(right.reason);
+		}),
+		feeSetItems: args.items
+			.map(({ item, template }) => ({
+				feeSetTemplateItemId: item._id,
+				feeTemplateId: template._id,
+				templateUpdatedAt: template.updatedAt,
+				templateStatus: template.status,
+				code: template.code,
+				surface: template.surface,
+				displayCode: template.displayCode,
+			}))
+			.sort((left, right) =>
+				left.feeSetTemplateItemId.localeCompare(right.feeSetTemplateItemId)
+			),
+	});
+}
+
+function dedupeMortgageIds(ids: Id<"mortgages">[]) {
+	const seen = new Set<Id<"mortgages">>();
+	const deduped: Id<"mortgages">[] = [];
+	for (const id of ids) {
+		if (seen.has(id)) {
+			continue;
+		}
+		seen.add(id);
+		deduped.push(id);
+	}
+	return deduped;
+}
+
 function compareMortgageFees(
 	left: Pick<Doc<"mortgageFees">, "effectiveFrom" | "createdAt" | "_id">,
 	right: Pick<Doc<"mortgageFees">, "effectiveFrom" | "createdAt" | "_id">
@@ -82,33 +178,27 @@ function compareMortgageFees(
 }
 
 export function assertValidFeeDefinition(input: FeeDefinitionInput) {
-	if (input.surface === "waterfall_deduction" && input.code !== "servicing") {
-		throw new ConvexError(
-			`Unsupported waterfall fee code "${input.code}" in v1; only servicing is allowed in the settlement waterfall`
-		);
-	}
-
-	if (
-		input.surface === "borrower_charge" &&
-		input.code !== "late_fee" &&
-		input.code !== "nsf"
-	) {
-		throw new ConvexError(
-			`Unsupported borrower charge fee code "${input.code}" in v1`
-		);
-	}
+	assertBehaviorMatchesDefinition({
+		behavior: input.behavior,
+		calculationType: input.calculationType,
+		parameters: input.parameters,
+		paymentRail: input.paymentRail,
+		recurrence: input.recurrence,
+		surface: input.surface,
+	});
 
 	if (input.revenueDestination !== "platform_revenue") {
 		throw new ConvexError(
-			`Unsupported revenueDestination "${input.revenueDestination}" in v1; only platform_revenue is supported`
+			`Unsupported revenueDestination "${input.revenueDestination}"; only platform_revenue is supported`
 		);
 	}
 
 	if (input.calculationType === "annual_rate_principal") {
+		const annualRate = input.parameters.annualRate;
 		if (
-			typeof input.parameters.annualRate !== "number" ||
-			!Number.isFinite(input.parameters.annualRate) ||
-			input.parameters.annualRate < 0
+			typeof annualRate !== "number" ||
+			!Number.isFinite(annualRate) ||
+			annualRate < 0
 		) {
 			throw new ConvexError(
 				"annual_rate_principal fees require a non-negative annualRate"
@@ -126,27 +216,6 @@ export function assertValidFeeDefinition(input: FeeDefinitionInput) {
 		throw new ConvexError(
 			"fixed_amount_cents fees require a non-negative integer fixedAmountCents"
 		);
-	}
-
-	if (input.code === "late_fee") {
-		const dueDays = input.parameters.dueDays;
-		if (
-			dueDays === undefined ||
-			!Number.isSafeInteger(dueDays) ||
-			dueDays <= 0
-		) {
-			throw new ConvexError("late_fee fees require a positive integer dueDays");
-		}
-		const graceDays = input.parameters.graceDays;
-		if (
-			graceDays === undefined ||
-			!Number.isSafeInteger(graceDays) ||
-			graceDays <= 0
-		) {
-			throw new ConvexError(
-				"late_fee fees require a positive integer graceDays"
-			);
-		}
 	}
 }
 
@@ -171,11 +240,118 @@ export async function listActiveMortgageFeesForSurface(
 		.sort(compareMortgageFees);
 }
 
-export async function resolveServicingFeeConfig(
-	db: GenericDatabaseReader<DataModel>,
+async function materializeLegacyServicingMortgageFee(
+	db: GenericDatabaseWriter<DataModel>,
 	mortgage: Pick<Doc<"mortgages">, "_id" | "annualServicingRate">,
 	asOfDate: string
-): Promise<ResolvedServicingFeeConfig> {
+): Promise<Doc<"mortgageFees"> | null> {
+	const defaults = await ensureDefaultFeeTemplatesAndSet(db);
+	if (await hasMortgageFeeSetOptOut(db, mortgage._id, defaults.feeSetId)) {
+		return null;
+	}
+	const servicingTemplate = await db.get(defaults.servicingTemplateId);
+	if (!servicingTemplate) {
+		throw new ConvexError(
+			`Default servicing fee template not found: ${defaults.servicingTemplateId}`
+		);
+	}
+
+	const existingRows = await listActiveMortgageFeesForSurface(
+		db,
+		mortgage._id,
+		"waterfall_deduction",
+		asOfDate
+	);
+	const existingServicingRows = existingRows.filter(
+		(row) => row.code === "servicing"
+	);
+	if (existingServicingRows.length > 0) {
+		return existingServicingRows[0];
+	}
+
+	const defaultFeeSetItems = await db
+		.query("feeSetTemplateItems")
+		.withIndex("by_fee_set_template", (q) =>
+			q.eq("feeSetTemplateId", defaults.feeSetId)
+		)
+		.collect();
+	const servicingSetItem = defaultFeeSetItems.find(
+		(item) => item.feeTemplateId === servicingTemplate._id
+	);
+	const mortgageFeeId = await attachFeeTemplateToMortgageSnapshot(db, {
+		mortgageId: mortgage._id,
+		feeTemplate: servicingTemplate,
+		defaultApplication: "platform_default",
+		feeSetTemplateId: defaults.feeSetId,
+		feeSetTemplateItemId: servicingSetItem?._id,
+		parameterOverrides: {
+			annualRate: mortgage.annualServicingRate ?? 0.01,
+		},
+		waterfallPriority:
+			servicingSetItem?.sortOrder ?? DEFAULT_DIRECT_WATERFALL_PRIORITY,
+	});
+	const mortgageFee = await db.get(mortgageFeeId);
+	if (!mortgageFee) {
+		throw new ConvexError(
+			`Failed to load materialized servicing mortgage fee ${mortgageFeeId}`
+		);
+	}
+	return mortgageFee;
+}
+
+function resolveAnnualRatePrincipalWaterfallFee(
+	row: Doc<"mortgageFees">,
+	waterfallPriority: number
+): ResolvedWaterfallFeeConfig {
+	if (row.behavior !== "payment_waterfall_deduction") {
+		throw new ConvexError(
+			`Waterfall fee config ${row._id} must use payment_waterfall_deduction behavior`
+		);
+	}
+	if (row.calculationType !== "annual_rate_principal") {
+		throw new ConvexError(
+			`Waterfall fee config ${row._id} must use annual_rate_principal`
+		);
+	}
+	const annualRate = row.parameters.annualRate;
+	if (annualRate === undefined) {
+		throw new ConvexError(
+			`Waterfall fee config ${row._id} is missing annualRate`
+		);
+	}
+	return {
+		annualRate,
+		behavior: "payment_waterfall_deduction",
+		code: row.code,
+		displayCode: row.displayCode,
+		mortgageFeeId: row._id,
+		policyVersion: FEE_POLICY_VERSION,
+		revenueDestination: row.revenueDestination,
+		waterfallPriority,
+	};
+}
+
+async function resolveMortgageFeeWaterfallPriority(
+	db: GenericDatabaseReader<DataModel>,
+	row: Doc<"mortgageFees">
+) {
+	if (row.waterfallPriority !== undefined) {
+		return row.waterfallPriority;
+	}
+	if (row.feeSetTemplateItemId !== undefined) {
+		const item = await db.get(row.feeSetTemplateItemId);
+		if (item) {
+			return item.sortOrder;
+		}
+	}
+	return DEFAULT_DIRECT_WATERFALL_PRIORITY;
+}
+
+export async function resolveServicingFeeConfig(
+	db: GenericDatabaseWriter<DataModel>,
+	mortgage: Pick<Doc<"mortgages">, "_id" | "annualServicingRate">,
+	asOfDate: string
+): Promise<ResolvedServicingFeeConfig | null> {
 	const activeRows = await listActiveMortgageFeesForSurface(
 		db,
 		mortgage._id,
@@ -204,26 +380,82 @@ export async function resolveServicingFeeConfig(
 			);
 		}
 		return {
-			code: "servicing",
-			mortgageFeeId: row._id,
 			annualRate,
+			behavior: "payment_waterfall_deduction",
+			code: "servicing",
+			displayCode: row.displayCode,
+			mortgageFeeId: row._id,
 			policyVersion: FEE_POLICY_VERSION,
 			revenueDestination: row.revenueDestination,
 		};
 	}
 
+	const legacyRow = await materializeLegacyServicingMortgageFee(
+		db,
+		mortgage,
+		asOfDate
+	);
+	if (!legacyRow) {
+		return null;
+	}
+	if (legacyRow.calculationType !== "annual_rate_principal") {
+		throw new ConvexError(
+			`Servicing fee config ${legacyRow._id} must use annual_rate_principal`
+		);
+	}
+	const legacyAnnualRate = legacyRow.parameters.annualRate;
+	if (legacyAnnualRate === undefined) {
+		throw new ConvexError(
+			`Servicing fee config ${legacyRow._id} is missing annualRate`
+		);
+	}
 	return {
+		annualRate: legacyAnnualRate,
+		behavior: "payment_waterfall_deduction",
 		code: "servicing",
-		annualRate: mortgage.annualServicingRate ?? 0.01,
+		displayCode: legacyRow.displayCode,
+		mortgageFeeId: legacyRow._id,
 		policyVersion: FEE_POLICY_VERSION,
-		revenueDestination: "platform_revenue",
+		revenueDestination: legacyRow.revenueDestination,
 	};
+}
+
+export async function resolveWaterfallFeeConfigs(
+	db: GenericDatabaseWriter<DataModel>,
+	mortgage: Pick<Doc<"mortgages">, "_id" | "annualServicingRate">,
+	asOfDate: string
+): Promise<ResolvedWaterfallFeeConfig[]> {
+	await resolveServicingFeeConfig(db, mortgage, asOfDate);
+
+	const activeRows = await listActiveMortgageFeesForSurface(
+		db,
+		mortgage._id,
+		"waterfall_deduction",
+		asOfDate
+	);
+	const resolved = await Promise.all(
+		activeRows.map(async (row, index) => ({
+			config: resolveAnnualRatePrincipalWaterfallFee(
+				row,
+				await resolveMortgageFeeWaterfallPriority(db, row)
+			),
+			rowIndex: index,
+		}))
+	);
+	return resolved
+		.sort((left, right) => {
+			if (left.config.waterfallPriority !== right.config.waterfallPriority) {
+				return left.config.waterfallPriority - right.config.waterfallPriority;
+			}
+			return left.rowIndex - right.rowIndex;
+		})
+		.map(({ config }) => config);
 }
 
 export async function resolveBorrowerChargeFeeConfig(
 	db: GenericDatabaseReader<DataModel>,
 	mortgageId: Id<"mortgages">,
-	code: "late_fee" | "nsf",
+	code: Exclude<FeeCode, "servicing">,
 	asOfDate: string
 ): Promise<ResolvedBorrowerChargeFeeConfig | null> {
 	const activeRows = await listActiveMortgageFeesForSurface(
@@ -306,6 +538,153 @@ export async function assertNoOverlappingMortgageFee(
 	}
 }
 
+export async function loadFeeSetTemplateItemsForApplication(
+	db: GenericDatabaseReader<DataModel>,
+	feeSetTemplateId: Id<"feeSetTemplates">
+): Promise<BulkApplyFeeSetItem[]> {
+	const feeSet = await db.get(feeSetTemplateId);
+	if (!feeSet) {
+		throw new ConvexError(`Fee set template not found: ${feeSetTemplateId}`);
+	}
+	if (feeSet.status !== "active") {
+		throw new ConvexError(`Fee set template is inactive: ${feeSetTemplateId}`);
+	}
+
+	const items = await db
+		.query("feeSetTemplateItems")
+		.withIndex("by_fee_set_template", (q) =>
+			q.eq("feeSetTemplateId", feeSetTemplateId)
+		)
+		.collect();
+	const sortedItems = items.sort((left, right) => {
+		if (left.sortOrder !== right.sortOrder) {
+			return left.sortOrder - right.sortOrder;
+		}
+		return left._id.localeCompare(right._id);
+	});
+
+	const resolvedItems: BulkApplyFeeSetItem[] = [];
+	const seenSurfaceCodes = new Set<string>();
+	for (const item of sortedItems) {
+		const template = await db.get(item.feeTemplateId);
+		if (!template) {
+			throw new ConvexError(
+				`Fee template not found for fee set item ${item._id}: ${item.feeTemplateId}`
+			);
+		}
+		if (template.status !== "active") {
+			throw new ConvexError(`Fee template is inactive: ${template._id}`);
+		}
+		const normalizedTemplate = normalizeFeeTemplate(template);
+		const surfaceCode = `${normalizedTemplate.surface}:${normalizedTemplate.code}`;
+		if (seenSurfaceCodes.has(surfaceCode)) {
+			throw new ConvexError(
+				`Fee set contains duplicate fee surface/code: ${normalizedTemplate.surface}/${normalizedTemplate.code}`
+			);
+		}
+		seenSurfaceCodes.add(surfaceCode);
+		resolvedItems.push({ item, template: normalizedTemplate });
+	}
+	return resolvedItems;
+}
+
+export async function hasMortgageFeeSetOptOut(
+	db: GenericDatabaseReader<DataModel>,
+	mortgageId: Id<"mortgages">,
+	feeSetTemplateId: Id<"feeSetTemplates">
+) {
+	const optOut = await db
+		.query("mortgageFeeSetOptOuts")
+		.withIndex("by_mortgage_fee_set", (q) =>
+			q.eq("mortgageId", mortgageId).eq("feeSetTemplateId", feeSetTemplateId)
+		)
+		.first();
+	return optOut !== null;
+}
+
+export async function previewBulkApplyFeeSetToMortgages(
+	db: GenericDatabaseReader<DataModel>,
+	args: {
+		feeSetTemplateId: Id<"feeSetTemplates">;
+		mortgageIds?: Id<"mortgages">[];
+		effectiveFrom: string;
+	}
+): Promise<BulkApplyPreview> {
+	const resolvedItems = await loadFeeSetTemplateItemsForApplication(
+		db,
+		args.feeSetTemplateId
+	);
+	const targetMortgageIds =
+		args.mortgageIds !== undefined
+			? dedupeMortgageIds(args.mortgageIds)
+			: (
+					await db
+						.query("mortgages")
+						.withIndex("by_status", (q) => q.eq("status", "active"))
+						.collect()
+				)
+					.map((mortgage) => mortgage._id)
+					.sort();
+
+	const applicable: BulkApplyPreview["applicable"] = [];
+	const conflicts: BulkApplyPreview["conflicts"] = [];
+
+	for (const mortgageId of targetMortgageIds) {
+		const mortgage = await db.get(mortgageId);
+		if (!mortgage || mortgage.status !== "active") {
+			conflicts.push({ mortgageId, reason: "mortgage_not_found" });
+			continue;
+		}
+
+		if (await hasMortgageFeeSetOptOut(db, mortgageId, args.feeSetTemplateId)) {
+			conflicts.push({ mortgageId, reason: "mortgage_opted_out" });
+			continue;
+		}
+
+		const existingRows = await db
+			.query("mortgageFees")
+			.withIndex("by_mortgage", (q) => q.eq("mortgageId", mortgageId))
+			.collect();
+
+		const hasOverlappingActiveFee = resolvedItems.some(({ template }) =>
+			existingRows.some(
+				(row) =>
+					row.status === "active" &&
+					row.code === template.code &&
+					row.surface === template.surface &&
+					rangesOverlap(
+						{
+							effectiveFrom: row.effectiveFrom,
+							effectiveTo: row.effectiveTo,
+						},
+						{ effectiveFrom: args.effectiveFrom }
+					)
+			)
+		);
+		if (hasOverlappingActiveFee) {
+			conflicts.push({ mortgageId, reason: "existing_active_fee" });
+			continue;
+		}
+
+		applicable.push({ mortgageId, feeCount: resolvedItems.length });
+	}
+
+	return {
+		previewToken: buildBulkApplyPreviewToken({
+			feeSetTemplateId: args.feeSetTemplateId,
+			effectiveFrom: args.effectiveFrom,
+			targetMortgageIds,
+			applicableMortgageIds: applicable.map((row) => row.mortgageId),
+			conflicts,
+			items: resolvedItems,
+		}),
+		feeSetTemplateId: args.feeSetTemplateId,
+		effectiveFrom: args.effectiveFrom,
+		applicable,
+		conflicts,
+	};
+}
+
 async function getFeeTemplateByCode(
 	db: GenericDatabaseReader<DataModel>,
 	code: FeeCode
@@ -317,12 +696,62 @@ async function getFeeTemplateByCode(
 	return rows[0] ?? null;
 }
 
-async function getDefaultFeeSet(db: GenericDatabaseReader<DataModel>) {
-	const rows = await db
+async function clearOtherActivePlatformDefaults(
+	db: GenericDatabaseWriter<DataModel>,
+	keepId: Id<"feeSetTemplates">,
+	now: number
+) {
+	const activeDefaults = await db
+		.query("feeSetTemplates")
+		.withIndex("by_platform_default_status", (q) =>
+			q.eq("isPlatformDefault", true).eq("status", "active")
+		)
+		.collect();
+
+	for (const row of activeDefaults) {
+		if (row._id === keepId) {
+			continue;
+		}
+		await db.patch(row._id, {
+			isPlatformDefault: false,
+			updatedAt: now,
+		});
+	}
+}
+
+async function getDefaultFeeSet(
+	db: GenericDatabaseWriter<DataModel>,
+	now: number
+) {
+	const activeDefaults = await db
+		.query("feeSetTemplates")
+		.withIndex("by_platform_default_status", (q) =>
+			q.eq("isPlatformDefault", true).eq("status", "active")
+		)
+		.collect();
+	const activeSets = await db
 		.query("feeSetTemplates")
 		.withIndex("by_status", (q) => q.eq("status", "active"))
 		.collect();
-	return rows.find((row) => row.name === DEFAULT_FEE_SET_NAME) ?? null;
+	const namedStandardSet =
+		activeSets.find((row) => row.name === DEFAULT_FEE_SET_NAME) ?? null;
+
+	if (namedStandardSet) {
+		if (!namedStandardSet.isPlatformDefault) {
+			await db.patch(namedStandardSet._id, {
+				isPlatformDefault: true,
+				updatedAt: now,
+			});
+		}
+		await clearOtherActivePlatformDefaults(db, namedStandardSet._id, now);
+		return await db.get(namedStandardSet._id);
+	}
+
+	const selectedDefault = activeDefaults[0] ?? null;
+	if (selectedDefault) {
+		await clearOtherActivePlatformDefaults(db, selectedDefault._id, now);
+	}
+	return selectedDefault;
 }
 
 export async function ensureDefaultFeeTemplatesAndSet(
@@ -331,12 +760,16 @@ export async function ensureDefaultFeeTemplatesAndSet(
 	const now = Date.now();
 
 	let servicingTemplate = await getFeeTemplateByCode(db, "servicing");
-	if (!servicingTemplate) {
+	if (servicingTemplate) {
+		servicingTemplate = await repairFeeTemplateIfNeeded(db, servicingTemplate);
+	} else {
 		const id = await db.insert("feeTemplates", {
 			name: "Standard Servicing Fee",
 			description:
 				"Standard servicing fee deducted from regular interest settlements",
 			code: "servicing",
+			behavior: "payment_waterfall_deduction",
+			displayCode: "servicing",
 			surface: "waterfall_deduction",
 			revenueDestination: "platform_revenue",
 			calculationType: "annual_rate_principal",
@@ -353,15 +786,21 @@ export async function ensureDefaultFeeTemplatesAndSet(
 	}
 
 	let lateFeeTemplate = await getFeeTemplateByCode(db, "late_fee");
-	if (!lateFeeTemplate) {
+	if (lateFeeTemplate) {
+		lateFeeTemplate = await repairFeeTemplateIfNeeded(db, lateFeeTemplate);
+	} else {
 		const id = await db.insert("feeTemplates", {
 			name: "Standard Late Fee",
 			description: "Borrower late fee assessed after grace expiry",
 			code: "late_fee",
+			behavior: "borrower_one_time_charge",
+			displayCode: "late_fee",
 			surface: "borrower_charge",
 			revenueDestination: "platform_revenue",
 			calculationType: "fixed_amount_cents",
 			parameters: { fixedAmountCents: 5000, dueDays: 30, graceDays: 45 },
+			paymentRail: "manual",
+			recurrence: "one_time",
 			status: "active",
 			createdAt: now,
 			updatedAt: now,
@@ -374,16 +813,22 @@ export async function ensureDefaultFeeTemplatesAndSet(
 	}
 
 	let nsfTemplate = await getFeeTemplateByCode(db, "nsf");
-	if (!nsfTemplate) {
+	if (nsfTemplate) {
+		nsfTemplate = await repairFeeTemplateIfNeeded(db, nsfTemplate);
+	} else {
 		const id = await db.insert("feeTemplates", {
 			name: "Standard NSF Fee",
 			description:
 				"Config-ready NSF fee definition; auto-generation is deferred in v1",
 			code: "nsf",
+			behavior: "borrower_one_time_charge",
+			displayCode: "nsf",
 			surface: "borrower_charge",
 			revenueDestination: "platform_revenue",
 			calculationType: "fixed_amount_cents",
 			parameters: { fixedAmountCents: 5000, dueDays: 30, graceDays: 45 },
+			paymentRail: "manual",
+			recurrence: "one_time",
 			status: "active",
 			createdAt: now,
 			updatedAt: now,
@@ -395,12 +840,13 @@ export async function ensureDefaultFeeTemplatesAndSet(
 		nsfTemplate = createdTemplate;
 	}
 
-	let feeSet = await getDefaultFeeSet(db);
+	let feeSet = await getDefaultFeeSet(db, now);
 	if (!feeSet) {
 		const id = await db.insert("feeSetTemplates", {
 			name: DEFAULT_FEE_SET_NAME,
 			description:
 				"Default servicing and late-fee configuration for active mortgages",
+			isPlatformDefault: true,
 			status: "active",
 			createdAt: now,
 			updatedAt: now,
@@ -465,44 +911,60 @@ export async function attachFeeTemplateToMortgageSnapshot(
 		effectiveTo?: string;
 		feeSetTemplateId?: Id<"feeSetTemplates">;
 		feeSetTemplateItemId?: Id<"feeSetTemplateItems">;
+		defaultApplication?: Doc<"mortgageFees">["defaultApplication"];
 		parameterOverrides?: FeeParameters;
+		waterfallPriority?: number;
 	}
 ) {
+	const feeTemplate = normalizeFeeTemplate(args.feeTemplate);
 	const effectiveFrom = normalizeEffectiveFrom(args.effectiveFrom);
 	const parameters: FeeParameters = {
-		...args.feeTemplate.parameters,
+		...feeTemplate.parameters,
 		...args.parameterOverrides,
 	};
 
 	assertValidFeeDefinition({
-		calculationType: args.feeTemplate.calculationType,
-		code: args.feeTemplate.code,
+		behavior: feeTemplate.behavior,
+		calculationType: feeTemplate.calculationType,
+		code: feeTemplate.code,
+		displayCode: feeTemplate.displayCode,
 		parameters,
-		revenueDestination: args.feeTemplate.revenueDestination,
-		surface: args.feeTemplate.surface,
+		paymentRail: feeTemplate.paymentRail,
+		recurrence: feeTemplate.recurrence,
+		revenueDestination: feeTemplate.revenueDestination,
+		surface: feeTemplate.surface,
 	});
 
 	await assertNoOverlappingMortgageFee(db, {
 		mortgageId: args.mortgageId,
-		code: args.feeTemplate.code,
-		surface: args.feeTemplate.surface,
+		code: feeTemplate.code,
+		surface: feeTemplate.surface,
 		effectiveFrom,
 		effectiveTo: args.effectiveTo,
 	});
 
 	return db.insert("mortgageFees", {
 		mortgageId: args.mortgageId,
-		code: args.feeTemplate.code,
-		surface: args.feeTemplate.surface,
-		revenueDestination: args.feeTemplate.revenueDestination,
-		calculationType: args.feeTemplate.calculationType,
+		code: feeTemplate.code,
+		behavior: feeTemplate.behavior,
+		displayCode: feeTemplate.displayCode,
+		surface: feeTemplate.surface,
+		revenueDestination: feeTemplate.revenueDestination,
+		calculationType: feeTemplate.calculationType,
 		parameters,
+		paymentRail: feeTemplate.paymentRail,
+		recurrence: feeTemplate.recurrence,
+		defaultApplication: args.defaultApplication ?? "mortgage_specific",
 		effectiveFrom,
 		effectiveTo: args.effectiveTo,
 		status: "active",
-		feeTemplateId: args.feeTemplate._id,
+		feeTemplateId: feeTemplate._id,
 		feeSetTemplateId: args.feeSetTemplateId,
 		feeSetTemplateItemId: args.feeSetTemplateItemId,
+		waterfallPriority:
+			feeTemplate.behavior === "payment_waterfall_deduction"
+				? (args.waterfallPriority ?? DEFAULT_DIRECT_WATERFALL_PRIORITY)
+				: undefined,
 		createdAt: Date.now(),
 	});
 }
@@ -513,6 +975,9 @@ export async function attachDefaultFeeSetToMortgage(
 	annualServicingRate?: number
 ) {
 	const defaults = await ensureDefaultFeeTemplatesAndSet(db);
+	if (await hasMortgageFeeSetOptOut(db, mortgageId, defaults.feeSetId)) {
+		return;
+	}
 	const items = await db
 		.query("feeSetTemplateItems")
 		.withIndex("by_fee_set_template", (q) =>
@@ -544,8 +1009,10 @@ export async function attachDefaultFeeSetToMortgage(
 		await attachFeeTemplateToMortgageSnapshot(db, {
 			mortgageId,
 			feeTemplate: template,
+			defaultApplication: "platform_default",
 			feeSetTemplateId: defaults.feeSetId,
 			feeSetTemplateItemId: item._id,
+			waterfallPriority: item.sortOrder,
 			parameterOverrides:
 				template.code === "servicing" && annualServicingRate !== undefined
 					? { annualRate: annualServicingRate }

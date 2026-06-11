@@ -60,6 +60,8 @@ describe("TRANSFER_TYPE_TO_OBLIGATION_TYPE", () => {
 			borrower_interest_collection: "regular_interest",
 			borrower_principal_collection: "principal_repayment",
 			borrower_late_fee_collection: "late_fee",
+			borrower_one_time_fee_collection: "late_fee",
+			borrower_recurring_fee_collection: "late_fee",
 			borrower_arrears_cure: "arrears_cure",
 		};
 
@@ -127,6 +129,27 @@ describe("obligationTypeToTransferType", () => {
 		expect(obligationTypeToTransferType("arrears_cure")).toBe(
 			"borrower_arrears_cure"
 		);
+	});
+
+	it("maps borrower fee obligations by fee behavior without changing late fees", () => {
+		expect(
+			obligationTypeToTransferType("late_fee", {
+				feeCode: "late_fee",
+				feeBehavior: "borrower_one_time_charge",
+			})
+		).toBe("borrower_late_fee_collection");
+		expect(
+			obligationTypeToTransferType("late_fee", {
+				feeCode: "admin_fee",
+				feeBehavior: "borrower_one_time_charge",
+			})
+		).toBe("borrower_one_time_fee_collection");
+		expect(
+			obligationTypeToTransferType("late_fee", {
+				feeCode: "custom_fee",
+				feeBehavior: "borrower_recurring_charge",
+			})
+		).toBe("borrower_recurring_fee_collection");
 	});
 
 	it("falls back safely for undefined obligation types", () => {

@@ -1,3 +1,5 @@
+import type { Doc, Id } from "../../_generated/dataModel";
+
 export const CASH_ACCOUNT_FAMILIES = [
 	"BORROWER_RECEIVABLE",
 	"CASH_CLEARING",
@@ -152,6 +154,16 @@ export interface BalancePair {
 export interface SerializedBalancePair {
 	credit: string;
 	debit: string;
+}
+
+export interface FeeAssessmentLedgerMetadata {
+	behavior: Doc<"feeAssessments">["behavior"];
+	calculationInputs: Record<string, unknown>;
+	calculationOutputs: Record<string, unknown>;
+	displayCode: string;
+	feeAssessmentId: Id<"feeAssessments">;
+	feeCode: Doc<"feeAssessments">["code"];
+	mortgageFeeId: Id<"mortgageFees">;
 }
 
 // ── Idempotency Key Convention ──────────────────────────────────────

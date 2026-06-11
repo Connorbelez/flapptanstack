@@ -130,6 +130,7 @@ export function buildVelocityActivationHandoff(args: {
 			providerCode: "pad_rotessa",
 			selectedBankAccountId: args.bankAccountId,
 		},
+		feeDefaultMode: "platform_default",
 		listingOverrides: mapListingOverrides(
 			args.workspace.fairlendEnrichment.listingOverrides
 		),

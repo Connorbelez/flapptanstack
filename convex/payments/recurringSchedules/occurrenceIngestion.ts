@@ -457,10 +457,16 @@ async function ensureTransferRequest(args: {
 			`Linked obligation ${firstObligationId} not found for plan entry ${args.planEntry._id}.`
 		);
 	}
+	const mortgageFee = firstObligation.mortgageFeeId
+		? await args.ctx.db.get(firstObligation.mortgageFeeId)
+		: null;
 
 	const transferId = await createTransferRequestRecord(args.ctx, {
 		direction: "inbound",
-		transferType: obligationTypeToTransferType(firstObligation.type),
+		transferType: obligationTypeToTransferType(firstObligation.type, {
+			feeBehavior: mortgageFee?.behavior,
+			feeCode: firstObligation.feeCode,
+		}),
 		amount: args.event.amount ?? args.planEntry.amount,
 		counterpartyType: "borrower",
 		counterpartyId: `${firstObligation.borrowerId}`,

@@ -13,6 +13,8 @@ export const INBOUND_TRANSFER_TYPES = [
 	"borrower_interest_collection",
 	"borrower_principal_collection",
 	"borrower_late_fee_collection",
+	"borrower_one_time_fee_collection",
+	"borrower_recurring_fee_collection",
 	"borrower_arrears_cure",
 	"locking_fee_collection",
 	"commitment_deposit_collection",
@@ -230,6 +232,8 @@ export const TRANSFER_TYPE_TO_OBLIGATION_TYPE = {
 	borrower_interest_collection: "regular_interest",
 	borrower_principal_collection: "principal_repayment",
 	borrower_late_fee_collection: "late_fee",
+	borrower_one_time_fee_collection: "late_fee",
+	borrower_recurring_fee_collection: "late_fee",
 	borrower_arrears_cure: "arrears_cure",
 	// Inbound — not obligation-backed
 	locking_fee_collection: null,
@@ -260,11 +264,34 @@ export const OBLIGATION_TYPE_TO_TRANSFER_TYPE = {
 export const DEFAULT_OBLIGATION_TRANSFER_TYPE: InboundTransferType =
 	"borrower_interest_collection";
 
+export interface ObligationTransferContext {
+	readonly feeBehavior?:
+		| "borrower_one_time_charge"
+		| "borrower_recurring_charge"
+		| "payment_waterfall_deduction";
+	readonly feeCode?:
+		| "servicing"
+		| "late_fee"
+		| "nsf"
+		| "admin_fee"
+		| "custom_fee";
+}
+
 export function obligationTypeToTransferType(
-	obligationType: string | undefined
+	obligationType: string | undefined,
+	context: ObligationTransferContext = {}
 ): InboundTransferType {
 	if (!obligationType) {
 		return DEFAULT_OBLIGATION_TRANSFER_TYPE;
+	}
+
+	if (obligationType === "late_fee" && context.feeCode !== "late_fee") {
+		if (context.feeBehavior === "borrower_recurring_charge") {
+			return "borrower_recurring_fee_collection";
+		}
+		if (context.feeBehavior === "borrower_one_time_charge") {
+			return "borrower_one_time_fee_collection";
+		}
 	}
 
 	return (

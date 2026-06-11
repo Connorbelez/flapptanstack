@@ -17,6 +17,7 @@ import {
 	buildIdempotencyKey,
 	type CashAccountFamily,
 	type CashEntryType,
+	type FeeAssessmentLedgerMetadata,
 } from "./types";
 
 function normalizeSource(source: CommandSource): CommandSource {
@@ -420,14 +421,277 @@ export interface ServicingFeeMetadata extends Record<string, unknown> {
 	/** Additional structured fields for future extensibility. */
 	additionalFields?: Record<string, unknown>;
 	annualRate: number;
+	behavior: FeeAssessmentLedgerMetadata["behavior"];
+	calculationInputs: Record<string, unknown>;
+	calculationOutputs: Record<string, unknown>;
+	displayCode: string;
+	feeAssessment: FeeAssessmentLedgerMetadata;
+	feeAssessmentId: FeeAssessmentLedgerMetadata["feeAssessmentId"];
 	feeCashApplied: number;
-	feeCode?: string;
+	feeCode: string;
 	feeDue: number;
 	feeReceivable: number;
-	mortgageFeeId?: string;
+	mortgageFeeId: Id<"mortgageFees">;
 	paymentFrequency: PaymentFrequency;
 	policyVersion?: number;
 	principalBalance: number;
+}
+
+interface ServicingFeeOutputTotals {
+	feeCashApplied: number;
+	feeDue: number;
+	feeReceivable: number;
+}
+
+function assertServicingFeeOutputTotalsMatch(
+	outputs: Record<string, unknown>,
+	totals: ServicingFeeOutputTotals,
+	context: string
+): void {
+	const expectedOutputs: [keyof ServicingFeeOutputTotals, number][] = [
+		["feeCashApplied", totals.feeCashApplied],
+		["feeDue", totals.feeDue],
+		["feeReceivable", totals.feeReceivable],
+	];
+
+	for (const [field, expected] of expectedOutputs) {
+		const actual = outputs[field];
+		if (actual !== undefined && actual !== expected) {
+			throw new ConvexError(
+				`${context} calculationOutputs.${field} does not match servicing fee metadata ${field}`
+			);
+		}
+	}
+}
+
+function normalizeServicingFeeMetadata(
+	metadata: ServicingFeeMetadata
+): ServicingFeeMetadata {
+	const normalized: ServicingFeeMetadata = {
+		...metadata,
+		feeAssessment: {
+			...metadata.feeAssessment,
+			calculationInputs: {
+				...metadata.feeAssessment.calculationInputs,
+				annualRate: metadata.annualRate,
+				paymentFrequency: metadata.paymentFrequency,
+				policyVersion: metadata.policyVersion,
+				principalBalance: metadata.principalBalance,
+			},
+			calculationOutputs: {
+				...metadata.feeAssessment.calculationOutputs,
+				feeCashApplied: metadata.feeCashApplied,
+				feeDue: metadata.feeDue,
+				feeReceivable: metadata.feeReceivable,
+			},
+		},
+		calculationInputs: {
+			...metadata.calculationInputs,
+			annualRate: metadata.annualRate,
+			paymentFrequency: metadata.paymentFrequency,
+			policyVersion: metadata.policyVersion,
+			principalBalance: metadata.principalBalance,
+		},
+		calculationOutputs: {
+			...metadata.calculationOutputs,
+			feeCashApplied: metadata.feeCashApplied,
+			feeDue: metadata.feeDue,
+			feeReceivable: metadata.feeReceivable,
+		},
+	};
+
+	return normalized;
+}
+
+async function loadServicingFeeAssessmentForAllocation(
+	ctx: MutationCtx,
+	args: {
+		metadata: ServicingFeeMetadata;
+		mortgageId: Id<"mortgages">;
+		obligationId: Id<"obligations">;
+	}
+): Promise<Doc<"feeAssessments">> {
+	if (
+		args.metadata.feeAssessment.feeAssessmentId !==
+		args.metadata.feeAssessmentId
+	) {
+		throw new ConvexError(
+			"Servicing fee metadata feeAssessmentId does not match nested fee assessment metadata"
+		);
+	}
+	if (
+		args.metadata.feeAssessment.mortgageFeeId !== args.metadata.mortgageFeeId
+	) {
+		throw new ConvexError(
+			"Servicing fee metadata mortgageFeeId does not match nested fee assessment metadata"
+		);
+	}
+	const outputTotals: ServicingFeeOutputTotals = {
+		feeCashApplied: args.metadata.feeCashApplied,
+		feeDue: args.metadata.feeDue,
+		feeReceivable: args.metadata.feeReceivable,
+	};
+	assertServicingFeeOutputTotalsMatch(
+		args.metadata.calculationOutputs,
+		outputTotals,
+		"Servicing fee metadata"
+	);
+	assertServicingFeeOutputTotalsMatch(
+		args.metadata.feeAssessment.calculationOutputs,
+		outputTotals,
+		"Nested servicing fee metadata"
+	);
+
+	const assessment = await ctx.db.get(args.metadata.feeAssessmentId);
+	if (!assessment) {
+		throw new ConvexError(
+			`Fee assessment not found: ${args.metadata.feeAssessmentId}`
+		);
+	}
+	if (assessment.mortgageId !== args.mortgageId) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not belong to mortgage ${args.mortgageId}`
+		);
+	}
+	if (assessment.mortgageFeeId !== args.metadata.mortgageFeeId) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match servicing fee metadata mortgageFeeId`
+		);
+	}
+	if (assessment.behavior !== args.metadata.behavior) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match servicing fee metadata behavior`
+		);
+	}
+	if (assessment.behavior !== args.metadata.feeAssessment.behavior) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match nested servicing fee metadata behavior`
+		);
+	}
+	if (assessment.code !== args.metadata.feeCode) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match servicing fee metadata feeCode`
+		);
+	}
+	if (assessment.code !== args.metadata.feeAssessment.feeCode) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match nested servicing fee metadata feeCode`
+		);
+	}
+	if (assessment.displayCode !== args.metadata.displayCode) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match servicing fee metadata displayCode`
+		);
+	}
+	if (assessment.displayCode !== args.metadata.feeAssessment.displayCode) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match nested servicing fee metadata displayCode`
+		);
+	}
+	if (assessment.behavior !== "payment_waterfall_deduction") {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} is not a waterfall deduction assessment`
+		);
+	}
+	if (
+		assessment.obligationId !== undefined &&
+		assessment.obligationId !== args.obligationId
+	) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match obligation ${args.obligationId}`
+		);
+	}
+	if (
+		assessment.sourceObligationId !== undefined &&
+		assessment.sourceObligationId !== args.obligationId
+	) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match source obligation ${args.obligationId}`
+		);
+	}
+	if (assessment.amountCents < args.metadata.feeCashApplied) {
+		throw new ConvexError(
+			"Fee assessment amountCents cannot be less than servicingFee"
+		);
+	}
+	if (assessment.amountCents !== args.metadata.feeDue) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} does not match servicing fee metadata feeDue`
+		);
+	}
+	if (
+		args.metadata.feeReceivable !==
+		args.metadata.feeDue - args.metadata.feeCashApplied
+	) {
+		throw new ConvexError(
+			"Servicing fee metadata feeReceivable must equal feeDue minus feeCashApplied"
+		);
+	}
+	if (
+		assessment.amountSettledCents > 0 &&
+		assessment.amountSettledCents !== args.metadata.feeCashApplied
+	) {
+		throw new ConvexError(
+			"Fee assessment amountSettledCents does not match servicingFee"
+		);
+	}
+	if (assessment.status === "reversed") {
+		throw new ConvexError("Reversed fee assessments cannot be linked");
+	}
+	return assessment;
+}
+
+async function linkServicingFeeAssessmentToJournalEntry(
+	ctx: MutationCtx,
+	args: {
+		assessmentId: Id<"feeAssessments">;
+		journalEntry: Doc<"cash_ledger_journal_entries">;
+		obligationId: Id<"obligations">;
+		servicingFee: number;
+	}
+) {
+	const assessment = await ctx.db.get(args.assessmentId);
+	if (!assessment) {
+		throw new ConvexError(`Fee assessment not found: ${args.assessmentId}`);
+	}
+	if (
+		assessment.cashLedgerJournalEntryId !== undefined &&
+		assessment.cashLedgerJournalEntryId !== args.journalEntry._id
+	) {
+		throw new ConvexError(
+			`Fee assessment ${assessment._id} is already linked to a different cash ledger journal entry`
+		);
+	}
+	if (args.journalEntry.entryType !== "SERVICING_FEE_RECOGNIZED") {
+		throw new ConvexError(
+			`Cash ledger journal entry ${args.journalEntry._id} is not a servicing fee recognition entry`
+		);
+	}
+	if (args.journalEntry.mortgageId !== assessment.mortgageId) {
+		throw new ConvexError(
+			`Cash ledger journal entry ${args.journalEntry._id} does not match fee assessment mortgage`
+		);
+	}
+	if (args.journalEntry.obligationId !== args.obligationId) {
+		throw new ConvexError(
+			`Cash ledger journal entry ${args.journalEntry._id} does not match obligation ${args.obligationId}`
+		);
+	}
+	if (args.journalEntry.amount !== BigInt(args.servicingFee)) {
+		throw new ConvexError(
+			"Cash ledger journal entry amount must match servicingFee"
+		);
+	}
+
+	await ctx.db.patch(assessment._id, {
+		amountSettledCents: args.servicingFee,
+		cashLedgerJournalEntryId: args.journalEntry._id,
+		status:
+			args.servicingFee === assessment.amountCents
+				? "settled"
+				: "partially_settled",
+		updatedAt: Date.now(),
+	});
 }
 
 export async function postSettlementAllocation(
@@ -446,8 +710,44 @@ export async function postSettlementAllocation(
 		}>;
 		source: CommandSource;
 		feeMetadata?: ServicingFeeMetadata;
+		feeMetadataEntries?: ServicingFeeMetadata[];
 	}
 ) {
+	const feeMetadataEntries =
+		args.feeMetadataEntries ?? (args.feeMetadata ? [args.feeMetadata] : []);
+	const feeAssessmentIds = new Set<string>();
+	const feeMetadataTotal = feeMetadataEntries.reduce((sum, metadata) => {
+		if (
+			!Number.isSafeInteger(metadata.feeCashApplied) ||
+			metadata.feeCashApplied < 0
+		) {
+			throw new ConvexError(
+				"postSettlementAllocation feeMetadata feeCashApplied must be a non-negative integer cent value"
+			);
+		}
+		if (metadata.feeCashApplied > 0) {
+			const assessmentId = `${metadata.feeAssessmentId}`;
+			if (feeAssessmentIds.has(assessmentId)) {
+				throw new ConvexError(
+					"postSettlementAllocation feeMetadataEntries must not contain duplicate positive feeAssessmentId values"
+				);
+			}
+			feeAssessmentIds.add(assessmentId);
+		}
+		return sum + metadata.feeCashApplied;
+	}, 0);
+
+	if (args.servicingFee > 0 && feeMetadataEntries.length === 0) {
+		throw new ConvexError(
+			"postSettlementAllocation requires feeMetadata when servicingFee is positive"
+		);
+	}
+	if (feeMetadataTotal !== args.servicingFee) {
+		throw new ConvexError(
+			"postSettlementAllocation fee metadata total must equal servicingFee"
+		);
+	}
+
 	const obligation = await ctx.db.get(args.obligationId);
 	if (!obligation) {
 		throw new ConvexError(`Obligation not found: ${args.obligationId}`);
@@ -458,6 +758,23 @@ export async function postSettlementAllocation(
 		grossAllocation,
 		args.entries.map((e) => e.amount),
 		args.servicingFee
+	);
+	const feeAssessments =
+		args.servicingFee > 0
+			? await Promise.all(
+					feeMetadataEntries
+						.filter((metadata) => metadata.feeCashApplied > 0)
+						.map((metadata) =>
+							loadServicingFeeAssessmentForAllocation(ctx, {
+								metadata,
+								mortgageId: args.mortgageId,
+								obligationId: args.obligationId,
+							})
+						)
+				)
+			: [];
+	const feeAssessmentById = new Map(
+		feeAssessments.map((assessment) => [assessment._id, assessment])
 	);
 
 	const allocationControlAccount = await getOrCreateCashAccount(ctx, {
@@ -494,31 +811,58 @@ export async function postSettlementAllocation(
 		});
 	}
 
+	const servicingFeeJournalEntryIds: Id<"cash_ledger_journal_entries">[] = [];
 	if (args.servicingFee > 0) {
 		const servicingRevenueAccount = await getOrCreateCashAccount(ctx, {
 			family: "SERVICING_REVENUE",
 			mortgageId: args.mortgageId,
 		});
 
-		await postCashEntryInternal(ctx, {
-			entryType: "SERVICING_FEE_RECOGNIZED",
-			effectiveDate: args.settledDate,
-			amount: args.servicingFee,
-			debitAccountId: allocationControlAccount._id,
-			creditAccountId: servicingRevenueAccount._id,
-			idempotencyKey: buildIdempotencyKey("servicing-fee", args.obligationId),
-			mortgageId: args.mortgageId,
-			obligationId: args.obligationId,
-			borrowerId: obligation.borrowerId,
-			postingGroupId: `allocation:${args.obligationId}`,
-			source: normalizeSource(args.source),
-			...(args.feeMetadata
-				? {
-						metadata: args.feeMetadata,
-					}
-				: {}),
-		});
+		for (const metadata of feeMetadataEntries) {
+			if (metadata.feeCashApplied === 0) {
+				continue;
+			}
+			const feeEntryResult = await postCashEntryInternal(ctx, {
+				entryType: "SERVICING_FEE_RECOGNIZED",
+				effectiveDate: args.settledDate,
+				amount: metadata.feeCashApplied,
+				debitAccountId: allocationControlAccount._id,
+				creditAccountId: servicingRevenueAccount._id,
+				idempotencyKey:
+					feeMetadataEntries.length === 1
+						? buildIdempotencyKey("servicing-fee", args.obligationId)
+						: buildIdempotencyKey(
+								"servicing-fee",
+								args.obligationId,
+								metadata.feeAssessmentId
+							),
+				mortgageId: args.mortgageId,
+				obligationId: args.obligationId,
+				borrowerId: obligation.borrowerId,
+				postingGroupId: `allocation:${args.obligationId}`,
+				source: normalizeSource(args.source),
+				metadata: normalizeServicingFeeMetadata(metadata),
+			});
+			servicingFeeJournalEntryIds.push(feeEntryResult.entry._id);
+			const feeAssessment = feeAssessmentById.get(metadata.feeAssessmentId);
+			if (!feeAssessment) {
+				throw new ConvexError(
+					`Fee assessment ${metadata.feeAssessmentId} was not validated before allocation posting`
+				);
+			}
+			await linkServicingFeeAssessmentToJournalEntry(ctx, {
+				assessmentId: feeAssessment._id,
+				journalEntry: feeEntryResult.entry,
+				obligationId: args.obligationId,
+				servicingFee: metadata.feeCashApplied,
+			});
+		}
 	}
+
+	return {
+		servicingFeeJournalEntryId: servicingFeeJournalEntryIds[0] ?? null,
+		servicingFeeJournalEntryIds,
+	};
 }
 
 // ── Waiver ───────────────────────────────────────────────────────────
@@ -1675,7 +2019,8 @@ export async function postTransferReversal(
  * Maps an inbound transfer type to the credit account family.
  *
  * - borrower_interest_collection, borrower_principal_collection,
- *   borrower_late_fee_collection, borrower_arrears_cure → BORROWER_RECEIVABLE
+ *   borrower_late_fee_collection, borrower_one_time_fee_collection,
+ *   borrower_recurring_fee_collection, borrower_arrears_cure → BORROWER_RECEIVABLE
  * - locking_fee_collection, commitment_deposit_collection → UNAPPLIED_CASH
  * - deal_principal_transfer → CASH_CLEARING
  */
@@ -1686,6 +2031,8 @@ export function inboundTransferCreditFamily(
 		case "borrower_interest_collection":
 		case "borrower_principal_collection":
 		case "borrower_late_fee_collection":
+		case "borrower_one_time_fee_collection":
+		case "borrower_recurring_fee_collection":
 		case "borrower_arrears_cure":
 			return "BORROWER_RECEIVABLE";
 		case "locking_fee_collection":

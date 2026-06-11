@@ -2,7 +2,10 @@ import { v } from "convex/values";
 import type { Id } from "../../_generated/dataModel";
 import type { CommandSource } from "../../engine/types";
 import type { ManualSettlementDetails } from "../transfers/interface";
-import type { ProviderCode } from "../transfers/types";
+import type {
+	ObligationTransferContext,
+	ProviderCode,
+} from "../transfers/types";
 import { obligationTypeToTransferType } from "../transfers/types";
 import { manualSettlementValidator } from "../transfers/validators";
 
@@ -146,6 +149,9 @@ export interface TransferHandoffRequest {
 	mortgageId: Id<"mortgages">;
 	obligationIds: Id<"obligations">[];
 	planEntryId: Id<"collectionPlanEntries">;
+	primaryFeeBehavior?: ObligationTransferContext["feeBehavior"];
+	primaryFeeCode?: ObligationTransferContext["feeCode"];
+	primaryMortgageFeeId?: Id<"mortgageFees">;
 	primaryObligationType?: string;
 	providerCode: ProviderCode;
 	source: CommandSource;
@@ -211,7 +217,10 @@ export function buildTransferHandoffMetadata(
 		obligationIds: args.obligationIds.map((obligationId) => `${obligationId}`),
 		planEntryMethod: args.method,
 		triggerSource: args.source.channel,
-		transferTypeHint: obligationTypeToTransferType(firstObligationType),
+		transferTypeHint: obligationTypeToTransferType(firstObligationType, {
+			feeBehavior: args.primaryFeeBehavior,
+			feeCode: args.primaryFeeCode,
+		}),
 	};
 }
 
