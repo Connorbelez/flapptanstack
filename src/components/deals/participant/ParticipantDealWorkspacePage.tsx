@@ -1,5 +1,6 @@
 "use client";
 
+import { useAction } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
 	AlertTriangle,
@@ -11,7 +12,7 @@ import {
 	Signature,
 	Users,
 } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
+import { type ComponentType, type ReactNode, useState } from "react";
 import { LegalRepresentationStatusPanel } from "#/components/legal-representation/LegalRepresentationStatusPanel";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -23,6 +24,8 @@ import {
 	CardTitle,
 } from "#/components/ui/card";
 import type { api } from "../../../../convex/_generated/api";
+import { api as convexApi } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 type ParticipantDealWorkspace = NonNullable<
 	FunctionReturnType<typeof api.deals.queries.getParticipantDealWorkspace>
@@ -37,7 +40,9 @@ export function ParticipantDealWorkspacePage({
 	backTo,
 	workspace,
 }: ParticipantDealWorkspacePageProps) {
-	const signingHref = safeHttpUrl(workspace.signing.embeddedSigningToken);
+	const createParticipantSigningSession = useAction(
+		convexApi.deals.signingSessions.createParticipantSigningSession
+	);
 	const hasCloseReceiptEvidence = Boolean(
 		workspace.closeReceipt.closedAt ||
 			workspace.closeReceipt.funds ||
@@ -157,8 +162,12 @@ export function ParticipantDealWorkspacePage({
 								</p>
 							</div>
 							<SigningAction
+								attemptId={workspace.signing.attemptId}
+								createParticipantSigningSession={
+									createParticipantSigningSession
+								}
+								dealId={workspace.deal.dealId}
 								hasToken={Boolean(workspace.signing.embeddedSigningToken)}
-								signingHref={signingHref}
 							/>
 						</div>
 						<div className="space-y-2">
@@ -261,36 +270,59 @@ export function ParticipantDealWorkspacePage({
 	);
 }
 
-function safeHttpUrl(value: string | null) {
-	if (!value) {
-		return null;
-	}
-	try {
-		const url = new URL(value);
-		if (url.protocol === "https:" || url.protocol === "http:") {
-			return url.toString();
-		}
-	} catch {
-		return null;
-	}
-	return null;
-}
-
 function SigningAction({
+	attemptId,
+	createParticipantSigningSession,
+	dealId,
 	hasToken,
-	signingHref,
 }: {
+	attemptId: Id<"dealEnvelopeAttempts"> | null;
+	createParticipantSigningSession: (args: {
+		attemptId: Id<"dealEnvelopeAttempts">;
+		dealId: Id<"deals">;
+	}) => Promise<{ expiresAt: number; url: string }>;
+	dealId: Id<"deals">;
 	hasToken: boolean;
-	signingHref: string | null;
 }) {
-	if (signingHref) {
+	const [isLaunching, setIsLaunching] = useState(false);
+	const [launchError, setLaunchError] = useState<string | null>(null);
+
+	if (hasToken && attemptId) {
 		return (
-			<Button asChild size="sm">
-				<a href={signingHref} rel="noreferrer" target="_blank">
+			<div className="flex flex-col items-end gap-2">
+				<Button
+					disabled={isLaunching}
+					onClick={async () => {
+						setIsLaunching(true);
+						setLaunchError(null);
+						try {
+							const session = await createParticipantSigningSession({
+								attemptId,
+								dealId,
+							});
+							window.open(session.url, "_blank", "noopener,noreferrer");
+						} catch (error) {
+							setLaunchError(
+								error instanceof Error
+									? error.message
+									: "Unable to open signing."
+							);
+						} finally {
+							setIsLaunching(false);
+						}
+					}}
+					size="sm"
+					type="button"
+				>
 					<ExternalLink className="mr-2 size-4" />
-					Open signing
-				</a>
-			</Button>
+					{isLaunching ? "Opening signing" : "Open signing"}
+				</Button>
+				{launchError ? (
+					<p className="max-w-48 text-destructive text-xs" role="alert">
+						{launchError}
+					</p>
+				) : null}
+			</div>
 		);
 	}
 	if (hasToken) {

@@ -2,13 +2,41 @@
  * @vitest-environment jsdom
  */
 
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { cleanup, render } from "@testing-library/react";
 import { useMutation } from "convex/react";
 import { Window } from "happy-dom";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LawyerOnboardingPage } from "#/components/legal-representation/LawyerOnboardingPage";
+import {
+	LawyerOnboardingRouteComponent,
+	Route,
+} from "#/routes/lawyer/onboarding.$sessionId";
+
+const convexReactMockState = vi.hoisted(() => ({
+	renderAuthenticatedChildren: true,
+}));
+
+vi.mock("@convex-dev/react-query", () => ({
+	convexQuery: vi.fn((_apiRef: unknown, args: unknown) => ({
+		queryKey: ["lawyer-onboarding-session", args],
+	})),
+}));
+
+vi.mock("@tanstack/react-query", () => ({
+	useSuspenseQuery: vi.fn(),
+}));
 
 vi.mock("convex/react", () => ({
+	Authenticated: ({ children }: { children: ReactNode }) =>
+		convexReactMockState.renderAuthenticatedChildren ? (
+			<div data-testid="authenticated-shell">{children}</div>
+		) : null,
+	AuthLoading: ({ children }: { children: ReactNode }) => (
+		<div data-testid="auth-loading-shell">{children}</div>
+	),
 	useMutation: vi.fn(),
 }));
 
@@ -57,6 +85,8 @@ afterEach(() => {
 	cleanup();
 	void testWindow?.happyDOM.abort();
 	testWindow = null;
+	convexReactMockState.renderAuthenticatedChildren = true;
+	vi.restoreAllMocks();
 	vi.clearAllMocks();
 });
 
@@ -100,6 +130,36 @@ const guestCompleteFixture = {
 } as const;
 
 describe("lawyer onboarding route UI", () => {
+	it("returns route params from the loader without subscribing before auth readiness", async () => {
+		const ensureQueryData = vi.fn().mockResolvedValue(identityPendingFixture);
+
+		expect(
+			await Route.options.loader?.({
+				context: {
+					queryClient: { ensureQueryData },
+				},
+				params: { sessionId: "session_123" },
+			} as never)
+		).toEqual({ sessionId: "session_123" });
+
+		expect(convexQuery).not.toHaveBeenCalled();
+		expect(ensureQueryData).not.toHaveBeenCalled();
+	});
+
+	it("does not subscribe to the onboarding query before Convex auth is ready", () => {
+		convexReactMockState.renderAuthenticatedChildren = false;
+		vi.spyOn(Route, "useLoaderData").mockReturnValue({
+			sessionId: "session_123",
+		} as never);
+		vi.mocked(useSuspenseQuery).mockReturnValue({
+			data: identityPendingFixture,
+		} as never);
+
+		render(<LawyerOnboardingRouteComponent />);
+
+		expect(useSuspenseQuery).not.toHaveBeenCalled();
+	});
+
 	it("renders the current onboarding checkpoint", async () => {
 		mockUseMutation();
 

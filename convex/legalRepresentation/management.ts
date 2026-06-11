@@ -25,6 +25,31 @@ import { isInvitationExpired } from "./tokenUtils";
 type LegalManagementMutationCtx = MutationCtx & { viewer: Viewer };
 type LegalManagementQueryCtx = Pick<QueryCtx, "db">;
 
+function hexFromBuffer(buffer: ArrayBuffer) {
+	return Array.from(new Uint8Array(buffer))
+		.map((byte) => byte.toString(16).padStart(2, "0"))
+		.join("");
+}
+
+async function hashAdminVerificationEvidence(args: {
+	readonly attachmentIds: readonly Id<"documentAssets">[];
+	readonly dealId: Id<"deals">;
+	readonly evidenceNote: string;
+	readonly reason: string;
+}) {
+	const payload = JSON.stringify({
+		attachmentIds: [...args.attachmentIds].map(String).sort(),
+		dealId: String(args.dealId),
+		evidenceNote: args.evidenceNote,
+		reason: args.reason,
+	});
+	const digest = await crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(payload)
+	);
+	return `sha256:${hexFromBuffer(digest)}`;
+}
+
 function isLawyerAccessRole(role: Doc<"dealAccess">["role"]) {
 	return role === "platform_lawyer" || role === "guest_lawyer";
 }
@@ -399,10 +424,16 @@ export const adminVerifyRepresentationConfirmation = adminMutation
 		}
 		await assertDocumentAssetsExist(ctx, attachmentIds);
 		const now = Date.now();
+		const evidenceHash = await hashAdminVerificationEvidence({
+			attachmentIds,
+			dealId: args.dealId,
+			evidenceNote,
+			reason,
+		});
 		const engagementId = await recordSignedRepresentationEngagementRow(ctx, {
 			createdAt: now,
 			dealId: args.dealId,
-			evidenceHash: `sha256:admin-verify:${args.dealId}:${now}:${evidenceNote.length}`,
+			evidenceHash,
 			lawyerAuthId,
 			provider: "manual_admin",
 			signedAt: now,

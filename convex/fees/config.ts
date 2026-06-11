@@ -5,8 +5,10 @@ import type { MutationCtx } from "../_generated/server";
 import { adminMutation } from "../fluent";
 import { createObligationImpl } from "../obligations/mutations";
 import { createEntryImpl } from "../payments/collectionPlan/initialScheduling";
+import { transitionFeeAssessmentToStatus } from "./assessmentTransitions";
 import { calculateFeeAmountCents } from "./behavior";
 import {
+	assertMortgageFeeAppliesOnDate,
 	assertNoOverlappingMortgageFee,
 	assertValidFeeDefinition,
 	attachFeeTemplateToMortgageSnapshot,
@@ -58,13 +60,24 @@ async function getPrimaryBorrowerIdForMortgage(
 		.withIndex("by_mortgage", (q) => q.eq("mortgageId", mortgageId))
 		.collect();
 	const primaryLink =
-		links.find((link) => link.role === "primary") ?? links[0] ?? null;
-	if (!primaryLink) {
+		links.find((link) => link.role === "primary") ??
+		(links.length === 1 ? links[0] : null);
+	if (primaryLink) {
+		return primaryLink.borrowerId;
+	}
+	if (links.length > 1) {
+		throw new ConvexError(
+			`Mortgage ${mortgageId} has multiple borrower links and no primary borrower for fee application`
+		);
+	}
+	if (links.length === 0) {
 		throw new ConvexError(
 			`Mortgage ${mortgageId} has no borrower link for fee application`
 		);
 	}
-	return primaryLink.borrowerId;
+	throw new ConvexError(
+		`Mortgage ${mortgageId} has no primary borrower for fee application`
+	);
 }
 
 function assertBorrowerChargeMortgageFee(
@@ -379,6 +392,7 @@ export const applyBorrowerFeeToMortgage = adminMutation
 				`Mortgage fee ${args.mortgageFeeId} does not belong to mortgage ${args.mortgageId}`
 			);
 		}
+		assertMortgageFeeAppliesOnDate(mortgageFee, args.effectiveDate);
 		assertBorrowerChargeMortgageFee(mortgageFee);
 		const paymentRail = mortgageFee.paymentRail;
 		if (!paymentRail || paymentRail === "stripe") {
@@ -415,7 +429,7 @@ export const applyBorrowerFeeToMortgage = adminMutation
 			amountCents,
 			amountSettledCents: 0,
 			source: "admin_manual",
-			status: "assessed",
+			status: "draft",
 			assessedAt: now,
 			effectiveDate: args.effectiveDate,
 			metadata: {
@@ -424,6 +438,15 @@ export const applyBorrowerFeeToMortgage = adminMutation
 			},
 			createdAt: now,
 			updatedAt: now,
+		});
+		await transitionFeeAssessmentToStatus(ctx, {
+			assessmentId: feeAssessmentId,
+			status: "assessed",
+			source: {
+				actorId: ctx.viewer.authId,
+				actorType: "admin",
+				channel: "admin_dashboard",
+			},
 		});
 
 		const obligationId = await createObligationImpl(ctx, {
@@ -441,9 +464,17 @@ export const applyBorrowerFeeToMortgage = adminMutation
 		});
 
 		await ctx.db.patch(feeAssessmentId, {
-			status: "invoiced",
 			obligationId,
 			updatedAt: Date.now(),
+		});
+		await transitionFeeAssessmentToStatus(ctx, {
+			assessmentId: feeAssessmentId,
+			status: "invoiced",
+			source: {
+				actorId: ctx.viewer.authId,
+				actorType: "admin",
+				channel: "admin_dashboard",
+			},
 		});
 
 		const collectionPlanEntryId = await createEntryImpl(ctx, {

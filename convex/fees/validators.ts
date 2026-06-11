@@ -70,6 +70,15 @@ export const feeAssessmentStatusValidator = v.union(
 	v.literal("reversed")
 );
 
+export const feeAssessmentStoredStatusValidator = v.union(
+	v.literal("draft"),
+	v.literal("assessed"),
+	v.literal("invoiced"),
+	v.literal("partially_settled"),
+	v.literal("settled"),
+	v.literal("reversed")
+);
+
 export const feeAssessmentSourceValidator = v.union(
 	v.literal("admin_manual"),
 	v.literal("bulk_apply"),

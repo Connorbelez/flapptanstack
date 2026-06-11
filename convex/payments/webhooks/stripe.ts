@@ -57,6 +57,7 @@ export const REVERSAL_EVENT_TYPES = new Set([
 	"payment_intent.payment_failed",
 ]);
 export const CHECKOUT_SUCCESS_EVENT_TYPES = new Set([
+	"checkout.session.async_payment_succeeded",
 	"checkout.session.completed",
 ]);
 

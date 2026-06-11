@@ -55,6 +55,20 @@ async function seedCheckoutFixture(t: ReturnType<typeof createHarness>) {
 			status: "active",
 			userId: brokerUserId,
 		});
+		const portalId = await ctx.db.insert("portals", {
+			brokerId,
+			createdAt: now,
+			isPublished: true,
+			localHost: "broker.localhost",
+			orgId: "org_broker",
+			portalType: "broker",
+			productionHost: "broker.fairlend.test",
+			publicTeaserEnabled: true,
+			slug: "broker",
+			status: "active",
+			updatedAt: now,
+		});
+		await ctx.db.patch(buyerUserId, { homePortalId: portalId });
 		await ctx.db.insert("lenders", {
 			accreditationStatus: "accredited",
 			brokerId,
@@ -134,7 +148,7 @@ async function seedCheckoutFixture(t: ReturnType<typeof createHarness>) {
 			pendingDebits: 0n,
 			type: "POSITION",
 		});
-		return { listingId, mortgageId, sellerAccountId };
+		return { listingId, mortgageId, portalId, sellerAccountId };
 	});
 }
 
@@ -144,6 +158,7 @@ async function prepareCheckout(
 		fractionalShareUnits?: number;
 		idempotencyKey?: string;
 		listingId: Id<"listings">;
+		portalId: Id<"portals">;
 	}
 ) {
 	return await t.mutation(api.prepareCheckoutSession, {
@@ -151,6 +166,7 @@ async function prepareCheckout(
 		fractionalShareUnits: args.fractionalShareUnits ?? 2500,
 		idempotencyKey: args.idempotencyKey ?? "checkout-test-key",
 		listingId: args.listingId,
+		portalId: args.portalId,
 		selectedLawyerAuthId: "lawyer-auth",
 		selectedLawyerType: "platform_lawyer",
 	});
@@ -189,6 +205,7 @@ describe("deal lock checkout start", () => {
 
 		const session = await prepareCheckout(t, {
 			listingId: fixture.listingId,
+			portalId: fixture.portalId,
 		});
 
 		expect(session).toMatchObject({
@@ -223,14 +240,38 @@ describe("deal lock checkout start", () => {
 		const first = await prepareCheckout(t, {
 			idempotencyKey: "same-selection",
 			listingId: fixture.listingId,
+			portalId: fixture.portalId,
 		});
 		const second = await prepareCheckout(t, {
 			idempotencyKey: "same-selection",
 			listingId: fixture.listingId,
+			portalId: fixture.portalId,
 		});
 
 		expect(second._id).toEqual(first._id);
 		expect(second.reservationId).toEqual(first.reservationId);
+	});
+
+	it("rejects checkout without portal context before reserving fractions", async () => {
+		const fixture = await seedCheckoutFixture(t);
+
+		await expect(
+			t.mutation(api.prepareCheckoutSession, {
+				buyerAuthId: "buyer-auth",
+				fractionalShareUnits: 2500,
+				idempotencyKey: "missing-portal",
+				listingId: fixture.listingId,
+				selectedLawyerAuthId: "lawyer-auth",
+				selectedLawyerType: "platform_lawyer",
+			})
+		).rejects.toThrow();
+
+		const counts = await t.run(async (ctx) => ({
+			reservations: await ctx.db.query("ledger_reservations").collect(),
+			sessions: await ctx.db.query("dealLockCheckoutSessions").collect(),
+		}));
+		expect(counts.reservations).toHaveLength(0);
+		expect(counts.sessions).toHaveLength(0);
 	});
 
 	it("rejects invalid fraction units before creating a session or reservation", async () => {
@@ -240,6 +281,7 @@ describe("deal lock checkout start", () => {
 			prepareCheckout(t, {
 				fractionalShareUnits: 0.5,
 				listingId: fixture.listingId,
+				portalId: fixture.portalId,
 			})
 		).rejects.toThrow(ConvexError);
 
@@ -263,6 +305,7 @@ describe("deal lock checkout start", () => {
 			prepareCheckout(t, {
 				fractionalShareUnits: 2500,
 				listingId: fixture.listingId,
+				portalId: fixture.portalId,
 			})
 		).rejects.toThrow(ConvexError);
 
@@ -284,6 +327,7 @@ describe("deal lock checkout start", () => {
 			prepareCheckout(t, {
 				fractionalShareUnits: 2500,
 				listingId: fixture.listingId,
+				portalId: fixture.portalId,
 			})
 		).rejects.toThrow(ConvexError);
 
@@ -302,6 +346,7 @@ describe("deal lock checkout start", () => {
 				fractionalShareUnits: 2500,
 				idempotencyKey: "unassigned-lawyer",
 				listingId: fixture.listingId,
+				portalId: fixture.portalId,
 				selectedLawyerAuthId: "unassigned-lawyer-auth",
 				selectedLawyerType: "platform_lawyer",
 			})
@@ -342,6 +387,7 @@ describe("deal lock checkout start", () => {
 			prepareCheckout(t, {
 				idempotencyKey: "inactive-buyer",
 				listingId: fixture.listingId,
+				portalId: fixture.portalId,
 			})
 		).rejects.toThrow(ConvexError);
 
@@ -355,6 +401,7 @@ describe("deal lock checkout start", () => {
 		const fixture = await seedCheckoutFixture(t);
 		const session = await prepareCheckout(t, {
 			listingId: fixture.listingId,
+			portalId: fixture.portalId,
 		});
 
 		const expired = await t.mutation(api.markCheckoutSessionExpired, {
@@ -375,6 +422,7 @@ describe("deal lock checkout start", () => {
 		const session = await prepareCheckout(t, {
 			idempotencyKey: "stale-session",
 			listingId: fixture.listingId,
+			portalId: fixture.portalId,
 		});
 
 		const result = await t.mutation(api.expireStaleCheckoutSessions, {
@@ -400,6 +448,7 @@ describe("deal lock checkout start", () => {
 		const session = await prepareCheckout(t, {
 			idempotencyKey: "paid-session",
 			listingId: fixture.listingId,
+			portalId: fixture.portalId,
 		});
 		await attachStripeSession(t, session._id);
 
@@ -473,11 +522,90 @@ describe("deal lock checkout start", () => {
 		);
 	});
 
+	it("reuses an existing checkout deal when a Stripe success retry follows a partial session patch failure", async () => {
+		const fixture = await seedCheckoutFixture(t);
+		const session = await prepareCheckout(t, {
+			idempotencyKey: "partial-session-patch-failure",
+			listingId: fixture.listingId,
+			portalId: fixture.portalId,
+		});
+		if (!session.reservationId) {
+			throw new Error("Expected checkout reservation");
+		}
+		const reservationId = session.reservationId;
+		await attachStripeSession(t, session._id, "cs_test_partial_success");
+
+		const existingDealId = await t.run(async (ctx) => {
+			return await ctx.db.insert("deals", {
+				buyerId: "buyer-auth",
+				createdAt: Date.now(),
+				createdBy: "stripe:evt_partial_success_original",
+				dealLockCheckoutSessionId: session._id,
+				fractionalShare: 2500,
+				lawyerId: "lawyer-auth",
+				lawyerType: "platform_lawyer",
+				lockFeeCollectionProvider: "stripe_checkout",
+				lockFeeCollectionStatus: "collected",
+				lockingFeeAmount: DEAL_LOCK_FEE_AMOUNT_CENTS,
+				mortgageId: fixture.mortgageId,
+				reservationId,
+				sellerId: CANONICAL_MIC_LENDER_AUTH_ID,
+				status: "initiated",
+				stripeCheckoutSessionId: "cs_test_partial_success",
+				stripePaymentIntentId: "pi_partial_success",
+				stripePaymentStatus: "paid",
+			});
+		});
+
+		const result = await t.mutation(api.processStripeCheckoutSuccess, {
+			providerEventId: "evt_partial_success_retry",
+			stripeCheckoutSessionId: "cs_test_partial_success",
+			stripePaymentIntentId: "pi_partial_success_retry",
+			stripePaymentStatus: "paid",
+		});
+
+		const state = await t.run(async (ctx) => ({
+			access: await ctx.db.query("dealAccess").collect(),
+			deal: await ctx.db.get(existingDealId),
+			deals: await ctx.db.query("deals").collect(),
+			reservation: await ctx.db.get(reservationId),
+			session: await ctx.db.get(session._id),
+		}));
+
+		expect(result).toMatchObject({
+			dealId: existingDealId,
+			outcome: "duplicate_success",
+			sessionId: session._id,
+		});
+		expect(state.deals).toHaveLength(1);
+		expect(state.deal).toMatchObject({
+			status: "lawyerOnboarding.pending",
+		});
+		expect(state.reservation?.dealId).toBe(String(existingDealId));
+		expect(state.session).toMatchObject({
+			dealId: existingDealId,
+			status: "paid",
+			stripePaymentIntentId: "pi_partial_success_retry",
+			stripePaymentStatus: "paid",
+		});
+		expect(state.access).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ dealId: existingDealId, role: "lender" }),
+				expect.objectContaining({ dealId: existingDealId, role: "borrower" }),
+				expect.objectContaining({
+					dealId: existingDealId,
+					role: "platform_lawyer",
+				}),
+			])
+		);
+	});
+
 	it("marks late Stripe success refund-needed and does not create a deal", async () => {
 		const fixture = await seedCheckoutFixture(t);
 		const session = await prepareCheckout(t, {
 			idempotencyKey: "late-session",
 			listingId: fixture.listingId,
+			portalId: fixture.portalId,
 		});
 		await attachStripeSession(t, session._id, "cs_test_late");
 		await t.run(async (ctx) => {
@@ -512,6 +640,7 @@ describe("deal lock checkout start", () => {
 		const session = await prepareCheckout(t, {
 			idempotencyKey: "cron-expired-then-paid",
 			listingId: fixture.listingId,
+			portalId: fixture.portalId,
 		});
 		await attachStripeSession(t, session._id, "cs_test_cron_expired_paid");
 		await t.mutation(api.expireStaleCheckoutSessions, {
@@ -548,6 +677,7 @@ describe("deal lock checkout start", () => {
 		const session = await prepareCheckout(t, {
 			idempotencyKey: "unpaid-session",
 			listingId: fixture.listingId,
+			portalId: fixture.portalId,
 		});
 		await attachStripeSession(t, session._id, "cs_test_unpaid");
 

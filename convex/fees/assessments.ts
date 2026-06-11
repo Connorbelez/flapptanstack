@@ -2,7 +2,12 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
-import { normalizeMortgageFeeForRead } from "./resolver";
+import type { FeeAssessmentPublicStatus } from "./assessmentTransitions";
+import { transitionFeeAssessmentToStatus } from "./assessmentTransitions";
+import {
+	assertMortgageFeeAppliesOnDate,
+	normalizeMortgageFeeForRead,
+} from "./resolver";
 import {
 	feeAssessmentSourceValidator,
 	feeAssessmentStatusValidator,
@@ -32,6 +37,7 @@ export const createFeeAssessment = internalMutation({
 				`Mortgage fee ${args.mortgageFeeId} does not belong to mortgage ${args.mortgageId}`
 			);
 		}
+		assertMortgageFeeAppliesOnDate(mortgageFee, args.effectiveDate);
 		const normalizedMortgageFee = normalizeMortgageFeeForRead(mortgageFee);
 
 		const mortgage = await ctx.db.get(args.mortgageId);
@@ -47,7 +53,7 @@ export const createFeeAssessment = internalMutation({
 		}
 
 		const now = Date.now();
-		return await ctx.db.insert("feeAssessments", {
+		const feeAssessmentId = await ctx.db.insert("feeAssessments", {
 			orgId: mortgage.orgId,
 			mortgageId: args.mortgageId,
 			mortgageFeeId: args.mortgageFeeId,
@@ -59,7 +65,7 @@ export const createFeeAssessment = internalMutation({
 			amountCents: args.amountCents,
 			amountSettledCents: 0,
 			source: args.source,
-			status: "assessed",
+			status: "draft",
 			assessedAt: now,
 			effectiveDate: args.effectiveDate,
 			sourceObligationId: args.sourceObligationId,
@@ -67,15 +73,16 @@ export const createFeeAssessment = internalMutation({
 			createdAt: now,
 			updatedAt: now,
 		});
+		await transitionFeeAssessmentToStatus(ctx, {
+			assessmentId: feeAssessmentId,
+			status: "assessed",
+			source: { channel: "scheduler", actorType: "system" },
+		});
+		return feeAssessmentId;
 	},
 });
 
-type FeeAssessmentStatus =
-	| "assessed"
-	| "invoiced"
-	| "partially_settled"
-	| "settled"
-	| "reversed";
+type FeeAssessmentStatus = FeeAssessmentPublicStatus;
 
 function assertValidMoneyCents(
 	value: number,
@@ -133,6 +140,9 @@ async function linkFeeAssessmentHandler(
 	if (amountSettledCents > assessment.amountCents) {
 		throw new ConvexError("amountSettledCents cannot exceed amountCents");
 	}
+	if (assessment.status === "draft") {
+		throw new ConvexError("Draft fee assessments cannot be linked");
+	}
 
 	assertAllowedStatusTransition(assessment.status, args.status);
 	assertStatusMatchesSettledAmount({
@@ -163,10 +173,8 @@ async function linkFeeAssessmentHandler(
 		dispersalEntryId?: Id<"dispersalEntries">;
 		obligationId?: Id<"obligations">;
 		servicingFeeEntryId?: Id<"servicingFeeEntries">;
-		status: typeof args.status;
 		updatedAt: number;
 	} = {
-		status: args.status,
 		updatedAt: Date.now(),
 	};
 
@@ -187,6 +195,11 @@ async function linkFeeAssessmentHandler(
 	}
 
 	await ctx.db.patch(args.feeAssessmentId, patch);
+	await transitionFeeAssessmentToStatus(ctx, {
+		assessmentId: args.feeAssessmentId,
+		status: args.status,
+		source: { channel: "scheduler", actorType: "system" },
+	});
 	return args.feeAssessmentId;
 }
 

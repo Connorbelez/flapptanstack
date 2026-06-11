@@ -157,6 +157,23 @@ const optOutMortgageFeeSetRef = makeFunctionReference<
 	{ mortgageId: Id<"mortgages">; optedOutAt: number }
 >("fees/config:optOutMortgageFeeSet");
 
+const applyBorrowerFeeToMortgageRef = makeFunctionReference<
+	"mutation",
+	{
+		mortgageId: Id<"mortgages">;
+		mortgageFeeId: Id<"mortgageFees">;
+		effectiveDate: string;
+		dueDate: number;
+		gracePeriodEnd: number;
+	},
+	{
+		amountCents: number;
+		collectionPlanEntryId: Id<"collectionPlanEntries">;
+		feeAssessmentId: Id<"feeAssessments">;
+		obligationId: Id<"obligations">;
+	}
+>("fees/config:applyBorrowerFeeToMortgage");
+
 const listMortgageFeesRef = makeFunctionReference<
 	"query",
 	{ mortgageId: Id<"mortgages"> },
@@ -321,6 +338,85 @@ async function seedMortgageDoc(t: ReturnType<typeof createTestConvex>) {
 			maturityDate: "2026-12-01",
 			firstPaymentDate: "2026-02-01",
 			brokerOfRecordId: brokerId,
+			createdAt: now,
+		});
+	});
+}
+
+async function seedBorrowerLink(
+	t: ReturnType<typeof createTestConvex>,
+	args: {
+		mortgageId: Id<"mortgages">;
+		role: "primary" | "co_borrower" | "guarantor";
+	}
+) {
+	return await t.run(async (ctx) => {
+		const now = Date.now();
+		const unique = `${now}_${Math.random().toString(36).slice(2)}`;
+		const userId = await ctx.db.insert("users", {
+			authId: `fee-config-borrower-${unique}`,
+			email: `fee-config-borrower-${unique}@test.com`,
+			firstName: "Fee",
+			lastName: "Borrower",
+		});
+		const borrowerId = await ctx.db.insert("borrowers", {
+			status: "active",
+			userId,
+			createdAt: now,
+		});
+		await ctx.db.insert("mortgageBorrowers", {
+			mortgageId: args.mortgageId,
+			borrowerId,
+			role: args.role,
+			addedAt: now,
+		});
+		return borrowerId;
+	});
+}
+
+async function seedBorrowerMortgageFee(
+	t: ReturnType<typeof createTestConvex>,
+	args: {
+		mortgageId: Id<"mortgages">;
+		effectiveFrom?: string;
+		effectiveTo?: string;
+		status?: "active" | "inactive";
+	}
+) {
+	return await t.run(async (ctx) => {
+		const now = Date.now();
+		const unique = `${now}_${Math.random().toString(36).slice(2)}`;
+		const feeTemplateId = await ctx.db.insert("feeTemplates", {
+			name: `Admin Fee ${unique}`,
+			code: "admin_fee",
+			behavior: "borrower_one_time_charge",
+			displayCode: "admin_fee",
+			surface: "borrower_charge",
+			revenueDestination: "platform_revenue",
+			calculationType: "fixed_amount_cents",
+			parameters: { fixedAmountCents: 15_000, dueDays: 7, graceDays: 10 },
+			paymentRail: "manual",
+			recurrence: "one_time",
+			status: "active",
+			createdAt: now,
+			updatedAt: now,
+		});
+		return await ctx.db.insert("mortgageFees", {
+			mortgageId: args.mortgageId,
+			feeTemplateId,
+			code: "admin_fee",
+			behavior: "borrower_one_time_charge",
+			displayCode: "admin_fee",
+			surface: "borrower_charge",
+			revenueDestination: "platform_revenue",
+			calculationType: "fixed_amount_cents",
+			parameters: { fixedAmountCents: 15_000, dueDays: 7, graceDays: 10 },
+			paymentRail: "manual",
+			recurrence: "one_time",
+			defaultApplication: "mortgage_specific",
+			effectiveFrom: args.effectiveFrom ?? "2026-01-01",
+			effectiveTo: args.effectiveTo,
+			status: args.status ?? "active",
 			createdAt: now,
 		});
 	});
@@ -1187,5 +1283,61 @@ describe("mortgage fee configuration", () => {
 				effectiveFrom: "2026-01-15",
 			})
 		).rejects.toThrow(OVERLAPPING_FEE_PATTERN);
+	});
+
+	it("rejects borrower fee application when a mortgage has multiple borrowers without an explicit primary", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+		const mortgageId = await seedMortgageDoc(t);
+		await seedBorrowerLink(t, { mortgageId, role: "co_borrower" });
+		await seedBorrowerLink(t, { mortgageId, role: "guarantor" });
+		const mortgageFeeId = await seedBorrowerMortgageFee(t, { mortgageId });
+
+		await expect(
+			asAdmin.mutation(applyBorrowerFeeToMortgageRef, {
+				mortgageId,
+				mortgageFeeId,
+				effectiveDate: "2026-02-01",
+				dueDate: Date.now(),
+				gracePeriodEnd: Date.now() + 86_400_000,
+			})
+		).rejects.toThrow("multiple borrower links and no primary borrower");
+	});
+
+	it("rejects borrower fee application for inactive or out-of-window mortgage fees", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+		const mortgageId = await seedMortgageDoc(t);
+		await seedBorrowerLink(t, { mortgageId, role: "primary" });
+		const inactiveFeeId = await seedBorrowerMortgageFee(t, {
+			mortgageId,
+			status: "inactive",
+		});
+		const futureFeeId = await seedBorrowerMortgageFee(t, {
+			mortgageId,
+			effectiveFrom: "2026-03-01",
+		});
+
+		await expect(
+			asAdmin.mutation(applyBorrowerFeeToMortgageRef, {
+				mortgageId,
+				mortgageFeeId: inactiveFeeId,
+				effectiveDate: "2026-02-01",
+				dueDate: Date.now(),
+				gracePeriodEnd: Date.now() + 86_400_000,
+			})
+		).rejects.toThrow("Mortgage fee is not active");
+
+		await expect(
+			asAdmin.mutation(applyBorrowerFeeToMortgageRef, {
+				mortgageId,
+				mortgageFeeId: futureFeeId,
+				effectiveDate: "2026-02-01",
+				dueDate: Date.now(),
+				gracePeriodEnd: Date.now() + 86_400_000,
+			})
+		).rejects.toThrow("not effective on 2026-02-01");
 	});
 });

@@ -10,14 +10,14 @@ Report file: `docs/review-triage/stacked-pr-review-triage-2026-06-10.md`
 - Total comments reviewed: 247 inline review-thread comments, plus 132 top-level PR comments/review submissions.
 - Linear issues audited: 39 distinct `ENG-*` references from PR titles, branches, bodies, and local `specs/ENG-*` artifacts.
 - Linear requirement gaps: 9 issue-artifact gap signals (`ENG-342`, `ENG-346`, `ENG-347`, `ENG-348`, `ENG-351`, `ENG-357`, `ENG-358`, plus missing local artifacts for `ENG-360` and `ENG-366`).
-- Relevant - Needs fix: 17 grouped findings.
-- Stale - Still Needs fix, reccomendation out of date: 2 grouped findings.
-- Stale - Skip fix: 2 grouped findings.
-- Completed: 0 findings implemented by this triage pass.
-- Open: 19 actionable grouped findings.
+- Relevant - Needs fix: 0 grouped findings.
+- Stale - Still Needs fix, reccomendation out of date: 0 grouped findings.
+- Stale - Skip fix: 3 grouped findings.
+- Completed: 18 findings implemented by this triage pass.
+- Open: 0 actionable grouped findings.
 - Blocked: 0.
-- Skipped after re-check: 2 grouped findings.
-- Highest-risk remaining area: checkout/deal-lock/payment-schedule money movement, followed by legal-representation WorkOS invitation state.
+- Skipped after re-check: 3 grouped findings.
+- Highest-risk remaining area: none; all actionable grouped findings in this report are completed or stale-skipped.
 - Recommended parallelization: split into five batches: checkout/payment rails, legal representation/admin lawyers, fees/cash ledger, deal-closing participant workspaces, and route/portal cleanup. Do not split individual money-movement findings across agents.
 
 Notes:
@@ -83,15 +83,17 @@ Production-quality concerns found across Linear artifacts:
 Linear issue: not found
 
 <!-- manifest:PR577-F1 -->
-- [ ] PR577-F1: Lender reassignment still uses broker org context for WorkOS membership decisions
-  - Status: open
+- [x] PR577-F1: Lender reassignment still uses broker org context for WorkOS membership decisions
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `convex/admin/lenders/reassignment.ts`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/577#discussion_r3178819901, https://github.com/Connorbelez/flapptanstack/pull/577#discussion_r3192111974, https://github.com/Connorbelez/flapptanstack/pull/577#discussion_r3192111976
   - Recommended fix: Drive old-membership lookup and org-change detection from the lender canonical org, not the current broker row.
   - Parallelization: batch with PR574-F1 if touching WorkOS helper abstractions
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped to remaining all-findings batch.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; WorkOS org-change detection and old-membership removal now use the lender canonical org.
 <!-- /manifest:PR577-F1 -->
 
 ### PR #576: admin-fee-management
@@ -99,39 +101,45 @@ Linear issue: not found
 Linear issue: not found
 
 <!-- manifest:PR576-F1 -->
-- [ ] PR576-F1: Fee assessment lifecycle and summaries bypass fee validity and governed transitions
-  - Status: open
+- [x] PR576-F1: Fee assessment lifecycle and summaries bypass fee validity and governed transitions
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `convex/fees/assessments.ts:11`, `convex/fees/config.ts:52`, `convex/fees/config.ts:371`, `convex/fees/queries.ts:160`, `convex/fees/resolver.ts:192`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/576#discussion_r3192140743, https://github.com/Connorbelez/flapptanstack/pull/576#discussion_r3192140760, https://github.com/Connorbelez/flapptanstack/pull/576#discussion_r3192140761, https://github.com/Connorbelez/flapptanstack/pull/576#discussion_r3192140766, https://github.com/Connorbelez/flapptanstack/pull/576#discussion_r3192140768
   - Recommended fix: Centralize mortgage-fee applicability checks and route fee-assessment status changes through a governed transition/audit path.
   - Parallelization: batch with PR576-F2
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped to PR576-F1.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; mortgage-fee applicability, primary borrower selection, reversed revenue exclusion, and fee-assessment governed transitions implemented.
 <!-- /manifest:PR576-F1 -->
 
 <!-- manifest:PR576-F2 -->
-- [ ] PR576-F2: Servicing-fee settlement and reversal can leave cash-ledger/assessment state inconsistent
-  - Status: open
+- [x] PR576-F2: Servicing-fee settlement and reversal can leave cash-ledger/assessment state inconsistent
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P0
   - Current files/lines: `convex/payments/cashLedger/integrations.ts:686`, `convex/payments/cashLedger/integrations.ts:853`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/576#discussion_r3192140775, https://github.com/Connorbelez/flapptanstack/pull/576#discussion_r3192140776
   - Recommended fix: Persist obligation linkage on fee-assessment settlement and ensure reversal reverses all associated servicing entries.
   - Parallelization: batch with PR576-F1
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped to PR576-F2.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; assessment obligation linkage and all-entry servicing-fee reversal coverage implemented.
 <!-- /manifest:PR576-F2 -->
 
 <!-- manifest:PR576-F3 -->
-- [ ] PR576-F3: Fee admin UI has dead-end actions
-  - Status: open
+- [x] PR576-F3: Fee admin UI has dead-end actions
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `src/components/admin/fees/bulk-apply-fee-set-panel.tsx`, `src/components/admin/fees/fee-set-form.tsx`, `src/components/admin/fees/mortgage-fee-application-panel.tsx`
   - Original review or requirement: PR #576 review threads on `Preview`, `Save set`, and `Inspect`
   - Recommended fix: Either wire the actions to real mutations/routes or remove/disable them with explicit unavailable state.
   - Parallelization: independent
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped to remaining all-findings batch.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; unsupported fee admin actions now render disabled explicit unavailable states.
 <!-- /manifest:PR576-F3 -->
 
 ### PR #574: admin-lawyers-management
@@ -139,27 +147,31 @@ Linear issue: not found
 Linear issue: not found
 
 <!-- manifest:PR574-F1 -->
-- [ ] PR574-F1: Admin lawyer WorkOS/profile flows have identity, race, and audit-evidence gaps
-  - Status: open
+- [x] PR574-F1: Admin lawyer WorkOS/profile flows have identity, race, and audit-evidence gaps
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `convex/legalRepresentation/adminLawyers.ts`, `convex/legalRepresentation/management.ts`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/574#discussion_r3178427831, https://github.com/Connorbelez/flapptanstack/pull/574#discussion_r3192122180, https://github.com/Connorbelez/flapptanstack/pull/574#discussion_r3192122185, https://github.com/Connorbelez/flapptanstack/pull/574#discussion_r3192122190
   - Recommended fix: Resolve users without a 100-row cap, claim invite delivery before external WorkOS calls, validate caller-provided auth IDs, and hash submitted evidence content.
   - Parallelization: batch with PR575-F1
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped with PR575-F1.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; synced-user lookup, WorkOS delivery reservation, authId validation, and real evidence hashing implemented.
 <!-- /manifest:PR574-F1 -->
 
 <!-- manifest:PR574-F2 -->
-- [ ] PR574-F2: Admin lawyer detail dialogs use local heuristics for deal/action state
-  - Status: open
+- [x] PR574-F2: Admin lawyer detail dialogs use local heuristics for deal/action state
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `src/components/admin/lawyers/AdminLawyersDetailSheet.tsx`, `src/components/admin/lawyers/InvitePlatformLawyerDialog.tsx`
   - Original review or requirement: PR #574 review threads on `primaryDeal`, local sheet state, and invite dialog close behavior
   - Recommended fix: Bind actions to explicit deal IDs from server projection and reset/await dialog mutations before closing.
   - Parallelization: independent after PR574-F1 projection shape is settled
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped to remaining all-findings batch.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; server-projected action target IDs drive detail actions and invite dialog mutations are awaited before close/reset.
 <!-- /manifest:PR574-F2 -->
 
 ### PR #575 and PR #565: lawyer onboarding and invitation handling
@@ -167,27 +179,31 @@ Linear issue: not found
 Linear issue: ENG-362, plus unlinked lawyer-onboarding PR review context
 
 <!-- manifest:PR575-F1 -->
-- [ ] PR575-F1: WorkOS invitation token resolution mutates onboarding state and inconsistent invitation status guards remain
-  - Status: open
+- [x] PR575-F1: WorkOS invitation token resolution mutates onboarding state and inconsistent invitation status guards remain
+  - Status: completed
   - Source: Review thread
-  - Verdict: Stale - Still Needs fix, reccomendation out of date
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `convex/legalRepresentation/workosInvitations.ts:323`, `convex/legalRepresentation/invitations.ts:638`, `convex/legalRepresentation/invitations.ts:733`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/575#discussion_r3192119083, https://github.com/Connorbelez/flapptanstack/pull/575#discussion_r3192119077, https://github.com/Connorbelez/flapptanstack/pull/573#discussion_r3178355686
   - Recommended fix: Keep token lookup read-only; move start/resume to explicit authenticated accept action; apply the same verified/revoked guard set to both WorkOS accept paths.
   - Parallelization: batch with PR574-F1
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped with PR574-F1.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; WorkOS token lookup is read-only and guest WorkOS accept paths now return terminal invitation states consistently.
 <!-- /manifest:PR575-F1 -->
 
 <!-- manifest:PR575-F2 -->
-- [ ] PR575-F2: Lawyer onboarding route still subscribes before Convex auth readiness
-  - Status: open
+- [x] PR575-F2: Lawyer onboarding route still subscribes before Convex auth readiness
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `src/routes/lawyer/onboarding.$sessionId.tsx:34`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/575#discussion_r3178778248
   - Recommended fix: Move the suspense query into a child rendered under a parent `Authenticated`/`AuthLoading` layout, matching `src/routes/listings/route.tsx`.
   - Parallelization: batch with PR573-F1
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped with PR573-F1.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; loader prefetch removed and suspense query moved under the Convex auth boundary with regression coverage.
 <!-- /manifest:PR575-F2 -->
 
 ### PR #573, #519, #523, #532, #514, #524, #510: checkout, locks, webhooks, and payment schedules
@@ -195,51 +211,57 @@ Linear issue: ENG-362, plus unlinked lawyer-onboarding PR review context
 Linear issue: ENG-341, ENG-344, ENG-345, ENG-349, ENG-339 where linked
 
 <!-- manifest:PR573-F1 -->
-- [ ] PR573-F1: Deal portal route still subscribes before Convex auth readiness
-  - Status: open
+- [x] PR573-F1: Deal portal route still subscribes before Convex auth readiness
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `src/routes/deals/$dealId.tsx:31`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/573#discussion_r3178355683
   - Recommended fix: Split `/deals/$dealId` into an authenticated parent wrapper plus child suspense-query component.
   - Parallelization: batch with PR575-F2
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped with PR575-F2.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; loader prefetch removed and suspense query moved under the Convex auth boundary with regression coverage.
 <!-- /manifest:PR573-F1 -->
 
 <!-- manifest:PR573-F2 -->
-- [ ] PR573-F2: Deal-lock checkout persists seller lender ID as seller auth ID and skips portal constraints when portalId is absent
-  - Status: open
+- [x] PR573-F2: Deal-lock checkout persists seller lender ID as seller auth ID and skips portal constraints when portalId is absent
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P0
   - Current files/lines: `convex/dealLocks/mutations.ts:92`, `convex/dealLocks/mutations.ts:348`, `convex/dealLocks/mutations.ts:382`, `convex/dealLocks/mutations.ts:563`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/573#discussion_r3178372799, https://github.com/Connorbelez/flapptanstack/pull/519#discussion_r3142164194, https://github.com/Connorbelez/flapptanstack/pull/519#discussion_r3142164195
   - Recommended fix: Persist seller auth/user identity separately from lender row ID, require portal context for marketplace visibility checks, and make success/deal creation replay-safe across partial failures.
   - Parallelization: batch with PR532-F1
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; scoped to PR573-F2 only.
 <!-- /manifest:PR573-F2 -->
 
 <!-- manifest:PR573-F3 -->
 - [ ] PR573-F3: Provider-managed payment-schedule activation can over-collect the final interest remainder
-  - Status: open
+  - Status: skipped-after-recheck
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Stale - Skip fix
   - Priority: P0
   - Current files/lines: `convex/payments/scheduleReplacement/apply.ts:2360`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/573#discussion_r3178372813
   - Recommended fix: Split provider-created schedules or otherwise represent the final remainder so total provider collections equal the generated schedule.
   - Parallelization: independent money-movement owner
+  - Progress: skipped after re-check on 2026-06-10 by `mobilelistingspage` fixer session; current code already rejects provider-managed Rotessa drafts whose interest amount does not divide outstanding interest exactly.
 <!-- /manifest:PR573-F3 -->
 
 <!-- manifest:PR532-F1 -->
-- [ ] PR532-F1: Stripe checkout success/refund handling still has retry and event-classification gaps
-  - Status: open
+- [x] PR532-F1: Stripe checkout success/refund handling still has retry and event-classification gaps
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P0
   - Current files/lines: `convex/payments/webhooks/stripe.ts:70`, `convex/checkout/reconciliation.ts:388`, `convex/checkout/reconciliation.ts:423`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/532#discussion_r3142692858, https://github.com/Connorbelez/flapptanstack/pull/532#discussion_r3142692859, https://github.com/Connorbelez/flapptanstack/pull/532#discussion_r3149084136, https://github.com/Connorbelez/flapptanstack/pull/523#discussion_r3144129897
   - Recommended fix: Do not treat `checkout.session.completed` as settled payment proof; persist retryable refund state after provider refund failures; distinguish replacement-reservation success from later relink/patch failures.
   - Parallelization: batch with PR573-F2
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped to PR532-F1.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; async Stripe checkout success, retryable recorded-refund state, and late re-lock post-reservation failure handling fixed.
 <!-- /manifest:PR532-F1 -->
 
 ### PR #521, #517, #515, #511, #516: deal-closing workspaces and Documenso
@@ -247,27 +269,29 @@ Linear issue: ENG-341, ENG-344, ENG-345, ENG-349, ENG-339 where linked
 Linear issue: ENG-348, ENG-347, ENG-342, ENG-338, ENG-343
 
 <!-- manifest:PR521-F1 -->
-- [ ] PR521-F1: Participant workspace still has receipt, signing-token, and viewer-context gaps
-  - Status: open
+- [x] PR521-F1: Participant workspace still has receipt, signing-token, and viewer-context gaps
+  - Status: completed
   - Source: Review thread / Linear requirement
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P0
   - Current files/lines: `convex/deals/queries.ts`, `src/components/deals/participant/ParticipantDealWorkspacePage.tsx`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/521#discussion_r3168518886, https://github.com/Connorbelez/flapptanstack/pull/521#discussion_r3168518910, https://github.com/Connorbelez/flapptanstack/pull/521#discussion_r3168518918; `specs/ENG-348/audit.md` verdict `not ready`
   - Recommended fix: Use newest archive row only for receipt evidence, pass viewer context into package surface reads, and exchange opaque signing tokens through a real sign-flow action/URL handoff.
   - Parallelization: shared deal-closing owner
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; receipt archive handling re-checked as current, participant package surfaces now receive viewer context, and opaque signing tokens launch through a server-derived signing-session action.
 <!-- /manifest:PR521-F1 -->
 
 <!-- manifest:PR515-F1 -->
-- [ ] PR515-F1: Documenso webhook parsing still risks missing nested provider identifiers and terminal-event ordering
-  - Status: open
+- [x] PR515-F1: Documenso webhook parsing still risks missing nested provider identifiers and terminal-event ordering
+  - Status: completed
   - Source: Review thread / Linear requirement
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `convex/deals/envelopeWebhooks.ts`
   - Original review or requirement: PR #515 review threads; `specs/ENG-342/audit.md` verdict `not ready`
   - Recommended fix: Parse provider IDs from nested webhook payloads, read secret headers before verification, and avoid completion reconciliation after terminal failure events.
   - Parallelization: independent backend owner
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; nested Documenso data payload parsing fixed and terminal-event precedence re-checked against current tests.
 <!-- /manifest:PR515-F1 -->
 
 ### PR #541, #542, #543, #536: route tree and MIC route comments
@@ -275,20 +299,22 @@ Linear issue: ENG-348, ENG-347, ENG-342, ENG-338, ENG-343
 Linear issue: ENG-307, ENG-357, ENG-358, ENG-355
 
 <!-- manifest:PR541-F1 -->
-- [ ] PR541-F1: Borrower financing draft form can still submit a native POST
-  - Status: open
+- [x] PR541-F1: Borrower financing draft form can still submit a native POST
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `src/components/borrower/financing/BorrowerFinancingApplicationPage.tsx`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/541#discussion_r3182495413
   - Recommended fix: Remove native `method="post"` or intercept submit until a real route/server action exists.
   - Parallelization: independent frontend owner
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped to remaining all-findings batch.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; native POST method removed and form submit is prevented until a real draft action exists.
 <!-- /manifest:PR541-F1 -->
 
 <!-- manifest:PR541-F2 -->
 - [ ] PR541-F2: Generated route-tree conflict comments are stale in current branch
-  - Status: open
+  - Status: skipped-after-recheck
   - Source: Review thread
   - Verdict: Stale - Skip fix
   - Priority: P0
@@ -296,6 +322,7 @@ Linear issue: ENG-307, ENG-357, ENG-358, ENG-355
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/542#discussion_r3156446099, https://github.com/Connorbelez/flapptanstack/pull/536#discussion_r3169708251, https://github.com/Connorbelez/flapptanstack/pull/541#discussion_r3182495427
   - Recommended fix: None. Current `rg -n "<<<<<<<|=======|>>>>>>>" src/routeTree.gen.ts src/routes` returns no conflict markers.
   - Parallelization: skip
+  - Progress: skipped after re-check on 2026-06-10 by `mobilelistingspage` fixer session; conflict-marker search remains clean.
 <!-- /manifest:PR541-F2 -->
 
 ### PR #540, #520, #518, #512: portal landing and portal security
@@ -303,27 +330,29 @@ Linear issue: ENG-307, ENG-357, ENG-358, ENG-355
 Linear issue: ENG-306, ENG-304, ENG-305, ENG-303
 
 <!-- manifest:PR540-F1 -->
-- [ ] PR540-F1: Lender CTA and entry-path validation still need portal-safe gating
-  - Status: open
+- [x] PR540-F1: Lender CTA and entry-path validation still need portal-safe gating
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `convex/portals/queries.ts`, `convex/onboarding/lenderLanding.ts`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/540#discussion_r3144414616, https://github.com/Connorbelez/flapptanstack/pull/540#discussion_r3144413917, https://github.com/Connorbelez/flapptanstack/pull/540#discussion_r3144415242
   - Recommended fix: Gate lender handoff CTA to broker-attributed portals and constrain accepted entry-path query params/origins.
   - Parallelization: batch with PR512-F1 if touching portal validators
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; non-broker lender CTAs now avoid `/start-lending`, and lender handoff entry paths reject absolute, protocol-relative, backslash, and unsupported-query inputs.
 <!-- /manifest:PR540-F1 -->
 
 <!-- manifest:PR512-F1 -->
-- [ ] PR512-F1: Portal landing href validator still accepts backslash external-link bypasses
-  - Status: open
+- [x] PR512-F1: Portal landing href validator still accepts backslash external-link bypasses
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `convex/portals/validators.ts:358`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/512#discussion_r3142177339
   - Recommended fix: Reject backslashes in stored portal landing hrefs before browser URL normalization can reinterpret them as path separators.
   - Parallelization: batch with PR540-F1
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; stored landing hrefs with backslashes are rejected before regex matching.
 <!-- /manifest:PR512-F1 -->
 
 ### PR #513 and #509: Velocity
@@ -331,20 +360,22 @@ Linear issue: ENG-306, ENG-304, ENG-305, ENG-303
 Linear issue: ENG-335, ENG-337
 
 <!-- manifest:PR513-F1 -->
-- [ ] PR513-F1: Velocity test harness setup and failure mutation need environment hardening
-  - Status: open
+- [x] PR513-F1: Velocity test harness setup and failure mutation need environment hardening
+  - Status: completed
   - Source: Review thread
-  - Verdict: Relevant - Needs fix
+  - Verdict: Completed - Fixed
   - Priority: P1
   - Current files/lines: `playwright.config.ts`, `convex/test/velocityE2e.ts`
   - Original review or requirement: PR #513 review threads
   - Recommended fix: Exclude Velocity auth setup from shared setup matching and gate test-only failure mutation outside non-test environments.
   - Parallelization: independent
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped to remaining all-findings batch.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; setup project matching is exact-path scoped and Velocity failure helpers require explicit non-production test enablement.
 <!-- /manifest:PR513-F1 -->
 
 <!-- manifest:PR509-F1 -->
 - [ ] PR509-F1: Velocity loanCode patch route comment is stale
-  - Status: open
+  - Status: skipped-after-recheck
   - Source: Review thread
   - Verdict: Stale - Skip fix
   - Priority: P1
@@ -352,6 +383,7 @@ Linear issue: ENG-335, ENG-337
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/509#discussion_r3139996553, https://github.com/Connorbelez/flapptanstack/pull/509#discussion_r3183375616
   - Recommended fix: None. Current code registers `pathPrefix: "/api/dev/mock-velocity/deals/"`.
   - Parallelization: skip
+  - Progress: skipped after re-check on 2026-06-10 by `mobilelistingspage` fixer session; prefix route remains present.
 <!-- /manifest:PR509-F1 -->
 
 ### Cross-PR artifacts and stale generated-output comments
@@ -359,15 +391,17 @@ Linear issue: ENG-335, ENG-337
 Linear issue: not found
 
 <!-- manifest:XPR-F1 -->
-- [ ] XPR-F1: `.superpowers` runtime artifact comments are partly stale but tracked artifacts remain
-  - Status: open
+- [x] XPR-F1: `.superpowers` runtime artifact comments are partly stale but tracked artifacts remain
+  - Status: completed
   - Source: Cross-PR synthesis
-  - Verdict: Stale - Still Needs fix, reccomendation out of date
+  - Verdict: Completed - Fixed
   - Priority: P2
   - Current files/lines: `.gitignore:32`, `.superpowers/brainstorm/18570-1777767946/state/server-info`, `.superpowers/verification/admin-lawyers/README.md`
   - Original review or requirement: https://github.com/Connorbelez/flapptanstack/pull/573#discussion_r3178372789, https://github.com/Connorbelez/flapptanstack/pull/573#discussion_r3178372790
   - Recommended fix: Remove currently tracked `.superpowers` artifacts from Git. The original `server.pid`/`server-stopped` files are gone and `.superpowers/` is now ignored.
   - Parallelization: independent
+  - Progress: in progress on 2026-06-10 by `mobilelistingspage` fixer session; scoped to remaining all-findings batch.
+  - Progress: completed on 2026-06-10 by `mobilelistingspage` fixer session; tracked `.superpowers` runtime artifacts removed from the index.
 <!-- /manifest:XPR-F1 -->
 
 ## Findings
@@ -393,8 +427,8 @@ Current-code evidence:
 - GitNexus: not sampled for this symbol; current file remains in stack head.
 - Local evidence: three unresolved review threads target the same reassignment invariant.
 
-Verdict: Relevant - Needs fix
-Reason: WorkOS membership side effects are external and stateful; using broker org metadata can remove the wrong membership or miss an org transition.
+Verdict: Completed - Fixed
+Reason: WorkOS membership side effects are external and stateful; this pass moved org-change detection and old-membership removal to the lender canonical org.
 Recommended update: None
 Additional comments: Keep FairLend admin super-permission separate from explicit FairLend staff boundary checks.
 Recommended fix: Resolve previous membership from lender canonical org data, compute org change from lender org, and add regression tests for broker row without orgId.
@@ -407,7 +441,12 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/admin/lenders src/test/admin/lender-broker-reassignment-dialog.test.tsx`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #577 review comments `r3178819901`, `r3192111974`, and `r3192111976`.
+- GitNexus impact: direct symbol lookups for `removeCurrentMembership`, `previewBrokerReassignment`, and `reassignBroker` were not indexed despite an up-to-date graph; fallback graph query also returned no reassignment process entries. Local blast radius was scoped with `rg` to `convex/admin/lenders/reassignment.ts`, `convex/admin/lenders/reassignmentInternal.ts`, `convex/admin/lenders/__tests__/reassignment.test.ts`, and the admin reassignment dialog test. No HIGH/CRITICAL GitNexus warning was available.
+- Red coverage first: `bun run test -- convex/admin/lenders/__tests__/reassignment.test.ts` failed on new regressions proving preview used the broker row org and current-membership removal listed WorkOS memberships under `organizationId: ""` when the broker row lacked `orgId`.
+- Production fix: `previewBrokerReassignment` now compares target WorkOS orgs against `lender.orgId ?? current.orgId`; `removeCurrentMembership` lists old memberships by `lender.orgId ?? currentBroker.orgId` and returns `not_found` without calling WorkOS when no canonical current org exists.
+- Green validation: `bun run test -- convex/admin/lenders/__tests__/reassignment.test.ts` passed 26 tests.
 <!-- /finding:PR577-F1 -->
 
 <!-- finding:PR576-F1 -->
@@ -431,8 +470,8 @@ Current-code evidence:
 - GitNexus: `createFeeAssessment` impact returned LOW, no direct upstream callers discovered; this is likely endpoint-style Convex export under-representation.
 - Local evidence: current `createFeeAssessment` inserts `status: "assessed"` directly; manual application normalizes fee but does not check active/effective/opt-out; income totals add `settled` before excluding reversed assessments.
 
-Verdict: Relevant - Needs fix
-Reason: The comments still match current code and affect accounting correctness.
+Verdict: Completed - Fixed
+Reason: The comments matched current code and affected accounting correctness; this pass implemented the shared lifecycle and accounting fixes.
 Recommended update: None
 Additional comments: The fix should be in shared fee applicability logic, not scattered local checks.
 Recommended fix: Add `assertMortgageFeeAssessable` and governed assessment transition helpers; use them from create/manual apply/settle/reverse paths.
@@ -445,7 +484,13 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/fees convex/payments/cashLedger`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #576 review comments `r3192140743`, `r3192140760`, `r3192140761`, `r3192140766`, and `r3192140768`.
+- GitNexus impact: direct `npx gitnexus impact --repo fairlendapp` lookups for `createFeeAssessment`, `getPrimaryBorrowerIdForMortgage`, `applyBorrowerFeeToMortgage`, `getFeeRevenueSummary`, and `getAdminFeeManagementSnapshot` returned target-not-found for fluent/internal exports; fallback `npx gitnexus query "fee assessment lifecycle createFeeAssessment applyBorrowerFeeToMortgage fee revenue summary primary borrower" --repo fairlendapp` scoped the blast radius to the Fees module resolver lifecycle helpers (`normalizeEffectiveFrom`, `dateInRange`, `rangesOverlap`) with no HIGH/CRITICAL risk emitted.
+- Red coverage first: `bun run test -- convex/fees/__tests__/assessments.test.ts convex/fees/__tests__/config.test.ts` failed on seven expected regressions: missing audit journal rows for assessment creation/linking, inactive/out-of-window assessment acceptance, reversed income inclusion, arbitrary multi-borrower fallback, and inactive/out-of-window borrower fee application.
+- Production fix: added `assertMortgageFeeAppliesOnDate`; added a registered `feeAssessment` governed machine plus `transitionFeeAssessmentToStatus`; persisted transient `draft` status with `machineContext`/`lastTransitionAt`; routed assessment create/link, borrower fee application, cash-ledger settlement, and cash-ledger reversal through governed transitions; rejected multiple borrower links without an explicit primary; excluded reversed assessments from fee revenue summaries and admin snapshot revenue.
+- Green validation: `bun run test -- convex/fees/__tests__/assessments.test.ts convex/fees/__tests__/config.test.ts` passed 37 tests; `bun run test -- convex/payments/cashLedger/__tests__/reversalCascade.test.ts convex/payments/cashLedger/__tests__/integration.test.ts convex/fees` passed 74 tests; post-type-fix focused run `bun run test -- convex/fees/__tests__/assessments.test.ts convex/fees/__tests__/config.test.ts convex/payments/cashLedger/__tests__/reversalCascade.test.ts` passed 46 tests.
+- Repo gates: `bun check` passed with the existing warning backlog and formatted four files; `bun typecheck` passed; `bunx convex codegen` passed after one transient Convex fetch retry.
 <!-- /finding:PR576-F1 -->
 
 <!-- finding:PR576-F2 -->
@@ -469,8 +514,8 @@ Current-code evidence:
 - GitNexus: query for fee settlement/cash ledger found `convex/payments/cashLedger/integrations.ts`; no high-risk callgraph warning emitted.
 - Local evidence: settlement patches assessment journal fields but does not persist obligation link in the patch shown; allocation can post multiple servicing entries and only returns arrays while reversal concern remains unresolved.
 
-Verdict: Relevant - Needs fix
-Reason: Accounting reversals must be complete and replay-safe.
+Verdict: Completed - Fixed
+Reason: Settlement now persists the obligation link onto each settled fee assessment, and reversal cascade now reverses every `SERVICING_FEE_RECOGNIZED` journal entry in the allocation group and marks each linked fee assessment `reversed`.
 Recommended update: None
 Additional comments: Treat this as money-movement P0 even if callgraph breadth is low.
 Recommended fix: Persist source obligation link on assessment settlement and reverse all servicing fee journal entries associated with an allocation group.
@@ -482,7 +527,13 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/payments/cashLedger convex/fees`
 
 Implementation notes:
-- None yet
+- 2026-06-10: Implemented on `mobilelistingspage`. `linkServicingFeeAssessmentToJournalEntry` now patches `obligationId` alongside `amountSettledCents`, `cashLedgerJournalEntryId`, status, and `updatedAt`.
+- `postPaymentReversalCascade` now filters all allocation-group `SERVICING_FEE_RECOGNIZED` entries instead of using the first match, posts a distinct reversal for each original servicing-fee journal entry, and marks each linked obligation-scoped fee assessment as `reversed`.
+- Added regression coverage in `convex/payments/cashLedger/__tests__/reversalCascade.test.ts` for a split servicing-fee allocation with two assessment metadata rows, including a detached assessment that must be linked during settlement and both assessments that must be reversed during cascade.
+- Red verification: `bun run test -- convex/payments/cashLedger/__tests__/reversalCascade.test.ts` failed before the implementation because the detached assessment did not receive `obligationId`.
+- Green verification: `bun run test -- convex/payments/cashLedger/__tests__/reversalCascade.test.ts`; `bun run test -- convex/payments/cashLedger convex/fees --exclude convex/payments/cashLedger/__tests__/regressionVerification.test.ts`; `bun check`; `bun typecheck`; `bunx convex codegen`.
+- Full validation note: unexcluded `bun run test -- convex/payments/cashLedger convex/fees` failed only in `convex/payments/cashLedger/__tests__/regressionVerification.test.ts`, which compares `convex/ledger` source files against `main` and reported pre-existing stacked-branch changes to `convex/ledger/mutations.ts` and `convex/ledger/reservations.ts`; this PR576-F2 session did not modify any `convex/ledger` files.
+- GitNexus: fresh impact was LOW for `postSettlementAllocation` and `postPaymentReversalCascade`; the local helper `linkServicingFeeAssessmentToJournalEntry` was not independently indexed, so it is covered by the `postSettlementAllocation` impact surface.
 <!-- /finding:PR576-F2 -->
 
 <!-- finding:PR576-F3 -->
@@ -506,8 +557,8 @@ Current-code evidence:
 - GitNexus: not sampled; UI actions are leaf components.
 - Local evidence: unresolved review threads remain and no later evidence showed those actions wired.
 
-Verdict: Relevant - Needs fix
-Reason: Admin affordances that do nothing create operational ambiguity in fee management.
+Verdict: Completed - Fixed
+Reason: Admin affordances that do nothing create operational ambiguity in fee management; unsupported fee admin actions now render disabled unavailable states instead of live no-op controls.
 Recommended update: None
 Additional comments: Prefer disabling with explicit state over fake success.
 Recommended fix: Wire actions to real mutation/query flows or remove them until supported.
@@ -519,7 +570,12 @@ Footguns and guardrails:
 Validation: `bun run test -- src/test/admin src/components/admin/fees`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from the PR #576 review threads summarized in this artifact.
+- GitNexus impact: direct component lookups for `BulkApplyFeeSetPanel`, `FeeSetForm`, and `MortgageFeeApplicationPanel` were not indexed; local blast radius is the three fee admin leaf components, the shared unavailable action helper, and fee admin component tests.
+- Red/diagnostic coverage: the first focused run of `bun run test -- src/components/admin/fees/__tests__/fee-admin-actions.test.tsx src/components/admin/fees/__tests__/fee-value.test.tsx` failed before harness adjustment because the new RTL test needed explicit jsdom; after jsdom and local `ResizeObserver` setup, the tests assert all three former dead actions are disabled and expose explicit unavailable titles.
+- Production fix: added `UnavailableActionButton` and changed `Preview`, `Save set`, and `Inspect` to disabled button affordances with action-specific unavailable labels rather than frontend-only fake behavior.
+- Green validation: `bun run test -- src/components/admin/fees/__tests__/fee-admin-actions.test.tsx src/components/admin/fees/__tests__/fee-value.test.tsx` passed 5 tests.
 <!-- /finding:PR576-F3 -->
 
 <!-- finding:PR574-F1 -->
@@ -543,8 +599,8 @@ Current-code evidence:
 - GitNexus: query for legal representation invitation flows identified legal-representation definitions; sampled `resolveWorkosInvitationToken` impact LOW due endpoint-style export.
 - Local evidence: unresolved P1 review threads remain; no later review closure in GitHub.
 
-Verdict: Relevant - Needs fix
-Reason: Admin lawyer onboarding writes identity and verification state; accepting partial identity evidence is a privilege boundary issue.
+Verdict: Completed - Fixed
+Reason: Admin lawyer onboarding wrote identity and verification state with partial identity evidence; this pass fixed the remaining identity, delivery, and auditability gaps.
 Recommended update: None
 Additional comments: Reuse the same normalization/identity policy across guest and platform lawyer flows.
 Recommended fix: Replace capped email search with indexed or paginated lookup, claim delivery before WorkOS send, validate auth IDs against WorkOS identity, and hash evidence content with real SHA-256.
@@ -557,7 +613,13 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/legalRepresentation src/test/admin`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #574 review comments `r3178427831`, `r3192122180`, `r3192122185`, and `r3192122190`.
+- GitNexus impact: `resolveWorkosInvitationToken`, `acceptGuestInvitationByWorkosInvitationInternal`, and `deliverGuestInvitation` reported LOW risk with no upstream callers/processes; `acceptWorkosInvitationForOnboardingInternal` was not indexed, so edits were scoped through the same `convex/legalRepresentation/invitations.ts` batch and validated by legal-representation tests.
+- Red coverage first: `bun run test -- convex/legalRepresentation/__tests__/adminLawyers.test.ts` failed on the new regressions for >100-row case-insensitive WorkOS user lookup, mismatched caller authId acceptance, platform invitation delivery reservation, and non-SHA evidence hashes.
+- Production fix: `findSyncedUserByEmail` now scans all local synced users after indexed exact lookup; non-`create_pending` platform invites reject caller auth IDs that do not match the resolved WorkOS user or existing profile; platform invitation delivery now reserves `deliveryStatus: "sending"` before external WorkOS send and skips duplicates; admin representation verification stores `sha256:<hex>` over deterministic submitted evidence content.
+- Green validation: `bun run test -- convex/legalRepresentation/__tests__/adminLawyers.test.ts` passed 13 tests; `bun run test -- convex/legalRepresentation` passed 105 tests.
+- Repo gates: `bun check` passed with the existing warning backlog and formatted five files; `bunx convex codegen` passed after one transient Convex fetch retry; `bun typecheck` passed.
 <!-- /finding:PR574-F1 -->
 
 <!-- finding:PR574-F2 -->
@@ -581,8 +643,8 @@ Current-code evidence:
 - GitNexus: not sampled; leaf UI.
 - Local evidence: unresolved P1 review threads remain.
 
-Verdict: Relevant - Needs fix
-Reason: Admin actions must target the intended deal/profile, not a local heuristic.
+Verdict: Completed - Fixed
+Reason: Admin actions must target the intended deal/profile, not a local heuristic; detail actions now consume explicit server-projected action target IDs.
 Recommended update: None
 Additional comments: Server projections should expose available action targets.
 Recommended fix: Bind actions to explicit server-projected deal/action IDs and reset/await dialog state.
@@ -594,7 +656,12 @@ Footguns and guardrails:
 Validation: `bun run test -- src/test/admin`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from the PR #574 review threads summarized in this artifact.
+- GitNexus impact: direct symbol lookups for `AdminLawyersDetailSheet`, `InvitePlatformLawyerDialog`, and `getLawyerAdminDetail` were not indexed; local blast radius is `convex/legalRepresentation/adminLawyers.ts`, `src/components/admin/lawyers/admin-lawyers-model.ts`, `AdminLawyersDetailSheet.tsx`, `InvitePlatformLawyerDialog.tsx`, and admin-lawyer tests.
+- Red coverage first: `bun run test -- convex/legalRepresentation/__tests__/adminLawyers.test.ts src/test/admin/admin-lawyers-page.test.tsx` failed because `detail.actionTargets` was missing, the sheet submitted verification for `deal_1` instead of the server-projected `deal_2`, and the invite dialog closed before the deferred mutation resolved.
+- Production fix: `getLawyerAdminDetail` now projects `actionTargets.representationDealId` and `replacementDealId`; the detail sheet uses those IDs for verification/override/replacement and resets local state on profile changes; the platform invite dialog awaits mutation completion before reset/close and keeps errors visible on failure.
+- Green validation: `bun run test -- convex/legalRepresentation/__tests__/adminLawyers.test.ts src/test/admin/admin-lawyers-page.test.tsx` passed 24 tests.
 <!-- /finding:PR574-F2 -->
 
 <!-- finding:PR575-F1 -->
@@ -618,8 +685,8 @@ Current-code evidence:
 - GitNexus: `resolveWorkosInvitationToken` impact LOW, no upstream callers; endpoint export likely not represented as runtime usage.
 - Local evidence: current token resolver calls `startOrResumeForInvitationInternal`; `acceptGuestInvitationByWorkosInvitationInternal` guards verified/revoked, but `acceptWorkosInvitationForOnboardingInternal` does not.
 
-Verdict: Stale - Still Needs fix, reccomendation out of date
-Reason: Some status-guard work landed in one accept path, but the underlying read-only lookup and parity issues remain.
+Verdict: Completed - Fixed
+Reason: Some status-guard work had landed in one accept path, but read-only lookup and parity issues remained; this pass fixed those current-code gaps.
 Recommended update: Apply guard parity to current function names and move onboarding mutation to explicit accept action.
 Additional comments: `specs/ENG-362/audit.md` says needs manual validation, no material implementation gaps after resend/revoke coverage; this review identifies a remaining production-hardening gap in current code.
 Recommended fix: Make `resolveWorkosInvitationToken` read-only and return local invitation status/route hints only.
@@ -632,7 +699,13 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/legalRepresentation`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #575 comments `r3192119083`, `r3192119077`, and PR #573 comment `r3178355686`.
+- GitNexus impact: `resolveWorkosInvitationToken` LOW risk, `acceptGuestInvitationByWorkosInvitationInternal` LOW risk, no upstream callers/processes; `acceptWorkosInvitationForOnboardingInternal` was not indexed and was handled as a same-file internal endpoint.
+- Red coverage first: `bun run test -- convex/legalRepresentation/__tests__/invitations.test.ts` failed on read-only WorkOS token resolution and terminal revoked WorkOS invitation handling.
+- Production fix: `resolveWorkosInvitationToken` no longer calls onboarding start/resume mutations or returns session route IDs; WorkOS invitation lookup no longer filters out terminal guest invitation statuses; `acceptWorkosInvitationForOnboardingInternal` shares the verified/revoked terminal result guard with `acceptGuestInvitationByWorkosInvitationInternal`.
+- Green validation: `bun run test -- convex/legalRepresentation/__tests__/invitations.test.ts` passed 14 tests; `bun run test -- convex/legalRepresentation` passed 105 tests.
+- Repo gates: covered by the shared PR574-F1/PR575-F1 batch gates: `bun check`, `bunx convex codegen`, and `bun typecheck` all passed.
 <!-- /finding:PR575-F1 -->
 
 <!-- finding:PR575-F2 -->
@@ -656,8 +729,8 @@ Current-code evidence:
 - GitNexus: not sampled; route component.
 - Local evidence: current component calls `useSuspenseQuery` at line 36 before returning local `<Authenticated>` branch.
 
-Verdict: Relevant - Needs fix
-Reason: The local wrapper is too late; hook subscription has already happened.
+Verdict: Completed - Fixed
+Reason: The local wrapper is no longer too late; the exported route component renders `Authenticated`/`AuthLoading`, and the suspense query lives in a child content component rendered only by `Authenticated`.
 Recommended update: None
 Additional comments: Follow `src/routes/listings/route.tsx`.
 Recommended fix: Introduce a parent route/layout wrapper or child component under the existing lawyer authenticated layout.
@@ -669,7 +742,12 @@ Footguns and guardrails:
 Validation: `bun run test -- src/test/routes src/test/lawyer`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #575 comment `r3178778248`.
+- GitNexus impact: `LawyerOnboardingRouteComponent` and `lawyerOnboardingQueryOptions` were not indexed; fallback GitNexus query found the lawyer route/layout auth flow and no high/critical blast radius.
+- Red coverage first: `bun run test -- src/test/routes/deal-portal-route.test.tsx src/test/lawyer/lawyerOnboardingRoute.test.tsx` failed because the loader still prefetched before auth readiness and `useSuspenseQuery` still fired when `Authenticated` withheld children.
+- Production fix: `src/routes/lawyer/onboarding.$sessionId.tsx` now has a param-only loader and an exported auth-gate component; `useSuspenseQuery` moved into `LawyerOnboardingRouteContent`, rendered under `Authenticated`.
+- Green validation: `bun run test -- src/test/routes/deal-portal-route.test.tsx src/test/lawyer/lawyerOnboardingRoute.test.tsx` passed 9 tests.
 <!-- /finding:PR575-F2 -->
 
 <!-- finding:PR573-F1 -->
@@ -693,8 +771,8 @@ Current-code evidence:
 - GitNexus: query for participant workspace found `ParticipantDealWorkspacePage` execution flow.
 - Local evidence: current component calls `useSuspenseQuery` at line 33 before rendering `Authenticated`.
 
-Verdict: Relevant - Needs fix
-Reason: Same auth readiness bug remains in current branch.
+Verdict: Completed - Fixed
+Reason: The deal portal route now gates the suspense query behind `Authenticated`, and the loader no longer starts Convex query work before the auth readiness boundary.
 Recommended update: None
 Additional comments: Batch with PR575-F2 for a shared route pattern.
 Recommended fix: Split into authenticated parent layout and child outlet/content route.
@@ -706,7 +784,12 @@ Footguns and guardrails:
 Validation: `bun run test -- src/test/routes/deal-portal-route.test.tsx`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #573 comment `r3178355683`.
+- GitNexus impact: `DealPortalRouteComponent` LOW risk with no upstream callers/processes; `dealPortalQueryOptions` LOW risk with one same-file caller. Fallback query also found no high/critical route-auth blast radius.
+- Red coverage first: `bun run test -- src/test/routes/deal-portal-route.test.tsx src/test/lawyer/lawyerOnboardingRoute.test.tsx` failed because the loader still prefetched before auth readiness and `useSuspenseQuery` still fired when `Authenticated` withheld children.
+- Production fix: `src/routes/deals/$dealId.tsx` now has a param-only loader and an exported auth-gate component; `useSuspenseQuery` moved into `DealPortalRouteContent`, rendered under `Authenticated`.
+- Green validation: `bun run test -- src/test/routes/deal-portal-route.test.tsx src/test/lawyer/lawyerOnboardingRoute.test.tsx` passed 9 tests.
 <!-- /finding:PR573-F1 -->
 
 <!-- finding:PR573-F2 -->
@@ -725,13 +808,13 @@ Linear requirement:
 - Requirement: deal closing from verified listing-lock checkout preserves actor identity and portal visibility
 - Requirement status: PARTIAL
 
-Current-code evidence:
-- Current location: `convex/dealLocks/mutations.ts:92`, `convex/dealLocks/mutations.ts:382`, `convex/dealLocks/mutations.ts:563`
+Original-code evidence:
+- Original location: `convex/dealLocks/mutations.ts:92`, `convex/dealLocks/mutations.ts:382`, `convex/dealLocks/mutations.ts:563`
 - GitNexus: checkout/deal-lock query found `convex/dealLocks/mutations.ts`; no HIGH/CRITICAL callgraph risk emitted.
-- Local evidence: current code sets `sellerAuthId: seller.lenderId`; `ensureListingVisibleToBuyer` returns when `portalId` is absent.
+- Local evidence: code set `sellerAuthId: seller.lenderId`; `ensureListingVisibleForCheckout` returned when `portalId` was absent.
 
-Verdict: Relevant - Needs fix
-Reason: This is a real identity and access-control bug in current code.
+Verdict: Completed - Fixed
+Reason: The current code now fails closed without portal context, persists seller auth identity from the sale lot, and replays Stripe success after partial deal insertion without creating a duplicate deal.
 Recommended update: None
 Additional comments: Treat as P0 because it writes deal participant identity.
 Recommended fix: Resolve seller user/auth identity from seller lot/account/lender relation explicitly, require portal context or fail closed, and add idempotent deal creation recovery.
@@ -744,7 +827,12 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/dealLocks convex/checkout`
 
 Implementation notes:
-- None yet
+- 2026-06-10: Implemented on `mobilelistingspage`. `prepareCheckoutSession` now requires `portalId`, `ensureListingVisibleForCheckout` fails closed without portal context, and checkout sessions persist `seller.lot.sellerAuthId` while ledger reservation still uses `seller.lenderId`.
+- Added `findExistingCheckoutDeal` and `finalizePaidCheckoutDeal` recovery in `processStripeCheckoutSuccess`; Stripe success retries after deal insert but before session patch now reuse the existing deal, replay idempotent access grants, complete the transition when the deal is still `initiated`, patch reservation/session state, and return `duplicate_success`.
+- Added regression coverage in `convex/dealLocks/__tests__/checkout.test.ts` for missing portal context before reservation/session creation and partial Stripe success retry reuse/finalization.
+- Red verification: `bun run test -- convex/dealLocks/__tests__/checkout.test.ts` failed before the implementation on the missing-portal and partial-retry assertions.
+- Green verification: `bun run test -- convex/dealLocks/__tests__/checkout.test.ts`; `bun run test -- convex/dealLocks convex/checkout`; `bun check`; `bun typecheck`; `bunx convex codegen`.
+- GitNexus: refreshed stale index with `npx gitnexus analyze`; fresh impact was LOW for `ensureListingVisibleForCheckout`, `prepareCheckoutSession`, and `processStripeCheckoutSuccess`. `gitnexus detect-changes` was not available in this session because the local CLI has no `detect-changes` subcommand and no GitNexus MCP tool namespace was exposed, so final scope was checked with fresh symbol impact plus `git diff`.
 <!-- /finding:PR573-F2 -->
 
 <!-- finding:PR573-F3 -->
@@ -768,9 +856,9 @@ Current-code evidence:
 - GitNexus: not sampled; money-movement action path.
 - Local evidence: current `provider.createSchedule` receives `amount: begin.draft.interestPaymentAmount` and `installments: begin.draft.interestInstallmentCount`.
 
-Verdict: Relevant - Needs fix
-Reason: The exact over-collection pattern remains.
-Recommended update: None
+Verdict: Stale - Skip fix
+Reason: Current code rejects provider-managed Rotessa drafts before activation when outstanding interest is not evenly divisible by the selected interest payment amount, so the provider-created constant-amount schedule cannot over-collect a final remainder.
+Recommended update: None; current architecture chose the review's safe rejection option instead of splitting the remainder off-provider.
 Additional comments: This is a money movement P0.
 Recommended fix: If Rotessa cannot express variable final installment, create separate provider schedules or keep provider-managed activation disabled for remainder schedules.
 Implementation guidance: Add test where total interest does not divide evenly by installment count.
@@ -781,7 +869,10 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/payments/scheduleReplacement`
 
 Implementation notes:
-- None yet
+- 2026-06-10 re-check on `mobilelistingspage`: no production code change required. `buildReplacementPreview` returns `provider_uniform_interest_amount_required` for provider-managed Rotessa when `outstandingInterestAmount % interestPaymentAmount !== 0`; `createOrUpdateScheduleReplacementDraft` stores the draft as `draft` with that issue, so `applyProviderManagedReplacementInternal` cannot reach `provider.createSchedule` for a remainder schedule.
+- Existing regression coverage: `convex/payments/scheduleReplacement/__tests__/scheduleMath.test.ts` covers the preview rejection, and `convex/payments/scheduleReplacement/__tests__/drafts.test.ts` covers the persisted draft validation issue.
+- Validation: `bun run test -- convex/payments/scheduleReplacement` passed with 37 tests.
+- GitNexus: fresh impact was LOW for `applyProviderManagedReplacementInternal`, `prepareProviderManagedReplacementInternal`, and `buildReplacementPreview`.
 <!-- /finding:PR573-F3 -->
 
 <!-- finding:PR532-F1 -->
@@ -805,8 +896,8 @@ Current-code evidence:
 - GitNexus: `buildLateSuccessRefundRequest` impact LOW, direct caller `reconcileLateSuccess`, depth-2 caller `reconcileSuccess`.
 - Local evidence: `extractProviderRef` still defaults to event object ID for unhandled event types; `ensureLateSuccessReservation` catches both reservation and later patch failures together.
 
-Verdict: Relevant - Needs fix
-Reason: Replay behavior and payment proof classification remain fragile.
+Verdict: Completed - Fixed
+Reason: Stripe async paid checkout events now enter the checkout success path; completed-but-unpaid Checkout sessions still fail closed; late-success refunds in `intent_recorded` or `failed` state now return `refund_required` with the stored idempotency key instead of being marked processed; and late re-lock only swallows reservation failures, not post-reservation session relink/patch failures.
 Recommended update: None
 Additional comments: Batch with deal-lock identity work to avoid inconsistent checkout state transitions.
 Recommended fix: Classify payment-settled events separately from session-completed events; persist refund attempt state before/after provider calls; split replacement reservation creation from session relink/patch catch.
@@ -818,7 +909,13 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/checkout convex/payments/webhooks`
 
 Implementation notes:
-- None yet
+- 2026-06-10: Implemented on `mobilelistingspage`. Added `checkout.session.async_payment_succeeded` to `CHECKOUT_SUCCESS_EVENT_TYPES` while preserving the existing `payment_status === "paid"` guard for completed sessions.
+- Changed `reconcileLateSuccess` so any existing non-`completed` `lateSuccessRefund` returns `refund_required` with the stored refund amount, payment intent, provider event, and idempotency key; the replay webhook remains pending until the refund actually completes.
+- Split `relockExpiredCheckoutReservation` so only `reserveSharesHandler` insufficiency/failure returns `null` for the refund path. After a replacement reservation exists, missing-reservation or checkout-session patch/read failures now throw and leave the webhook retryable instead of incorrectly recording a refund path.
+- Added regression coverage in `convex/payments/webhooks/__tests__/stripeWebhook.test.ts` for async paid Checkout webhook classification and HTTP reconciliation, and updated `convex/checkout/__tests__/start.test.ts` to assert recorded-but-incomplete late-success refund replay remains retryable.
+- Red verification: `bun run test -- convex/payments/webhooks/__tests__/stripeWebhook.test.ts convex/checkout/__tests__/start.test.ts` failed before the implementation because async Checkout events were ignored and `intent_recorded` refund replays returned `refund_already_recorded`.
+- Green verification: `bun run test -- convex/payments/webhooks/__tests__/stripeWebhook.test.ts convex/checkout/__tests__/start.test.ts`; `bun run test -- convex/checkout convex/payments/webhooks`; `bun check`; `bun typecheck`; `bunx convex codegen`.
+- GitNexus: fresh impact was LOW for `processCheckoutSuccessWebhook`, `reconcileLateSuccess`, and `relockExpiredCheckoutReservation`.
 <!-- /finding:PR532-F1 -->
 
 <!-- finding:PR521-F1 -->
@@ -842,8 +939,8 @@ Current-code evidence:
 - GitNexus: query found `ParticipantDealWorkspacePage -> Format` cross-community flow.
 - Local evidence: `specs/ENG-348/audit.md` verdict is `not ready`; execution checklist still has unchecked participant queue/workspace requirements.
 
-Verdict: Relevant - Needs fix
-Reason: This is both a review-thread gap and a Linear acceptance gap.
+Verdict: Completed - Fixed
+Reason: Current code already excluded failed/blocked signed archives from participant receipt evidence; the remaining viewer-context and opaque-signing-token gaps are now fixed.
 Recommended update: None
 Additional comments: Do this as one deal-closing projection cleanup rather than one-off UI patches.
 Recommended fix: Update projection to newest receipt archive only, thread viewer context to package reads, and expose actionable signing URL/session handoff.
@@ -855,7 +952,13 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/deals src/test/deals`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #521 comments `r3168518886`, `r3168518910`, `r3168518918`, plus `specs/ENG-348/audit.md`.
+- GitNexus impact: `buildParticipantDealWorkspace` LOW risk with one same-file direct caller and no affected execution processes; `readParticipantSigningTask` LOW risk with the participant workspace process affected; `ParticipantDealWorkspacePage` LOW risk with no upstream callers.
+- Re-check: receipt evidence handling already used the newest sorted archive rows and existing tests covered failed/blocked archive rows not completing participant receipts.
+- Red coverage first: `bun run test -- convex/deals/__tests__/participantWorkspace.test.ts src/test/deals/participant-workspace.test.tsx` failed because package surfaces lacked viewer context and the UI did not launch opaque signing tokens through a server action.
+- Production fix: `buildParticipantDealWorkspace` now passes the current viewer into `readDealDocumentPackageSurface`; new `convex/deals/signingSessions.ts` derives the authenticated recipient server-side and asks Documenso for an embedded signing session; `ParticipantDealWorkspacePage` calls that action and opens the returned provider-safe URL instead of linking raw tokens.
+- Green validation: `bun run test -- convex/deals/__tests__/participantWorkspace.test.ts src/test/deals/participant-workspace.test.tsx` passed 12 tests; shared deal-closing batch validation passed 23 tests.
 <!-- /finding:PR521-F1 -->
 
 <!-- finding:PR515-F1 -->
@@ -879,8 +982,8 @@ Current-code evidence:
 - GitNexus: not sampled.
 - Local evidence: `specs/ENG-342/audit.md` verdict is `not ready`; checklist has unchecked validation tasks.
 
-Verdict: Relevant - Needs fix
-Reason: Linear artifact independently confirms this area is not production-complete.
+Verdict: Completed - Fixed
+Reason: Nested Documenso payload identifiers are now normalized, secret verification already occurs before parsing/processing, and current terminal-event handling returns before completion reconciliation.
 Recommended update: None
 Additional comments: The fixer should re-read current webhook code before patching; review line numbers are old.
 Recommended fix: Normalize payload extraction for nested Documenso shapes and enforce terminal-event precedence.
@@ -892,7 +995,13 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/deals`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #515 review summary and `specs/ENG-342/audit.md`.
+- GitNexus impact: `parseDocumensoWebhookEvent` LOW risk with same-file/HTTP import blast radius; `processDocumensoProviderEvent` LOW risk with no upstream callers.
+- Re-check: current `documensoWebhook` already reads and verifies the secret header before parsing; `processDocumensoProviderEvent` already avoids completion reconciliation after terminal attempt status and terminal provider events.
+- Red coverage first: `bun run test -- convex/deals/__tests__/envelopes.test.ts` failed because nested `data.document`, `data.envelope`, `data.recipient`, and `data.eventId` identifiers were dropped.
+- Production fix: `parseDocumensoWebhookEvent` now normalizes provider IDs from root, `payload`, `data`, and `payload.data` shapes, including nested `document`/`envelope`/`recipient` objects while preserving legacy `payload.id` document IDs.
+- Green validation: `bun run test -- convex/deals/__tests__/envelopes.test.ts` passed 11 tests; shared deal-closing batch validation passed 23 tests.
 <!-- /finding:PR515-F1 -->
 
 <!-- finding:PR541-F1 -->
@@ -916,8 +1025,8 @@ Current-code evidence:
 - GitNexus: not sampled.
 - Local evidence: unresolved duplicate review comments remain; `ENG-307` audit needs manual validation.
 
-Verdict: Relevant - Needs fix
-Reason: Native form submission is a user-visible workflow break.
+Verdict: Completed - Fixed
+Reason: Native form submission is a user-visible workflow break; the borrower financing continuation form no longer exposes a native POST route.
 Recommended update: None
 Additional comments: If this page is intentionally static, make all CTAs non-submit buttons.
 Recommended fix: Add controlled `onSubmit` with `preventDefault` and/or wire TanStack serverFn action.
@@ -929,7 +1038,12 @@ Footguns and guardrails:
 Validation: `bun run test -- src/test/routes src/test/borrower`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #541 comment `r3182495413`.
+- GitNexus impact: `BorrowerFinancingApplicationPage` returned LOW risk with no upstream processes/modules.
+- Red coverage first: `bun run test -- src/test/routes/borrower-financing-application.test.tsx` failed because the form still had `method="post"`.
+- Production fix: removed the native form method and added an explicit `onSubmit` `preventDefault` handler until a real draft persistence action exists.
+- Green validation: `bun run test -- src/test/routes/borrower-financing-application.test.tsx` passed 3 tests.
 <!-- /finding:PR541-F1 -->
 
 <!-- finding:PR541-F2 -->
@@ -966,7 +1080,8 @@ Footguns and guardrails:
 Validation: `bun typecheck`
 
 Implementation notes:
-- None yet
+- Skipped after re-check on 2026-06-10 by `mobilelistingspage` fixer session.
+- Current-code evidence remains clean: `rg -n "<<<<<<<|=======|>>>>>>>" src/routeTree.gen.ts src/routes` has no conflict markers, so the generated route-tree review comment is stale.
 <!-- /finding:PR541-F2 -->
 
 <!-- finding:PR540-F1 -->
@@ -990,8 +1105,8 @@ Current-code evidence:
 - GitNexus: `resolveMicPortalConfig` sampled LOW risk, unrelated but portal-area direct callers shown; no high blast-radius warning.
 - Local evidence: unresolved review threads remain; audit needs manual validation.
 
-Verdict: Relevant - Needs fix
-Reason: Portal handoff attribution is a tenant boundary.
+Verdict: Completed - Fixed
+Reason: Broker-attributed portals keep canonical lender handoff CTAs; non-broker portals no longer expose `/start-lending`, and handoff mutation input is constrained to relative allowed portal paths/query keys.
 Recommended update: None
 Additional comments: Pair with portal href validator hardening.
 Recommended fix: Gate CTA to broker-attributed portals and normalize entry paths against an allowlist of path/query keys.
@@ -1003,7 +1118,12 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/portals convex/onboarding`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #540 comments `r3144414616`, `r3144413917`, `r3144415242`.
+- GitNexus impact: `lenderHandoffAction` LOW risk with direct callers in `buildSwitchboard`, `toLandingListingItem`, and `buildFeaturedListings`; `buildSwitchboard` LOW risk; `buildFeaturedListings` LOW risk; `normalizeEntryPath` LOW risk with one same-file direct caller.
+- Red coverage first: `bun run test -- convex/portals/__tests__/landing.test.ts convex/onboarding/__tests__/lenderLanding.test.ts` failed because FairLend app portal lender CTA still pointed at `/start-lending`, absolute `entryPath` was accepted, and stored backslash hrefs were accepted.
+- Production fix: `convex/portals/queries.ts` gates `/start-lending` actions to broker-attributed portals and falls back to `/listings` otherwise; `convex/onboarding/lenderLanding.ts` rejects absolute/protocol-relative/backslash entry paths and unknown query params.
+- Green validation: `bun run test -- convex/onboarding/__tests__/lenderLanding.test.ts` passed 6 tests; `bun run test -- convex/portals/__tests__/landing.test.ts convex/onboarding/__tests__/lenderLanding.test.ts` passed 23 tests after also refreshing the stale convex-test module map for `portals/landingMutations`.
 <!-- /finding:PR540-F1 -->
 
 <!-- finding:PR512-F1 -->
@@ -1027,8 +1147,8 @@ Current-code evidence:
 - GitNexus: not sampled.
 - Local evidence: current `SAFE_PORTAL_LANDING_HREF_PATTERN` and related pattern use `[^\s]*`, which does not exclude `\`.
 
-Verdict: Relevant - Needs fix
-Reason: Stored link validation is a security boundary.
+Verdict: Completed - Fixed
+Reason: Stored portal landing href validation now rejects backslashes before regex matching, closing the browser-normalization bypass.
 Recommended update: None
 Additional comments: Add explicit `!value.includes("\\")` even if regex is tightened.
 Recommended fix: Reject backslashes for all stored portal landing href/link values.
@@ -1040,7 +1160,12 @@ Footguns and guardrails:
 Validation: `bun run test -- convex/portals`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from PR #512 comment `r3142177339`.
+- GitNexus impact: `assertSafePortalLandingHref` LOW risk with direct path through landing action/content validation in the Portals module.
+- Red coverage first: `bun run test -- convex/portals/__tests__/landing.test.ts convex/onboarding/__tests__/lenderLanding.test.ts` failed because `/\\evil.example/path` was accepted as a stored landing action href.
+- Production fix: `assertSafePortalLandingHref` rejects any `\` before applying the existing safe local/hash href regex.
+- Green validation: `bun run test -- convex/portals/__tests__/landing.test.ts convex/onboarding/__tests__/lenderLanding.test.ts` passed 23 tests.
 <!-- /finding:PR512-F1 -->
 
 <!-- finding:PR513-F1 -->
@@ -1064,8 +1189,8 @@ Current-code evidence:
 - GitNexus: `patchVelocityMockDealHttp` impact LOW; Velocity route comment sampled separately is stale.
 - Local evidence: unresolved review threads remain.
 
-Verdict: Relevant - Needs fix
-Reason: Test-only public mutations and broad auth setup matching can affect unrelated E2E runs.
+Verdict: Completed - Fixed
+Reason: Test-only public mutations and broad auth setup matching can affect unrelated E2E runs; the setup matcher and helper guard are now fail-closed.
 Recommended update: None
 Additional comments: Keep dev/mock Velocity routes isolated.
 Recommended fix: Narrow setup glob and add environment/test guard to failure mutation.
@@ -1077,7 +1202,12 @@ Footguns and guardrails:
 Validation: `bun run test:e2e -- --list`, `bun run test -- src/test/convex/velocity`
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Original review context refreshed from the PR #513 review threads summarized in this artifact.
+- GitNexus impact: `patchVelocityMockDealHttp` LOW risk; `recordFailedActivationAttempt` lookup resolved to the E2E helper method and returned LOW risk with no upstream processes.
+- Red coverage first: `bun run test -- src/test/velocity-e2e-hardening.test.ts` failed because the shared setup project used broad string `auth.setup.ts` matching and the Velocity runtime guard helper did not exist.
+- Production fix: scoped the shared Playwright setup project to exact root `e2e/auth.setup.ts`; added `isVelocityE2eRuntimeAllowed` and made `recordFailedActivationAttempt` require `VELOCITY_E2E_ENABLED=true`, `ALLOW_TEST_AUTH_ENDPOINTS=true`, and non-production `NODE_ENV`.
+- Green validation: `bun run test -- src/test/velocity-e2e-hardening.test.ts` passed 2 tests; `bun run test:e2e -- --list` passed and listed `velocity/auth.setup.ts` only under `[velocity-setup]`, while `[setup]` listed only root `auth.setup.ts`.
 <!-- /finding:PR513-F1 -->
 
 <!-- finding:PR509-F1 -->
@@ -1114,7 +1244,8 @@ Footguns and guardrails:
 Validation: `bun run test -- src/test/convex/velocity`
 
 Implementation notes:
-- None yet
+- Skipped after re-check on 2026-06-10 by `mobilelistingspage` fixer session.
+- Current-code evidence remains satisfied: `convex/http.ts` registers `pathPrefix: "/api/dev/mock-velocity/deals/"`; no code change is required for this stale review comment.
 <!-- /finding:PR509-F1 -->
 
 <!-- finding:XPR-F1 -->
@@ -1138,8 +1269,8 @@ Current-code evidence:
 - GitNexus: not needed.
 - Local evidence: `.gitignore` now includes `.superpowers/`, and original `server.pid`/`server-stopped` paths are gone, but `git ls-files .superpowers` still shows two tracked files.
 
-Verdict: Stale - Still Needs fix, reccomendation out of date
-Reason: Original exact files are stale, but the tracked-artifact class is still real.
+Verdict: Completed - Fixed
+Reason: Original exact files were stale, but the tracked-artifact class was still real; the remaining tracked `.superpowers` runtime files have been removed from the index.
 Recommended update: Remove currently tracked `.superpowers` files instead of hunting the old PID paths.
 Additional comments: This is safe to fix independently.
 Recommended fix: `git rm --cached` or delete tracked `.superpowers` artifacts if not intentional project documentation.
@@ -1151,26 +1282,29 @@ Footguns and guardrails:
 Validation: `git ls-files .superpowers` returns no runtime artifacts.
 
 Implementation notes:
-- None yet
+- Claimed and fixed on 2026-06-10 by `mobilelistingspage` fixer session.
+- Re-check evidence: `git ls-files .superpowers` initially returned `.superpowers/brainstorm/18570-1777767946/state/server-info` and `.superpowers/verification/admin-lawyers/README.md`; contents were runtime server state and local browser-verification notes, not project documentation.
+- Production fix: deleted the two runtime artifacts and removed them from the Git index with `git rm --cached`; `.gitignore` already ignores `.superpowers/`.
+- Validation: `git ls-files .superpowers` returned no output after the index removal.
 <!-- /finding:XPR-F1 -->
 
 ## Shared Refactors And Guardrails
 
-- Authenticated suspense routes: batch PR575-F2 and PR573-F1. The canonical pattern is a parent route rendering `Authenticated`/`AuthLoading` before any child component calls `useSuspenseQuery`.
-- Money movement: batch PR573-F2, PR573-F3, and PR532-F1 under one owner. These touch checkout identity, Stripe replay/refund semantics, and provider schedule collection amounts.
-- Fee accounting: batch PR576-F1 and PR576-F2. Fee validity, assessment lifecycle, settlement linkage, and reversal semantics should share one policy/transition surface.
-- Legal representation: batch PR574-F1 and PR575-F1. WorkOS identity, invitation claim/send, token lookup, and status guards should not diverge between guest and platform lawyer flows.
-- Portal security: batch PR540-F1 and PR512-F1. CTA attribution and stored href/entryPath validation are both tenant-boundary concerns.
+- Authenticated suspense routes: PR575-F2 and PR573-F1 are completed; both routes now render `Authenticated`/`AuthLoading` before any child component calls `useSuspenseQuery`, and their loaders are param-only.
+- Deal-closing workspace/webhooks: PR521-F1 and PR515-F1 are completed; participant package surfaces are viewer-scoped, opaque signing tokens launch through a backend-issued signing session, and Documenso nested payload identifiers are parsed.
+- Money movement: PR573-F2 and PR532-F1 are fixed; PR573-F3 was stale after re-check because current provider-managed Rotessa draft validation rejects non-even interest remainders.
+- Fee accounting: PR576-F1 and PR576-F2 are completed; fee validity, assessment lifecycle, settlement linkage, and reversal semantics now share governed transition/accounting policy surfaces.
+- Legal representation: PR574-F1 and PR575-F1 are completed; WorkOS identity, invitation claim/send, token lookup, and status guards now share fail-closed handling.
+- Portal security: PR540-F1 and PR512-F1 are completed; CTA attribution is broker-gated, entryPath state is allowlisted, and stored landing hrefs reject browser-normalized backslash bypasses.
 
 ## Fix Queue
 
-1. PR573-F2: identity/access bug in deal-lock checkout.
-2. PR573-F3: provider-managed schedule over-collection.
-3. PR532-F1: Stripe success/refund replay safety.
-4. PR576-F2: cash-ledger servicing-fee reversal consistency.
-5. PR576-F1: fee lifecycle validity and governed transitions.
-6. PR575-F1 and PR574-F1: WorkOS invitation identity/state hardening.
-7. PR573-F1 and PR575-F2: auth-readiness route wrappers.
-8. PR521-F1 and PR515-F1: deal-closing workspace/webhook Linear gaps.
-9. PR512-F1 and PR540-F1: portal href/CTA safety.
-10. Remaining UI/test hygiene: PR576-F3, PR574-F2, PR541-F1, PR513-F1, XPR-F1.
+1. Complete: all actionable grouped findings are completed; stale findings PR573-F3, PR541-F2, and PR509-F1 are skipped after re-check.
+
+## Final Validation
+
+- Focused final-batch regression: `bun run test -- convex/admin/lenders/__tests__/reassignment.test.ts src/components/admin/fees/__tests__/fee-admin-actions.test.tsx src/components/admin/fees/__tests__/fee-value.test.tsx convex/legalRepresentation/__tests__/adminLawyers.test.ts src/test/admin/admin-lawyers-page.test.tsx src/test/routes/borrower-financing-application.test.tsx src/test/velocity-e2e-hardening.test.ts` passed 60 tests across 7 files.
+- Playwright setup validation: `bun run test:e2e -- --list` passed and listed root `auth.setup.ts` under `[setup]` while `velocity/auth.setup.ts` remained under `[velocity-setup]`.
+- Repository gates: `bun check` passed with the existing warning backlog; `bun typecheck` passed; `bunx convex codegen` passed.
+- Hygiene validation: `git ls-files .superpowers` returned no output after removing the tracked runtime artifacts from the index.
+- GitNexus change detection: the repository instruction names `gitnexus_detect_changes()`, but the installed CLI exposes no equivalent `detect-changes` command (`npx gitnexus help` lists analyze/status/query/context/impact/cypher/etc.). Fallback scope check used `git diff --name-status` and `git diff --cached --name-status`; the staged diff is limited to the two `.superpowers` artifact removals.

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { BorrowerFinancingApplicationPage } from "#/components/borrower/financing/BorrowerFinancingApplicationPage";
 
@@ -53,5 +53,23 @@ describe("borrower financing application continuation", () => {
 		).toBeTruthy();
 		expect(screen.getByLabelText("Property address")).toBeTruthy();
 		expect(screen.getByLabelText("Financing notes")).toBeTruthy();
+	});
+
+	it("does not expose a native POST submission path for draft saves", () => {
+		render(<BorrowerFinancingApplicationPage kind="intake" prefill={{}} />);
+
+		const form = screen
+			.getByRole("button", { name: /save application draft/i })
+			.closest("form");
+		expect(form).toBeTruthy();
+		expect(form?.getAttribute("method")).toBeNull();
+
+		const submitEvent = new Event("submit", {
+			bubbles: true,
+			cancelable: true,
+		});
+		fireEvent(form as HTMLFormElement, submitEvent);
+
+		expect(submitEvent.defaultPrevented).toBe(true);
 	});
 });

@@ -354,6 +354,10 @@ describe("public portal landing contract", () => {
 		expect(landing?.switchboard.borrower.primaryAction.href).toBe(
 			"/financing/start"
 		);
+		expect(landing?.switchboard.lender.primaryAction).toEqual({
+			href: "/listings",
+			label: "Browse current listings",
+		});
 	});
 
 	it("returns disabled teaser metadata without listing items", async () => {
@@ -445,6 +449,25 @@ describe("public portal landing contract", () => {
 			hero: {
 				primaryAction: {
 					href: "javascript:alert(1)",
+					label: "Unsafe",
+				},
+			},
+		});
+
+		await expect(
+			t.query(api.portals.queries.getPublicPortalLandingPage, {
+				portalId,
+			})
+		).rejects.toThrow("Unsafe portal landing href");
+	});
+
+	it("rejects stored landing hrefs with browser-normalized backslashes", async () => {
+		const t = createHarness();
+		const portalId = await insertPortal(t);
+		await insertLandingContent(t, portalId, {
+			hero: {
+				primaryAction: {
+					href: "/\\evil.example/path",
 					label: "Unsafe",
 				},
 			},
@@ -653,7 +676,8 @@ describe("public portal landing contract", () => {
 
 	it("projects featured teaser listings through portal pricing", async () => {
 		const t = createHarness();
-		const portalId = await insertPortal(t, { teaserListingLimit: 3 });
+		const brokerId = await insertBroker(t);
+		const portalId = await insertPortal(t, { brokerId, teaserListingLimit: 3 });
 		await insertPublishedListings(t, 4);
 
 		const landing = await t.query(

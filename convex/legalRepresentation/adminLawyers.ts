@@ -614,6 +614,13 @@ function activeDealCount(deals: readonly Doc<"deals">[]) {
 	return deals.filter((deal) => isActiveLawyerMatterStatus(deal.status)).length;
 }
 
+function primaryAdminActionDealId(deals: readonly Doc<"deals">[]) {
+	const activeDeal = deals.find((deal) =>
+		ACTIVE_DEAL_STATUSES.has(deal.status)
+	);
+	return activeDeal?._id ?? deals[0]?._id ?? null;
+}
+
 function deriveSlaStatus(args: {
 	readonly now: number;
 	readonly review: Doc<"platformLawyerSlaReviews"> | null;
@@ -1094,7 +1101,12 @@ export const getLawyerAdminDetail = adminQuery
 				session.status !== "expired" &&
 				session.status !== "blocked"
 		);
+		const actionDealId = primaryAdminActionDealId(deals);
 		return {
+			actionTargets: {
+				replacementDealId: actionDealId,
+				representationDealId: actionDealId,
+			},
 			allowedActions: {
 				cancelInvitation: activeInvitations.length > 0,
 				replaceLawyer: deals.length > 0,
@@ -2076,7 +2088,7 @@ async function findSyncedUserByEmail(ctx: Pick<QueryCtx, "db">, email: string) {
 	if (exact) {
 		return exact;
 	}
-	const rows = await ctx.db.query("users").take(100);
+	const rows = await ctx.db.query("users").collect();
 	return (
 		rows.find((user) => normalizeLawyerEmail(user.email) === normalizedEmail) ??
 		null
@@ -2176,6 +2188,7 @@ export const updatePlatformInvitationDeliveryInternal = convex
 		deliveryError: v.optional(v.string()),
 		deliveryStatus: v.union(
 			v.literal("pending"),
+			v.literal("sending"),
 			v.literal("sent"),
 			v.literal("failed")
 		),
@@ -2200,6 +2213,37 @@ export const updatePlatformInvitationDeliveryInternal = convex
 			updatedAt: args.lastDeliveryAttemptAt,
 			workosInvitationId: args.workosInvitationId,
 		});
+	})
+	.internal();
+
+export const reservePlatformInvitationDeliveryInternal = convex
+	.mutation()
+	.input({
+		invitationId: v.id("platformLawyerInvitations"),
+		now: v.number(),
+	})
+	.handler(async (ctx, args) => {
+		const invitation = await ctx.db.get(args.invitationId);
+		if (
+			!invitation ||
+			invitation.status !== "pending" ||
+			invitation.deliveryStatus !== "pending"
+		) {
+			return null;
+		}
+		await ctx.db.patch(invitation._id, {
+			deliveryError: undefined,
+			deliveryStatus: "sending",
+			lastDeliveryAttemptAt: args.now,
+			updatedAt: args.now,
+		});
+		return {
+			...invitation,
+			deliveryError: undefined,
+			deliveryStatus: "sending" as const,
+			lastDeliveryAttemptAt: args.now,
+			updatedAt: args.now,
+		};
 	})
 	.internal();
 
@@ -2277,16 +2321,16 @@ export const deliverPlatformLawyerInvitation = convex
 			| { readonly status: "failed" | "skipped" }
 			| { readonly status: "sent"; readonly workosInvitationId: string }
 		> => {
-			const invitation: Doc<"platformLawyerInvitations"> | null =
-				await ctx.runQuery(
+			const reserved: Doc<"platformLawyerInvitations"> | null =
+				await ctx.runMutation(
 					internal.legalRepresentation.adminLawyers
-						.getPlatformLawyerInvitationForDeliveryInternal,
-					{ invitationId: args.invitationId }
+						.reservePlatformInvitationDeliveryInternal,
+					{ invitationId: args.invitationId, now: Date.now() }
 				);
-			if (!invitation || invitation.status !== "pending") {
+			if (!reserved) {
 				return { status: "skipped" as const };
 			}
-			return await deliverPlatformInvite(ctx, invitation);
+			return await deliverPlatformInvite(ctx, reserved);
 		}
 	)
 	.internal();
@@ -2323,6 +2367,14 @@ export const invitePlatformLawyer = adminMutation
 			resolution === "create_pending"
 				? args.authId
 				: (args.authId ?? syncedUser?.authId ?? existingProfile?.authId);
+		if (
+			args.authId &&
+			resolution !== "create_pending" &&
+			args.authId !== syncedUser?.authId &&
+			args.authId !== existingProfile?.authId
+		) {
+			throw new ConvexError("Provided authId does not match WorkOS identity");
+		}
 		const upsertArgs: UpsertPlatformLawyerProfileArgs = {
 			actorId: ctx.viewer.authId,
 			authId,

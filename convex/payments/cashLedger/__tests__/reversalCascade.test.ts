@@ -14,6 +14,7 @@ import {
 	postPaymentReversalCascade,
 	postSettlementAllocation,
 	postTransferReversal,
+	type ServicingFeeMetadata,
 } from "../integrations";
 import { postCashEntryInternal } from "../postEntry";
 import { getPostingGroupSummary } from "../postingGroups";
@@ -44,10 +45,12 @@ interface SettlementState {
 	lenderBId: Id<"lenders">;
 	mortgageId: Id<"mortgages">;
 	obligationId: Id<"obligations">;
+	servicingFeeAssessmentIds: Id<"feeAssessments">[];
 }
 
 async function setupFullSettlementState(
-	t: TestHarness
+	t: TestHarness,
+	options?: { splitServicingFeeAssessments?: boolean }
 ): Promise<SettlementState> {
 	// 1. Seed entities
 	const { borrowerId, lenderAId, lenderBId, mortgageId } = await t.run(
@@ -296,21 +299,35 @@ async function setupFullSettlementState(
 	});
 
 	// 6. Post allocation entries (LENDER_PAYABLE_CREATED x2 + SERVICING_FEE_RECOGNIZED)
-	await t.run(async (ctx) => {
+	const servicingFeeAssessmentIds = await t.run(async (ctx) => {
+		const firstFeeAmount = options?.splitServicingFeeAssessments
+			? 6000
+			: SERVICING_FEE_AMOUNT;
 		const feeMetadata = await createTestServicingFeeMetadata(ctx, {
 			mortgageId,
 			obligationId,
 			effectiveDate: "2026-03-01",
-			feeDue: SERVICING_FEE_AMOUNT,
-			feeCashApplied: SERVICING_FEE_AMOUNT,
+			feeDue: firstFeeAmount,
+			feeCashApplied: firstFeeAmount,
 		});
+		const feeMetadataEntries = options?.splitServicingFeeAssessments
+			? [
+					feeMetadata,
+					await createDetachedServicingFeeMetadata(ctx, {
+						baseMetadata: feeMetadata,
+						feeCashApplied: SERVICING_FEE_AMOUNT - firstFeeAmount,
+						feeDue: SERVICING_FEE_AMOUNT - firstFeeAmount,
+						mortgageId,
+					}),
+				]
+			: [feeMetadata];
 
-		return postSettlementAllocation(ctx, {
+		await postSettlementAllocation(ctx, {
 			obligationId,
 			mortgageId,
 			settledDate: "2026-03-01",
 			servicingFee: SERVICING_FEE_AMOUNT,
-			feeMetadata,
+			feeMetadataEntries,
 			entries: [
 				{
 					dispersalEntryId: dispersalEntryAId,
@@ -325,6 +342,7 @@ async function setupFullSettlementState(
 			],
 			source: SYSTEM_SOURCE,
 		});
+		return feeMetadataEntries.map((metadata) => metadata.feeAssessmentId);
 	});
 
 	return {
@@ -337,6 +355,61 @@ async function setupFullSettlementState(
 		dispersalEntryAId,
 		dispersalEntryBId,
 		cashReceivedEntry: cashReceivedResult.entry,
+		servicingFeeAssessmentIds,
+	};
+}
+
+async function createDetachedServicingFeeMetadata(
+	ctx: Parameters<typeof createTestServicingFeeMetadata>[0],
+	args: {
+		baseMetadata: ServicingFeeMetadata;
+		feeCashApplied: number;
+		feeDue: number;
+		mortgageId: Id<"mortgages">;
+	}
+): Promise<ServicingFeeMetadata> {
+	const baseAssessment = await ctx.db.get(args.baseMetadata.feeAssessmentId);
+	if (!baseAssessment) {
+		throw new Error("Expected base fee assessment");
+	}
+	const now = Date.now();
+	const feeAssessmentId = await ctx.db.insert("feeAssessments", {
+		orgId: baseAssessment.orgId,
+		mortgageId: args.mortgageId,
+		mortgageFeeId: baseAssessment.mortgageFeeId,
+		feeTemplateId: baseAssessment.feeTemplateId,
+		feeSetTemplateId: baseAssessment.feeSetTemplateId,
+		behavior: baseAssessment.behavior,
+		code: baseAssessment.code,
+		displayCode: baseAssessment.displayCode,
+		amountCents: args.feeDue,
+		amountSettledCents: 0,
+		source: baseAssessment.source,
+		status: "assessed",
+		assessedAt: now,
+		effectiveDate: baseAssessment.effectiveDate,
+		metadata: { testFixture: "detached-split-servicing-fee" },
+		createdAt: now,
+		updatedAt: now,
+	});
+	const calculationOutputs = {
+		...args.baseMetadata.calculationOutputs,
+		feeCashApplied: args.feeCashApplied,
+		feeDue: args.feeDue,
+		feeReceivable: args.feeDue - args.feeCashApplied,
+	};
+	return {
+		...args.baseMetadata,
+		calculationOutputs,
+		feeAssessmentId,
+		feeCashApplied: args.feeCashApplied,
+		feeDue: args.feeDue,
+		feeReceivable: args.feeDue - args.feeCashApplied,
+		feeAssessment: {
+			...args.baseMetadata.feeAssessment,
+			calculationOutputs,
+			feeAssessmentId,
+		},
 	};
 }
 
@@ -438,6 +511,69 @@ describe("T-006: Full reversal cascade", () => {
 
 		// At least 4 entries: 1 cash received + 2 lender payable + 1 servicing fee
 		expect(result.reversalEntries.length).toBeGreaterThanOrEqual(4);
+	});
+
+	it("links and reverses every split servicing fee assessment", async () => {
+		const t = createHarness(modules);
+		registerAuditLogComponent(t, "auditLog");
+		const state = await setupFullSettlementState(t, {
+			splitServicingFeeAssessments: true,
+		});
+
+		const settledState = await t.run(async (ctx) => {
+			const assessments = await Promise.all(
+				state.servicingFeeAssessmentIds.map((id) => ctx.db.get(id))
+			);
+			const servicingEntries = await ctx.db
+				.query("cash_ledger_journal_entries")
+				.withIndex("by_posting_group", (q) =>
+					q.eq("postingGroupId", `allocation:${state.obligationId}`)
+				)
+				.filter((q) => q.eq(q.field("entryType"), "SERVICING_FEE_RECOGNIZED"))
+				.collect();
+			return { assessments, servicingEntries };
+		});
+
+		expect(settledState.assessments).toHaveLength(2);
+		for (const assessment of settledState.assessments) {
+			expect(assessment).toMatchObject({
+				obligationId: state.obligationId,
+				status: "settled",
+			});
+			expect(assessment?.cashLedgerJournalEntryId).toBeDefined();
+		}
+		expect(settledState.servicingEntries).toHaveLength(2);
+
+		const result = await t.run(async (ctx) => {
+			return postPaymentReversalCascade(ctx, {
+				attemptId: state.attemptId,
+				obligationId: state.obligationId,
+				mortgageId: state.mortgageId,
+				effectiveDate: "2026-03-10",
+				source: SYSTEM_SOURCE,
+				reason: "split servicing fee reversal test",
+			});
+		});
+
+		const reversedState = await t.run(async (ctx) => {
+			const assessments = await Promise.all(
+				state.servicingFeeAssessmentIds.map((id) => ctx.db.get(id))
+			);
+			const servicingReversals = result.reversalEntries.filter((entry) =>
+				settledState.servicingEntries.some(
+					(original) => original._id === entry.causedBy
+				)
+			);
+			return { assessments, servicingReversals };
+		});
+
+		expect(reversedState.servicingReversals).toHaveLength(2);
+		for (const assessment of reversedState.assessments) {
+			expect(assessment).toMatchObject({
+				obligationId: state.obligationId,
+				status: "reversed",
+			});
+		}
 	});
 });
 

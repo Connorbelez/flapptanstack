@@ -2126,16 +2126,23 @@ async function buildParticipantDealWorkspace(
 	const [
 		property,
 		participants,
-		packageSurface,
+		viewerUser,
 		closeEvidence,
 		legalRepresentation,
 	] = await Promise.all([
 		ctx.db.get(mortgage.propertyId),
 		buildDealParticipantProjection(ctx, deal),
-		readDealDocumentPackageSurface(ctx, deal._id),
+		ctx.db
+			.query("users")
+			.withIndex("authId", (query) => query.eq("authId", ctx.viewer.authId))
+			.unique(),
 		readCloseEvidenceProjection(ctx, deal._id),
 		buildLegalRepresentationStatusProjection(ctx, { deal }),
 	]);
+	const packageSurface = await readDealDocumentPackageSurface(ctx, deal._id, {
+		isFairLendAdmin: ctx.viewer.isFairLendAdmin,
+		userId: viewerUser?._id,
+	});
 	const signing = await readParticipantSigningTask(ctx, {
 		dealId: deal._id,
 		packageSurface,

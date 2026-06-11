@@ -163,7 +163,7 @@ export const getFeeRevenueSummary = adminQuery
 			if (assessment.status !== "reversed" && open > 0) {
 				openAccountsReceivableCents += open;
 			}
-			if (settled <= 0) {
+			if (assessment.status === "reversed" || settled <= 0) {
 				continue;
 			}
 			totalIncomeCents += settled;
@@ -286,7 +286,7 @@ export const getAdminFeeManagementSnapshot = adminQuery
 		}
 
 		const revenueRows = recentAssessments.filter(
-			(row) => row.amountSettledCents > 0
+			(row) => row.status !== "reversed" && row.amountSettledCents > 0
 		);
 		const revenue = {
 			totalIncomeCents: revenueRows.reduce(

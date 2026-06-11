@@ -1,16 +1,25 @@
 import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
 	EXTERNAL_ORG_ADMIN,
 	FAIRLEND_ADMIN,
 } from "../../../src/test/auth/identities";
 import { registerAuditLogComponent } from "../../../src/test/convex/registerAuditLogComponent";
+import {
+	setWorkosProvisioningForTests,
+	type WorkosProvisioning,
+} from "../../engine/effects/workosProvisioning";
 import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
 import { normalizeLawyerEmail } from "../normalization";
 
 const adminLawyersApi = anyApi.legalRepresentation.adminLawyers;
+const SHA_256_EVIDENCE_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/u;
+
+afterEach(() => {
+	setWorkosProvisioningForTests(null);
+});
 
 function createHarness() {
 	const t = convexTest(schema, convexModules);
@@ -841,6 +850,10 @@ describe("admin lawyer detail projection and actions", () => {
 		expect(detail.profile.email).toBe("guest@example.test");
 		expect(detail.invitations.active).toHaveLength(1);
 		expect(detail.allowedActions.resendInvitation).toBe(true);
+		expect(detail.actionTargets).toEqual({
+			replacementDealId: detail.deals.active[0]._id,
+			representationDealId: detail.deals.active[0]._id,
+		});
 		expect(detail.deals.active).toHaveLength(1);
 	});
 
@@ -984,6 +997,37 @@ describe("admin lawyer detail projection and actions", () => {
 		});
 	});
 
+	it("resolves synced WorkOS users beyond the first fallback page", async () => {
+		const t = createHarness();
+		await t.run(async (ctx) => {
+			for (let index = 0; index < 105; index += 1) {
+				await ctx.db.insert("users", {
+					authId: `user_filler_${index}`,
+					email: `filler-${index}@example.test`,
+					firstName: "Filler",
+					lastName: String(index),
+				});
+			}
+			await ctx.db.insert("users", {
+				authId: "user_late_case_synced_platform_lawyer",
+				email: "Late.Case.Platform@Example.Test",
+				firstName: "Late",
+				lastName: "Case",
+			});
+		});
+
+		const resolution = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(adminLawyersApi.resolvePlatformLawyerInvite, {
+				email: "late.case.platform@example.test",
+			});
+
+		expect(resolution).toMatchObject({
+			recommendedAction: "attach_existing_user",
+			user: { authId: "user_late_case_synced_platform_lawyer" },
+		});
+	});
+
 	it("attaches synced users and creates pending platform onboarding invites for new people", async () => {
 		const t = createHarness();
 		await t.run(async (ctx) => {
@@ -1042,6 +1086,107 @@ describe("admin lawyer detail projection and actions", () => {
 		});
 	});
 
+	it("rejects caller-supplied auth IDs that do not match the resolved WorkOS user", async () => {
+		const t = createHarness();
+		await t.run(async (ctx) => {
+			await ctx.db.insert("users", {
+				authId: "user_correct_platform_lawyer",
+				email: "correct.platform@example.test",
+				firstName: "Correct",
+				lastName: "Lawyer",
+			});
+		});
+
+		await expect(
+			t
+				.withIdentity(FAIRLEND_ADMIN)
+				.mutation(adminLawyersApi.invitePlatformLawyer, {
+					authId: "user_wrong_platform_lawyer",
+					barNumber: "LSO-777888",
+					displayName: "Correct Lawyer",
+					email: "correct.platform@example.test",
+					firmName: "Correct LLP",
+					jurisdiction: "ON",
+					resolution: "attach_existing_user",
+				})
+		).rejects.toThrow("Provided authId does not match WorkOS identity");
+	});
+
+	it("reserves platform invitation delivery before sending through WorkOS", async () => {
+		const t = createHarness();
+		let releaseSend: () => void = () => undefined;
+		let sendStarted: () => void = () => undefined;
+		const sendStartedPromise = new Promise<void>((resolve) => {
+			sendStarted = resolve;
+		});
+		const releaseSendPromise = new Promise<void>((resolve) => {
+			releaseSend = resolve;
+		});
+		const sentEmails: string[] = [];
+		setWorkosProvisioningForTests({
+			sendInvitation: async (input: { email: string }) => {
+				sentEmails.push(input.email);
+				sendStarted();
+				await releaseSendPromise;
+				return {
+					acceptInvitationUrl: "https://workos.example/accept",
+					email: input.email,
+					id: "workos_platform_reserved",
+					state: "pending",
+				};
+			},
+		} as unknown as WorkosProvisioning);
+		const invitationId = await t.run(async (ctx) => {
+			const now = Date.UTC(2026, 4, 3);
+			const profileId = await ctx.db.insert("lawyerProfiles", {
+				createdAt: now,
+				displayName: "Reserved Platform",
+				email: "reserved.platform@example.test",
+				normalizedEmail: "reserved.platform@example.test",
+				platformStatus: "invited",
+				profileKind: "platform",
+				updatedAt: now,
+			});
+			return await ctx.db.insert("platformLawyerInvitations", {
+				createdAt: now,
+				createdBy: FAIRLEND_ADMIN.subject,
+				deliveryStatus: "pending",
+				displayName: "Reserved Platform",
+				email: "reserved.platform@example.test",
+				lawyerProfileId: profileId,
+				normalizedEmail: "reserved.platform@example.test",
+				status: "pending",
+				updatedAt: now,
+			});
+		});
+
+		const firstDelivery = t.action(
+			adminLawyersApi.deliverPlatformLawyerInvitation,
+			{
+				invitationId,
+			}
+		);
+		await sendStartedPromise;
+		const reserved = await t.run(async (ctx) => ctx.db.get(invitationId));
+		const secondDelivery = await t.action(
+			adminLawyersApi.deliverPlatformLawyerInvitation,
+			{ invitationId }
+		);
+		releaseSend();
+		const delivered = await firstDelivery;
+
+		expect(reserved).toMatchObject({
+			deliveryStatus: "sending",
+			status: "pending",
+		});
+		expect(secondDelivery).toEqual({ status: "skipped" });
+		expect(delivered).toMatchObject({
+			status: "sent",
+			workosInvitationId: "workos_platform_reserved",
+		});
+		expect(sentEmails).toEqual(["reserved.platform@example.test"]);
+	});
+
 	it("keeps representation override evidence enforced by the canonical management mutation", async () => {
 		const t = createHarness();
 		const { dealId } = await seedLawyerRosterRows(t);
@@ -1080,9 +1225,9 @@ describe("admin lawyer detail projection and actions", () => {
 			await ctx.db.insert("lawyerVerifications", {
 				authId: "guest@example.test",
 				checkType: "manual_admin",
-				createdAt: Date.UTC(2026, 4, 3),
+				createdAt: Date.now(),
 				createdBy: "user_fairlend_admin",
-				expiresAt: Date.UTC(2026, 4, 10),
+				expiresAt: Date.now() + 86_400_000,
 				normalizedEmail: "guest@example.test",
 				outcome: "eligible",
 				provider: "manual_admin",
@@ -1107,6 +1252,10 @@ describe("admin lawyer detail projection and actions", () => {
 
 			expect(result.engagementId).toBeTruthy();
 			expect(result.transition.success).toBe(true);
+			const engagement = await t.run(async (ctx) =>
+				ctx.db.get(result.engagementId)
+			);
+			expect(engagement?.evidenceHash).toMatch(SHA_256_EVIDENCE_HASH_PATTERN);
 		} finally {
 			if (previousHashchain === undefined) {
 				process.env.DISABLE_GT_HASHCHAIN = undefined;

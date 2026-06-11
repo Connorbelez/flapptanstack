@@ -2575,7 +2575,7 @@ describe("checkout Stripe reconciliation", () => {
 		);
 	});
 
-	it("does not create a second refund intent for a second late-success event", async () => {
+	it("returns refund_required for a second late-success event while the refund intent is still recorded", async () => {
 		const t = createHarness();
 		const { metadata, prepared } = await prepareHostedCheckout(t);
 		const firstWebhookEventId = await insertStripeWebhookEvent(
@@ -2625,7 +2625,15 @@ describe("checkout Stripe reconciliation", () => {
 		expect(first).toMatchObject({ ok: true, status: "refund_required" });
 		expect(second).toMatchObject({
 			ok: true,
-			status: "refund_already_recorded",
+			status: "refund_required",
+			refundRequest: {
+				idempotencyKey:
+					"checkout-late-success-refund:" +
+					String(prepared.checkoutSessionId) +
+					":pi_test_reconcile",
+				paymentIntentId: "pi_test_reconcile",
+				webhookEventId: secondWebhookEventId,
+			},
 		});
 		expect(snapshot.transfers).toHaveLength(0);
 		expect(snapshot.checkoutSession?.lateSuccessRefund).toMatchObject({
@@ -2636,7 +2644,7 @@ describe("checkout Stripe reconciliation", () => {
 			providerEventId: "evt_late_dupe_first",
 		});
 		expect(snapshot.firstWebhook).toMatchObject({ status: "pending" });
-		expect(snapshot.secondWebhook).toMatchObject({ status: "processed" });
+		expect(snapshot.secondWebhook).toMatchObject({ status: "pending" });
 	});
 
 	it("fails a second late-success event with a different PaymentIntent", async () => {

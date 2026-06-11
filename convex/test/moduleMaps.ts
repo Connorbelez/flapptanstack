@@ -238,6 +238,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 	"/convex/deals/portalQueries.ts": async () =>
 		await import("./../deals/portalQueries.ts"),
 	"/convex/deals/queries.ts": async () => await import("./../deals/queries.ts"),
+	"/convex/deals/signingSessions.ts": async () =>
+		await import("./../deals/signingSessions.ts"),
 	"/convex/demo/actionCache.ts": async () =>
 		await import("./../demo/actionCache.ts"),
 	"/convex/demo/aggregate.ts": async () =>
@@ -538,6 +540,8 @@ export const convexModules: ModuleMap = withModuleAliases({
 		await import("./../portals/helpers.ts"),
 	"/convex/portals/invariants.ts": async () =>
 		await import("./../portals/invariants.ts"),
+	"/convex/portals/landingMutations.ts": async () =>
+		await import("./../portals/landingMutations.ts"),
 	"/convex/portals/micConfig.ts": async () =>
 		await import("./../portals/micConfig.ts"),
 	"/convex/portals/pricing.ts": async () =>

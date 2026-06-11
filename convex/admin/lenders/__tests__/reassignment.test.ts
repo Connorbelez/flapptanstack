@@ -223,21 +223,24 @@ async function insertBroker(
 	t: ReturnType<typeof createTestHarness>,
 	input: {
 		brokerageName: string;
-		orgId: string;
+		orgId?: string;
 		status?: string;
 		userId: Id<"users">;
 	}
 ) {
 	return await t.run(async (ctx) => {
 		const now = Date.now();
-		return await ctx.db.insert("brokers", {
+		const broker: Omit<Doc<"brokers">, "_creationTime" | "_id"> = {
 			brokerageName: input.brokerageName,
 			createdAt: now,
-			orgId: input.orgId,
 			status: input.status ?? "active",
 			updatedAt: now,
 			userId: input.userId,
-		});
+		};
+		if (input.orgId) {
+			broker.orgId = input.orgId;
+		}
+		return await ctx.db.insert("brokers", broker);
 	});
 }
 
@@ -480,6 +483,15 @@ async function readLatestAttemptForLender(
 	});
 }
 
+async function clearBrokerOrgId(
+	t: ReturnType<typeof createTestHarness>,
+	brokerId: Id<"brokers">
+) {
+	await t.run(async (ctx) => {
+		await ctx.db.patch(brokerId, { orgId: undefined });
+	});
+}
+
 describe("previewBrokerReassignment", () => {
 	it("previews the global app portal for FairLend-owned target brokers", async () => {
 		const t = createTestHarness();
@@ -646,6 +658,35 @@ describe("previewBrokerReassignment", () => {
 			"Lender broker assignment changed. Refresh and try again."
 		);
 	});
+
+	it("previews WorkOS operations from the lender canonical org instead of the broker row", async () => {
+		const t = createTestHarness();
+		const { currentBrokerId, lenderId } = await seedBaseReassignmentFixture(t);
+		await clearBrokerOrgId(t, currentBrokerId);
+		const target = await seedExternalTargetBroker(t, {
+			authId: "user_same_canonical_org_target",
+			brokerageName: "Same Canonical Org Target",
+			orgId: "org_current_brokerage",
+			portalSlug: "same-canonical-org-target",
+		});
+
+		const preview = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.query(previewBrokerReassignmentRef, {
+				expectedCurrentBrokerId: currentBrokerId,
+				expectedCurrentOrgId: "org_current_brokerage",
+				lenderId,
+				targetBrokerId: target.targetBrokerId,
+			});
+
+		expect(preview.current.orgId).toBe("");
+		expect(preview.target.orgId).toBe("org_current_brokerage");
+		expect(preview.workosOperations).toEqual({
+			addTargetMembership: false,
+			deactivateCurrentMembership: false,
+			roleSlug: "lender",
+		});
+	});
 });
 
 describe("searchActiveBrokerTargets", () => {
@@ -779,6 +820,55 @@ describe("reassignBroker", () => {
 		expect(attempt?.currentMembershipOperation).toBe("deactivated");
 		expect(attempt?.currentMembershipRoleSlugsBefore).toEqual(["lender"]);
 		expect(attempt?.currentMembershipRoleSlugsAfter).toEqual([]);
+	});
+
+	it("removes the old WorkOS membership from the lender canonical org when the broker org is missing", async () => {
+		const t = createTestHarness();
+		const { currentBrokerId, lenderId, lenderUserId } =
+			await seedBaseReassignmentFixture(t);
+		await clearBrokerOrgId(t, currentBrokerId);
+		const target = await seedExternalTargetBroker(t);
+		const provisioning = createWorkosProvisioningMock({
+			memberships: [
+				createWorkosMembership({
+					id: "om_old_canonical",
+					organizationId: "org_current_brokerage",
+					userId: "user_lender",
+				}),
+			],
+		});
+		setWorkosProvisioningForTests(provisioning);
+
+		const result = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.action(reassignBrokerRef, {
+				expectedCurrentBrokerId: currentBrokerId,
+				expectedCurrentOrgId: "org_current_brokerage",
+				lenderId,
+				targetBrokerId: target.targetBrokerId,
+			});
+
+		expect(provisioning.listOrganizationMemberships).toHaveBeenNthCalledWith(
+			2,
+			{
+				organizationId: "org_current_brokerage",
+				statuses: ["active"],
+				userId: "user_lender",
+			}
+		);
+		expect(provisioning.deactivateOrganizationMembership).toHaveBeenCalledWith(
+			"om_old_canonical"
+		);
+		const { lender, user } = await readCanonicalAssignment(t, {
+			lenderId,
+			lenderUserId,
+		});
+		expect(lender?.brokerId).toBe(target.targetBrokerId);
+		expect(lender?.orgId).toBe(target.orgId);
+		expect(user?.homePortalId).toBe(target.targetPortalId);
+		const attempt = await readAttempt(t, result.attemptId);
+		expect(attempt?.currentMembershipId).toBe("om_old_canonical");
+		expect(attempt?.currentMembershipOperation).toBe("deactivated");
 	});
 
 	it("adds the lender role to an existing active target membership before reassignment", async () => {
