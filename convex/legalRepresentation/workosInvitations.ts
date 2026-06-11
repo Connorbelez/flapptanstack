@@ -305,8 +305,6 @@ export const resolveWorkosInvitationToken = convex
 					readonly dealId: Id<"deals">;
 					readonly emailMatches: boolean;
 					readonly invitationKind: "guest";
-					readonly nextRoute?: string;
-					readonly onboardingSessionId?: Id<"lawyerOnboardingSessions">;
 					readonly status: Doc<"lawyerInvitations">["status"];
 					readonly targetEmail: string;
 			  }
@@ -314,8 +312,6 @@ export const resolveWorkosInvitationToken = convex
 					readonly dealId?: undefined;
 					readonly emailMatches: boolean;
 					readonly invitationKind: "platform";
-					readonly nextRoute?: string;
-					readonly onboardingSessionId?: Id<"lawyerOnboardingSessions">;
 					readonly status: Doc<"platformLawyerInvitations">["status"];
 					readonly targetEmail: string;
 			  }
@@ -336,17 +332,10 @@ export const resolveWorkosInvitationToken = convex
 				const emailMatches =
 					normalizeLawyerEmail(workosInvitation.email) ===
 					localInvitation.normalizedTargetEmail;
-				const onboarding = await ctx.runMutation(
-					internal.legalRepresentation.onboarding
-						.startOrResumeForInvitationInternal,
-					{ invitationId: localInvitation._id }
-				);
 				return {
 					dealId: localInvitation.dealId,
 					emailMatches,
 					invitationKind: "guest",
-					nextRoute: onboarding.session.nextRoute,
-					onboardingSessionId: onboarding.session._id,
 					status: localInvitation.status,
 					targetEmail: localInvitation.targetEmail,
 				};
@@ -363,16 +352,9 @@ export const resolveWorkosInvitationToken = convex
 			const emailMatches =
 				normalizeLawyerEmail(workosInvitation.email) ===
 				platformInvitation.normalizedEmail;
-			const onboarding = await ctx.runMutation(
-				internal.legalRepresentation.onboarding
-					.startOrResumeForPlatformInvitationInternal,
-				{ invitationId: platformInvitation._id }
-			);
 			return {
 				emailMatches,
 				invitationKind: "platform",
-				nextRoute: onboarding.session.nextRoute,
-				onboardingSessionId: onboarding.session._id,
 				status: platformInvitation.status,
 				targetEmail: platformInvitation.email,
 			};

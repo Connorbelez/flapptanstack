@@ -15,6 +15,7 @@ const ALLOWED_ENTRY_SOURCES = new Set([
 	"switchboard",
 	"view-all",
 ]);
+const ALLOWED_ENTRY_QUERY_PARAMS = new Set(["listingId", "source"]);
 
 function normalizeEmail(email: string | undefined) {
 	const normalized = email?.trim().toLowerCase();
@@ -29,6 +30,15 @@ function normalizeEntryPath(args: {
 	listingId?: string | undefined;
 }) {
 	const entryPath = args.entryPath.trim();
+	if (
+		!entryPath.startsWith("/") ||
+		entryPath.startsWith("//") ||
+		entryPath.includes("\\")
+	) {
+		throw new ConvexError(
+			"Lender handoff entryPath must be a relative portal path."
+		);
+	}
 	const entryUrl = new URL(entryPath, "https://portal.local");
 	if (entryUrl.pathname !== "/start-lending") {
 		throw new ConvexError(
@@ -42,10 +52,15 @@ function normalizeEntryPath(args: {
 	if (!(source && ALLOWED_ENTRY_SOURCES.has(source))) {
 		throw new ConvexError("Lender handoff entryPath source is invalid.");
 	}
-	if (
-		args.listingId &&
-		entryUrl.searchParams.get("listingId") !== args.listingId
-	) {
+	for (const key of entryUrl.searchParams.keys()) {
+		if (!ALLOWED_ENTRY_QUERY_PARAMS.has(key)) {
+			throw new ConvexError(
+				`Lender handoff entryPath query parameter is unsupported: ${key}`
+			);
+		}
+	}
+	const entryListingId = entryUrl.searchParams.get("listingId");
+	if (entryListingId !== (args.listingId ?? null)) {
 		throw new ConvexError("Lender handoff listingId must match the entryPath.");
 	}
 	return entryPath;

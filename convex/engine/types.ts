@@ -25,7 +25,8 @@ export type EntityType =
 	| "provisionalOffer"
 	| "offerCondition"
 	| "lenderRenewalIntent"
-	| "dispersalEntry";
+	| "dispersalEntry"
+	| "feeAssessment";
 
 // ── Governed Entity Types ──────────────────────────────────────────
 // Subset of EntityType that have XState machine definitions.
@@ -39,7 +40,8 @@ export type GovernedEntityType =
 	| "collectionAttempt"
 	| "deal"
 	| "transfer"
-	| "lenderRenewalIntent";
+	| "lenderRenewalIntent"
+	| "feeAssessment";
 
 // ── Command Source ──────────────────────────────────────────────────
 export type CommandChannel =
@@ -227,4 +229,5 @@ export const ENTITY_TABLE_MAP = {
 	offerCondition: "offerConditions",
 	lenderRenewalIntent: "lenderRenewalIntents",
 	dispersalEntry: "dispersalEntries",
+	feeAssessment: "feeAssessments",
 } as const satisfies Record<EntityType, string>;

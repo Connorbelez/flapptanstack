@@ -63,7 +63,12 @@ export function BorrowerFinancingApplicationPage({
 						</CardTitle>
 					</CardHeader>
 					<CardContent>
-						<form className="grid gap-4" method="post">
+						<form
+							className="grid gap-4"
+							onSubmit={(event) => {
+								event.preventDefault();
+							}}
+						>
 							<div className="grid gap-2">
 								<label className="font-medium text-sm" htmlFor="fullName">
 									Legal name

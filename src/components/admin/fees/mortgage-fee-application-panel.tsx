@@ -1,7 +1,7 @@
 import { Search } from "lucide-react";
-import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { UnavailableActionButton } from "./unavailable-action-button";
 
 export function MortgageFeeApplicationPanel() {
 	return (
@@ -17,10 +17,15 @@ export function MortgageFeeApplicationPanel() {
 					<Label htmlFor="mortgage-fee-id">Mortgage</Label>
 					<Input id="mortgage-fee-id" placeholder="Mortgage ID" />
 				</div>
-				<Button className="self-end" type="button" variant="outline">
+				<UnavailableActionButton
+					action="Inspect"
+					className="self-end"
+					reason="mortgage fee inspection is not supported yet"
+					variant="outline"
+				>
 					<Search className="size-4" />
 					Inspect
-				</Button>
+				</UnavailableActionButton>
 			</div>
 		</section>
 	);

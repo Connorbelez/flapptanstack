@@ -182,6 +182,21 @@ function lenderHandoffAction(
 	return action(label, `${LENDER_HANDOFF_START_PATH}?${params.toString()}`);
 }
 
+function portalCanUseLenderHandoff(portal: Doc<"portals">) {
+	return portal.portalType === "broker" && Boolean(portal.brokerId);
+}
+
+function portalLenderAction(
+	portal: Doc<"portals">,
+	label: string,
+	source: "featured-listing" | "switchboard" | "view-all",
+	listingId?: string
+) {
+	return portalCanUseLenderHandoff(portal)
+		? lenderHandoffAction(label, source, listingId)
+		: action(label, "/listings");
+}
+
 async function getPortalLandingPageContent(
 	ctx: PortalReaderCtx,
 	portal: Doc<"portals">
@@ -355,7 +370,8 @@ function buildSwitchboard(
 				args.content?.switchboard?.lender?.helper ??
 				"For accredited lenders and repeat deal-flow participants.",
 			label: args.content?.switchboard?.lender?.label ?? "Lender",
-			primaryAction: lenderHandoffAction(
+			primaryAction: portalLenderAction(
+				args.portal,
 				args.content?.switchboard?.lender?.primaryAction?.label ??
 					"Browse current listings",
 				"switchboard"
@@ -430,7 +446,8 @@ function buildLandingFallbacks(args: {
 function toLandingListingItem(
 	listing: Awaited<
 		ReturnType<typeof listMarketplaceListingsSnapshot>
-	>["page"][number]
+	>["page"][number],
+	portal: Doc<"portals">
 ): LandingListing {
 	const statusLabel =
 		listing.availability.lockedPercent > 0 ||
@@ -441,7 +458,8 @@ function toLandingListingItem(
 
 	return {
 		amountLabel: formatCurrency(listing.principal),
-		action: lenderHandoffAction(
+		action: portalLenderAction(
+			portal,
 			`Continue with ${listing.title}`,
 			"featured-listing",
 			listing.id
@@ -489,7 +507,8 @@ async function buildFeaturedListings(args: {
 		subcopy:
 			args.content?.featuredListings?.subcopy ??
 			"Currently available mortgage investment opportunities",
-		viewAllAction: lenderHandoffAction(
+		viewAllAction: portalLenderAction(
+			args.portal,
 			args.content?.featuredListings?.viewAllAction?.label ?? "View All",
 			"view-all"
 		),
@@ -519,7 +538,9 @@ async function buildFeaturedListings(args: {
 	return {
 		...fallback,
 		hasBlurredContinuation: !snapshot.isDone,
-		items: snapshot.page.map(toLandingListingItem),
+		items: snapshot.page.map((listing) =>
+			toLandingListingItem(listing, args.portal)
+		),
 	};
 }
 

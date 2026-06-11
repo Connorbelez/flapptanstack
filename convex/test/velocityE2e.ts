@@ -10,11 +10,27 @@ type AdminMutationCtx = MutationCtx & {
 };
 
 const VELOCITY_E2E_ENABLED_ENV = "VELOCITY_E2E_ENABLED";
+const ALLOW_TEST_AUTH_ENDPOINTS_ENV = "ALLOW_TEST_AUTH_ENDPOINTS";
+
+type VelocityE2eRuntimeEnv = Partial<
+	Record<
+		"ALLOW_TEST_AUTH_ENDPOINTS" | "NODE_ENV" | "VELOCITY_E2E_ENABLED",
+		string | undefined
+	>
+>;
+
+export function isVelocityE2eRuntimeAllowed(env: VelocityE2eRuntimeEnv) {
+	return (
+		env.VELOCITY_E2E_ENABLED === "true" &&
+		env.ALLOW_TEST_AUTH_ENDPOINTS === "true" &&
+		env.NODE_ENV !== "production"
+	);
+}
 
 function assertVelocityE2eEnabled() {
-	if (process.env.VELOCITY_E2E_ENABLED !== "true") {
+	if (!isVelocityE2eRuntimeAllowed(process.env)) {
 		throw new ConvexError(
-			`Velocity E2E helpers are disabled. Set ${VELOCITY_E2E_ENABLED_ENV}=true to enable them.`
+			`Velocity E2E helpers are disabled. Set ${VELOCITY_E2E_ENABLED_ENV}=true and ${ALLOW_TEST_AUTH_ENDPOINTS_ENV}=true outside production to enable them.`
 		);
 	}
 }

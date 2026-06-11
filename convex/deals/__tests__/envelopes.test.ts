@@ -273,6 +273,37 @@ describe("deal envelope helpers", () => {
 			expect(parsed.event.normalizedEventType).toBe("recipient_completed");
 		}
 	});
+
+	it("parses nested Documenso data payload provider identifiers", () => {
+		const parsed = parseDocumensoWebhookEvent(
+			JSON.stringify({
+				type: "document.declined",
+				data: {
+					eventId: "evt_nested_decline",
+					document: {
+						id: "doc_nested",
+					},
+					envelope: {
+						id: "env_nested",
+					},
+					recipient: {
+						id: "rec_nested",
+					},
+				},
+			})
+		);
+
+		expect(parsed.ok).toBe(true);
+		if (parsed.ok) {
+			expect(parsed.event).toMatchObject({
+				normalizedEventType: "document_declined",
+				providerDocumentId: "doc_nested",
+				providerEnvelopeId: "env_nested",
+				providerEventId: "evt_nested_decline",
+				providerRecipientId: "rec_nested",
+			});
+		}
+	});
 });
 
 describe("deal envelope attempts", () => {

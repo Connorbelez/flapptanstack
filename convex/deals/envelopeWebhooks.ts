@@ -83,6 +83,37 @@ function nestedStringValue(
 	return nested ? stringValue(nested, keys) : undefined;
 }
 
+function compactRecords(...values: Array<JsonRecord | null | undefined>) {
+	return values.filter((value): value is JsonRecord => Boolean(value));
+}
+
+function stringValueFromRecords(
+	records: readonly JsonRecord[],
+	keys: readonly string[]
+) {
+	for (const record of records) {
+		const value = stringValue(record, keys);
+		if (value) {
+			return value;
+		}
+	}
+	return undefined;
+}
+
+function nestedStringValueFromRecords(
+	records: readonly JsonRecord[],
+	key: string,
+	keys: readonly string[]
+) {
+	for (const record of records) {
+		const value = nestedStringValue(record, key, keys);
+		if (value) {
+			return value;
+		}
+	}
+	return undefined;
+}
+
 function arrayValue(record: JsonRecord, keys: readonly string[]) {
 	for (const key of keys) {
 		const value = record[key];
@@ -213,33 +244,49 @@ export function parseDocumensoWebhookEvent(
 		stringValue(record, ["event", "eventType", "type"]) ?? "unknown";
 	const normalizedEventType = normalizeDocumensoEventType(rawEventType);
 	const payload = asRecord(record.payload);
+	const data = asRecord(record.data);
+	const payloadData = payload ? asRecord(payload.data) : null;
+	const eventRecords = compactRecords(record, payload, data, payloadData);
+	const payloadRecords = compactRecords(payload, payloadData);
 	const providerDocumentId =
-		stringValue(record, ["documentId", "document_id", "providerDocumentId"]) ??
-		nestedStringValue(record, "document", ["id", "documentId"]) ??
-		stringValue(payload ?? {}, [
-			"id",
+		stringValueFromRecords(eventRecords, [
 			"documentId",
 			"document_id",
 			"providerDocumentId",
+		]) ??
+		stringValueFromRecords(payloadRecords, ["id"]) ??
+		nestedStringValueFromRecords(eventRecords, "document", [
+			"id",
+			"documentId",
 		]);
 	const providerEnvelopeId =
-		stringValue(record, ["envelopeId", "envelope_id", "providerEnvelopeId"]) ??
-		nestedStringValue(record, "envelope", ["id", "envelopeId"]) ??
-		stringValue(payload ?? {}, [
+		stringValueFromRecords(eventRecords, [
 			"envelopeId",
 			"envelope_id",
 			"providerEnvelopeId",
+		]) ??
+		nestedStringValueFromRecords(eventRecords, "envelope", [
+			"id",
+			"envelopeId",
 		]);
 	const providerRecipientId =
-		stringValue(record, [
+		stringValueFromRecords(eventRecords, [
 			"recipientId",
 			"recipient_id",
 			"providerRecipientId",
 		]) ??
-		nestedStringValue(record, "recipient", ["id", "recipientId"]) ??
+		nestedStringValueFromRecords(eventRecords, "recipient", [
+			"id",
+			"recipientId",
+		]) ??
 		recipientIdFromPayload(payload, normalizedEventType);
 	const providerEventId =
-		stringValue(record, ["id", "eventId", "event_id", "providerEventId"]) ??
+		stringValueFromRecords(eventRecords, [
+			"id",
+			"eventId",
+			"event_id",
+			"providerEventId",
+		]) ??
 		[
 			providerDocumentId ?? providerEnvelopeId ?? "unresolved",
 			providerRecipientId ?? "document",

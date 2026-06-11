@@ -1,7 +1,7 @@
 import { Play } from "lucide-react";
-import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { UnavailableActionButton } from "./unavailable-action-button";
 
 export function BulkApplyFeeSetPanel() {
 	return (
@@ -21,10 +21,15 @@ export function BulkApplyFeeSetPanel() {
 					<Label htmlFor="bulk-effective-from">Effective from</Label>
 					<Input id="bulk-effective-from" placeholder="2026-05-04" />
 				</div>
-				<Button className="self-end" type="button" variant="outline">
+				<UnavailableActionButton
+					action="Preview"
+					className="self-end"
+					reason="bulk fee-set preview is not supported yet"
+					variant="outline"
+				>
 					<Play className="size-4" />
 					Preview
-				</Button>
+				</UnavailableActionButton>
 			</div>
 		</section>
 	);

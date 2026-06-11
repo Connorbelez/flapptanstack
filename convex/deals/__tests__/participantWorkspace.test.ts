@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "../../_generated/api";
+import type { Id } from "../../_generated/dataModel";
 import { FAIRLEND_STAFF_ORG_ID } from "../../constants";
 import schema from "../../schema";
 import { convexModules } from "../../test/moduleMaps";
@@ -53,6 +54,7 @@ async function seedParticipantDeal(args?: {
 	envelopeStatus?: "sent" | "send_failed";
 	includeEnvelope?: boolean;
 	includeOpenException?: boolean;
+	includePackageSigningSurface?: boolean;
 	includeReceiptEvidence?: boolean;
 	packageStatus?: "pending" | "ready" | "failed";
 	signedArchiveStatus?: "archived" | "blocked_missing_artifacts" | "failed";
@@ -173,6 +175,44 @@ async function seedParticipantDeal(args?: {
 			createdAt: now,
 			updatedAt: now,
 		});
+		const generatedDocumentId = args?.includePackageSigningSurface
+			? await (async () => {
+					const storageId = await ctx.storage.store(
+						new Blob(["participant signing pdf"])
+					);
+					const basePdfId = await ctx.db.insert("documentBasePdfs", {
+						fileHash: "participant-signing-base-hash",
+						fileRef: storageId,
+						fileSize: 128,
+						name: "participant-signing-base.pdf",
+						pageCount: 1,
+						pageDimensions: [{ page: 1, width: 612, height: 792 }],
+						uploadedAt: now,
+					});
+					const templateId = await ctx.db.insert("documentTemplates", {
+						basePdfHash: "participant-signing-base-hash",
+						basePdfId,
+						createdAt: now,
+						draft: { fields: [], signatories: [] },
+						hasDraftChanges: false,
+						name: "Participant Signing Package",
+						updatedAt: now,
+					});
+					return ctx.db.insert("generatedDocuments", {
+						entityId: dealId,
+						entityType: "deal",
+						generatedAt: now,
+						generatedBy: "participant-workspace-test",
+						name: "Closing Signature Package",
+						pdfStorageId: storageId as Id<"_storage">,
+						sensitivityTier: "sensitive",
+						signingStatus: "sent",
+						templateId,
+						templateVersionUsed: 1,
+						updatedAt: now,
+					});
+				})()
+			: undefined;
 		const instanceId = await ctx.db.insert("dealDocumentInstances", {
 			packageId,
 			dealId,
@@ -186,9 +226,34 @@ async function seedParticipantDeal(args?: {
 			},
 			kind: "generated",
 			status: "signature_sent",
+			generatedDocumentId,
 			createdAt: now,
 			updatedAt: now,
 		});
+		if (args?.includePackageSigningSurface && generatedDocumentId) {
+			const envelopeId = await ctx.db.insert("signatureEnvelopes", {
+				createdAt: now,
+				dealId,
+				generatedDocumentId,
+				providerCode: "documenso",
+				providerEnvelopeId: "env_package_123",
+				status: "sent",
+				updatedAt: now,
+			});
+			await ctx.db.insert("signatureRecipients", {
+				createdAt: now,
+				email: BUYER_IDENTITY.user_email,
+				envelopeId,
+				name: "Bianca Buyer",
+				platformRole: "lender_primary",
+				providerRecipientId: "rec_package_buyer",
+				providerRole: "SIGNER",
+				signingOrder: 1,
+				status: "pending",
+				updatedAt: now,
+				userId: buyerUserId,
+			});
+		}
 		if (args?.includeEnvelope) {
 			const attemptId = await ctx.db.insert("dealEnvelopeAttempts", {
 				active: true,
@@ -425,6 +490,27 @@ describe("participant deal workspace projections", () => {
 		expect(exceptionWorkspace?.blockers).toContainEqual(
 			expect.objectContaining({ kind: "envelope_exception" })
 		);
+	});
+
+	it("passes viewer context into participant package surfaces", async () => {
+		const { t, dealId } = await seedParticipantDeal({
+			includePackageSigningSurface: true,
+		});
+
+		const workspace = await t
+			.withIdentity(BUYER_IDENTITY)
+			.query(api.deals.queries.getParticipantDealWorkspace, {
+				dealId,
+				persona: "buyer",
+			});
+
+		const signableDocument = workspace?.documentInstances.find(
+			(document) => document.class === "private_templated_signable"
+		);
+		expect(signableDocument?.signing).toMatchObject({
+			canLaunchEmbeddedSigning: true,
+			status: "sent",
+		});
 	});
 
 	it("projects expired signing tokens as blocked participant action", async () => {

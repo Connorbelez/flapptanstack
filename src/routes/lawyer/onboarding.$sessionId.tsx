@@ -19,32 +19,30 @@ function lawyerOnboardingQueryOptions(sessionId: string) {
 
 export const Route = createFileRoute("/lawyer/onboarding/$sessionId")({
 	beforeLoad: guardAuthenticated(),
-	loader: async ({ context, params }) => {
-		const session = await context.queryClient.ensureQueryData(
-			lawyerOnboardingQueryOptions(params.sessionId)
-		);
-		if (!session) {
-			throw notFound();
-		}
+	loader: ({ params }) => {
 		return { sessionId: params.sessionId };
 	},
 	component: LawyerOnboardingRouteComponent,
 });
 
 export function LawyerOnboardingRouteComponent() {
-	const { sessionId } = Route.useLoaderData();
-	const { data } = useSuspenseQuery(lawyerOnboardingQueryOptions(sessionId));
-	if (!data) {
-		throw notFound();
-	}
 	return (
 		<>
 			<Authenticated>
-				<LawyerOnboardingPage session={data} />
+				<LawyerOnboardingRouteContent />
 			</Authenticated>
 			<AuthLoading>
 				<AppRoutePendingScreen />
 			</AuthLoading>
 		</>
 	);
+}
+
+function LawyerOnboardingRouteContent() {
+	const { sessionId } = Route.useLoaderData();
+	const { data } = useSuspenseQuery(lawyerOnboardingQueryOptions(sessionId));
+	if (!data) {
+		throw notFound();
+	}
+	return <LawyerOnboardingPage session={data} />;
 }

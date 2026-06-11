@@ -179,6 +179,10 @@ export interface AdminLawyerProfileRepairPreviewResult {
 }
 
 export interface AdminLawyerDetailResult {
+	readonly actionTargets: {
+		readonly replacementDealId: Id<"deals"> | null;
+		readonly representationDealId: Id<"deals"> | null;
+	};
 	readonly activity: {
 		readonly events: readonly {
 			readonly at: number;

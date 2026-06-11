@@ -91,7 +91,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: local audit verdict is `needs manual validation`; the production landing contract could not be validated against active local portal data.
-- Missing requirements: manual live-data validation of the portal landing contract.
+- Unsatisfied requirements:
+  - ENG-305 still needs production-representative portal landing validation against active portal data, not only route/component tests.
+  - The audit must prove a correctly configured portal loads the approved landing contract and that a misconfigured portal stays fail-closed.
+- Recommended fix:
+  - Seed or select an active portal whose landing contract can load, run the browser/manual smoke recorded in `specs/ENG-305/audit.md`, and update `specs/ENG-305/status.md` with the exact portal, host, command/manual steps, and result.
 - Requirement ledger: SATISFIED 0, PARTIAL 1, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-305/audit.md`, `specs/ENG-305/status.md`
 
@@ -104,7 +108,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: WorkOS hosted-auth browser round trip remains manual-only.
-- Missing requirements: full external hosted-auth validation.
+- Unsatisfied requirements:
+  - ENG-306 still needs the external WorkOS hosted-auth browser round trip for lender handoff.
+  - Local route and Convex contract tests do not prove AuthKit callback/session behavior or the Convex auth readiness timing in a real hosted sign-in flow.
+- Recommended fix:
+  - Run a staging/local-hosted WorkOS handoff smoke with a real test account, capture callback/session/organization evidence, and update `specs/ENG-306/audit.md` with the exact environment and result.
 - Requirement ledger: SATISFIED 0, PARTIAL 1, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-306/audit.md`
 
@@ -117,7 +125,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: local audit requires additional validation because full repo tests were blocked outside the route handoff scope.
-- Missing requirements: full validation closure or explicit isolation of unrelated failures.
+- Unsatisfied requirements:
+  - ENG-307 does not yet have clean final validation evidence for the borrower financing route handoff.
+  - The audit records full-suite failures as unrelated, but the report does not include a fresh targeted pass plus an explicit isolation record for the unrelated failures.
+- Recommended fix:
+  - Rerun the focused ENG-307 route/Convex tests, record the exact passing command output, separately list unrelated full-suite failures if they persist, and update `specs/ENG-307/audit.md`.
 - Requirement ledger: SATISFIED 0, PARTIAL 1, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-307/audit.md`
 
@@ -130,7 +142,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: High
 - Summary: the spec audit verdict is `not ready`; full repo test and review gates remain blocked.
-- Missing requirements: required review gate and full validation closure.
+- Unsatisfied requirements:
+  - ENG-342 requires final review/validation closure, but `bun run review` never reaches analysis because CodeRabbit sees 952 files against the current stack target.
+  - ENG-342 requires full validation closure, but `bun run test` is still recorded as blocked by 26 existing failures outside the envelope/package path.
+- Recommended fix:
+  - Retarget or split the PR so the review tool sees a file-count-safe diff, rerun `bun run review`, rerun the focused ENG-342 envelope/webhook tests and repo validation, then update `specs/ENG-342/audit.md` from `not ready` to the actual final verdict.
 - Requirement ledger: SATISFIED 0, PARTIAL 2, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-342/audit.md:6`, `specs/ENG-342/audit.md:10`, `specs/ENG-342/status.md:3`
 
@@ -143,7 +159,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: High
 - Summary: implementation findings were resolved, but targeted browser validation remains blocked by existing dev data/schema drift and full e2e failures.
-- Missing requirements: targeted ENG-347 e2e validation and full e2e confidence.
+- Unsatisfied requirements:
+  - ENG-347 requires targeted lawyer workspace e2e coverage, but the e2e seeder cannot deploy while existing Convex dev data contains `portals.portalType = "mic"` outside the checked-in schema.
+  - ENG-347 still lacks a reliable full `bun run test:e2e` verdict because shared auth/demo suites fail before the lawyer workspace flow can be trusted.
+- Recommended fix:
+  - Migrate or explicitly admit the existing MIC portal dev data, run `bunx convex dev --once`, rerun `bun run test:e2e -- --project=deal-closing --no-deps e2e/deal-closing/lawyer-workspace.spec.ts`, and update `specs/ENG-347/audit.md` with the result.
 - Requirement ledger: SATISFIED 0, PARTIAL 1, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-347/audit.md:6`, `specs/ENG-347/audit.md:9`, `specs/ENG-347/status.md:12`
 
@@ -156,7 +176,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Critical Gaps
 - Gap severity: Critical
 - Summary: no Linear issue key was found in branch, title, body, commit metadata, or fetched PR discussion.
-- Missing requirements: requirement source of truth and acceptance criteria.
+- Unsatisfied requirements:
+  - No Linear source of truth exists for public document/PDF access, signed document retrieval, authorization boundaries, empty/error states, or marketplace PDF e2e acceptance.
+  - The PR cannot prove whether unauthenticated access, expiring URLs, document visibility, and PDF viewer fallback/error behavior match product and security requirements.
+- Recommended fix:
+  - Link or create the governing Linear issue, add acceptance criteria for public-document access and viewer behavior, backfill a local spec/audit artifact, then verify `convex/listings/publicDocuments.ts`, `ListingDocumentViewer`, and marketplace public-document e2e against that issue.
 - Requirement ledger: SATISFIED 0, PARTIAL 0, MISSING 1, CONTRADICTED 0, UNVERIFIED 0, OUT_OF_SCOPE 0
 - Validation evidence: PR metadata and changed files only.
 
@@ -169,7 +193,12 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: High
 - Summary: current code appears to have remediated the stale receipt-evidence finding, but e2e acceptance coverage and final validation remain incomplete.
-- Missing requirements: participant happy path, unauthorized denial, completed receipt e2e execution, and final validation closure.
+- Unsatisfied requirements:
+  - ENG-348 requires participant e2e coverage for buyer/seller happy paths, unauthorized denial, and completed receipt; the current audit records these as incomplete or blocked.
+  - ENG-348 requires final validation closure, but focused participant e2e cannot run until the dev Convex deployment accepts the current schema and exposes the new public queries.
+  - The current unit coverage proves blocked/failed signed archives do not count as receipt evidence, but it does not replace the missing browser acceptance path.
+- Recommended fix:
+  - Fix the shared Convex dev data/schema blocker, seed deterministic buyer/seller/unauthorized/completed-receipt scenarios, rerun focused participant workspace e2e, and update `specs/ENG-348/audit.md` and `tasks.md` to close T-213 and the final validation tasks.
 - Requirement ledger: SATISFIED 1, PARTIAL 2, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-348/audit.md:9`, `specs/ENG-348/audit.md:10`, `specs/ENG-348/tasks.md:32`, `src/components/deals/participant/ParticipantDealWorkspacePage.tsx:257`, `convex/deals/__tests__/participantWorkspace.test.ts:473`
 
@@ -182,7 +211,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: local audit says code readiness is not blocked, but WorkOS and seeded-environment checks remain manual.
-- Missing requirements: operational rollout validation.
+- Unsatisfied requirements:
+  - ENG-352 still needs manual WorkOS validation and seeded-environment checks before operational rollout.
+  - The local audit treats the embedded Linear implementation plan as authoritative, but the remaining environment-dependent checks are not recorded as complete.
+- Recommended fix:
+  - Run the WorkOS and seeded-environment checklist from `specs/ENG-352/audit.md`, capture environment/account IDs or safe redacted equivalents, and update the audit/status artifact with the pass/fail result.
 - Requirement ledger: SATISFIED 0, PARTIAL 1, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-352/audit.md`
 
@@ -195,7 +228,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: local audit verdict is `needs manual validation`.
-- Missing requirements: manual validation closure.
+- Unsatisfied requirements:
+  - ENG-355 still needs manual MIC portal validation beyond automated route/component checks.
+  - The report does not prove the MIC portal behavior in the target WorkOS/portal configuration that real MIC users will hit.
+- Recommended fix:
+  - Run the recorded MIC portal smoke against the intended host and role setup, verify loading/error/empty states and access boundaries, then update `specs/ENG-355/audit.md` with the exact result.
 - Requirement ledger: SATISFIED 0, PARTIAL 1, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-355/audit.md`
 
@@ -208,7 +245,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: linked issue and task artifact exist, but no local audit/status artifact was found for this PR in the current branch.
-- Missing requirements: requirement-ledger audit evidence.
+- Unsatisfied requirements:
+  - ENG-357 has no persisted `audit.md` or `status.md` evidence in the current branch, so its Linear requirements are not mapped to current-code proof.
+  - Task checkboxes alone do not prove production-grade completion against Linear acceptance criteria, related issues, tests, and tech-debt screen.
+- Recommended fix:
+  - Run a fresh requirement-ledger audit for ENG-357 against the current branch, persist `specs/ENG-357/audit.md` and `status.md`, and update this report with any resulting requirement gaps or lgtm evidence.
 - Requirement ledger: SATISFIED 0, PARTIAL 0, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-357/tasks.md`
 
@@ -221,7 +262,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: linked issue and task artifact exist, but no local audit/status artifact was found. PR discussion also mentions invalid Linear keys ENG-526, ENG-529, ENG-530, and ENG-531.
-- Missing requirements: requirement-ledger audit evidence and cleanup of invalid issue references.
+- Unsatisfied requirements:
+  - ENG-358 has no persisted `audit.md` or `status.md` evidence in the current branch, so completion is not proven against the Linear issue.
+  - PR metadata/discussion mentions ENG-526, ENG-529, ENG-530, and ENG-531, but Linear GraphQL reports those issue keys do not exist; related-issue context is therefore polluted.
+- Recommended fix:
+  - Run and persist an ENG-358 requirement-ledger audit, remove or correct the invalid issue references in PR/spec discussion, and rerun this stack audit for ENG-358 after the source links are clean.
 - Requirement ledger: SATISFIED 0, PARTIAL 0, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-358/tasks.md`
 
@@ -234,7 +279,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: PR title and commit message explicitly mix ENG-351 with broad UI, obligations, payment ops, deal portal, and listing-detail fixes; only `tasks.md` exists locally.
-- Missing requirements: focused audit evidence for the mixed-scope PR.
+- Unsatisfied requirements:
+  - ENG-351 lacks focused audit evidence separating the actual ENG-351 requirements from unrelated UI, obligations, payment ops, deal portal, and listing-detail fixes.
+  - The PR does not prove which non-ENG-351 changes have their own acceptance criteria or related Linear ownership.
+- Recommended fix:
+  - Produce a `specs/ENG-351/audit.md` that maps only ENG-351 requirements to current-code evidence, then split or explicitly link any unrelated fixes to their owning Linear issues before treating the PR as production-ready.
 - Requirement ledger: SATISFIED 0, PARTIAL 0, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-351/tasks.md`
 
@@ -247,7 +296,12 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: local audit verdict is `needs manual validation`; e2e is blocked by missing `TEST_ACCOUNT_EMAIL`, and CodeRabbit review is blocked by file-count limits.
-- Missing requirements: admin denial-path and full e2e validation.
+- Unsatisfied requirements:
+  - ENG-346 requires admin denial-path and full deal-closing e2e validation, but the e2e project is blocked by missing `TEST_ACCOUNT_EMAIL`.
+  - ENG-346 requires final review validation, but CodeRabbit exits before review because the branch target exceeds its file-count limit.
+  - Full test closure remains partial because unrelated suite failures are still recorded.
+- Recommended fix:
+  - Configure a valid test auth account, run `bun run test:e2e -- --project=deal-closing`, verify non-admin/external-org denial behavior, retarget or split for a file-count-safe `bun run review`, and update `specs/ENG-346/audit.md`.
 - Requirement ledger: SATISFIED 0, PARTIAL 2, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-346/audit.md:6`, `specs/ENG-346/audit.md:10`, `specs/ENG-346/status.md:12`
 
@@ -260,7 +314,12 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Critical Gaps
 - Gap severity: Critical
 - Summary: PR is draft, body mixes many prior issue scopes, and no `specs/ENG-360` artifact exists in the current branch.
-- Missing requirements: a focused ENG-360 requirement ledger and completion evidence.
+- Unsatisfied requirements:
+  - ENG-360 has no local `specs/ENG-360` requirement ledger, audit, status, or completion evidence in the current branch.
+  - The draft PR body mixes ENG-360 with ENG-351, ENG-359, ENG-361, ENG-362, ENG-363, ENG-365, ENG-340, ENG-344, ENG-345, ENG-349, and ENG-350, so the PR does not prove which requirements it owns.
+  - Because the PR is draft and mixed-scope, no production-grade DoD can be verified for ENG-360.
+- Recommended fix:
+  - Decide the real ENG-360 scope, create or restore `specs/ENG-360/{summary,tasks,status,audit}.md`, move unrelated fixes to their owning PRs or linked child issues, and only then rerun the requirement audit.
 - Requirement ledger: SATISFIED 0, PARTIAL 0, MISSING 1, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: GitHub PR metadata; no local `specs/ENG-360`.
 
@@ -273,7 +332,12 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Critical Gaps
 - Gap severity: Critical
 - Summary: the PR cannot be cleanly audited against one requirement source. There is no local `specs/ENG-366`, while the changed files include `specs/ENG-361/*`.
-- Missing requirements: correct PR title/Linear link/spec artifact alignment.
+- Unsatisfied requirements:
+  - The PR title/body claim ENG-366 File Workspace, but the branch name and changed spec files point to ENG-361 platform lawyer management.
+  - There is no local `specs/ENG-366` artifact, so ENG-366 requirements, acceptance criteria, and validation evidence are absent.
+  - The contradictory issue identity prevents an honest requirement ledger because a fixing agent cannot tell whether to audit ENG-361 or ENG-366.
+- Recommended fix:
+  - If the PR implements ENG-361, retitle/relink it and remove ENG-366 claims; if it implements ENG-366, move the matching file-workspace spec artifacts/code into the PR and link ENG-366. After alignment, rerun the Linear/spec audit for the single owning issue.
 - Requirement ledger: SATISFIED 0, PARTIAL 0, MISSING 1, CONTRADICTED 1, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: PR metadata and changed-file list.
 
@@ -286,7 +350,11 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Gaps Found
 - Gap severity: Medium
 - Summary: local audit verdict is `needs manual validation` because hosted WorkOS sign-in/sign-up cannot complete in this checkout.
-- Missing requirements: live WorkOS AuthKit browser callback validation.
+- Unsatisfied requirements:
+  - ENG-362 still needs live hosted WorkOS AuthKit sign-in/sign-up callback validation.
+  - Local automation covers Convex invitation lifecycle, resource-check compatibility, and route redirect/fail-closed helpers, but not the external hosted callback state.
+- Recommended fix:
+  - Run a hosted WorkOS callback smoke with a test lawyer/onboarding session, verify the callback resumes the correct route/session state, and update `specs/ENG-362/audit.md`.
 - Requirement ledger: SATISFIED 0, PARTIAL 1, MISSING 0, CONTRADICTED 0, UNVERIFIED 1, OUT_OF_SCOPE 0
 - Validation evidence: `specs/ENG-362/audit.md`
 
@@ -302,7 +370,18 @@ Validation caveat: several local spec artifacts record unrelated full-suite fail
 - Final recommendation: Critical Gaps for all five
 - Gap severity: Critical
 - Summary: no Linear issue key was found in branch, title, body, commit metadata, or fetched PR discussion. These are requirement-heavy admin/payment/legal/accounting changes and should not be reviewed without traceable acceptance criteria.
-- Missing requirements: requirement source of truth, acceptance criteria, related issue context, and auditable DoD.
+- Unsatisfied requirements:
+  - #573 lacks a Linear source for payment schedule replacement, admin lawyer roster management, investor portfolio views, fee administration, deal portal changes, WorkOS invitations, marketplace checkout changes, and any required decomposition across those domains.
+  - #575 lacks a Linear source for the lawyer onboarding LSO orchestrator, including resume behavior, checkpoint transitions, blocked reasons, WorkOS invitation semantics, LSO lookup/import, and route access.
+  - #574 lacks a Linear source proving whether the temporary admin lawyers implementation is acceptable, whether lawyers must be migrated to a canonical CRM/system-object model, and what cleanup/removal path owns the recorded "spaghetti" debt.
+  - #576 lacks a Linear source for fee assessment lifecycle, fee priority, bulk fee-set application, settlement linking, opt-out behavior, cash-ledger metadata, and accounting regression requirements.
+  - #577 lacks a Linear source for admin lender broker reassignment, including all-or-nothing WorkOS transfer semantics, rollback/repair evidence, role-specific membership preservation, stale assignment races, same-broker blocking, portal routing, and historical ledger/deal immutability.
+- Recommended fix:
+  - #573: link a governing Linear parent with child issues per domain or split the PR so each domain has its own acceptance criteria and audit artifact.
+  - #575: attach/create the LSO onboarding orchestrator Linear issue and backfill a requirement ledger covering auth, route resume, LSO registry, evidence writes, and tests.
+  - #574: attach/create the admin lawyers management Linear issue, decide whether lawyers are canonical system objects or legal-representation profiles, and record the migration/cleanup plan with tests.
+  - #576: attach/create the admin fee management Linear issue and map every accounting/ledger invariant to targeted tests before review.
+  - #577: attach/create the broker reassignment Linear issue, map WorkOS/portal/immutability invariants to tests, and replace the temporary codegen workaround after `bunx convex codegen` succeeds.
 - Requirement ledger: SATISFIED 0, PARTIAL 0, MISSING 5, CONTRADICTED 0, UNVERIFIED 0, OUT_OF_SCOPE 0
 - Validation evidence: PR metadata and changed files. #574 commit metadata explicitly says the implementation is temporary and "spaghetti"; #577 current UI still has a temporary codegen workaround at `src/components/admin/lenders/BrokerReassignmentDialog.tsx:42`.
 

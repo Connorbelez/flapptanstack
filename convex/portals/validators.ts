@@ -362,6 +362,11 @@ const SAFE_PORTAL_LANDING_HEX_COLOR_PATTERN =
 	/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 function assertSafePortalLandingHref(href: string, fieldPath: string): void {
+	if (href.includes("\\")) {
+		throw new ConvexError(
+			`Unsafe portal landing href at ${fieldPath}: ${href}`
+		);
+	}
 	if (!SAFE_PORTAL_LANDING_HREF_PATTERN.test(href)) {
 		throw new ConvexError(
 			`Unsafe portal landing href at ${fieldPath}: ${href}`

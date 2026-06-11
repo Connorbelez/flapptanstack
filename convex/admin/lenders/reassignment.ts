@@ -192,6 +192,12 @@ function isMissingCreatedMembershipIdError(error: unknown) {
 	);
 }
 
+function currentCanonicalOrgId(actionContext: ReassignmentActionContext) {
+	return (
+		actionContext.lender.orgId ?? actionContext.currentBroker.orgId ?? undefined
+	);
+}
+
 function repairNeededError(args: {
 	attemptId: Id<"lenderBrokerReassignmentAttempts">;
 	canonicalAssignmentChanged: boolean;
@@ -332,8 +338,12 @@ async function removeCurrentMembership(args: {
 		currentMembershipOperation: "not_found",
 	};
 	try {
+		const currentOrgId = currentCanonicalOrgId(args.actionContext);
+		if (!currentOrgId) {
+			return currentMembershipRemoval;
+		}
 		const oldMemberships = await args.provisioning.listOrganizationMemberships({
-			organizationId: args.actionContext.currentBroker.orgId ?? "",
+			organizationId: currentOrgId,
 			statuses: ["active"],
 			userId: args.actionContext.lenderUser.authId,
 		});
@@ -480,7 +490,8 @@ export const previewBrokerReassignment = adminQuery
 			);
 		}
 
-		const organizationWillChange = current.orgId !== target.orgId;
+		const currentWorkosOrgId = lender.orgId ?? current.orgId;
+		const organizationWillChange = currentWorkosOrgId !== target.orgId;
 
 		return {
 			blockingReasons,

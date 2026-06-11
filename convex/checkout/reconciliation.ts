@@ -385,41 +385,27 @@ async function relockExpiredCheckoutReservation(
 		return null;
 	}
 
+	const relockArgs = {
+		amount: args.checkoutSession.requestedFractions,
+		buyerLenderId,
+		effectiveDate: today(),
+		idempotencyKey: `marketplace-checkout-late-relock:${String(
+			args.checkoutSession._id
+		)}:${providerRefForCheckoutTransfer(args)}`,
+		metadata: {
+			checkoutSessionId: String(args.checkoutSession._id),
+			originalReservationId: String(args.checkoutSession.reservationId),
+			providerEventId: args.providerEventId,
+			stripeCheckoutSessionId: args.stripeCheckoutSessionId,
+			stripePaymentIntentId: args.stripePaymentIntentId,
+		},
+		mortgageId: String(args.checkoutSession.mortgageId),
+		sellerLenderId,
+		source: { type: "webhook", actor: "stripe", channel: "api_webhook" },
+	} as const;
+	let replacement: Awaited<ReturnType<typeof reserveSharesHandler>>;
 	try {
-		const replacement = await reserveSharesHandler(ctx, {
-			amount: args.checkoutSession.requestedFractions,
-			buyerLenderId,
-			effectiveDate: today(),
-			idempotencyKey: `marketplace-checkout-late-relock:${String(
-				args.checkoutSession._id
-			)}:${providerRefForCheckoutTransfer(args)}`,
-			metadata: {
-				checkoutSessionId: String(args.checkoutSession._id),
-				originalReservationId: String(args.checkoutSession.reservationId),
-				providerEventId: args.providerEventId,
-				stripeCheckoutSessionId: args.stripeCheckoutSessionId,
-				stripePaymentIntentId: args.stripePaymentIntentId,
-			},
-			mortgageId: String(args.checkoutSession.mortgageId),
-			sellerLenderId,
-			source: { type: "webhook", actor: "stripe", channel: "api_webhook" },
-		});
-		const replacementReservation = await ctx.db.get(replacement.reservationId);
-		if (!replacementReservation) {
-			throw new ConvexError("Late checkout re-lock reservation missing");
-		}
-		await ctx.db.patch(args.checkoutSession._id, {
-			buyerAccountId: replacementReservation.buyerAccountId,
-			failureReason: undefined,
-			reservationId: replacementReservation._id,
-			sellerAccountId: replacementReservation.sellerAccountId,
-			updatedAt: Date.now(),
-		});
-		const updated = await ctx.db.get(args.checkoutSession._id);
-		if (!updated) {
-			throw new ConvexError("Checkout session missing after late re-lock");
-		}
-		return updated;
+		replacement = await reserveSharesHandler(ctx, relockArgs);
 	} catch (error) {
 		console.warn("[checkout.reconciliation] late checkout re-lock failed", {
 			checkoutSessionId: String(args.checkoutSession._id),
@@ -430,6 +416,22 @@ async function relockExpiredCheckoutReservation(
 		});
 		return null;
 	}
+	const replacementReservation = await ctx.db.get(replacement.reservationId);
+	if (!replacementReservation) {
+		throw new ConvexError("Late checkout re-lock reservation missing");
+	}
+	await ctx.db.patch(args.checkoutSession._id, {
+		buyerAccountId: replacementReservation.buyerAccountId,
+		failureReason: undefined,
+		reservationId: replacementReservation._id,
+		sellerAccountId: replacementReservation.sellerAccountId,
+		updatedAt: Date.now(),
+	});
+	const updated = await ctx.db.get(args.checkoutSession._id);
+	if (!updated) {
+		throw new ConvexError("Checkout session missing after late re-lock");
+	}
+	return updated;
 }
 
 async function completeCheckoutFromStripeSuccess(
@@ -529,7 +531,7 @@ async function reconcileLateSuccess(
 				webhookEventId: args.webhookEventId,
 			});
 		}
-		if (args.checkoutSession.lateSuccessRefund.status === "failed") {
+		if (args.checkoutSession.lateSuccessRefund.status !== "completed") {
 			return {
 				ok: true as const,
 				status: "refund_required" as const,

@@ -1,8 +1,8 @@
 import { Layers } from "lucide-react";
-import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Switch } from "#/components/ui/switch";
+import { UnavailableActionButton } from "./unavailable-action-button";
 
 export function FeeSetForm() {
 	return (
@@ -15,10 +15,15 @@ export function FeeSetForm() {
 				<Switch id="fee-set-default" />
 				<Label htmlFor="fee-set-default">Default</Label>
 			</div>
-			<Button className="self-end" type="button" variant="outline">
+			<UnavailableActionButton
+				action="Save set"
+				className="self-end"
+				reason="fee-set persistence is not supported yet"
+				variant="outline"
+			>
 				<Layers className="size-4" />
 				Save set
-			</Button>
+			</UnavailableActionButton>
 		</form>
 	);
 }

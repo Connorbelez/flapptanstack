@@ -90,7 +90,10 @@ async function ensureListingVisibleForCheckout(
 	}
 ) {
 	if (!args.portalId) {
-		return;
+		throw new ConvexError({
+			code: "PORTAL_CONTEXT_REQUIRED" as const,
+			message: "Portal context is required for listing checkout",
+		});
 	}
 	const lenderConstraint = await resolveViewerLenderConstraintForPortal(ctx, {
 		portalId: args.portalId,
@@ -172,6 +175,96 @@ async function markLateSuccessRefundNeeded(
 	};
 }
 
+async function findExistingCheckoutDeal(
+	ctx: MutationCtx,
+	session: Doc<"dealLockCheckoutSessions">
+) {
+	if (!session.reservationId) {
+		return null;
+	}
+	const deals = await ctx.db
+		.query("deals")
+		.withIndex("by_reservation", (q) =>
+			q.eq("reservationId", session.reservationId)
+		)
+		.collect();
+	return (
+		deals.find((deal) => deal.dealLockCheckoutSessionId === session._id) ?? null
+	);
+}
+
+async function finalizePaidCheckoutDeal(
+	ctx: MutationCtx,
+	args: {
+		deal: Doc<"deals">;
+		now: number;
+		providerEventId: string;
+		session: Doc<"dealLockCheckoutSessions">;
+		stripePaymentIntentId?: string;
+		stripePaymentStatus?: string;
+	}
+) {
+	if (!(args.session.reservationId && args.session.selectedLawyerAuthId)) {
+		throw new ConvexError({
+			code: "CHECKOUT_SESSION_INCOMPLETE" as const,
+			message: "Checkout session is missing reservation or lawyer context",
+		});
+	}
+
+	await ctx.db.patch(args.session.reservationId, {
+		dealId: String(args.deal._id),
+	});
+	await grantDealAccess(ctx.db, {
+		dealId: args.deal._id,
+		grantedBy: "stripe_webhook",
+		role: "lender",
+		userId: args.session.buyerAuthId,
+	});
+	await grantDealAccess(ctx.db, {
+		dealId: args.deal._id,
+		grantedBy: "stripe_webhook",
+		role: "borrower",
+		userId: args.session.sellerAuthId,
+	});
+	if (args.session.selectedLawyerType) {
+		await grantDealAccess(ctx.db, {
+			dealId: args.deal._id,
+			grantedBy: "stripe_webhook",
+			role: args.session.selectedLawyerType,
+			userId: args.session.selectedLawyerAuthId,
+		});
+	}
+
+	let transition: Awaited<ReturnType<typeof executeTransition>> | undefined;
+	if (args.deal.status === "initiated") {
+		const source: CommandSource = {
+			actorId: "stripe",
+			actorType: "system",
+			channel: "api_webhook",
+		};
+		transition = await executeTransition(ctx, {
+			entityId: args.deal._id,
+			entityType: "deal",
+			eventType: "DEAL_LOCKED",
+			payload: { closingDate: args.now },
+			source,
+		});
+	}
+
+	await ctx.db.patch(args.session._id, {
+		dealCreatedAt: args.session.dealCreatedAt ?? args.now,
+		dealId: args.deal._id,
+		paidAt: args.session.paidAt ?? args.now,
+		providerEventId: args.providerEventId,
+		status: "paid",
+		stripePaymentIntentId: args.stripePaymentIntentId,
+		stripePaymentStatus: args.stripePaymentStatus,
+		updatedAt: args.now,
+	});
+
+	return transition;
+}
+
 async function expireCreatedCheckoutSession(
 	ctx: MutationCtx,
 	sessionId: Id<"dealLockCheckoutSessions">
@@ -220,7 +313,7 @@ export const prepareCheckoutSession = internalMutation({
 		fractionalShareUnits: v.number(),
 		idempotencyKey: v.string(),
 		listingId: v.id("listings"),
-		portalId: v.optional(v.id("portals")),
+		portalId: v.id("portals"),
 		selectedLawyerAuthId: v.optional(v.string()),
 		selectedLawyerType: v.optional(dealLockSelectedLawyerTypeValidator),
 		viewerIsFairLendAdmin: v.optional(v.boolean()),
@@ -375,13 +468,11 @@ export const prepareCheckoutSession = internalMutation({
 			lockFeeAmountCents: DEAL_LOCK_FEE_AMOUNT_CENTS,
 			lockFeeCurrency: DEAL_LOCK_FEE_CURRENCY,
 			mortgageId: listing.mortgageId,
-			purchasingLenderAuthId: args.buyerAuthId,
 			refundStatus: "none",
 			reservationId: reservation.reservationId,
 			selectedLawyerAuthId,
 			selectedLawyerType: args.selectedLawyerType,
-			sellerAuthId: seller.lenderId,
-			sellingLenderAuthId: seller.lenderId,
+			sellerAuthId: seller.lot.sellerAuthId,
 			status: "created",
 			updatedAt: now,
 		});
@@ -562,6 +653,23 @@ export const processStripeCheckoutSuccess = internalMutation({
 			});
 		}
 
+		const existingDeal = await findExistingCheckoutDeal(ctx, session);
+		if (existingDeal) {
+			await finalizePaidCheckoutDeal(ctx, {
+				deal: existingDeal,
+				now,
+				providerEventId: args.providerEventId,
+				session,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+				stripePaymentStatus: args.stripePaymentStatus,
+			});
+			return {
+				dealId: existingDeal._id,
+				outcome: "duplicate_success" as const,
+				sessionId: session._id,
+			};
+		}
+
 		const dealId = await ctx.db.insert("deals", {
 			buyerId: session.buyerAuthId,
 			createdAt: now,
@@ -574,60 +682,25 @@ export const processStripeCheckoutSuccess = internalMutation({
 			lockFeeCollectionStatus: "collected",
 			lockingFeeAmount: session.lockFeeAmountCents,
 			mortgageId: session.mortgageId,
-			purchasingLenderAuthId: session.buyerAuthId,
 			reservationId: session.reservationId,
 			sellerId: session.sellerAuthId,
-			sellingLenderAuthId: session.sellerAuthId,
 			status: "initiated",
 			stripeCheckoutSessionId: args.stripeCheckoutSessionId,
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			stripePaymentStatus: args.stripePaymentStatus,
 		});
-
-		await ctx.db.patch(session.reservationId, { dealId: String(dealId) });
-		await grantDealAccess(ctx.db, {
-			dealId,
-			grantedBy: "stripe_webhook",
-			role: "lender",
-			userId: session.buyerAuthId,
-		});
-		await grantDealAccess(ctx.db, {
-			dealId,
-			grantedBy: "stripe_webhook",
-			role: "lender",
-			userId: session.sellerAuthId,
-		});
-		if (session.selectedLawyerType) {
-			await grantDealAccess(ctx.db, {
-				dealId,
-				grantedBy: "stripe_webhook",
-				role: session.selectedLawyerType,
-				userId: session.selectedLawyerAuthId,
-			});
+		const deal = await ctx.db.get(dealId);
+		if (!deal) {
+			throw new ConvexError("CHECKOUT_DEAL_INSERT_FAILED");
 		}
 
-		const source: CommandSource = {
-			actorId: "stripe",
-			actorType: "system",
-			channel: "api_webhook",
-		};
-		const transition = await executeTransition(ctx, {
-			entityId: dealId,
-			entityType: "deal",
-			eventType: "DEAL_LOCKED",
-			payload: { closingDate: now },
-			source,
-		});
-
-		await ctx.db.patch(session._id, {
-			dealCreatedAt: now,
-			dealId,
-			paidAt: now,
+		const transition = await finalizePaidCheckoutDeal(ctx, {
+			deal,
+			now,
 			providerEventId: args.providerEventId,
-			status: "paid",
+			session,
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			stripePaymentStatus: args.stripePaymentStatus,
-			updatedAt: now,
 		});
 
 		return {

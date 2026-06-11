@@ -210,8 +210,12 @@ async function getInvitationByWorkosInvitationId(
 		)
 		.collect();
 	return (
-		rows.find((row) => row.status === "pending" || row.status === "accepted") ??
-		null
+		rows.sort((left, right) => {
+			if (right.updatedAt !== left.updatedAt) {
+				return right.updatedAt - left.updatedAt;
+			}
+			return right.createdAt - left.createdAt;
+		})[0] ?? null
 	);
 }
 
@@ -624,6 +628,29 @@ const workosInvitationViewerValidator = v.object({
 	verifiedEmail: v.optional(v.string()),
 });
 
+function terminalWorkosInvitationResult(
+	invitation: Doc<"lawyerInvitations">
+): InvitationAcceptResult | null {
+	if (invitation.status === "verified") {
+		return {
+			dealId: invitation.dealId,
+			invitationId: invitation._id,
+			reason: "Invitation was already verified",
+			status: "used",
+			verificationId: invitation.verificationId,
+		};
+	}
+	if (invitation.status === "revoked") {
+		return {
+			dealId: invitation.dealId,
+			invitationId: invitation._id,
+			reason: "Invitation was revoked",
+			status: "revoked",
+		};
+	}
+	return null;
+}
+
 export const getPendingInvitationByWorkosInvitationIdInternal = convex
 	.query()
 	.input({ workosInvitationId: v.string() })
@@ -657,6 +684,10 @@ export const acceptWorkosInvitationForOnboardingInternal = convex
 		);
 		if (!invitation) {
 			throw new ConvexError("FairLend lawyer invitation was not found");
+		}
+		const terminalResult = terminalWorkosInvitationResult(invitation);
+		if (terminalResult) {
+			return terminalResult;
 		}
 		if (
 			normalizeLawyerEmail(args.invitationEmail) !==
@@ -753,28 +784,15 @@ export const acceptGuestInvitationByWorkosInvitationInternal = convex
 		if (!invitation) {
 			throw new ConvexError("FairLend lawyer invitation was not found");
 		}
+		const terminalResult = terminalWorkosInvitationResult(invitation);
+		if (terminalResult) {
+			return terminalResult;
+		}
 		if (
 			normalizeLawyerEmail(args.invitationEmail) !==
 			invitation.normalizedTargetEmail
 		) {
 			throw new ConvexError("WorkOS invitation email does not match");
-		}
-		if (invitation.status === "verified") {
-			return {
-				dealId: invitation.dealId,
-				invitationId: invitation._id,
-				reason: "Invitation was already verified",
-				status: "used",
-				verificationId: invitation.verificationId,
-			};
-		}
-		if (invitation.status === "revoked") {
-			return {
-				dealId: invitation.dealId,
-				invitationId: invitation._id,
-				reason: "Invitation was revoked",
-				status: "revoked",
-			};
 		}
 		if (
 			invitation.status === "expired" ||

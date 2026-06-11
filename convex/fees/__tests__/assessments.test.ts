@@ -1,6 +1,10 @@
 import { makeFunctionReference } from "convex/server";
 import { describe, expect, it } from "vitest";
-import { createTestConvex } from "../../../src/test/auth/helpers";
+import {
+	createTestConvex,
+	ensureSeededIdentity,
+} from "../../../src/test/auth/helpers";
+import { FAIRLEND_ADMIN } from "../../../src/test/auth/identities";
 import type { Id } from "../../_generated/dataModel";
 
 const createFeeAssessmentRef = makeFunctionReference<
@@ -31,7 +35,42 @@ const linkFeeAssessmentLedgerEntryRef = makeFunctionReference<
 	Id<"feeAssessments">
 >("fees/assessments:linkFeeAssessmentLedgerEntry");
 
-async function seedMortgageFee(t: ReturnType<typeof createTestConvex>) {
+const getFeeRevenueSummaryRef = makeFunctionReference<
+	"query",
+	Record<string, never>,
+	{
+		totalIncomeCents: number;
+		waterfallIncomeCents: number;
+		borrowerChargeIncomeCents: number;
+		openAccountsReceivableCents: number;
+		byType: Array<{
+			behavior: string;
+			displayCode: string;
+			incomeCents: number;
+			volume: number;
+		}>;
+	}
+>("fees/queries:getFeeRevenueSummary");
+
+const getAdminFeeManagementSnapshotRef = makeFunctionReference<
+	"query",
+	Record<string, never>,
+	{
+		revenue: {
+			totalIncomeCents: number;
+			openAccountsReceivableCents: number;
+		};
+	}
+>("fees/queries:getAdminFeeManagementSnapshot");
+
+async function seedMortgageFee(
+	t: ReturnType<typeof createTestConvex>,
+	options: {
+		effectiveFrom?: string;
+		effectiveTo?: string;
+		status?: "active" | "inactive";
+	} = {}
+) {
 	return await t.run(async (ctx) => {
 		const now = Date.now();
 		const unique = `${now}_${Math.random().toString(36).slice(2)}`;
@@ -108,8 +147,9 @@ async function seedMortgageFee(t: ReturnType<typeof createTestConvex>) {
 			calculationType: "annual_rate_principal",
 			parameters: { annualRate: 0.0125 },
 			defaultApplication: "platform_default",
-			effectiveFrom: "2026-01-01",
-			status: "active",
+			effectiveFrom: options.effectiveFrom ?? "2026-01-01",
+			effectiveTo: options.effectiveTo,
+			status: options.status ?? "active",
 			createdAt: now,
 		});
 
@@ -287,6 +327,66 @@ describe("fee assessments", () => {
 			effectiveDate: "2026-02-01",
 			metadata: { postingGroupId: "allocation:test" },
 		});
+
+		const auditEntries = await t.run(async (ctx) => {
+			return await ctx.db.query("auditJournal").collect();
+		});
+		expect(auditEntries).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					entityId: String(assessmentId),
+					entityType: "feeAssessment",
+					eventType: "ASSESS",
+					newState: "assessed",
+					outcome: "transitioned",
+				}),
+			])
+		);
+	});
+
+	it("rejects assessments against inactive mortgage fees", async () => {
+		const t = createTestConvex();
+		const { mortgageId, mortgageFeeId } = await seedMortgageFee(t, {
+			status: "inactive",
+		});
+
+		await expect(
+			t.mutation(createFeeAssessmentRef, {
+				mortgageId,
+				mortgageFeeId,
+				amountCents: 1250,
+				source: "payment_waterfall",
+				effectiveDate: "2026-02-01",
+			})
+		).rejects.toThrow("Mortgage fee is not active");
+	});
+
+	it("rejects assessments outside the mortgage fee effective window", async () => {
+		const t = createTestConvex();
+		const { mortgageId, mortgageFeeId } = await seedMortgageFee(t, {
+			effectiveFrom: "2026-03-01",
+			effectiveTo: "2026-03-31",
+		});
+
+		await expect(
+			t.mutation(createFeeAssessmentRef, {
+				mortgageId,
+				mortgageFeeId,
+				amountCents: 1250,
+				source: "payment_waterfall",
+				effectiveDate: "2026-02-01",
+			})
+		).rejects.toThrow("not effective on 2026-02-01");
+
+		await expect(
+			t.mutation(createFeeAssessmentRef, {
+				mortgageId,
+				mortgageFeeId,
+				amountCents: 1250,
+				source: "payment_waterfall",
+				effectiveDate: "2026-04-01",
+			})
+		).rejects.toThrow("not effective on 2026-04-01");
 	});
 
 	it("rejects invalid assessment amounts", async () => {
@@ -369,6 +469,21 @@ describe("fee assessments", () => {
 			amountSettledCents: 1250,
 			status: "settled",
 		});
+
+		const auditEntries = await t.run(async (ctx) => {
+			return await ctx.db.query("auditJournal").collect();
+		});
+		expect(auditEntries).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					entityId: String(assessmentId),
+					entityType: "feeAssessment",
+					eventType: "SETTLE",
+					newState: "settled",
+					outcome: "transitioned",
+				}),
+			])
+		);
 	});
 
 	it("rejects invalid settlement amounts", async () => {
@@ -597,5 +712,61 @@ describe("fee assessments", () => {
 				cashLedgerJournalEntryId: replacementJournalEntryId,
 			})
 		).rejects.toThrow("cashLedgerJournalEntryId is immutable once linked");
+	});
+
+	it("excludes reversed assessments from fee income summaries", async () => {
+		const t = createTestConvex();
+		await ensureSeededIdentity(t, FAIRLEND_ADMIN);
+		const asAdmin = t.withIdentity(FAIRLEND_ADMIN);
+		const { mortgageId, mortgageFeeId, orgId } = await seedMortgageFee(t);
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.insert("feeAssessments", {
+				orgId,
+				mortgageId,
+				mortgageFeeId,
+				behavior: "payment_waterfall_deduction",
+				code: "servicing",
+				displayCode: "servicing",
+				amountCents: 1250,
+				amountSettledCents: 1250,
+				source: "payment_waterfall",
+				status: "settled",
+				assessedAt: now,
+				effectiveDate: "2026-02-01",
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("feeAssessments", {
+				orgId,
+				mortgageId,
+				mortgageFeeId,
+				behavior: "payment_waterfall_deduction",
+				code: "servicing",
+				displayCode: "servicing",
+				amountCents: 750,
+				amountSettledCents: 750,
+				source: "payment_waterfall",
+				status: "reversed",
+				assessedAt: now + 1,
+				effectiveDate: "2026-02-01",
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const summary = await asAdmin.query(getFeeRevenueSummaryRef, {});
+		const snapshot = await asAdmin.query(getAdminFeeManagementSnapshotRef, {});
+
+		expect(summary.totalIncomeCents).toBe(1250);
+		expect(summary.waterfallIncomeCents).toBe(1250);
+		expect(summary.byType).toEqual([
+			expect.objectContaining({
+				displayCode: "servicing",
+				incomeCents: 1250,
+				volume: 1,
+			}),
+		]);
+		expect(snapshot.revenue.totalIncomeCents).toBe(1250);
 	});
 });

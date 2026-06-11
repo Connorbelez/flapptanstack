@@ -33,7 +33,7 @@ export default defineConfig({
 	projects: [
 		{
 			name: "setup",
-			testMatch: "auth.setup.ts",
+			testMatch: /(^|[/\\])e2e[/\\]auth\.setup\.ts$/,
 			testIgnore: ["amps/**", "velocity/**"],
 			use: { ...devices["Desktop Chrome"] },
 		},

@@ -205,6 +205,15 @@ describe("lender landing handoff", () => {
 			t
 				.withIdentity(LENDER_IDENTITY)
 				.mutation(lenderLandingApi.completeLandingStart, {
+					entryPath: "https://evil.test/start-lending?source=switchboard",
+					portalId,
+				})
+		).rejects.toThrow("must be a relative portal path");
+
+		await expect(
+			t
+				.withIdentity(LENDER_IDENTITY)
+				.mutation(lenderLandingApi.completeLandingStart, {
 					entryPath: "/start-lendingevil?source=switchboard",
 					portalId,
 				})
@@ -218,5 +227,15 @@ describe("lender landing handoff", () => {
 					portalId,
 				})
 		).rejects.toThrow("entryPath source is invalid");
+
+		await expect(
+			t
+				.withIdentity(LENDER_IDENTITY)
+				.mutation(lenderLandingApi.completeLandingStart, {
+					entryPath:
+						"/start-lending?source=switchboard&redirect=https://evil.test",
+					portalId,
+				})
+		).rejects.toThrow("entryPath query parameter is unsupported");
 	});
 });

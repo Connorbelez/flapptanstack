@@ -452,6 +452,46 @@ describe("guest lawyer invitations", () => {
 		expect(reloaded.onboardingSessionId).toBe(accepted.onboardingSessionId);
 	});
 
+	it("keeps WorkOS token resolution read-only for guest invitations", async () => {
+		const t = createHarness();
+		installWorkosInvitationLookup();
+		await insertSyncedLawyerIdentity(t);
+		const { dealId } = await insertGuestDeal(t);
+		const created = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(invitationsApi.createGuestInvitationForDeal, {
+				dealId,
+				now: NOW,
+			});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(created.invitationId, {
+				deliveryProvider: "workos",
+				deliveryStatus: "sent",
+				workosInvitationId: "workos_invitation_1",
+			});
+		});
+
+		const resolved = await t.action(
+			workosInvitationsApi.resolveWorkosInvitationToken,
+			{
+				invitationToken: "workos_token_1",
+			}
+		);
+
+		expect(resolved).toMatchObject({
+			dealId,
+			emailMatches: true,
+			invitationKind: "guest",
+			status: "pending",
+			targetEmail: "riley.guest@example.test",
+		});
+		expect("nextRoute" in resolved).toBe(false);
+		expect("onboardingSessionId" in resolved).toBe(false);
+		await expect(
+			t.run(async (ctx) => ctx.db.query("lawyerOnboardingSessions").collect())
+		).resolves.toEqual([]);
+	});
+
 	it("routes a matching platform WorkOS invitation token into deal-less lawyer onboarding", async () => {
 		const t = createHarness();
 		installWorkosInvitationLookup({
@@ -489,7 +529,8 @@ describe("guest lawyer invitations", () => {
 			targetEmail: "platform.pending@example.test",
 		});
 		expect(resolved.dealId).toBeUndefined();
-		expect(resolved.nextRoute).toContain("/lawyer/onboarding/");
+		expect("nextRoute" in resolved).toBe(false);
+		expect("onboardingSessionId" in resolved).toBe(false);
 		expect(accepted).toMatchObject({
 			invitationKind: "platform",
 			status: "onboarding_required",
@@ -519,6 +560,67 @@ describe("guest lawyer invitations", () => {
 		expect(rows.profile).toMatchObject({
 			platformStatus: "invited",
 		});
+	});
+
+	it("returns terminal WorkOS invitation statuses instead of hiding them as not found", async () => {
+		const t = createHarness();
+		installWorkosInvitationLookup({
+			invitationId: "workos_invitation_revoked",
+		});
+		await insertSyncedLawyerIdentity(t);
+		const { dealId } = await insertGuestDeal(t);
+		const created = await t
+			.withIdentity(FAIRLEND_ADMIN)
+			.mutation(invitationsApi.createGuestInvitationForDeal, {
+				dealId,
+				now: NOW,
+			});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(created.invitationId, {
+				deliveryProvider: "workos",
+				deliveryStatus: "sent",
+				status: "revoked",
+				updatedAt: NOW + 1,
+				workosInvitationId: "workos_invitation_revoked",
+			});
+		});
+
+		const accepted = await t
+			.withIdentity(lawyerIdentity())
+			.action(workosInvitationsApi.completeWorkosGuestInvitation, {
+				invitationToken: "workos_token_revoked",
+				now: NOW + 2,
+			});
+		const legacyAccepted = await t.mutation(
+			invitationsApi.acceptWorkosInvitationForOnboardingInternal,
+			{
+				invitationEmail: "riley.guest@example.test",
+				now: NOW + 3,
+				viewer: {
+					authId: "user_guest_lawyer",
+					email: "riley.guest@example.test",
+					permissions: ["lawyer:access", "deal:view"],
+					role: "lawyer",
+					roles: ["lawyer"],
+					verifiedEmail: "riley.guest@example.test",
+				},
+				workosInvitationId: "workos_invitation_revoked",
+			}
+		);
+
+		expect(accepted).toMatchObject({
+			dealId,
+			reason: "Invitation was revoked",
+			status: "revoked",
+		});
+		expect(legacyAccepted).toMatchObject({
+			dealId,
+			reason: "Invitation was revoked",
+			status: "revoked",
+		});
+		await expect(
+			t.run(async (ctx) => ctx.db.query("lawyerOnboardingSessions").collect())
+		).resolves.toEqual([]);
 	});
 
 	it("keeps legacy WorkOS internal acceptance on onboarding without granting final access", async () => {

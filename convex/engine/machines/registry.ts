@@ -3,6 +3,7 @@ import type { GovernedEntityType } from "../types";
 import { brokerOnboardingApplicationMachine } from "./brokerOnboardingApplication.machine";
 import { collectionAttemptMachine } from "./collectionAttempt.machine";
 import { dealMachine } from "./deal.machine";
+import { feeAssessmentMachine } from "./feeAssessment.machine";
 import { lenderRenewalIntentMachine } from "./lenderRenewalIntent.machine";
 import { micInvestorAccessRequestMachine } from "./micInvestorAccessRequest.machine";
 import { mortgageMachine } from "./mortgage.machine";
@@ -19,6 +20,7 @@ export const machineRegistry: Record<GovernedEntityType, AnyStateMachine> = {
 	brokerOnboardingApplication: brokerOnboardingApplicationMachine,
 	collectionAttempt: collectionAttemptMachine,
 	deal: dealMachine,
+	feeAssessment: feeAssessmentMachine,
 	lenderRenewalIntent: lenderRenewalIntentMachine,
 	micInvestorAccessRequest: micInvestorAccessRequestMachine,
 	mortgage: mortgageMachine,

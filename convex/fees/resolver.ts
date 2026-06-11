@@ -116,6 +116,18 @@ function dateInRange(date: string, from: string, to?: string) {
 	return true;
 }
 
+export function assertMortgageFeeAppliesOnDate(
+	fee: Pick<Doc<"mortgageFees">, "effectiveFrom" | "effectiveTo" | "status">,
+	effectiveDate: string
+) {
+	if (fee.status !== "active") {
+		throw new ConvexError("Mortgage fee is not active");
+	}
+	if (!dateInRange(effectiveDate, fee.effectiveFrom, fee.effectiveTo)) {
+		throw new ConvexError(`Mortgage fee is not effective on ${effectiveDate}`);
+	}
+}
+
 function rangesOverlap(
 	left: { effectiveFrom: string; effectiveTo?: string },
 	right: { effectiveFrom: string; effectiveTo?: string }

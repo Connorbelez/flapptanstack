@@ -13,6 +13,7 @@ import { useMutation, useQuery } from "convex/react";
 import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminLawyersPage } from "#/components/admin/lawyers/AdminLawyersPage";
+import { InvitePlatformLawyerDialog } from "#/components/admin/lawyers/InvitePlatformLawyerDialog";
 import {
 	formatLawyerUrgencyLabel,
 	getLawyerRosterFilterFromSummaryCard,
@@ -127,6 +128,10 @@ function detailFixture() {
 			resendInvitation: true,
 			verifyRepresentation: true,
 		},
+		actionTargets: {
+			replacementDealId: "deal_1",
+			representationDealId: "deal_2",
+		},
 		deals: {
 			active: [
 				{
@@ -140,6 +145,18 @@ function detailFixture() {
 						type: "guest_lawyer",
 					},
 					status: "lawyerOnboarding.pending",
+				},
+				{
+					_id: "deal_2",
+					lawyerType: "guest_lawyer",
+					selectedLawyer: {
+						email: "guest@example.test",
+						firm: "Guest Law",
+						name: "Guest Lawyer",
+						source: "manual",
+						type: "guest_lawyer",
+					},
+					status: "lawyerOnboarding.verified",
 				},
 			],
 			recent: [],
@@ -502,7 +519,7 @@ describe("AdminLawyersPage", () => {
 		expect(mutation).toHaveBeenCalledWith({ invitationId: "invitation_1" });
 		expect(mutation).toHaveBeenCalledWith({
 			attachmentIds: [],
-			dealId: "deal_1",
+			dealId: "deal_2",
 			evidenceNote: "Signed engagement reviewed.",
 			reason: "Admin verified representation from lawyer operations detail sheet",
 		});
@@ -518,6 +535,44 @@ describe("AdminLawyersPage", () => {
 			jurisdiction: "ON",
 			profileId: "lawyerProfile_guest",
 		});
+	});
+
+	it("keeps the invite dialog open until the platform invite mutation resolves", async () => {
+		let resolveInvite: (() => void) | null = null;
+		const invitePlatformLawyer = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					resolveInvite = resolve;
+				})
+		);
+		mockRoster();
+		useMutationMock.mockReturnValue(invitePlatformLawyer);
+		const onOpenChange = vi.fn();
+		const view = render(
+			<InvitePlatformLawyerDialog onOpenChange={onOpenChange} open />
+		);
+
+		fireEvent.input(view.getByLabelText("Email"), {
+			target: { value: "existing@example.test" },
+		});
+		fireEvent.input(view.getByLabelText("Name"), {
+			target: { value: "Existing Lawyer" },
+		});
+		fireEvent.click(view.getByRole("button", { name: "Attach user" }));
+
+		expect(invitePlatformLawyer).toHaveBeenCalledWith({
+			authId: "user_existing_lawyer",
+			barNumber: undefined,
+			displayName: "Existing Lawyer",
+			email: "existing@example.test",
+			firmName: undefined,
+			jurisdiction: undefined,
+			resolution: "attach_existing_user",
+		});
+		expect(onOpenChange).not.toHaveBeenCalled();
+
+		resolveInvite?.();
+		await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
 	});
 
 	it("blocks representation override without evidence text", () => {

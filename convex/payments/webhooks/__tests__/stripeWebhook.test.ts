@@ -310,6 +310,14 @@ describe("Stripe webhook handler", () => {
 				CHECKOUT_SUCCESS_EVENT_TYPES.has("checkout.session.completed")
 			).toBe(true);
 		});
+
+		it("recognizes checkout.session.async_payment_succeeded as a checkout success event", () => {
+			expect(
+				CHECKOUT_SUCCESS_EVENT_TYPES.has(
+					"checkout.session.async_payment_succeeded"
+				)
+			).toBe(true);
+		});
 	});
 
 	// ── Provider ref extraction ──────────────────────────────────────
@@ -832,6 +840,78 @@ describe("stripe webhook persistence bridge", () => {
 			transferType: "locking_fee_collection",
 		});
 		expect(state.deals).toHaveLength(0);
+		expect(state.webhook).toMatchObject({
+			attempts: 1,
+			provider: "stripe",
+			providerEventId: event.id,
+			signatureVerified: true,
+			status: "processed",
+		});
+	});
+
+	it("persists and reconciles async marketplace checkout success through the HTTP bridge", async () => {
+		const t = createHarness();
+		const { checkoutSessionId, metadata } =
+			await insertHostedMarketplaceCheckout(t);
+		const event = makeEvent({
+			type: "checkout.session.async_payment_succeeded",
+			id: "evt_checkout_async_success_001",
+			data: {
+				object: {
+					id: "cs_test_http_checkout",
+					amount: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+					amount_total: CHECKOUT_LOCK_FEE_AMOUNT_CENTS,
+					currency: "cad",
+					metadata,
+					payment_intent: "pi_test_http_checkout",
+					payment_status: "paid",
+				},
+			},
+		});
+		const body = JSON.stringify(event);
+		const signature = buildStripeSignature(body);
+
+		const response = await t.fetch("/webhooks/stripe", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"stripe-signature": signature,
+			},
+			body,
+		});
+		const payload = (await response.json()) as {
+			accepted?: boolean;
+			processing?: string;
+			providerEventId?: string;
+			result?: { status?: string };
+		};
+
+		const state = await t.run(async (ctx) => {
+			const session = await ctx.db.get(checkoutSessionId);
+			const transferRequests = await ctx.db.query("transferRequests").collect();
+			const webhook = await ctx.db
+				.query("webhookEvents")
+				.withIndex("by_provider_event", (q) =>
+					q.eq("provider", "stripe").eq("providerEventId", event.id)
+				)
+				.unique();
+			return { session, transferRequests, webhook };
+		});
+
+		expect(response.status).toBe(200);
+		expect(payload).toMatchObject({
+			accepted: true,
+			processing: "processed",
+			providerEventId: event.id,
+			result: { status: "completed" },
+		});
+		expect(state.session).toMatchObject({
+			status: "completed",
+			stripeCheckoutSessionId: "cs_test_http_checkout",
+			stripePaymentIntentId: "pi_test_http_checkout",
+			lockFeeTransferRequestId: state.transferRequests[0]?._id,
+		});
+		expect(state.transferRequests).toHaveLength(1);
 		expect(state.webhook).toMatchObject({
 			attempts: 1,
 			provider: "stripe",

@@ -3,6 +3,7 @@ import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { auditLog } from "../../auditLog";
 import type { CommandSource } from "../../engine/types";
+import { transitionFeeAssessmentToStatus } from "../../fees/assessmentTransitions";
 import type { PaymentFrequency } from "../../mortgages/paymentFrequency";
 import {
 	findCashAccount,
@@ -683,14 +684,20 @@ async function linkServicingFeeAssessmentToJournalEntry(
 		);
 	}
 
+	const nextStatus =
+		args.servicingFee === assessment.amountCents
+			? "settled"
+			: "partially_settled";
 	await ctx.db.patch(assessment._id, {
 		amountSettledCents: args.servicingFee,
 		cashLedgerJournalEntryId: args.journalEntry._id,
-		status:
-			args.servicingFee === assessment.amountCents
-				? "settled"
-				: "partially_settled",
+		obligationId: args.obligationId,
 		updatedAt: Date.now(),
+	});
+	await transitionFeeAssessmentToStatus(ctx, {
+		assessmentId: assessment._id,
+		status: nextStatus,
+		source: { channel: "scheduler", actorType: "system" },
 	});
 }
 
@@ -1665,13 +1672,40 @@ function assertExactlyOneReversalIdentifier(args: {
 		| { hasAttemptId: false; hasTransferRequestId: true };
 }
 
+async function markLinkedServicingFeeAssessmentReversed(
+	ctx: MutationCtx,
+	args: {
+		journalEntryId: Id<"cash_ledger_journal_entries">;
+		obligationId: Id<"obligations">;
+	}
+) {
+	const assessments = await ctx.db
+		.query("feeAssessments")
+		.withIndex("by_obligation", (q) => q.eq("obligationId", args.obligationId))
+		.collect();
+	const assessment = assessments.find(
+		(row) => row.cashLedgerJournalEntryId === args.journalEntryId
+	);
+	if (!assessment || assessment.status === "reversed") {
+		return;
+	}
+	await ctx.db.patch(assessment._id, {
+		updatedAt: Date.now(),
+	});
+	await transitionFeeAssessmentToStatus(ctx, {
+		assessmentId: assessment._id,
+		status: "reversed",
+		source: { channel: "scheduler", actorType: "system" },
+	});
+}
+
 /**
  * Reverses an entire settlement's posting group atomically.
  *
  * Given an attempt or transfer request, this function:
  * 1. Reverses the CASH_RECEIVED entry
  * 2. Reverses all LENDER_PAYABLE_CREATED entries from the allocation group
- * 3. Reverses the SERVICING_FEE_RECOGNIZED entry (if any)
+ * 3. Reverses all SERVICING_FEE_RECOGNIZED entries
  * 4. Reverses LENDER_PAYOUT_SENT entries (if payouts already sent, flagging clawback)
  *
  * All reversal entries share a single postingGroupId for atomicity.
@@ -1819,7 +1853,7 @@ export async function postPaymentReversalCascade(
 	const lenderPayableEntries = allocationEntries.filter(
 		(e) => e.entryType === "LENDER_PAYABLE_CREATED"
 	);
-	const servicingFeeEntry = allocationEntries.find(
+	const servicingFeeEntries = allocationEntries.filter(
 		(e) => e.entryType === "SERVICING_FEE_RECOGNIZED"
 	);
 
@@ -1848,8 +1882,8 @@ export async function postPaymentReversalCascade(
 		});
 	}
 
-	// 11. Reverse SERVICING_FEE_RECOGNIZED (if exists)
-	if (servicingFeeEntry) {
+	// 11. Reverse every SERVICING_FEE_RECOGNIZED entry.
+	for (const servicingFeeEntry of servicingFeeEntries) {
 		await postCashEntryInternal(ctx, {
 			entryType: "REVERSAL",
 			effectiveDate: args.effectiveDate,
@@ -1861,13 +1895,17 @@ export async function postPaymentReversalCascade(
 			idempotencyKey: buildIdempotencyKey(
 				"reversal",
 				"servicing-fee",
-				args.obligationId
+				servicingFeeEntry._id
 			),
 			mortgageId: args.mortgageId,
 			obligationId: args.obligationId,
 			borrowerId: servicingFeeEntry.borrowerId,
 			source: normalizeSource(args.source),
 			reason: args.reason,
+		});
+		await markLinkedServicingFeeAssessmentReversed(ctx, {
+			journalEntryId: servicingFeeEntry._id,
+			obligationId: args.obligationId,
 		});
 	}
 

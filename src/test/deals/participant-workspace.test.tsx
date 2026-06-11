@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { FunctionReturnType } from "convex/server";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,13 @@ import { ParticipantDealWorkspacePage } from "#/components/deals/participant/Par
 import { BorrowerLayout } from "#/routes/borrower/route";
 import { LenderLayout } from "#/routes/lender/route";
 import { api } from "../../../convex/_generated/api";
+
+const convexReactMocks = vi.hoisted(() => ({
+	createParticipantSigningSession: vi.fn(async () => ({
+		expiresAt: 1_800_000_120_000,
+		url: "https://documenso.test/sign/session_1",
+	})),
+}));
 
 vi.mock("react", async () => {
 	const { createRequire } =
@@ -43,12 +50,14 @@ vi.mock("convex/react", () => ({
 	AuthLoading: ({ children }: { children: ReactNode }) => (
 		<div data-testid="auth-loading-shell">{children}</div>
 	),
+	useAction: () => convexReactMocks.createParticipantSigningSession,
 	useMutation: () => vi.fn(async () => ({ success: true })),
 }));
 
 afterEach(() => {
 	cleanup();
 	vi.restoreAllMocks();
+	convexReactMocks.createParticipantSigningSession.mockClear();
 });
 
 type ParticipantDealQueue = FunctionReturnType<
@@ -66,14 +75,14 @@ const queue: ParticipantDealQueue = {
 			closingDate: 1_800_000_000_000,
 			dealId: "deal_123" as never,
 			group: "needsAction",
-			nextAction: "Sign your purchasing lender closing documents",
-			persona: "purchasing_lender",
+			nextAction: "Sign your buyer closing documents",
+			persona: "buyer",
 			propertyLabel: "123 King St W, Toronto, ON",
 			signingStatus: "ready_to_sign",
 			status: "documentReview.signed",
 		},
 	],
-	persona: "purchasing_lender",
+	persona: "buyer",
 };
 
 const workspace: ParticipantDealWorkspace = {
@@ -90,7 +99,7 @@ const workspace: ParticipantDealWorkspace = {
 		fractionalShareDisplayPercent: 25,
 		fractionalShareUnits: 2500,
 		lockingFeeAmount: null,
-		persona: "purchasing_lender",
+		persona: "buyer",
 		status: "documentReview.signed",
 	},
 	documentInstances: [
@@ -154,12 +163,12 @@ const workspace: ParticipantDealWorkspace = {
 		principal: 500_000,
 		status: "funded",
 	},
-	nextAction: "Sign your purchasing lender closing documents",
+	nextAction: "Sign your buyer closing documents",
 	participants: {
 		buyer: {
 			accessRole: "lender",
 			authId: "buyer-auth",
-			displayName: "Bianca Purchasing",
+			displayName: "Bianca Buyer",
 			email: "buyer@test.fairlend.ca",
 			lenderId: "lender_123" as never,
 			userId: "user_123" as never,
@@ -181,55 +190,18 @@ const workspace: ParticipantDealWorkspace = {
 			lawyerType: "guest_lawyer",
 		},
 		personas: {
-			assigned_broker: "assigned_broker",
-			broker_of_record: "broker_of_record",
-			fairlend_admin: "fairlend_admin",
-			primary_borrower: "primary_borrower",
-			primary_lawyer: "primary_lawyer",
-			purchasing_lender: "purchasing_lender",
-			selling_lender: "selling_lender",
-		},
-		primary_borrower: {
-			authId: "borrower-auth",
-			borrowerId: "borrower_123" as never,
-			displayName: "Bailey Borrower",
-			email: "borrower@test.fairlend.ca",
-			persona: "primary_borrower",
-			userId: "user_borrower" as never,
-		},
-		primary_lawyer: {
-			authId: "lawyer-auth",
-			displayName: "Laura Lawyer",
-			email: "lawyer@test.fairlend.ca",
-			hasActiveDealAccess: true,
-			lawyerType: "guest_lawyer",
-			persona: "primary_lawyer",
-		},
-		purchasing_lender: {
-			accessRole: "lender",
-			authId: "buyer-auth",
-			displayName: "Bianca Purchasing",
-			email: "buyer@test.fairlend.ca",
-			lenderId: "lender_123" as never,
-			persona: "purchasing_lender",
-			userId: "user_123" as never,
+			admin: "admin",
+			buyer: "buyer",
+			lawyer: "lawyer",
+			seller: "seller",
 		},
 		seller: {
-			accessRole: "lender",
+			accessRole: "borrower",
 			authId: "seller-auth",
-			borrowerId: null,
-			displayName: "Sam Selling",
+			borrowerId: "borrower_123" as never,
+			displayName: "Sam Seller",
 			email: "seller@test.fairlend.ca",
-			lenderId: "seller_lender_123" as never,
-			userId: "user_456" as never,
-		},
-		selling_lender: {
-			accessRole: "lender",
-			authId: "seller-auth",
-			displayName: "Sam Selling",
-			email: "seller@test.fairlend.ca",
-			lenderId: "seller_lender_123" as never,
-			persona: "selling_lender",
+			lenderId: null,
 			userId: "user_456" as never,
 		},
 	},
@@ -240,14 +212,14 @@ const workspace: ParticipantDealWorkspace = {
 		},
 		lender: {
 			email: "buyer@test.fairlend.ca",
-			name: "Bianca Purchasing",
+			name: "Bianca Buyer",
 		},
 		seller: {
 			email: "seller@test.fairlend.ca",
-			name: "Sam Selling",
+			name: "Sam Seller",
 		},
 	},
-	persona: "purchasing_lender",
+	persona: "buyer",
 	property: {
 		city: "Toronto",
 		propertyType: "residential",
@@ -259,17 +231,17 @@ const workspace: ParticipantDealWorkspace = {
 	signing: {
 		attemptId: "attempt_123" as never,
 		completedRequiredCount: 0,
-		embeddedSigningToken: "purchasing-lender-token",
+		embeddedSigningToken: "buyer-token",
 		exceptionMessage: null,
 		providerDocumentId: "doc_123",
 		providerEnvelopeId: "env_123",
-		recipientName: "Bianca Purchasing",
+		recipientName: "Bianca Buyer",
 		recipients: [
 			{
 				completedAt: null,
 				documensoRole: "SIGNER",
-				name: "Bianca Purchasing",
-				platformRole: "purchasing_lender",
+				name: "Bianca Buyer",
+				platformRole: "lender_primary",
 				required: true,
 				signingOrder: 1,
 				signingStatus: "not_started",
@@ -290,18 +262,18 @@ const workspace: ParticipantDealWorkspace = {
 };
 
 describe("participant deal workspace UI", () => {
-	it("renders queue groups and purchasing lender next action", () => {
+	it("renders queue groups and buyer next action", () => {
 		render(<ParticipantDealsQueuePage queue={queue} />);
 
 		expect(screen.getByText("My Closings")).toBeTruthy();
 		expect(screen.getByText("Needs Action")).toBeTruthy();
 		expect(screen.getByText("123 King St W, Toronto, ON")).toBeTruthy();
-		expect(
-			screen.getByText("Sign your purchasing lender closing documents")
-		).toBeTruthy();
+		expect(screen.getByText("Sign your buyer closing documents")).toBeTruthy();
 	});
 
-	it("renders workspace panels and only the projected signing entry", () => {
+	it("renders workspace panels and opens signing through the app action", async () => {
+		const open = vi.spyOn(window, "open").mockReturnValue(null);
+
 		render(
 			<ParticipantDealWorkspacePage backTo="/lender/deals" workspace={workspace} />
 		);
@@ -313,15 +285,25 @@ describe("participant deal workspace UI", () => {
 		expect(screen.getByText("Documents & Signatures")).toBeTruthy();
 		expect(screen.getByText("Timeline")).toBeTruthy();
 		expect(screen.getByText("Parties & Counsel")).toBeTruthy();
-		expect(screen.getByText("Signing task ready")).toBeTruthy();
-		expect(screen.queryByRole("link", { name: /open signing/i })).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: /open signing/i }));
+		await waitFor(() =>
+			expect(convexReactMocks.createParticipantSigningSession).toHaveBeenCalledWith({
+				attemptId: "attempt_123",
+				dealId: "deal_123",
+			})
+		);
+		expect(open).toHaveBeenCalledWith(
+			"https://documenso.test/sign/session_1",
+			"_blank",
+			"noopener,noreferrer"
+		);
 		expect(
-			document.querySelector('a[href="purchasing-lender-token"]')
+			document.querySelector('a[href="buyer-token"]')
 		).toBeNull();
 		expect(screen.queryByText("lawyer-token")).toBeNull();
 	});
 
-	it("only links provider-safe signing URLs", () => {
+	it("does not launch signing without a projected attempt", () => {
 		render(
 			<ParticipantDealWorkspacePage
 				backTo="/lender/deals"
@@ -329,16 +311,14 @@ describe("participant deal workspace UI", () => {
 					...workspace,
 					signing: {
 						...workspace.signing,
-						embeddedSigningToken: "https://sign.example/purchasing-lender",
+						attemptId: null,
 					},
 				}}
 			/>
 		);
 
-		const signingLink = screen.getByRole("link", { name: /open signing/i });
-		expect(signingLink.getAttribute("href")).toBe(
-			"https://sign.example/purchasing-lender"
-		);
+		expect(screen.getByText("Signing task ready")).toBeTruthy();
+		expect(screen.queryByRole("button", { name: /open signing/i })).toBeNull();
 	});
 
 	it("wraps lender and borrower route trees before suspense children render", () => {
